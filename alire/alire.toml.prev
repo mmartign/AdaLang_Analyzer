@@ -1,0 +1,13 @@
+name = "gnatcheck"
+description = ""
+version = "0.1.0-dev"
+
+authors = ["Maurizio Martignano"]
+maintainers = ["Maurizio Martignano <Maurizio.Martignano@spazioit.com>"]
+licenses = "Apache-2.0"
+website = ""
+tags = []
+
+project-files = ["gnatcheck/gnatcheck.gpr"]
+
+executables = ["gnatcheck"]

@@ -1,0 +1,986 @@
+# THIS FILE IS GENERATED. DO NOT EDIT.
+
+[solution]
+[solution.context]
+solved = true
+[[solution.state]]
+crate = "adasat"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "^26"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "Implementation of a DPLL-based SAT solver in Ada."
+licenses = "Apache-2.0 WITH LLVM-exception"
+long-description = "Main features:\n\n - [X] Conflict analysis and backjumping\n - [X] Two-watched literals scheme\n - [X] Built-in support for At-Most-One constraints\n - [X] Custom theories\n"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"chouteau",
+"roldak",
+"AldanTanneo",
+]
+name = "adasat"
+tags = [
+"sat",
+"solver",
+"theories",
+]
+version = "26.0.0"
+website = "https://github.com/AdaCore/adasat"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.gpr-externals]
+ADASAT_BUILD_MODE = [
+"dev",
+"prod",
+"prof",
+]
+[solution.state.release.origin]
+hashes = [
+"sha512:37336738b543040461e72c50a8e1341787766beba22c91e08c86f2bb24275ccac79f4e777e9cf23622c3e1d3bf0248bb34f10b9570f4307d1697f489781fd4b9",
+]
+url = "https://github.com/AdaCore/AdaSAT/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.actions]]
+command = [
+"sed",
+"-i",
+"-e",
+"s/external (\"ADASAT_BUILD_MODE\", \"dev\")/external (\"ADASAT_BUILD_MODE\", \"prod\")/",
+"adasat.gpr",
+]
+directory = "."
+type = "post-fetch"
+[[solution.state.release.actions]]
+command = [
+"sed",
+"-i",
+"-e",
+"s/, \"-flto\");/);/",
+"adasat.gpr",
+]
+directory = "."
+type = "post-fetch"
+[[solution.state]]
+crate = "gnat"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = ">=14"
+[solution.state.release]
+auto-gpr-with = false
+description = "The GNAT Ada compiler - Native"
+licenses = "GPL-3.0-or-later AND GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"Fabien Chouteau <chouteau@adacore.com>",
+"CÃ©sar Sagaert <sagaert@adacore.com>",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "gnat_native"
+provides = [
+"gnat=15.1.2",
+]
+version = "15.1.2"
+website = "https://github.com/alire-project/GNAT-FSF-builds"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.environment]
+[solution.state.release.environment.LD_LIBRARY_PATH]
+prepend = "${CRATE_ROOT}/lib"
+[solution.state.release.environment.LD_RUN_PATH]
+prepend = "${CRATE_ROOT}/lib"
+[solution.state.release.environment.LIBRARY_PATH]
+prepend = "${CRATE_ROOT}/lib"
+[solution.state.release.environment.PATH]
+prepend = "${CRATE_ROOT}/bin"
+[solution.state.release.origin]
+binary = true
+hashes = [
+"sha256:60748c5436aba29243333ca1f26c1ef694749644d2f194ab3cbe9f58c53ca829",
+]
+url = "https://github.com/alire-project/GNAT-FSF-builds/releases/download/gnat-15.1.0-2/gnat-aarch64-darwin-15.1.0-2.tar.gz"
+[[solution.state]]
+crate = "gnatcoll"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "^26"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "GNAT Components Collection - Core packages"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "gnatcoll"
+project-files = [
+"core/gnatcoll_core.gpr",
+]
+tags = [
+"gnatcoll",
+"json",
+"email",
+"refcount",
+"vfs",
+]
+version = "26.0.0"
+website = "https://github.com/adacore/gnatcoll-core"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.gpr-externals]
+GNATCOLL_BLAKE3_ARCH = [
+"x86_64-linux",
+"aarch64-linux",
+"x86_64-windows",
+"generic",
+]
+GNATCOLL_MADVISE = [
+"yes",
+"no",
+]
+GNATCOLL_MMAP = [
+"yes",
+"no",
+]
+GNATCOLL_XXHASH_ARCH = [
+"x86_64",
+"generic",
+]
+[solution.state.release.origin]
+hashes = [
+"sha512:cc5dd0a199115fee269ec1ef963b80abbb56e3029e817d5dbfe71e90fff09d0535ae5be86dedb6d3fbcc74cfa2f3e2e7885de800e5805f9f596507814dce6d4b",
+]
+url = "https://github.com/AdaCore/gnatcoll-core/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.depends-on]]
+gnat = ">=14"
+gnatcoll_minimal = "~26.0.0"
+[[solution.state]]
+crate = "gnatcoll_gmp"
+fulfilment = "solved"
+pinned = false
+transitivity = "direct"
+versions = "^26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "GNAT Components Collection - GNU Multiple Precision Arithmetic binding"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "gnatcoll_gmp"
+project-files = [
+"gmp/gnatcoll_gmp.gpr",
+]
+tags = [
+"gnatcoll",
+"bindings",
+"gmp",
+"arbitrary",
+"precision",
+"arithmetic",
+]
+version = "26.0.0"
+website = "https://github.com/adacore/gnatcoll-bindings"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.origin]
+hashes = [
+"sha512:dacec6f3f87c5ba7b197db9d3df4f7547019583d0c440c9cd572a458a736e1a59c165df6148848fd574bef16cf69a7fb19b66f46d963addfc343c3ff10bf649b",
+]
+url = "https://github.com/AdaCore/gnatcoll-bindings/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.depends-on]]
+gnatcoll_minimal = "~26.0.0"
+libgmp = "*"
+[[solution.state]]
+crate = "gnatcoll_iconv"
+fulfilment = "solved"
+pinned = false
+transitivity = "direct"
+versions = "^26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "GNAT Components Collection - iconv binding"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "gnatcoll_iconv"
+project-files = [
+"iconv/gnatcoll_iconv.gpr",
+]
+tags = [
+"gnatcoll",
+"bindings",
+"iconv",
+"i18n",
+]
+version = "26.0.0"
+website = "https://github.com/adacore/gnatcoll-bindings"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.gpr-externals]
+GNATCOLL_BUILD_MODE = [
+"DEBUG",
+"PROD",
+]
+LIBRARY_TYPE = [
+"static",
+"relocatable",
+"static-pic",
+]
+[solution.state.release.origin]
+hashes = [
+"sha512:dacec6f3f87c5ba7b197db9d3df4f7547019583d0c440c9cd572a458a736e1a59c165df6148848fd574bef16cf69a7fb19b66f46d963addfc343c3ff10bf649b",
+]
+url = "https://github.com/AdaCore/gnatcoll-bindings/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.depends-on]]
+gnatcoll = "~26.0.0"
+[[solution.state]]
+crate = "gnatcoll_minimal"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "~26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "GNAT Components Collection - Minimal"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "gnatcoll_minimal"
+project-files = [
+"minimal/gnatcoll_minimal.gpr",
+]
+tags = [
+"gnatcoll",
+"asserts",
+"encoders",
+"stream",
+"storage",
+]
+version = "26.0.0"
+website = "https://github.com/adacore/gnatcoll-core"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.gpr-externals]
+GNATCOLL_BUILD_MODE = [
+"DEBUG",
+"PROD",
+]
+GNATCOLL_OS = [
+"windows",
+"unix",
+"osx",
+]
+LIBRARY_TYPE = [
+"static",
+"relocatable",
+"static-pic",
+]
+[solution.state.release.gpr-set-externals]
+GNATCOLL_OS = "osx"
+GNATCOLL_VERSION = "26.0.0"
+[solution.state.release.origin]
+hashes = [
+"sha512:cc5dd0a199115fee269ec1ef963b80abbb56e3029e817d5dbfe71e90fff09d0535ae5be86dedb6d3fbcc74cfa2f3e2e7885de800e5805f9f596507814dce6d4b",
+]
+url = "https://github.com/AdaCore/gnatcoll-core/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.depends-on]]
+gnat = ">=14"
+[[solution.state]]
+crate = "gnatcoll_projects"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "^26"
+[solution.state.release]
+description = "GNAT Components Collection - Projects"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "gnatcoll_projects"
+project-files = [
+"projects/gnatcoll_projects.gpr",
+]
+tags = [
+"gnatcoll",
+"projects",
+"gpr",
+]
+version = "26.0.0"
+website = "https://github.com/adacore/gnatcoll-core"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.origin]
+hashes = [
+"sha512:cc5dd0a199115fee269ec1ef963b80abbb56e3029e817d5dbfe71e90fff09d0535ae5be86dedb6d3fbcc74cfa2f3e2e7885de800e5805f9f596507814dce6d4b",
+]
+url = "https://github.com/AdaCore/gnatcoll-core/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.depends-on]]
+gnat = ">=14"
+gnatcoll = "~26.0.0"
+libgpr = ">=25.0.0"
+[[solution.state]]
+crate = "gprconfig_kb"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "^26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+auto-gpr-with = false
+description = "GPRCONFIG Knowledge Database"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "gprconfig_kb"
+version = "26.0.0"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.origin]
+binary = true
+hashes = [
+"sha512:8d626e9805c6757f7aeb6871726811d19169c1706e97dc6690789d90df33b36ae5853d2f74095dade8b2bd12e9032a456ad7f84b8041292e68881063b20e88a8",
+]
+url = "https://github.com/AdaCore/gprconfig_kb/archive/refs/tags/v26.0.0.zip"
+[[solution.state]]
+crate = "langkit_support"
+fulfilment = "solved"
+pinned = false
+transitivity = "direct"
+versions = "^26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "Runtime support library for Langkit-generated libraries"
+licenses = "Apache-2.0 WITH LLVM-exception"
+maintainers = [
+"Pierre-Marie de Rodat <pmderodat@kawie.fr>",
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"pmderodat",
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "langkit_support"
+project-files = [
+"langkit/support/langkit_support.gpr",
+]
+version = "26.0.0"
+website = "https://github.com/AdaCore/langkit"
+[solution.state.release.gpr-externals]
+LANGKIT_SUPPORT_BUILD_MODE = [
+"dev",
+"prod",
+"prof",
+]
+LANGKIT_SUPPORT_LIBRARY_TYPE = [
+"static",
+"relocatable",
+"static-pic",
+]
+[solution.state.release.gpr-set-externals]
+LANGKIT_SUPPORT_BUILD_MODE = "prod"
+[solution.state.release.origin]
+hashes = [
+"sha512:1745168f4b01d6a0c61322d455f02fd8b0de2d540965ccba175e4916ecd0227cd89afc5cda1d766d15c1b2899fd33bd4d258d1f6176f84eaa43134b1f07f7a68",
+]
+url = "https://github.com/AdaCore/langkit/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.depends-on]]
+adasat = "^26"
+gnatcoll = "^26"
+gnatcoll_gmp = "^26"
+gnatcoll_iconv = "^26"
+prettier_ada = "^26"
+[[solution.state]]
+crate = "libadalang"
+fulfilment = "solved"
+pinned = false
+transitivity = "direct"
+versions = "^26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "Ada semantic analysis library"
+licenses = "Apache-2.0 WITH LLVM-exception"
+maintainers = [
+"Pierre-Marie de Rodat <pmderodat@kawie.fr>",
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"pmderodat",
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "libadalang"
+tags = [
+"libadalang",
+"static-analysis",
+]
+version = "26.0.0"
+website = "https://github.com/AdaCore/libadalang"
+[solution.state.release.gpr-externals]
+LIBADALANG_BUILD_MODE = [
+"dev",
+"prod",
+"prof",
+]
+LIBADALANG_LIBRARY_TYPE = [
+"static",
+"relocatable",
+"static-pic",
+]
+[solution.state.release.gpr-set-externals]
+LIBADALANG_BUILD_MODE = "prod"
+[solution.state.release.origin]
+hashes = [
+"sha512:75276b8d59cc68900d31bfe4962cb3c4bcb9405b75c21492c14a2c5471c4e644b21feac17acc28783bb060d31d1794ea0aa6b22aacaf8fa05b8408baf4f7e293",
+]
+url = "https://github.com/AdaCore/libadalang/releases/download/v26.0.0/libadalang-26.0.0.tar.gz"
+[[solution.state.release.depends-on]]
+gnatcoll = "^26"
+gnatcoll_gmp = "^26"
+gnatcoll_iconv = "^26"
+gnatcoll_projects = "^26"
+langkit_support = "^26"
+libgpr2 = "^26"
+[[solution.state]]
+crate = "libgmp"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "*"
+[solution.state.release]
+description = "The GNU Multiple Precision Arithmetic Library"
+licenses = "LGPL-3.0-only"
+maintainers = [
+"derodat@adacore.com",
+"chouteau@adacore.com",
+]
+maintainers-logins = [
+"pmderodat",
+"Fabien-Chouteau",
+]
+name = "libgmp"
+notes = "Provided by system package: gmp"
+version = "6.3.0"
+[solution.state.release.origin]
+url = "system:gmp"
+[[solution.state]]
+crate = "libgpr"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = ">=25.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "GNAT Project File Library"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "libgpr"
+project-files = [
+"gpr/gpr.gpr",
+]
+version = "26.0.0"
+website = "https://github.com/AdaCore/gprbuild"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.gpr-externals]
+GPR_BUILD = [
+"debug",
+"production",
+"coverage",
+"profiling",
+]
+LIBRARY_TYPE = [
+"static",
+"relocatable",
+"static-pic",
+]
+[solution.state.release.origin]
+hashes = [
+"sha512:600d4a7b585755cbf746fd649d62faa79c7e9721f854efe2b74cfec415808e96d50631cd18f87cf292d198822a87beb22a458ced63c3350dd81bfb4f47ca677b",
+]
+url = "https://github.com/AdaCore/gprbuild/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.depends-on]]
+gnat = ">=15"
+xmlada = "~26.0.0"
+[[solution.state]]
+crate = "libgpr2"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "^26"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "Parser for GPR Project File"
+licenses = "Apache-2.0 WITH LLVM-exception"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "libgpr2"
+project-files = [
+"gpr2.gpr",
+]
+version = "26.0.0"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.environment]
+[solution.state.release.environment.GPR2KBDIR]
+set = "$$GPRCONFIG_KB_ALIRE_PREFIX//db"
+[solution.state.release.gpr-externals]
+GPR2_BUILD = [
+"debug",
+"release",
+"release_checks",
+"gnatcov",
+]
+GPR2_OS = [
+"Windows_NT",
+"UNIX",
+]
+LIBRARY_TYPE = [
+"static",
+"relocatable",
+"static-pic",
+]
+[solution.state.release.gpr-set-externals]
+GPR2_BUILD = "release"
+[solution.state.release.origin]
+hashes = [
+"sha512:99e9d2cd944b200d64fcbc0fca94291fa4b01d1186dfe0cb7513aa79cd5912f743b6206d0d9d2a6029149bba50a0ce90441a05c7b4485fb2a19ac56582dbecfe",
+]
+url = "https://github.com/AdaCore/gpr/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.actions]]
+command = [
+"make",
+".build/kb/collect_kb",
+".build/kb/gpr2-kb-embedded.ads",
+".build/kb/gpr2-kb-embedded.adb",
+]
+directory = "."
+type = "post-fetch"
+[[solution.state.release.depends-on]]
+gnatcoll = "^26.0.0"
+gnatcoll_gmp = "^26.0.0"
+gnatcoll_iconv = "^26.0.0"
+gprconfig_kb = "^26.0.0"
+make = "*"
+xmlada = "^26.0.0"
+[[solution.state]]
+crate = "make"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "*"
+[solution.state.release]
+description = "Utility for directing compilation"
+maintainers = [
+"alejandro@mosteo.com",
+]
+maintainers-logins = [
+"mosteo",
+]
+name = "make"
+notes = "Provided by system package: make"
+version = "4.4.1"
+[solution.state.release.origin]
+url = "system:make"
+[[solution.state]]
+crate = "prettier_ada"
+fulfilment = "solved"
+pinned = false
+transitivity = "direct"
+versions = "^26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "Port of the Prettier formatter to Ada"
+licenses = "Apache-2.0 WITH LLVM-exception"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "prettier_ada"
+tags = [
+"format",
+"formatter",
+]
+version = "26.0.0"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.gpr-externals]
+PRETTIER_ADA_BUILD_MODE = [
+"dev",
+"prod",
+]
+PRETTIER_ADA_LIBRARY_TYPE = [
+"static",
+"static-pic",
+"relocatable",
+]
+[solution.state.release.gpr-set-externals]
+PRETTIER_ADA_BUILD_MODE = "prod"
+[solution.state.release.origin]
+hashes = [
+"sha512:8fa12a562cc344772b79fa79168b5091fbf6eea0cbcef6da434f4b6b1ddde82494d44ac8dd08b49c45788545b2e08e028c3fb79588fe9c77041da290d8444ae5",
+]
+url = "https://github.com/AdaCore/prettier-ada/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.depends-on]]
+gnatcoll = "^26"
+vss_text = "^26"
+[[solution.state]]
+crate = "templates_parser"
+fulfilment = "solved"
+pinned = false
+transitivity = "direct"
+versions = "^26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "Templates Parser: File generation from templates in Ada"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "templates_parser"
+project-files = [
+"templates_parser.gpr",
+]
+version = "26.0.0"
+website = "https://github.com/AdaCore/templates-parser"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.environment]
+[solution.state.release.environment.ADAFLAGS]
+set = "-gnaty-d"
+[solution.state.release.gpr-externals]
+LIBRARY_TYPE = [
+"static",
+"relocatable",
+]
+PRJ_BUILD = [
+"Debug",
+"Release",
+]
+PRJ_TARGET = [
+"Windows",
+"macOS",
+"Linux",
+"FreeBSD",
+"UNIX",
+]
+TP_TASKING = [
+"No_Tasking",
+"Standard_Tasking",
+]
+TP_XMLADA = [
+"Installed",
+"Disabled",
+]
+[solution.state.release.gpr-set-externals]
+PRJ_BUILD = "Release"
+PRJ_TARGET = "macOS"
+TP_XMLADA = "Installed"
+[solution.state.release.origin]
+hashes = [
+"sha512:bc2b94808c9123f0a70246f2b7716f5d9b25e64bc1789e924974dfead7cc89e9d8557e9febba21bd2f1401748755abe32774acb68410731f5c2830e6a8dfa6ef",
+]
+url = "https://github.com/AdaCore/templates-parser/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.actions]]
+command = [
+"cp",
+"config/tp_xmlada_installed.gpr",
+"tp_xmlada.gpr",
+]
+directory = "."
+type = "post-fetch"
+[[solution.state.release.depends-on]]
+xmlada = "~26.0.0"
+[[solution.state]]
+crate = "vss_text"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "^26"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "A high level Unicode text processing library"
+licenses = "Apache-2.0"
+long-description = "This crate is based on [`VSS`](https://github.com/AdaCore/VSS) (Virtual\nString System). VSS has been split into two crates:\n\n* [`vss_text`](https://alire.ada.dev/crates/vss_text) (this crate): a library\n  for Unicode text processing.\n* [`vss_extra`](https://alire.ada.dev/crates/vss_extra): libraries for handling\n  JSON, Regexp, XML and other features based on `vss_text`.\n\nSignificant changes are planned in `vss_text` with the goal to make it a\nhigh-quality, high-performance library suitable for a wide range of\napplications.\n\nThe changes include the following (non-exhaustive list):\n\n* API Changes\n  * Introduce an immutable string type.\n  * Repurpose the mutable `Virtual_String` type to a string builder type.\n  * Possibly rename the root package `VSS` to a new more appropriate name. Alire crate,\n    GPR project and repository names might change accordingly.\n* (done) Drop the support of multiple internal encodings in favor of a single internal\n  encoding (likely UTF-8) for improved performance.\n"
+maintainers = [
+"Vadim Godunko <vgodunko@gmail.com>",
+"Maxim Reznik <reznikmm@gmail.com>",
+"sagaert@adacore.com",
+"chouteau@adacore.com",
+]
+maintainers-logins = [
+"godunko",
+"reznikmm",
+"AldanTanneo",
+"Fabien-Chouteau",
+]
+name = "vss_text"
+project-files = [
+"gnat/vss_text.gpr",
+"gnat/vss_gnat.gpr",
+]
+tags = [
+"unicode",
+"string",
+"text",
+]
+version = "26.0.0"
+website = "https://github.com/AdaCore/vss-text"
+[solution.state.release.build-switches]
+[solution.state.release.build-switches."*"]
+ada_version = "Ada2022"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = false
+generate_ada = false
+generate_c = false
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.configuration.variables]
+[solution.state.release.configuration.variables.Max_Supported_Integer_Size]
+default = "128"
+type = "Enum"
+values = [
+"128",
+"64",
+]
+[solution.state.release.environment]
+[solution.state.release.environment.DYLD_LIBRARY_PATH]
+append = "${CRATE_ROOT}/.libs/release/relocatable"
+[solution.state.release.gpr-externals]
+VSS_LIBRARY_TYPE = [
+"relocatable",
+"static",
+"static-pic",
+]
+VSS_OS = [
+"unix",
+"osx",
+"Windows_NT",
+]
+[solution.state.release.gpr-set-externals]
+VSS_BUILD_PROFILE = "release"
+VSS_OS = "osx"
+[solution.state.release.origin]
+hashes = [
+"sha512:940443ab7465479f7fa56917a7327dffbc07a5cb643cadf0fc6da549e3dce127dda7b404c2b63d4cf30b51710776903ce4c612aa2cbbb49efe448b28e0bd4e74",
+]
+url = "https://github.com/AdaCore/vss-text/archive/refs/tags/v26.0.0.zip"
+[[solution.state]]
+crate = "xmlada"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "~26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "The XML/Ada toolkit"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "xmlada"
+project-files = [
+"distrib/xmlada.gpr",
+"dom/xmlada_dom.gpr",
+"sax/xmlada_sax.gpr",
+"input_sources/xmlada_input.gpr",
+"schema/xmlada_schema.gpr",
+"unicode/xmlada_unicode.gpr",
+]
+version = "26.0.0"
+website = "https://github.com/AdaCore/xmlada"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.gpr-externals]
+LIBRARY_TYPE = [
+"static",
+"relocatable",
+"static-pic",
+]
+XMLADA_BUILD_MODE = [
+"distrib",
+"Debug",
+"Production",
+"profile",
+"coverage",
+"nochecks",
+]
+[solution.state.release.origin]
+hashes = [
+"sha512:b140ed4a41210d9defccf07fde0eafe8ee3d883aa31bfc2996fab01409a657d11ea7af7f6caca2a5ffa492e5bd18ffb6958355c23aa78180f41a19af21efdd0f",
+]
+url = "https://github.com/AdaCore/xmlada/archive/refs/tags/v26.0.0.zip"
+[[solution.state.release.actions]]
+command = [
+"sh",
+"configure",
+]
+directory = "."
+type = "post-fetch"
+[[solution.state.release.depends-on]]
+gnat = ">=11"
+

@@ -1,0 +1,13 @@
+dependency:gnatcoll_gmp=26.0.0=e21371a6ceaceebfa50910461417daada0fa5228577832baeb04671bc73dabee
+dependency:gnatcoll_iconv=26.0.0=7f20d405fd475a0e09d47650ad47f8b189d61ff7122e2ad8adedb9cf2f304f86
+dependency:langkit_support=26.0.0=d83c22c56619d4f25959bc456f1df433644d4e790d675aba40f27a45bafc07e5
+dependency:libadalang=26.0.0=94515b17a748885a90988fd7d72550e81cce1ae0bd0af1bc3f406d0ccf6bde1c
+dependency:prettier_ada=26.0.0=85563e234b3d9f76501db11e2b8f87759796755cc87e70865bccfde98ec1529f
+dependency:templates_parser=26.0.0=a2356666136e398bd6fe34a11efe0b52ca6a474727fb1273cd1d607dfd7feca0
+environment:CPLUS_INCLUDE_PATH=/opt/homebrew/include:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include
+environment:C_INCLUDE_PATH=/opt/homebrew/include:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include
+environment:LIBRARY_PATH=gnat_native_15.1.2_60748c54/lib:/opt/homebrew/lib:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
+external:ADALANG_ANALYZER_LIBRARY_TYPE=default
+external:LIBRARY_TYPE=default
+profile:adalang_analyzer=DEVELOPMENT
+switches:adalang_analyzer=-Og,-fdata-sections,-ffunction-sections,-g,-gnatVa,-gnatW8,-gnatw.X,-gnatwa,-gnaty-d,-gnaty3,-gnatyA,-gnatyB,-gnatyI,-gnatyO,-gnatyS,-gnatya,-gnatyb,-gnatyc,-gnatye,-gnatyf,-gnatyh,-gnatyi,-gnatyk,-gnatyl,-gnatym,-gnatyn,-gnatyp,-gnatyr,-gnatyt,-gnatyu,-gnatyx
