@@ -17,7 +17,10 @@ The analyzer currently detects:
 - constant conditions and unreachable code or branches;
 - statically detectable division by zero and reversed ranges;
 - self-assignments, repeated operands, and duplicate conditions;
-- null statements and empty exception handlers.
+- contradictory conditions and identical conditional branches;
+- repeated assignments, ineffective operations, and operations forced to a
+  constant result;
+- null statements, empty loops, and empty exception handlers.
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
@@ -39,6 +42,12 @@ alr build
 ```
 
 The executable is produced under `bin/`.
+
+Run the bug-finding regression suite after building:
+
+```sh
+sh tests/run_bug_findings.sh
+```
 
 ## Usage
 

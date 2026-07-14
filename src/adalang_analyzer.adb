@@ -41,7 +41,13 @@ procedure Adalang_Analyzer is
       Duplicate_Condition,
       Null_Statement,
       Empty_Exception_Handler,
-      Unreachable_Branch
+      Unreachable_Branch,
+      Contradictory_Condition,
+      Identical_Branches,
+      Repeated_Statement,
+      Ineffective_Operation,
+      Constant_Result_Operation,
+      Empty_Loop
    );
 
    type Rule_Info is record
@@ -121,7 +127,7 @@ procedure Adalang_Analyzer is
         (Name        => To_Unbounded_String ("Unreachable_Code"),
          Description => To_Unbounded_String
            ("Find statements that cannot execute after an unconditional " &
-            "return, raise, or loop exit in the same statement list."),
+            "return, raise, goto, or loop exit in the same statement list."),
          Guidance    => To_Unbounded_String
            ("Move the statement before the terminating statement, remove it, " &
             "or make the terminating statement conditional.")),
@@ -186,7 +192,51 @@ procedure Adalang_Analyzer is
             "conditions earlier in the chain."),
          Guidance    => To_Unbounded_String
            ("Remove the branch or change the condition sequence so each branch " &
-            "can be selected."))
+            "can be selected.")),
+      Contradictory_Condition =>
+        (Name        => To_Unbounded_String ("Contradictory_Condition"),
+         Description => To_Unbounded_String
+           ("Find boolean expressions of the form X and not X or X or not X."),
+         Guidance    => To_Unbounded_String
+           ("Correct the copied or negated operand, or replace the expression " &
+            "with the intended constant value.")),
+      Identical_Branches =>
+        (Name        => To_Unbounded_String ("Identical_Branches"),
+         Description => To_Unbounded_String
+           ("Find adjacent if, elsif, or else branches with identical bodies."),
+         Guidance    => To_Unbounded_String
+           ("Merge the conditions or restore the branch-specific operation " &
+            "that was probably lost during editing.")),
+      Repeated_Statement =>
+        (Name        => To_Unbounded_String ("Repeated_Statement"),
+         Description => To_Unbounded_String
+           ("Find identical assignments repeated consecutively."),
+         Guidance    => To_Unbounded_String
+           ("Remove the duplicate or correct the operand that should differ " &
+            "in the second statement.")),
+      Ineffective_Operation =>
+        (Name        => To_Unbounded_String ("Ineffective_Operation"),
+         Description => To_Unbounded_String
+           ("Find arithmetic or boolean operations whose identity operand " &
+            "cannot affect the result."),
+         Guidance    => To_Unbounded_String
+           ("Remove the ineffective operation or correct a constant or operand " &
+            "that was entered incorrectly.")),
+      Constant_Result_Operation =>
+        (Name        => To_Unbounded_String ("Constant_Result_Operation"),
+         Description => To_Unbounded_String
+           ("Find operations forced to a constant result by zero, one, or a " &
+            "boolean absorbing operand."),
+         Guidance    => To_Unbounded_String
+           ("Replace the expression with the constant when intentional, or " &
+            "correct the operand that unexpectedly forces the result.")),
+      Empty_Loop =>
+        (Name        => To_Unbounded_String ("Empty_Loop"),
+         Description => To_Unbounded_String
+           ("Find loops whose bodies contain only null statements or pragmas."),
+         Guidance    => To_Unbounded_String
+           ("Implement the missing loop body or remove the loop; an intentional " &
+            "wait should use an explicit delay or synchronization operation."))
    );
 
    Rule_States       : array (Rule_Kind) of Rule_State := (others => Disabled);
@@ -577,15 +627,43 @@ procedure Adalang_Analyzer is
    function Canonical_Text
      (Node : Libadalang.Analysis.Ada_Node'Class) return String
    is
-      Result : Unbounded_String;
+      Text      : constant String := Node_Text (Node);
+      Result    : Unbounded_String;
+      Index     : Natural := Text'First;
+      In_String : Boolean := False;
    begin
-      for Char of Node_Text (Node) loop
-         if Char not in ' '
+      while Index <= Text'Last loop
+         if Text (Index) = '"' then
+            Append (Result, Text (Index));
+            if In_String and then Index < Text'Last
+              and then Text (Index + 1) = '"'
+            then
+               --  Two quotes encode one quote inside an Ada string literal.
+               Append (Result, Text (Index + 1));
+               Index := Index + 2;
+            else
+               In_String := not In_String;
+               Index := Index + 1;
+            end if;
+         elsif In_String then
+            Append (Result, Text (Index));
+            Index := Index + 1;
+         elsif Text (Index) = Character'Val (39)
+           and then Index + 2 <= Text'Last
+           and then Text (Index + 2) = Character'Val (39)
+         then
+            --  Preserve the spelling and case of character literals.
+            Append (Result, Text (Index .. Index + 2));
+            Index := Index + 3;
+         elsif Text (Index) not in ' '
            | Ada.Characters.Latin_1.HT
            | Ada.Characters.Latin_1.LF
            | Ada.Characters.Latin_1.CR
          then
-            Append (Result, Lower_Char (Char));
+            Append (Result, Lower_Char (Text (Index)));
+            Index := Index + 1;
+         else
+            Index := Index + 1;
          end if;
       end loop;
 
@@ -997,6 +1075,14 @@ procedure Adalang_Analyzer is
       end case;
    end Is_Static_Zero;
 
+   function Is_Static_One
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Value : constant Abstract_Int := Integer_Value (Node);
+   begin
+      return Value.Known and then Value.Value = 1;
+   end Is_Static_One;
+
    function Is_Null_Literal
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
    begin
@@ -1245,7 +1331,8 @@ procedure Adalang_Analyzer is
       case Node.Kind is
          when Libadalang.Common.Ada_Return_Stmt
             | Libadalang.Common.Ada_Extended_Return_Stmt
-            | Libadalang.Common.Ada_Raise_Stmt =>
+            | Libadalang.Common.Ada_Raise_Stmt
+            | Libadalang.Common.Ada_Goto_Stmt =>
             return True;
 
          when Libadalang.Common.Ada_Exit_Stmt =>
@@ -1262,8 +1349,11 @@ procedure Adalang_Analyzer is
       List : Libadalang.Analysis.Ada_Node'Class)
    is
       Previous_Terminates : Boolean := False;
+      Previous_Assignment : Unbounded_String;
    begin
-      if Rule_States (Unreachable_Code) /= Enabled then
+      if Rule_States (Unreachable_Code) /= Enabled
+        and then Rule_States (Repeated_Statement) /= Enabled
+      then
          return;
       end if;
 
@@ -1273,11 +1363,36 @@ procedure Adalang_Analyzer is
          begin
             if not Libadalang.Analysis.Is_Null (Stmt) then
                if Previous_Terminates
+                 and then Stmt.Kind = Libadalang.Common.Ada_Label
+               then
+                  --  A label is a possible entry point, so statements from
+                  --  this point onward are reachable again.
+                  Previous_Terminates := False;
+               elsif Previous_Terminates
                  and then Stmt.Kind in Libadalang.Common.Ada_Stmt
                then
                   Report_Rule_Violation
                     (Unit, Stmt, Unreachable_Code,
                      "statement is unreachable");
+               end if;
+
+               if Rule_States (Repeated_Statement) = Enabled
+                 and then Stmt.Kind = Libadalang.Common.Ada_Assign_Stmt
+               then
+                  declare
+                     Current : constant String := Canonical_Text (Stmt);
+                  begin
+                     if Current /= ""
+                       and then Current = To_String (Previous_Assignment)
+                     then
+                        Report_Rule_Violation
+                          (Unit, Stmt, Repeated_Statement,
+                           "assignment duplicates the preceding assignment");
+                     end if;
+                     Previous_Assignment := To_Unbounded_String (Current);
+                  end;
+               else
+                  Previous_Assignment := Null_Unbounded_String;
                end if;
 
                if Terminates_Statement (Stmt) then
@@ -1287,6 +1402,19 @@ procedure Adalang_Analyzer is
          end;
       end loop;
    end Analyze_Statement_List;
+
+   function Is_Negation_Of
+     (Possible_Not : Libadalang.Analysis.Ada_Node'Class;
+      Other        : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      return not Libadalang.Analysis.Is_Null (Possible_Not)
+        and then Possible_Not.Kind = Libadalang.Common.Ada_Un_Op
+        and then Possible_Not.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Not
+        and then Canonical_Text (Possible_Not.As_Un_Op.F_Expr) /= ""
+        and then Canonical_Text (Possible_Not.As_Un_Op.F_Expr) =
+          Canonical_Text (Other);
+   end Is_Negation_Of;
 
    function Interesting_Same_Operand_Op
      (Op : Libadalang.Common.Ada_Node_Kind_Type) return Boolean is
@@ -1355,6 +1483,74 @@ procedure Adalang_Analyzer is
            (Unit, Expr, Same_Operand,
             "same expression appears on both sides of the operator");
       end if;
+
+      if Rule_States (Contradictory_Condition) = Enabled
+        and then Op in Libadalang.Common.Ada_Op_And
+          | Libadalang.Common.Ada_Op_And_Then
+          | Libadalang.Common.Ada_Op_Or
+          | Libadalang.Common.Ada_Op_Or_Else
+        and then (Is_Negation_Of (Expr.F_Left, Expr.F_Right)
+                  or else Is_Negation_Of (Expr.F_Right, Expr.F_Left))
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Contradictory_Condition,
+            (if Op in Libadalang.Common.Ada_Op_And
+               | Libadalang.Common.Ada_Op_And_Then
+             then "condition is always false because it combines X and not X"
+             else "condition is always true because it combines X or not X"));
+      end if;
+
+      if Rule_States (Ineffective_Operation) = Enabled then
+         if (Op = Libadalang.Common.Ada_Op_Plus
+             and then (Is_Static_Zero (Expr.F_Left)
+                       or else Is_Static_Zero (Expr.F_Right)))
+           or else (Op = Libadalang.Common.Ada_Op_Minus
+                    and then Is_Static_Zero (Expr.F_Right))
+           or else (Op = Libadalang.Common.Ada_Op_Mult
+                    and then (Is_Static_One (Expr.F_Left)
+                              or else Is_Static_One (Expr.F_Right)))
+           or else (Op = Libadalang.Common.Ada_Op_Div
+                    and then Is_Static_One (Expr.F_Right))
+           or else (Op = Libadalang.Common.Ada_Op_Pow
+                    and then Is_Static_One (Expr.F_Right))
+           or else (Op in Libadalang.Common.Ada_Op_And
+                      | Libadalang.Common.Ada_Op_And_Then
+                    and then (Boolean_Value (Expr.F_Left) = Bool_True
+                              or else Boolean_Value (Expr.F_Right) = Bool_True))
+           or else (Op in Libadalang.Common.Ada_Op_Or
+                      | Libadalang.Common.Ada_Op_Or_Else
+                    and then (Boolean_Value (Expr.F_Left) = Bool_False
+                              or else Boolean_Value (Expr.F_Right) = Bool_False))
+         then
+            Report_Rule_Violation
+              (Unit, Expr, Ineffective_Operation,
+               "identity operand has no effect on the expression result");
+         end if;
+      end if;
+
+      if Rule_States (Constant_Result_Operation) = Enabled then
+         if (Op = Libadalang.Common.Ada_Op_Mult
+             and then (Is_Static_Zero (Expr.F_Left)
+                       or else Is_Static_Zero (Expr.F_Right)))
+           or else (Op = Libadalang.Common.Ada_Op_Pow
+                    and then Is_Static_Zero (Expr.F_Right))
+           or else (Op in Libadalang.Common.Ada_Op_Mod
+                      | Libadalang.Common.Ada_Op_Rem
+                    and then Is_Static_One (Expr.F_Right))
+           or else (Op in Libadalang.Common.Ada_Op_And
+                      | Libadalang.Common.Ada_Op_And_Then
+                    and then (Boolean_Value (Expr.F_Left) = Bool_False
+                              or else Boolean_Value (Expr.F_Right) = Bool_False))
+           or else (Op in Libadalang.Common.Ada_Op_Or
+                      | Libadalang.Common.Ada_Op_Or_Else
+                    and then (Boolean_Value (Expr.F_Left) = Bool_True
+                              or else Boolean_Value (Expr.F_Right) = Bool_True))
+         then
+            Report_Rule_Violation
+              (Unit, Expr, Constant_Result_Operation,
+               "an absorbing operand forces this expression to a constant");
+         end if;
+      end if;
    end Analyze_Binary_Expression;
 
    procedure Analyze_Assignment
@@ -1396,6 +1592,82 @@ procedure Adalang_Analyzer is
             "condition duplicates an earlier condition in this chain");
       end if;
    end Report_Duplicate_Condition;
+
+   procedure Report_Identical_Statement_Branches
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Stmt : Libadalang.Analysis.If_Stmt)
+   is
+      Previous : Unbounded_String :=
+        To_Unbounded_String (Canonical_Text (Stmt.F_Then_Stmts));
+   begin
+      if Rule_States (Identical_Branches) /= Enabled then
+         return;
+      end if;
+
+      for Alt of Stmt.F_Alternatives loop
+         declare
+            Current : constant String := Canonical_Text (Alt.F_Stmts);
+         begin
+            if Current /= "" and then Current = To_String (Previous) then
+               Report_Rule_Violation
+                 (Unit, Alt.F_Stmts, Identical_Branches,
+                  "branch body is identical to the preceding branch");
+            end if;
+            Previous := To_Unbounded_String (Current);
+         end;
+      end loop;
+
+      if not Libadalang.Analysis.Is_Null (Stmt.F_Else_Part) then
+         declare
+            Else_Stmts : constant Libadalang.Analysis.Stmt_List :=
+              Stmt.F_Else_Part.F_Stmts;
+            Current : constant String := Canonical_Text (Else_Stmts);
+         begin
+            if Current /= "" and then Current = To_String (Previous) then
+               Report_Rule_Violation
+                 (Unit, Else_Stmts, Identical_Branches,
+                  "else body is identical to the preceding branch");
+            end if;
+         end;
+      end if;
+   end Report_Identical_Statement_Branches;
+
+   procedure Report_Identical_Expression_Branches
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Expr : Libadalang.Analysis.If_Expr)
+   is
+      Previous : Unbounded_String :=
+        To_Unbounded_String (Canonical_Text (Expr.F_Then_Expr));
+   begin
+      if Rule_States (Identical_Branches) /= Enabled then
+         return;
+      end if;
+
+      for Alt of Expr.F_Alternatives loop
+         declare
+            Current : constant String := Canonical_Text (Alt.F_Then_Expr);
+         begin
+            if Current /= "" and then Current = To_String (Previous) then
+               Report_Rule_Violation
+                 (Unit, Alt.F_Then_Expr, Identical_Branches,
+                  "conditional expression is identical to the preceding one");
+            end if;
+            Previous := To_Unbounded_String (Current);
+         end;
+      end loop;
+
+      if not Libadalang.Analysis.Is_Null (Expr.F_Else_Expr) then
+         declare
+            Current : constant String := Canonical_Text (Expr.F_Else_Expr);
+         begin
+            if Current /= "" and then Current = To_String (Previous) then
+               Report_Rule_Violation
+                 (Unit, Expr.F_Else_Expr, Identical_Branches,
+                  "else expression is identical to the preceding expression");
+            end if;
+         end;
+      end if;
+   end Report_Identical_Expression_Branches;
 
    procedure Analyze_If_Statement
      (Unit : Libadalang.Analysis.Analysis_Unit;
@@ -1468,8 +1740,10 @@ procedure Adalang_Analyzer is
          Report_Unreachable_Branch
            (Unit, Stmt.F_Else_Part,
             "else branch is unreachable because an earlier condition is "
-            & "always true");
+           & "always true");
       end if;
+
+      Report_Identical_Statement_Branches (Unit, Stmt);
    end Analyze_If_Statement;
 
    procedure Analyze_If_Expression
@@ -1546,6 +1820,8 @@ procedure Adalang_Analyzer is
             "else expression is unreachable because an earlier condition is "
             & "always true");
       end if;
+
+      Report_Identical_Expression_Branches (Unit, Expr);
    end Analyze_If_Expression;
 
    function Has_Substantive_Statement
@@ -1624,6 +1900,14 @@ procedure Adalang_Analyzer is
                   Report_Constant_Condition
                     (Unit, Spec.As_While_Loop_Spec.F_Expr);
                end if;
+               if Rule_States (Empty_Loop) = Enabled
+                 and then not Has_Substantive_Statement
+                   (Node.As_Base_Loop_Stmt.F_Stmts)
+               then
+                  Report_Rule_Violation
+                    (Unit, Node, Empty_Loop,
+                     "loop body contains no substantive statements");
+               end if;
             end;
 
          when Libadalang.Common.Ada_Exit_Stmt =>
@@ -1645,6 +1929,17 @@ procedure Adalang_Analyzer is
 
          when Libadalang.Common.Ada_Exception_Handler =>
             Analyze_Exception_Handler (Unit, Node.As_Exception_Handler);
+
+         when Libadalang.Common.Ada_For_Loop_Stmt
+            | Libadalang.Common.Ada_Loop_Stmt =>
+            if Rule_States (Empty_Loop) = Enabled
+              and then not Has_Substantive_Statement
+                (Node.As_Base_Loop_Stmt.F_Stmts)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Empty_Loop,
+                  "loop body contains no substantive statements");
+            end if;
 
          when others =>
             null;
@@ -1833,7 +2128,7 @@ begin
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    end if;
 
-exception 
+exception
    when E : others =>
       Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error,
                             "Internal error: " & Ada.Exceptions.Exception_Information (E));
