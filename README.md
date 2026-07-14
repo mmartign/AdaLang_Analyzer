@@ -1,9 +1,9 @@
 # adalang_analyzer
 
-`adalang_analyzer` is a command-line static analyzer for Ada source code. It
-uses [Libadalang](https://github.com/AdaCore/libadalang) to parse Ada and
-reports rule violations with source locations, explanations, and remediation
-guidance. Its command-line experience is inspired by `clang-tidy`.
+`adalang_analyzer` is a command-line static analysis tool for Ada source code.
+It uses [Libadalang](https://github.com/AdaCore/libadalang) to parse Ada and
+report rule violations with source locations, explanations, and remediation
+guidance.
 
 The project is maintained by [Spazio IT](https://spazioit.com/) and is derived
 from AdaCore's `libadalang-tools` codebase.
