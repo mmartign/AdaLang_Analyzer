@@ -1,12 +1,20 @@
 # adalang_analyzer
 
-`adalang_analyzer` is a command-line static analysis tool for Ada source code.
-It uses [Libadalang](https://github.com/AdaCore/libadalang) to parse Ada and
-report rule violations with source locations, explanations, and remediation
+`adalang_analyzer` is an independent command-line static analysis tool for Ada
+source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
+reports rule violations with source locations, explanations, and remediation
 guidance.
 
-The project is maintained by [Spazio IT](https://spazioit.com/) and is derived
-from AdaCore's `libadalang-tools` codebase.
+## Relationship to Libadalang and AdaCore
+
+- **Engine:** This tool is built on top of
+  [Libadalang](https://github.com/AdaCore/libadalang), the open-source semantic
+  engine developed by AdaCore.
+- **Lineage:** The codebase is a derivative of AdaCore's open-source
+  `libadalang-tools` repository.
+- **Disclaimer:** This is an independent project maintained solely by Spazio
+  IT. It is not endorsed, sponsored, or officially supported by AdaCore.
+  “Libadalang” and “AdaCore” are trademarks of AdaCore.
 
 ## Checks
 
@@ -93,8 +101,11 @@ Bug reports and focused pull requests are welcome. See
 
 ## License
 
-Spazio IT distributes this project under the
-[GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). Files
-inherited from upstream retain their existing copyright and license notices;
-GPLv3-covered material may be combined with AGPLv3-covered material under
-section 13 of the licenses.
+This project is distributed under the
+[GNU General Public License, version 3 or later](LICENSE)
+(`GPL-3.0-or-later`). Files inherited from AdaCore retain their original
+copyright and license notices.
+
+Libadalang is a separate dependency distributed under the Apache License 2.0
+with LLVM Exceptions (`Apache-2.0 WITH LLVM-exception`). Its license does not
+replace or alter this project's GPL license.

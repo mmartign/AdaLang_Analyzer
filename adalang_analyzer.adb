@@ -1,20 +1,23 @@
 --
 --  AdaLang Analyzer
 --
+--  Copyright (C) 2024, AdaCore
 --  Copyright (C) 2026, Spazio IT
+--  Modified by Spazio IT in 2026.
 --
 --  This file is part of AdaLang Analyzer.
 --
 --  AdaLang Analyzer is free software: you can redistribute it and/or modify
---  it under the terms of the GNU Affero General Public License as published
---  by the Free Software Foundation, version 3 of the License.
+--  it under the terms of the GNU General Public License as published by the
+--  Free Software Foundation, either version 3 of the License, or (at your
+--  option) any later version.
 --
 --  AdaLang Analyzer is distributed in the hope that it will be useful,
 --  but WITHOUT ANY WARRANTY; without even the implied warranty of
 --  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the LICENSE file
 --  for details.
 --
---  SPDX-License-Identifier: AGPL-3.0-only
+--  SPDX-License-Identifier: GPL-3.0-or-later
 --
 
 with Ada.Command_Line;

@@ -16,4 +16,4 @@ Include the analyzer version, host platform, command line, a minimal Ada input,
 and the actual and expected output whenever possible.
 
 By contributing, you agree that your contribution is distributed under the
-repository's GNU Affero General Public License v3.0.
+repository's GNU General Public License, version 3 or any later version.
