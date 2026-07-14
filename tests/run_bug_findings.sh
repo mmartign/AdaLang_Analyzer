@@ -52,4 +52,38 @@ if ! "$analyzer" -q -checks="$high_value_checks" tests/high_value_clean.adb; the
    exit 1
 fi
 
+advanced_checks='Unused_Parameter,Dead_Store,Overwritten_Assignment,Shadowed_Declaration,Unreachable_Case_Alternative,Overlapping_Case_Ranges,Infinite_Loop,Duplicate_Boolean_Operand,Exception_Swallowed,Cyclomatic_Complexity'
+if "$analyzer" -complexity-threshold=2 -checks="$advanced_checks" \
+     tests/advanced_findings.adb >"$output" 2>&1
+then
+   echo "expected advanced_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+for rule in \
+   Unused_Parameter \
+   Dead_Store \
+   Overwritten_Assignment \
+   Shadowed_Declaration \
+   Unreachable_Case_Alternative \
+   Overlapping_Case_Ranges \
+   Infinite_Loop \
+   Duplicate_Boolean_Operand \
+   Exception_Swallowed \
+   Cyclomatic_Complexity
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "missing expected finding: $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if ! "$analyzer" -q -complexity-threshold=20 \
+     -checks="$advanced_checks" tests/advanced_clean.adb
+then
+   echo "advanced_clean.adb unexpectedly produced a violation" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

@@ -32,6 +32,16 @@ The analyzer currently provides the following checks:
 | Safety | `No_Unchecked_Conversion` | Reports instantiations of `Ada.Unchecked_Conversion`. |
 | Numerical safety | `Floating_Equality` | Reports `=` and `/=` applied to floating-point operands. |
 | Maintainability | `Magic_Number` | Reports unexplained numeric literals other than 0, 1, and -1 outside named constant declarations. |
+| Data flow | `Unused_Parameter` | Reports subprogram parameters that are never referenced. |
+| Data flow | `Dead_Store` | Reports assignments whose value is never read later in the subprogram. |
+| Data flow | `Overwritten_Assignment` | Reports assignments overwritten before an intervening read. |
+| Scope | `Shadowed_Declaration` | Reports local objects hiding declarations in enclosing subprograms. |
+| Case analysis | `Unreachable_Case_Alternative` | Reports choices wholly covered by an earlier case alternative. |
+| Case analysis | `Overlapping_Case_Ranges` | Reports intersecting statically evaluable integer choices. |
+| Control flow | `Infinite_Loop` | Reports unconditional loops without an exit, return, or raise. |
+| Expression | `Duplicate_Boolean_Operand` | Reports repeated boolean operands and double negations. |
+| Exception handling | `Exception_Swallowed` | Reports empty or null-only `when others` handlers. |
+| Complexity | `Cyclomatic_Complexity` | Reports subprograms exceeding the configured complexity threshold. |
 | Control flow | `Constant_Condition` | Reports conditions that are statically always true or false. |
 | Control flow | `Unreachable_Code` | Reports statements following an unconditional transfer of control. |
 | Arithmetic | `Division_By_Zero` | Reports statically detectable division, `mod`, or `rem` by zero. |
@@ -51,6 +61,12 @@ The analyzer currently provides the following checks:
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
+
+The data-flow checks are intraprocedural and deliberately conservative.
+`Dead_Store` follows resolved simple-object assignments in source order,
+`Overwritten_Assignment` stays within one statement list, and the case checks
+compare statically evaluable integer literals and ranges. These boundaries keep
+findings predictable without requiring whole-program control-flow analysis.
 
 ## Requirements
 
@@ -105,6 +121,8 @@ Useful options include:
 -version         Show the version
 -list-checks     List all available checks
 -checks=<list>   Enable or disable a comma-separated set of checks
+-complexity-threshold=<n>
+                 Set the Cyclomatic_Complexity limit (default: 10)
 -v, -verbose     Print files as they are parsed
 -q, -quiet       Suppress the final summary
 --               Treat all remaining arguments as file names
