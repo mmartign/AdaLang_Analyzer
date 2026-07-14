@@ -26,7 +26,9 @@ with Langkit_Support.Text;
 
 procedure Adalang_Analyzer is
    use Ada.Strings.Unbounded;
+   use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Libadalang.Analysis.Basic_Decl;
 
    type Rule_State is (Disabled, Enabled);
 
@@ -42,6 +44,16 @@ procedure Adalang_Analyzer is
       No_Unchecked_Conversion,
       Floating_Equality,
       Magic_Number,
+      Unused_Parameter,
+      Dead_Store,
+      Overwritten_Assignment,
+      Shadowed_Declaration,
+      Unreachable_Case_Alternative,
+      Overlapping_Case_Ranges,
+      Infinite_Loop,
+      Duplicate_Boolean_Operand,
+      Exception_Swallowed,
+      Cyclomatic_Complexity,
       Constant_Condition,
       Unreachable_Code,
       Division_By_Zero,
@@ -150,6 +162,85 @@ procedure Adalang_Analyzer is
          Guidance    => To_Unbounded_String
            ("Introduce a descriptively named constant so the value's meaning " &
             "and maintenance policy are explicit.")),
+      Unused_Parameter =>
+        (Name        => To_Unbounded_String ("Unused_Parameter"),
+         Description => To_Unbounded_String
+           ("Find subprogram parameters that are never referenced by their " &
+            "body."),
+         Guidance    => To_Unbounded_String
+           ("Remove the parameter, use it as intended, or document why an " &
+            "externally required profile must retain it.")),
+      Dead_Store =>
+        (Name        => To_Unbounded_String ("Dead_Store"),
+         Description => To_Unbounded_String
+           ("Find assignments whose stored value is never read later in the " &
+            "enclosing subprogram."),
+         Guidance    => To_Unbounded_String
+           ("Remove the assignment or restore the later use that was intended " &
+            "to consume the value.")),
+      Overwritten_Assignment =>
+        (Name        => To_Unbounded_String ("Overwritten_Assignment"),
+         Description => To_Unbounded_String
+           ("Find assignments overwritten in the same statement list before " &
+            "their value is read."),
+         Guidance    => To_Unbounded_String
+           ("Remove the earlier assignment or use its value before assigning " &
+            "the variable again.")),
+      Shadowed_Declaration =>
+        (Name        => To_Unbounded_String ("Shadowed_Declaration"),
+         Description => To_Unbounded_String
+           ("Find local object declarations that hide an object or parameter " &
+            "declared by an enclosing subprogram."),
+         Guidance    => To_Unbounded_String
+           ("Rename the inner declaration so references clearly identify the " &
+            "intended object.")),
+      Unreachable_Case_Alternative =>
+        (Name        => To_Unbounded_String
+           ("Unreachable_Case_Alternative"),
+         Description => To_Unbounded_String
+           ("Find case choices wholly covered by an earlier alternative."),
+         Guidance    => To_Unbounded_String
+           ("Remove the alternative or correct its choice so it selects a " &
+            "distinct value range.")),
+      Overlapping_Case_Ranges =>
+        (Name        => To_Unbounded_String ("Overlapping_Case_Ranges"),
+         Description => To_Unbounded_String
+           ("Find statically evaluable case choices whose integer ranges " &
+            "intersect."),
+         Guidance    => To_Unbounded_String
+           ("Adjust the choice boundaries so every value belongs to exactly " &
+            "one alternative.")),
+      Infinite_Loop =>
+        (Name        => To_Unbounded_String ("Infinite_Loop"),
+         Description => To_Unbounded_String
+           ("Find unconditional loops with no exit, return, or raise in their " &
+            "body."),
+         Guidance    => To_Unbounded_String
+           ("Add an explicit termination path or document and isolate an " &
+            "intentional nonterminating service loop.")),
+      Duplicate_Boolean_Operand =>
+        (Name        => To_Unbounded_String ("Duplicate_Boolean_Operand"),
+         Description => To_Unbounded_String
+           ("Find repeated boolean operands and double negations."),
+         Guidance    => To_Unbounded_String
+           ("Remove the duplicate operator or correct the operand that was " &
+            "probably copied incorrectly.")),
+      Exception_Swallowed =>
+        (Name        => To_Unbounded_String ("Exception_Swallowed"),
+         Description => To_Unbounded_String
+           ("Find when-others handlers that neither re-raise nor perform " &
+            "substantive handling."),
+         Guidance    => To_Unbounded_String
+           ("Handle or log the exception, or re-raise it after required " &
+            "cleanup.")),
+      Cyclomatic_Complexity =>
+        (Name        => To_Unbounded_String ("Cyclomatic_Complexity"),
+         Description => To_Unbounded_String
+           ("Find subprograms whose decision complexity exceeds the configured " &
+            "threshold."),
+         Guidance    => To_Unbounded_String
+           ("Extract cohesive helpers or simplify branching so each subprogram " &
+            "has fewer independent paths.")),
       Constant_Condition =>
         (Name        => To_Unbounded_String ("Constant_Condition"),
          Description => To_Unbounded_String
@@ -283,6 +374,7 @@ procedure Adalang_Analyzer is
    Show_Version      : Boolean := False;
    List_Checks_Only  : Boolean := False;
    Invalid_Options   : Boolean := False;
+   Complexity_Threshold : Positive := 10;
    Source_File_Count : Natural := 0;
    Violations        : Natural := 0;
    Rule_Violations   : array (Rule_Kind) of Natural := (others => 0);
@@ -443,6 +535,8 @@ procedure Adalang_Analyzer is
       Ada.Text_IO.Put_Line ("  -version              Show version and exit");
       Ada.Text_IO.Put_Line ("  -checks=<list>        Enable/disable checks");
       Ada.Text_IO.Put_Line ("  -list-checks          List available checks");
+      Ada.Text_IO.Put_Line
+        ("  -complexity-threshold=<n>  Set complexity limit (default: 10)");
       Ada.Text_IO.Put_Line ("  -v, -verbose          Enable verbose output");
       Ada.Text_IO.Put_Line ("  -q, -quiet            Suppress summary output");
       Ada.Text_IO.Put_Line ("  --                    Treat items as files");
@@ -554,6 +648,17 @@ procedure Adalang_Analyzer is
          Apply_Check_Item (List_Text (Start .. List_Text'Last));
       end if;
    end Parse_Checks_Option;
+
+   procedure Set_Complexity_Threshold (Text : String) is
+   begin
+      Complexity_Threshold := Positive'Value
+        (Ada.Strings.Fixed.Trim (Text, Ada.Strings.Both));
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid complexity threshold '" & Text & "'");
+         Invalid_Options := True;
+   end Set_Complexity_Threshold;
 
    --  Small abstract domains support safe constant folding without executing
    --  analyzed code or assuming a value when evaluation is incomplete.
@@ -1448,6 +1553,401 @@ procedure Adalang_Analyzer is
       end case;
    end Terminates_Statement;
 
+   function Referenced_Declaration
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is
+   begin
+      if not Libadalang.Analysis.Is_Null (Node)
+        and then Node.Kind = Libadalang.Common.Ada_Identifier
+      then
+         return Node.As_Name.P_Referenced_Decl;
+      end if;
+
+      return Libadalang.Analysis.No_Basic_Decl;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Referenced_Declaration;
+
+   function References_Declaration
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Libadalang.Analysis.Is_Null (Decl)
+      then
+         return False;
+      end if;
+
+      if Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Referenced_Declaration (Node) = Decl
+      then
+         return True;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if References_Declaration (Node.Child (I), Decl) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   end References_Declaration;
+
+   function Reads_Declaration
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+         --  A simple assignment destination is a write, while expressions in
+         --  the value (and in a complex destination) remain reads.
+         declare
+            Stmt : constant Libadalang.Analysis.Assign_Stmt :=
+              Node.As_Assign_Stmt;
+         begin
+            return References_Declaration (Stmt.F_Expr, Decl)
+              or else (Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier
+                       and then References_Declaration (Stmt.F_Dest, Decl));
+         end;
+      end if;
+
+      if Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Referenced_Declaration (Node) = Decl
+      then
+         return True;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if Reads_Declaration (Node.Child (I), Decl) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   end Reads_Declaration;
+
+   function Assigned_Declaration
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Basic_Decl is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Assign_Stmt
+        or else Node.As_Assign_Stmt.F_Dest.Kind /=
+          Libadalang.Common.Ada_Identifier
+      then
+         return Libadalang.Analysis.No_Basic_Decl;
+      end if;
+
+      return Referenced_Declaration (Node.As_Assign_Stmt.F_Dest);
+   end Assigned_Declaration;
+
+   function Has_Read_After
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      Decl       : Libadalang.Analysis.Basic_Decl;
+      Assignment : Libadalang.Analysis.Assign_Stmt) return Boolean
+   is
+      function Starts_After_Assignment
+        (Candidate : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         return Natural (Candidate.Sloc_Range.Start_Line) >
+             Natural (Assignment.Sloc_Range.End_Line)
+           or else
+             (Natural (Candidate.Sloc_Range.Start_Line) =
+                Natural (Assignment.Sloc_Range.End_Line)
+              and then Natural (Candidate.Sloc_Range.Start_Column) >=
+                Natural (Assignment.Sloc_Range.End_Column));
+      end Starts_After_Assignment;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+         declare
+            Stmt : constant Libadalang.Analysis.Assign_Stmt :=
+              Node.As_Assign_Stmt;
+         begin
+            if Has_Read_After (Stmt.F_Expr, Decl, Assignment) then
+               return True;
+            elsif Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier then
+               return Has_Read_After (Stmt.F_Dest, Decl, Assignment);
+            else
+               return False;
+            end if;
+         end;
+      elsif Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Starts_After_Assignment (Node)
+        and then Referenced_Declaration (Node) = Decl
+      then
+         return True;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if Has_Read_After (Node.Child (I), Decl, Assignment) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   end Has_Read_After;
+
+   function Enclosing_Subprogram
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Subp_Body
+   is
+      Ancestor : Libadalang.Analysis.Ada_Node := Node.Parent;
+   begin
+      while not Libadalang.Analysis.Is_Null (Ancestor) loop
+         if Ancestor.Kind = Libadalang.Common.Ada_Subp_Body then
+            return Ancestor.As_Subp_Body;
+         end if;
+         Ancestor := Ancestor.Parent;
+      end loop;
+
+      return Libadalang.Analysis.No_Subp_Body;
+   end Enclosing_Subprogram;
+
+   function References_Parameter
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Identifier : String) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Canonical_Text (Node) = Identifier
+        and then Referenced_Declaration (Node) =
+          Libadalang.Analysis.Basic_Decl (Param)
+      then
+         return True;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if References_Parameter (Node.Child (I), Param, Identifier) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   end References_Parameter;
+
+   function Declares_Name
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Name : String) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Object_Decl then
+         for Id of Node.As_Object_Decl.F_Ids loop
+            if Canonical_Text (Id) = Name then
+               return True;
+            end if;
+         end loop;
+      elsif Node.Kind = Libadalang.Common.Ada_Param_Spec then
+         for Id of Node.As_Param_Spec.F_Ids loop
+            if Canonical_Text (Id) = Name then
+               return True;
+            end if;
+         end loop;
+      end if;
+
+      return False;
+   end Declares_Name;
+
+   function Shadows_Enclosing_Declaration
+     (Decl : Libadalang.Analysis.Object_Decl; Name : String) return Boolean
+   is
+      function Scope_Of
+        (Node : Libadalang.Analysis.Ada_Node'Class)
+         return Libadalang.Analysis.Ada_Node
+      is
+         Ancestor : Libadalang.Analysis.Ada_Node := Node.Parent;
+      begin
+         while not Libadalang.Analysis.Is_Null (Ancestor) loop
+            if Ancestor.Kind in Libadalang.Common.Ada_Subp_Body
+              | Libadalang.Common.Ada_Decl_Block
+              | Libadalang.Common.Ada_Package_Body
+            then
+               return Ancestor;
+            end if;
+            Ancestor := Ancestor.Parent;
+         end loop;
+         return Libadalang.Analysis.No_Ada_Node;
+      end Scope_Of;
+
+      function Is_Ancestor_Of
+        (Possible_Ancestor : Libadalang.Analysis.Ada_Node;
+         Node              : Libadalang.Analysis.Ada_Node'Class)
+         return Boolean
+      is
+         Ancestor : Libadalang.Analysis.Ada_Node := Node.Parent;
+      begin
+         while not Libadalang.Analysis.Is_Null (Ancestor) loop
+            if Ancestor = Possible_Ancestor then
+               return True;
+            end if;
+            Ancestor := Ancestor.Parent;
+         end loop;
+         return False;
+      end Is_Ancestor_Of;
+
+      Current_Node  : constant Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Decl);
+      Current_Scope : constant Libadalang.Analysis.Ada_Node := Scope_Of (Decl);
+      Root          : Libadalang.Analysis.Ada_Node := Current_Node;
+
+      function Has_Outer_Declaration
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+         Candidate_Scope : Libadalang.Analysis.Ada_Node;
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         end if;
+
+         if Libadalang.Analysis.Ada_Node (Node) /= Current_Node
+           and then Node.Kind in Libadalang.Common.Ada_Object_Decl
+             | Libadalang.Common.Ada_Param_Spec
+           and then Declares_Name (Node, Name)
+         then
+            Candidate_Scope := Scope_Of (Node);
+            if not Libadalang.Analysis.Is_Null (Candidate_Scope)
+              and then Candidate_Scope /= Current_Scope
+              and then Is_Ancestor_Of (Candidate_Scope, Decl)
+            then
+               return True;
+            end if;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            if Has_Outer_Declaration (Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Outer_Declaration;
+   begin
+      while not Libadalang.Analysis.Is_Null (Root.Parent) loop
+         Root := Root.Parent;
+      end loop;
+      return Has_Outer_Declaration (Root);
+   end Shadows_Enclosing_Declaration;
+
+   function Cyclomatic_Value
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Natural
+   is
+      Result : Natural := 0;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return 0;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_If_Stmt
+            | Libadalang.Common.Ada_Elsif_Stmt_Part
+            | Libadalang.Common.Ada_For_Loop_Stmt
+            | Libadalang.Common.Ada_Loop_Stmt
+            | Libadalang.Common.Ada_While_Loop_Stmt
+            | Libadalang.Common.Ada_Exception_Handler =>
+            Result := 1;
+
+         when Libadalang.Common.Ada_Case_Stmt =>
+            declare
+               Count : constant Natural :=
+                 Node.As_Case_Stmt.F_Alternatives.Children_Count;
+            begin
+               if Count > 0 then
+                  Result := Count - 1;
+               end if;
+            end;
+
+         when Libadalang.Common.Ada_Bin_Op =>
+            if Node.As_Bin_Op.F_Op in
+              Libadalang.Common.Ada_Op_And_Then
+                | Libadalang.Common.Ada_Op_Or_Else
+            then
+               Result := 1;
+            end if;
+
+         when Libadalang.Common.Ada_Subp_Body =>
+            --  A nested subprogram has its own independent complexity score.
+            return 0;
+
+         when others =>
+            null;
+      end case;
+
+      for I in 1 .. Node.Children_Count loop
+         Result := Result + Cyclomatic_Value (Node.Child (I));
+      end loop;
+
+      return Result;
+   end Cyclomatic_Value;
+
+   procedure Analyze_Subprogram
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Subprogram : Libadalang.Analysis.Subp_Body)
+   is
+   begin
+      if Rule_States (Unused_Parameter) = Enabled then
+         for Param of Subprogram.F_Subp_Spec.P_Params loop
+            for Id of Param.F_Ids loop
+               declare
+                  Name : constant String := Canonical_Text (Id);
+               begin
+                  if not References_Parameter
+                    (Subprogram.F_Decls, Param, Name)
+                    and then not References_Parameter
+                      (Subprogram.F_Stmts, Param, Name)
+                  then
+                     Report_Rule_Violation
+                       (Unit, Id, Unused_Parameter,
+                        "parameter '" & Node_Text (Id) & "' is never referenced");
+                  end if;
+               end;
+            end loop;
+         end loop;
+      end if;
+
+      if Rule_States (Cyclomatic_Complexity) = Enabled then
+         declare
+            Complexity : constant Natural :=
+              1 + Cyclomatic_Value (Subprogram.F_Stmts);
+         begin
+            if Complexity > Complexity_Threshold then
+               Report_Rule_Violation
+                 (Unit, Subprogram.F_Subp_Spec.P_Name,
+                  Cyclomatic_Complexity,
+                  "cyclomatic complexity " & To_Decimal (Complexity)
+                  & " exceeds threshold " &
+                    To_Decimal (Complexity_Threshold));
+            end if;
+         end;
+      end if;
+   end Analyze_Subprogram;
+
+   procedure Analyze_Object_Declaration
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Decl : Libadalang.Analysis.Object_Decl) is
+   begin
+      if Rule_States (Shadowed_Declaration) = Enabled then
+         for Id of Decl.F_Ids loop
+            if Shadows_Enclosing_Declaration
+              (Decl, Canonical_Text (Id))
+            then
+               Report_Rule_Violation
+                 (Unit, Id, Shadowed_Declaration,
+                  "declaration shadows an object in an enclosing subprogram");
+            end if;
+         end loop;
+      end if;
+   end Analyze_Object_Declaration;
+
    procedure Analyze_Statement_List
      (Unit : Libadalang.Analysis.Analysis_Unit;
       List : Libadalang.Analysis.Ada_Node'Class)
@@ -1457,6 +1957,7 @@ procedure Adalang_Analyzer is
    begin
       if Rule_States (Unreachable_Code) /= Enabled
         and then Rule_States (Repeated_Statement) /= Enabled
+        and then Rule_States (Overwritten_Assignment) /= Enabled
       then
          return;
       end if;
@@ -1497,6 +1998,33 @@ procedure Adalang_Analyzer is
                   end;
                else
                   Previous_Assignment := Null_Unbounded_String;
+               end if;
+
+               if Rule_States (Overwritten_Assignment) = Enabled
+                 and then Stmt.Kind = Libadalang.Common.Ada_Assign_Stmt
+               then
+                  declare
+                     Decl : constant Libadalang.Analysis.Basic_Decl :=
+                       Assigned_Declaration (Stmt);
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Decl) then
+                        for J in I + 1 .. List.Children_Count loop
+                           declare
+                              Later : constant Libadalang.Analysis.Ada_Node :=
+                                List.Child (J);
+                           begin
+                              if Reads_Declaration (Later, Decl) then
+                                 exit;
+                              elsif Assigned_Declaration (Later) = Decl then
+                                 Report_Rule_Violation
+                                   (Unit, Later, Overwritten_Assignment,
+                                    "assignment overwrites an unread value");
+                                 exit;
+                              end if;
+                           end;
+                        end loop;
+                     end if;
+                  end;
                end if;
 
                if Terminates_Statement (Stmt) then
@@ -1615,6 +2143,19 @@ procedure Adalang_Analyzer is
              else "condition is always true because it combines X or not X"));
       end if;
 
+      if Rule_States (Duplicate_Boolean_Operand) = Enabled
+        and then Op in Libadalang.Common.Ada_Op_And
+          | Libadalang.Common.Ada_Op_And_Then
+          | Libadalang.Common.Ada_Op_Or
+          | Libadalang.Common.Ada_Op_Or_Else
+        and then Left_Text /= ""
+        and then Left_Text = Right_Text
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Duplicate_Boolean_Operand,
+            "boolean expression repeats the same operand");
+      end if;
+
       if Rule_States (Ineffective_Operation) = Enabled then
          if (Op = Libadalang.Common.Ada_Op_Plus
              and then (Is_Static_Zero (Expr.F_Left)
@@ -1683,7 +2224,231 @@ procedure Adalang_Analyzer is
            (Unit, Stmt, Self_Assignment,
             "assignment stores an expression back into itself");
       end if;
+
+      if Rule_States (Dead_Store) = Enabled
+        and then Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+      then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Assigned_Declaration (Stmt);
+            Subprogram : constant Libadalang.Analysis.Subp_Body :=
+              Enclosing_Subprogram (Stmt);
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind = Libadalang.Common.Ada_Object_Decl
+              and then not Libadalang.Analysis.Is_Null (Subprogram)
+              and then not Has_Read_After
+                (Subprogram.F_Stmts, Decl, Stmt)
+            then
+               Report_Rule_Violation
+                 (Unit, Stmt, Dead_Store,
+                  "assigned value is never read later in this subprogram");
+            end if;
+         end;
+      end if;
    end Analyze_Assignment;
+
+   procedure Analyze_Unary_Expression
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Expr : Libadalang.Analysis.Un_Op)
+   is
+      Inner : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Expr.F_Expr);
+   begin
+      if Inner.Kind = Libadalang.Common.Ada_Paren_Expr then
+         Inner := Libadalang.Analysis.Ada_Node
+           (Inner.As_Paren_Expr.F_Expr);
+      end if;
+
+      if Rule_States (Duplicate_Boolean_Operand) = Enabled
+        and then Expr.F_Op = Libadalang.Common.Ada_Op_Not
+        and then Inner.Kind = Libadalang.Common.Ada_Un_Op
+        and then Inner.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Not
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Duplicate_Boolean_Operand,
+            "double negation can be simplified");
+      end if;
+   end Analyze_Unary_Expression;
+
+   type Static_Interval is record
+      Known : Boolean := False;
+      Low   : Long_Long_Integer := 0;
+      High  : Long_Long_Integer := 0;
+   end record;
+
+   function Choice_Interval
+     (Choice : Libadalang.Analysis.Ada_Node'Class) return Static_Interval
+   is
+      Value : constant Abstract_Int := Integer_Value (Choice);
+   begin
+      if Value.Known then
+         return (Known => True, Low => Value.Value, High => Value.Value);
+      elsif Choice.Kind = Libadalang.Common.Ada_Bin_Op
+        and then Choice.As_Bin_Op.F_Op =
+          Libadalang.Common.Ada_Op_Double_Dot
+      then
+         declare
+            Low  : constant Abstract_Int :=
+              Integer_Value (Choice.As_Bin_Op.F_Left);
+            High : constant Abstract_Int :=
+              Integer_Value (Choice.As_Bin_Op.F_Right);
+         begin
+            if Low.Known and then High.Known then
+               return (Known => True, Low => Low.Value, High => High.Value);
+            end if;
+         end;
+      end if;
+
+      return (Known => False, Low => 0, High => 0);
+   end Choice_Interval;
+
+   procedure Analyze_Case_Statement
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Stmt : Libadalang.Analysis.Case_Stmt)
+   is
+      Alternatives : constant Libadalang.Analysis.Case_Stmt_Alternative_List :=
+        Stmt.F_Alternatives;
+   begin
+      if Rule_States (Unreachable_Case_Alternative) /= Enabled
+        and then Rule_States (Overlapping_Case_Ranges) /= Enabled
+      then
+         return;
+      end if;
+
+      for Current_Index in 1 .. Alternatives.Children_Count loop
+         declare
+            Current_Alt : constant Libadalang.Analysis.Case_Stmt_Alternative :=
+              Alternatives.Child (Current_Index).As_Case_Stmt_Alternative;
+         begin
+            for Current_Choice of Current_Alt.F_Choices loop
+               declare
+                  Current_Range : constant Static_Interval :=
+                    Choice_Interval (Current_Choice);
+                  Is_Overlapping : Boolean := False;
+                  Is_Unreachable : Boolean := False;
+               begin
+                  for Prior_Index in 1 .. Current_Index - 1 loop
+                     declare
+                        Prior_Alt : constant
+                          Libadalang.Analysis.Case_Stmt_Alternative :=
+                            Alternatives.Child (Prior_Index)
+                              .As_Case_Stmt_Alternative;
+                     begin
+                        for Prior_Choice of Prior_Alt.F_Choices loop
+                           declare
+                              Prior_Range : constant Static_Interval :=
+                                Choice_Interval (Prior_Choice);
+                              Same_Choice : constant Boolean :=
+                                Canonical_Text (Current_Choice) /= ""
+                                and then Canonical_Text (Current_Choice) =
+                                  Canonical_Text (Prior_Choice);
+                           begin
+                              if Prior_Choice.Kind =
+                                Libadalang.Common.Ada_Others_Designator
+                              then
+                                 Is_Unreachable := True;
+                              elsif Same_Choice then
+                                 Is_Overlapping := True;
+                                 Is_Unreachable := True;
+                              elsif Current_Range.Known
+                                and then Prior_Range.Known
+                                and then Current_Range.Low <= Prior_Range.High
+                                and then Prior_Range.Low <= Current_Range.High
+                              then
+                                 Is_Overlapping := True;
+                                 if Current_Range.Low >= Prior_Range.Low
+                                   and then Current_Range.High <= Prior_Range.High
+                                 then
+                                    Is_Unreachable := True;
+                                 end if;
+                              end if;
+                           end;
+                        end loop;
+                     end;
+                  end loop;
+
+                  if Is_Overlapping
+                    and then Rule_States (Overlapping_Case_Ranges) = Enabled
+                  then
+                     Report_Rule_Violation
+                       (Unit, Current_Choice, Overlapping_Case_Ranges,
+                        "case choice overlaps an earlier alternative");
+                  end if;
+                  if Is_Unreachable
+                    and then Rule_States (Unreachable_Case_Alternative) = Enabled
+                  then
+                     Report_Rule_Violation
+                       (Unit, Current_Choice, Unreachable_Case_Alternative,
+                        "case choice is covered by an earlier alternative");
+                  end if;
+               end;
+            end loop;
+         end;
+      end loop;
+   end Analyze_Case_Statement;
+
+   function Has_Loop_Termination
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Exit_Stmt
+            | Libadalang.Common.Ada_Return_Stmt
+            | Libadalang.Common.Ada_Extended_Return_Stmt
+            | Libadalang.Common.Ada_Raise_Stmt =>
+            return True;
+
+         when Libadalang.Common.Ada_For_Loop_Stmt
+            | Libadalang.Common.Ada_Loop_Stmt
+            | Libadalang.Common.Ada_While_Loop_Stmt =>
+            --  A transfer inside a nested loop does not terminate this loop.
+            return False;
+
+         when others =>
+            null;
+      end case;
+
+      for I in 1 .. Node.Children_Count loop
+         if Has_Loop_Termination (Node.Child (I)) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   end Has_Loop_Termination;
+
+   procedure Analyze_Infinite_Loop
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Loop_Node : Libadalang.Analysis.Base_Loop_Stmt)
+   is
+      Is_Unconditional : Boolean :=
+        Loop_Node.Kind = Libadalang.Common.Ada_Loop_Stmt;
+   begin
+      if Loop_Node.Kind = Libadalang.Common.Ada_While_Loop_Stmt then
+         declare
+            Spec : constant Libadalang.Analysis.Loop_Spec :=
+              Loop_Node.As_While_Loop_Stmt.F_Spec;
+         begin
+            Is_Unconditional := not Libadalang.Analysis.Is_Null (Spec)
+              and then Boolean_Value (Spec.As_While_Loop_Spec.F_Expr) =
+                Bool_True;
+         end;
+      end if;
+
+      if Rule_States (Infinite_Loop) = Enabled
+        and then Is_Unconditional
+        and then not Has_Loop_Termination (Loop_Node.F_Stmts)
+      then
+         Report_Rule_Violation
+           (Unit, Loop_Node, Infinite_Loop,
+            "unconditional loop has no explicit termination path");
+      end if;
+   end Analyze_Infinite_Loop;
 
    procedure Report_Unreachable_Branch
      (Unit : Libadalang.Analysis.Analysis_Unit;
@@ -1971,6 +2736,26 @@ procedure Adalang_Analyzer is
            (Unit, Handler, Empty_Exception_Handler,
             "exception handler contains no substantive statements");
       end if;
+
+      if Rule_States (Exception_Swallowed) = Enabled then
+         declare
+            Handles_Others : Boolean := False;
+         begin
+            for Choice of Handler.F_Handled_Exceptions loop
+               if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
+                  Handles_Others := True;
+               end if;
+            end loop;
+
+            if Handles_Others
+              and then not Has_Substantive_Statement (Handler.F_Stmts)
+            then
+               Report_Rule_Violation
+                 (Unit, Handler, Exception_Swallowed,
+                  "when others handler silently discards the exception");
+            end if;
+         end;
+      end if;
    end Analyze_Exception_Handler;
 
    procedure Analyze_Bug_Finding_Node
@@ -1985,8 +2770,20 @@ procedure Adalang_Analyzer is
          when Libadalang.Common.Ada_Bin_Op_Range =>
             Analyze_Binary_Expression (Unit, Node.As_Bin_Op);
 
+         when Libadalang.Common.Ada_Un_Op =>
+            Analyze_Unary_Expression (Unit, Node.As_Un_Op);
+
          when Libadalang.Common.Ada_Assign_Stmt =>
             Analyze_Assignment (Unit, Node.As_Assign_Stmt);
+
+         when Libadalang.Common.Ada_Object_Decl =>
+            Analyze_Object_Declaration (Unit, Node.As_Object_Decl);
+
+         when Libadalang.Common.Ada_Subp_Body =>
+            Analyze_Subprogram (Unit, Node.As_Subp_Body);
+
+         when Libadalang.Common.Ada_Case_Stmt =>
+            Analyze_Case_Statement (Unit, Node.As_Case_Stmt);
 
          when Libadalang.Common.Ada_If_Stmt =>
             Report_Constant_Condition
@@ -2023,6 +2820,7 @@ procedure Adalang_Analyzer is
                     (Unit, Node, Empty_Loop,
                      "loop body contains no substantive statements");
                end if;
+               Analyze_Infinite_Loop (Unit, Node.As_Base_Loop_Stmt);
             end;
 
          when Libadalang.Common.Ada_Exit_Stmt =>
@@ -2055,6 +2853,7 @@ procedure Adalang_Analyzer is
                  (Unit, Node, Empty_Loop,
                   "loop body contains no substantive statements");
             end if;
+            Analyze_Infinite_Loop (Unit, Node.As_Base_Loop_Stmt);
 
          when others =>
             null;
@@ -2222,6 +3021,22 @@ begin
                end if;
             elsif Arg'Length > 8 and then Arg (Arg'First .. Arg'First + 7) = "-checks=" then
                Parse_Checks_Option (Arg);
+            elsif Arg = "-complexity-threshold" then
+               if Current_Arg = Argument_Count then
+                  Ada.Text_IO.Put_Line
+                    ("adalang-analyzer: expected positive threshold value");
+                  Invalid_Options := True;
+               else
+                  Set_Complexity_Threshold
+                    (Ada.Command_Line.Argument (Current_Arg + 1));
+                  Current_Arg := Current_Arg + 1;
+               end if;
+            elsif Arg'Length > 22
+              and then Arg (Arg'First .. Arg'First + 21) =
+                "-complexity-threshold="
+            then
+               Set_Complexity_Threshold
+                 (Arg (Arg'First + 22 .. Arg'Last));
             elsif Arg (Arg'First) = '+' or else Arg (Arg'First) = '-' then
                if Arg'Length > 2 and then Arg (Arg'First + 1) = 'R' then
                   Process_Command_Switch (Arg);
