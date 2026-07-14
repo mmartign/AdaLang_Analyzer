@@ -1,0 +1,2 @@
+last_build_profile = "adalang_analyzer=DEVELOPMENT,adasat=RELEASE,gnat_native=RELEASE,gnatcoll=RELEASE,gnatcoll_gmp=RELEASE,gnatcoll_iconv=RELEASE,gnatcoll_minimal=RELEASE,gnatcoll_projects=RELEASE,gprconfig_kb=RELEASE,langkit_support=RELEASE,libadalang=RELEASE,libgmp=RELEASE,libgpr=RELEASE,libgpr2=RELEASE,make=RELEASE,prettier_ada=RELEASE,templates_parser=RELEASE,vss_text=RELEASE,xmlada=RELEASE"
+

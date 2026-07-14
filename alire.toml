@@ -1,0 +1,58 @@
+# AdaLang Analyzer
+#
+# Copyright (C) 2026, Spazio IT
+#
+# This file is part of AdaLang Analyzer.
+#
+# AdaLang Analyzer is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, version 3 of the License.
+#
+# AdaLang Analyzer is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the LICENSE file
+# for details.
+#
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name = "adalang_analyzer"
+description = "A Libadalang-based static analyzer for Ada source code"
+version = "0.1.0-dev"
+
+authors = ["Maurizio Martignano"]
+maintainers = ["Maurizio Martignano <Maurizio.Martignano@spazioit.com>"]
+licenses = "AGPL-3.0-only"
+website = "https://spazioit.com/"
+tags = ["ada", "analysis", "libadalang", "static-analysis"]
+
+project-files = ["adalang_analyzer.gpr"]
+
+executables = ["adalang_analyzer"]
+
+[environment]
+[environment.C_INCLUDE_PATH]
+append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
+
+[environment.CPLUS_INCLUDE_PATH]
+append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
+
+[environment.LIBRARY_PATH]
+append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
+
+[[depends-on]]
+libadalang = "^26.0.0"
+
+[[depends-on]]
+gnatcoll_gmp = "^26.0.0"
+
+[[depends-on]]
+gnatcoll_iconv = "^26.0.0"
+
+[[depends-on]]
+langkit_support = "^26.0.0"
+
+[[depends-on]]
+prettier_ada = "^26.0.0"
+
+[[depends-on]]
+templates_parser = "^26.0.0"
