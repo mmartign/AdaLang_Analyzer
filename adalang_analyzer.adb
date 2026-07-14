@@ -20,6 +20,10 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 --
 
+--  Command-line driver and rule implementation for AdaLang Analyzer. Rules
+--  are registered below, evaluated during one recursive Libadalang AST walk,
+--  and reported with source locations and remediation guidance.
+
 with Ada.Command_Line;
 with Ada.Characters.Latin_1;
 with Ada.Containers.Indefinite_Vectors;
@@ -40,6 +44,7 @@ procedure Adalang_Analyzer is
 
    type Rule_State is (Disabled, Enabled);
 
+   --  This enumeration is the authoritative registry of selectable checks.
    type Rule_Kind is (
       No_Goto,
       No_Abort,
@@ -48,6 +53,9 @@ procedure Adalang_Analyzer is
       No_Label,
       No_Pragma,
       No_Access_To_Subp_Def,
+      No_Unchecked_Conversion,
+      Floating_Equality,
+      Magic_Number,
       Constant_Condition,
       Unreachable_Code,
       Division_By_Zero,
@@ -131,6 +139,31 @@ procedure Adalang_Analyzer is
          Guidance    => To_Unbounded_String
            ("Prefer explicit subprogram parameters, generics, or a small " &
             "dispatching abstraction with a clear ownership boundary.")),
+      No_Unchecked_Conversion =>
+        (Name        => To_Unbounded_String ("No_Unchecked_Conversion"),
+         Description => To_Unbounded_String
+           ("Find instantiations of Ada.Unchecked_Conversion, which bypass " &
+            "the language's normal type-safety guarantees."),
+         Guidance    => To_Unbounded_String
+           ("Replace the conversion with a checked representation or an " &
+            "explicit serialization boundary; if it is unavoidable, isolate " &
+            "and justify the instantiation.")),
+      Floating_Equality =>
+        (Name        => To_Unbounded_String ("Floating_Equality"),
+         Description => To_Unbounded_String
+           ("Find equality and inequality comparisons whose operands have a " &
+            "floating-point type."),
+         Guidance    => To_Unbounded_String
+           ("Compare the absolute or relative difference against a tolerance " &
+            "appropriate for the values and numerical algorithm.")),
+      Magic_Number =>
+        (Name        => To_Unbounded_String ("Magic_Number"),
+         Description => To_Unbounded_String
+           ("Find unexplained numeric literals other than 0, 1, and -1 that " &
+            "are not part of a named constant declaration."),
+         Guidance    => To_Unbounded_String
+           ("Introduce a descriptively named constant so the value's meaning " &
+            "and maintenance policy are explicit.")),
       Constant_Condition =>
         (Name        => To_Unbounded_String ("Constant_Condition"),
          Description => To_Unbounded_String
@@ -255,6 +288,8 @@ procedure Adalang_Analyzer is
             "wait should use an explicit delay or synchronization operation."))
    );
 
+   --  Runtime state and counters are indexed by the registry above so adding
+   --  a rule automatically includes it in selection and summary operations.
    Rule_States       : array (Rule_Kind) of Rule_State := (others => Disabled);
    Verbose_Mode      : Boolean := False;
    Quiet_Mode        : Boolean := False;
@@ -534,6 +569,8 @@ procedure Adalang_Analyzer is
       end if;
    end Parse_Checks_Option;
 
+   --  Small abstract domains support safe constant folding without executing
+   --  analyzed code or assuming a value when evaluation is incomplete.
    type Abstract_Bool is (Bool_Unknown, Bool_False, Bool_True);
 
    function Bool_Name (Value : Abstract_Bool) return String is
@@ -1096,8 +1133,73 @@ procedure Adalang_Analyzer is
    is
       Value : constant Abstract_Int := Integer_Value (Node);
    begin
-      return Value.Known and then Value.Value = 1;
+      if Value.Known then
+         return Value.Value = 1;
+      end if;
+
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Real_Literal
+      then
+         return False;
+      end if;
+
+      return Long_Long_Float'Value
+        (Strip_Underscores (Node_Text (Node))) = 1.0;
+   exception
+      when others =>
+         return False;
    end Is_Static_One;
+
+   function Is_In_Named_Constant_Declaration
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Ancestor : Libadalang.Analysis.Ada_Node := Node.Parent;
+   begin
+      while not Libadalang.Analysis.Is_Null (Ancestor) loop
+         case Ancestor.Kind is
+            when Libadalang.Common.Ada_Number_Decl =>
+               return True;
+
+            when Libadalang.Common.Ada_Object_Decl =>
+               return Ancestor.As_Object_Decl.F_Has_Constant;
+
+            when others =>
+               if Ancestor.Kind in Libadalang.Common.Ada_Stmt
+                 or else Ancestor.Kind in Libadalang.Common.Ada_Basic_Decl
+               then
+                  return False;
+               end if;
+               Ancestor := Ancestor.Parent;
+         end case;
+      end loop;
+
+      return False;
+   exception
+      when others =>
+         return False;
+   end Is_In_Named_Constant_Declaration;
+
+   function Is_Allowed_Magic_Number
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+   begin
+      return Is_Static_Zero (Node)
+        or else Is_Static_One (Node)
+        or else Is_In_Named_Constant_Declaration (Node);
+   end Is_Allowed_Magic_Number;
+
+   function Is_Floating_Expression
+     (Node : Libadalang.Analysis.Expr'Class) return Boolean
+   is
+      Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+        Node.P_Expression_Type;
+   begin
+      return not Libadalang.Analysis.Is_Null (Expr_Type)
+        and then Expr_Type.P_Is_Float_Type (Node);
+   exception
+      when others =>
+         --  Name resolution can legitimately fail for incomplete source.
+         return False;
+   end Is_Floating_Expression;
 
    function Is_Null_Literal
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
@@ -1477,6 +1579,17 @@ procedure Adalang_Analyzer is
          Report_Rule_Violation
            (Unit, Expr.F_Right, Division_By_Zero,
             "right operand is statically zero");
+      end if;
+
+      if Rule_States (Floating_Equality) = Enabled
+        and then Op in Libadalang.Common.Ada_Op_Eq
+          | Libadalang.Common.Ada_Op_Neq
+        and then (Is_Floating_Expression (Expr.F_Left)
+                  or else Is_Floating_Expression (Expr.F_Right))
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Floating_Equality,
+            "direct equality comparison on floating-point operands");
       end if;
 
       if Rule_States (Reversed_Range) = Enabled
@@ -1962,6 +2075,32 @@ procedure Adalang_Analyzer is
       end case;
    end Analyze_Bug_Finding_Node;
 
+   function Is_Ada_Unchecked_Conversion
+     (Name : Libadalang.Analysis.Name'Class) return Boolean
+   is
+      Written_Name : constant String := Canonical_Text (Name);
+   begin
+      if Written_Name = "ada.unchecked_conversion" then
+         return True;
+      elsif Written_Name /= "unchecked_conversion" then
+         return False;
+      end if;
+
+      declare
+         Declaration : constant Libadalang.Analysis.Basic_Decl :=
+           Name.P_Referenced_Decl;
+         Full_Name   : constant String := Langkit_Support.Text.To_UTF8
+           (Declaration.P_Canonical_Fully_Qualified_Name);
+      begin
+         return Full_Name = "ada.unchecked_conversion";
+      end;
+   exception
+      when others =>
+         --  Keep the qualified spelling useful even when resolution fails,
+         --  but do not guess for an unrelated unqualified generic.
+         return Written_Name = "ada.unchecked_conversion";
+   end Is_Ada_Unchecked_Conversion;
+
    procedure Evaluate_Node (Unit : Libadalang.Analysis.Analysis_Unit;
                            Node : Libadalang.Analysis.Ada_Node'Class) is
    begin
@@ -1991,7 +2130,32 @@ procedure Adalang_Analyzer is
          Report_Rule_Violation (Unit, Node, No_Access_To_Subp_Def,
                                 "access-to-subprogram type definition used");
       end if;
+      if Rule_States (No_Unchecked_Conversion) = Enabled
+        and then Node.Kind =
+          Libadalang.Common.Ada_Generic_Subp_Instantiation
+      then
+         declare
+            Generic_Name : constant Libadalang.Analysis.Name :=
+              Node.As_Generic_Subp_Instantiation.F_Generic_Subp_Name;
+         begin
+            if Is_Ada_Unchecked_Conversion (Generic_Name) then
+               Report_Rule_Violation
+                 (Unit, Node, No_Unchecked_Conversion,
+                  "Ada.Unchecked_Conversion instantiated");
+            end if;
+         end;
+      end if;
+      if Rule_States (Magic_Number) = Enabled
+        and then Node.Kind in Libadalang.Common.Ada_Int_Literal
+          | Libadalang.Common.Ada_Real_Literal
+        and then not Is_Allowed_Magic_Number (Node)
+      then
+         Report_Rule_Violation
+           (Unit, Node, Magic_Number,
+            "numeric literal should be replaced by a named constant");
+      end if;
 
+      --  Apply node-specific checks before recursively visiting descendants.
       Analyze_Bug_Finding_Node (Unit, Node);
 
       for I in 1 .. Node.Children_Count loop

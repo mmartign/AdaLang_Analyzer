@@ -1,3 +1,6 @@
+--  Primary build project: compiles the maintained sources in src and places
+--  development artifacts under profile-specific obj and bin directories.
+
 with "config/adalang_analyzer_config.gpr";
 project AdaLang_Analyzer is
 
