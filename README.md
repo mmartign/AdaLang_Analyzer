@@ -18,17 +18,36 @@ guidance.
 
 ## Checks
 
-The analyzer currently detects:
+The analyzer currently provides the following checks:
 
-- discouraged constructs: `No_Goto`, `No_Abort`, `No_Raise`, `No_Exit`,
-  `No_Label`, `No_Pragma`, and `No_Access_To_Subp_Def`;
-- constant conditions and unreachable code or branches;
-- statically detectable division by zero and reversed ranges;
-- self-assignments, repeated operands, and duplicate conditions;
-- contradictory conditions and identical conditional branches;
-- repeated assignments, ineffective operations, and operations forced to a
-  constant result;
-- null statements, empty loops, and empty exception handlers.
+| Category | Check | Purpose |
+|----------|-------|---------|
+| Restricted construct | `No_Goto` | Reports `goto` statements. |
+| Restricted construct | `No_Abort` | Reports asynchronous task aborts. |
+| Restricted construct | `No_Raise` | Reports explicit `raise` statements. |
+| Restricted construct | `No_Exit` | Reports loop `exit` statements. |
+| Restricted construct | `No_Label` | Reports statement labels. |
+| Restricted construct | `No_Pragma` | Reports pragmas. |
+| Restricted construct | `No_Access_To_Subp_Def` | Reports access-to-subprogram type definitions. |
+| Safety | `No_Unchecked_Conversion` | Reports instantiations of `Ada.Unchecked_Conversion`. |
+| Numerical safety | `Floating_Equality` | Reports `=` and `/=` applied to floating-point operands. |
+| Maintainability | `Magic_Number` | Reports unexplained numeric literals other than 0, 1, and -1 outside named constant declarations. |
+| Control flow | `Constant_Condition` | Reports conditions that are statically always true or false. |
+| Control flow | `Unreachable_Code` | Reports statements following an unconditional transfer of control. |
+| Arithmetic | `Division_By_Zero` | Reports statically detectable division, `mod`, or `rem` by zero. |
+| Arithmetic | `Reversed_Range` | Reports static ranges whose lower bound exceeds their upper bound. |
+| Assignment | `Self_Assignment` | Reports assignments whose target and value are the same expression. |
+| Expression | `Same_Operand` | Reports suspicious binary expressions with identical operands. |
+| Conditional | `Duplicate_Condition` | Reports repeated conditions in an `if`/`elsif` chain. |
+| Style | `Null_Statement` | Reports executable `null` statements. |
+| Exception handling | `Empty_Exception_Handler` | Reports handlers containing no substantive statements. |
+| Control flow | `Unreachable_Branch` | Reports branches excluded by earlier static conditions. |
+| Conditional | `Contradictory_Condition` | Reports expressions such as `X and not X` or `X or not X`. |
+| Conditional | `Identical_Branches` | Reports adjacent conditional branches with identical bodies. |
+| Assignment | `Repeated_Statement` | Reports identical consecutive assignments. |
+| Expression | `Ineffective_Operation` | Reports operations containing an identity operand that has no effect. |
+| Expression | `Constant_Result_Operation` | Reports operations forced to a constant by an absorbing operand. |
+| Control flow | `Empty_Loop` | Reports loops containing no substantive statements. |
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.

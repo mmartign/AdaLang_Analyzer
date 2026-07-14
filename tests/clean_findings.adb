@@ -1,5 +1,7 @@
 with Ada.Text_IO;
 
+--  Negative regression fixture: similar-looking constructs remain meaningful
+--  and must not trigger the selected bug-finding rules.
 procedure Clean_Findings is
    A     : Integer := 1;
    Flag  : Boolean := True;

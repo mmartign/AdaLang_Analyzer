@@ -31,4 +31,25 @@ if ! "$analyzer" -q -checks="$checks" tests/clean_findings.adb; then
    exit 1
 fi
 
+high_value_checks='No_Unchecked_Conversion,Floating_Equality,Magic_Number'
+if "$analyzer" -checks="$high_value_checks" \
+     tests/high_value_findings.adb >"$output" 2>&1
+then
+   echo "expected high_value_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+for rule in No_Unchecked_Conversion Floating_Equality Magic_Number
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "missing expected finding: $rule" >&2
+      exit 1
+   fi
+done
+
+if ! "$analyzer" -q -checks="$high_value_checks" tests/high_value_clean.adb; then
+   echo "high_value_clean.adb unexpectedly produced a violation" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"
