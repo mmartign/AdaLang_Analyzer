@@ -72,14 +72,58 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       Repeated_Statement,
       Ineffective_Operation,
       Constant_Result_Operation,
-      Empty_Loop
+      Empty_Loop,
+      No_Recursion,
+      No_Multiple_Return,
+      Non_Short_Circuit_Condition,
+      Address_Clause,
+      Too_Many_Parameters,
+      Deep_Nesting,
+      Unused_Variable,
+      Empty_If_Body,
+      Unnecessary_Else_After_Return,
+      Function_Side_Effect,
+      Redundant_Boolean_Comparison,
+      Long_Line,
+      Trailing_Whitespace
    );
+
+   --  SonarQube-style classification of every check: the Software Quality
+   --  it primarily affects, and the severity of a typical violation. This
+   --  is this analyzer's own judgment applying SonarQube's Clean Code
+   --  taxonomy to Ada constructs, not an imported SonarQube ruleset.
+   type Software_Quality is
+     (Quality_Security, Quality_Reliability, Quality_Maintainability);
+
+   type Issue_Severity is
+     (Severity_Blocker, Severity_High, Severity_Medium, Severity_Low);
+
+   function Quality_Name (Quality : Software_Quality) return String is
+   begin
+      case Quality is
+         when Quality_Security       => return "Security";
+         when Quality_Reliability    => return "Reliability";
+         when Quality_Maintainability => return "Maintainability";
+      end case;
+   end Quality_Name;
+
+   function Severity_Name (Severity : Issue_Severity) return String is
+   begin
+      case Severity is
+         when Severity_Blocker => return "Blocker";
+         when Severity_High    => return "High";
+         when Severity_Medium  => return "Medium";
+         when Severity_Low     => return "Low";
+      end case;
+   end Severity_Name;
 
    --  The fixed metadata shown alongside every violation of a given check.
    type Rule_Info is record
       Name        : Ada.Strings.Unbounded.Unbounded_String;
       Description : Ada.Strings.Unbounded.Unbounded_String;
       Guidance    : Ada.Strings.Unbounded.Unbounded_String;
+      Quality     : Software_Quality;
+      Severity    : Issue_Severity;
    end record;
 
    --  Static text for every check, indexed by Rule_Kind so it stays in sync
@@ -94,7 +138,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
          Guidance    => To_Unbounded_String
            ("Replace the jump with structured control flow such as a " &
             "loop condition, if statement, return, or a small local " &
-            "subprogram.")),
+            "subprogram."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
       No_Abort =>
         (Name        => To_Unbounded_String ("No_Abort"),
          Description => To_Unbounded_String
@@ -102,7 +148,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "can leave shared state and cleanup paths unclear."),
          Guidance    => To_Unbounded_String
            ("Prefer cooperative cancellation, protected objects, or an " &
-            "explicit task shutdown protocol.")),
+            "explicit task shutdown protocol."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
       No_Raise =>
         (Name        => To_Unbounded_String ("No_Raise"),
          Description => To_Unbounded_String
@@ -110,7 +158,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "errors to be handled through regular control flow."),
          Guidance    => To_Unbounded_String
            ("Return a status/result value where possible, or centralize " &
-            "exception raising at a documented boundary.")),
+            "exception raising at a documented boundary."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       No_Exit =>
         (Name        => To_Unbounded_String ("No_Exit"),
          Description => To_Unbounded_String
@@ -118,7 +168,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "hidden branches inside the loop body."),
          Guidance    => To_Unbounded_String
            ("Move the termination condition into the loop condition or " &
-            "split the loop so the exit case is explicit.")),
+            "split the loop so the exit case is explicit."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       No_Label =>
         (Name        => To_Unbounded_String ("No_Label"),
          Description => To_Unbounded_String
@@ -126,7 +178,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "unstructured jumps."),
          Guidance    => To_Unbounded_String
            ("Remove the label or replace the surrounding flow with " &
-            "structured statements.")), --
+            "structured statements."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low), --
       No_Pragma =>
         (Name        => To_Unbounded_String ("No_Pragma"),
          Description => To_Unbounded_String
@@ -134,7 +188,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "behavior, portability, or verification assumptions."),
          Guidance    => To_Unbounded_String
            ("Keep only required pragmas, document the reason, and isolate " &
-            "compiler-specific pragmas behind project policy.")),
+            "compiler-specific pragmas behind project policy."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       No_Access_To_Subp_Def =>
         (Name        => To_Unbounded_String ("No_Access_To_Subp_Def"),
          Description => To_Unbounded_String
@@ -142,7 +198,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "calls make call relationships harder to analyze."),
          Guidance    => To_Unbounded_String
            ("Prefer explicit subprogram parameters, generics, or a small " &
-            "dispatching abstraction with a clear ownership boundary.")),
+            "dispatching abstraction with a clear ownership boundary."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
       No_Unchecked_Conversion =>
         (Name        => To_Unbounded_String ("No_Unchecked_Conversion"),
          Description => To_Unbounded_String
@@ -151,7 +209,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
          Guidance    => To_Unbounded_String
            ("Replace the conversion with a checked representation or an " &
             "explicit serialization boundary; if it is unavoidable, isolate " &
-            "and justify the instantiation.")),
+            "and justify the instantiation."),
+         Quality     => Quality_Security,
+         Severity    => Severity_High),
       Floating_Equality =>
         (Name        => To_Unbounded_String ("Floating_Equality"),
          Description => To_Unbounded_String
@@ -159,7 +219,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "floating-point type."),
          Guidance    => To_Unbounded_String
            ("Compare the absolute or relative difference against a tolerance " &
-            "appropriate for the values and numerical algorithm.")),
+            "appropriate for the values and numerical algorithm."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Magic_Number =>
         (Name        => To_Unbounded_String ("Magic_Number"),
          Description => To_Unbounded_String
@@ -167,7 +229,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "are not part of a named constant declaration."),
          Guidance    => To_Unbounded_String
            ("Introduce a descriptively named constant so the value's meaning " &
-            "and maintenance policy are explicit.")),
+            "and maintenance policy are explicit."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       Unused_Parameter =>
         (Name        => To_Unbounded_String ("Unused_Parameter"),
          Description => To_Unbounded_String
@@ -175,7 +239,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "body."),
          Guidance    => To_Unbounded_String
            ("Remove the parameter, use it as intended, or document why an " &
-            "externally required profile must retain it.")),
+            "externally required profile must retain it."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       Dead_Store =>
         (Name        => To_Unbounded_String ("Dead_Store"),
          Description => To_Unbounded_String
@@ -183,7 +249,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "enclosing subprogram."),
          Guidance    => To_Unbounded_String
            ("Remove the assignment or restore the later use that was intended " &
-            "to consume the value.")),
+            "to consume the value."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
       Overwritten_Assignment =>
         (Name        => To_Unbounded_String ("Overwritten_Assignment"),
          Description => To_Unbounded_String
@@ -191,7 +259,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "their value is read."),
          Guidance    => To_Unbounded_String
            ("Remove the earlier assignment or use its value before assigning " &
-            "the variable again.")),
+            "the variable again."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Shadowed_Declaration =>
         (Name        => To_Unbounded_String ("Shadowed_Declaration"),
          Description => To_Unbounded_String
@@ -199,7 +269,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "declared by an enclosing subprogram."),
          Guidance    => To_Unbounded_String
            ("Rename the inner declaration so references clearly identify the " &
-            "intended object.")),
+            "intended object."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Unreachable_Case_Alternative =>
         (Name        => To_Unbounded_String
            ("Unreachable_Case_Alternative"),
@@ -207,7 +279,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
            ("Find case choices wholly covered by an earlier alternative."),
          Guidance    => To_Unbounded_String
            ("Remove the alternative or correct its choice so it selects a " &
-            "distinct value range.")),
+            "distinct value range."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Overlapping_Case_Ranges =>
         (Name        => To_Unbounded_String ("Overlapping_Case_Ranges"),
          Description => To_Unbounded_String
@@ -215,7 +289,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "intersect."),
          Guidance    => To_Unbounded_String
            ("Adjust the choice boundaries so every value belongs to exactly " &
-            "one alternative.")),
+            "one alternative."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
       Infinite_Loop =>
         (Name        => To_Unbounded_String ("Infinite_Loop"),
          Description => To_Unbounded_String
@@ -223,14 +299,18 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "body."),
          Guidance    => To_Unbounded_String
            ("Add an explicit termination path or document and isolate an " &
-            "intentional nonterminating service loop.")),
+            "intentional nonterminating service loop."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
       Duplicate_Boolean_Operand =>
         (Name        => To_Unbounded_String ("Duplicate_Boolean_Operand"),
          Description => To_Unbounded_String
            ("Find repeated boolean operands and double negations."),
          Guidance    => To_Unbounded_String
            ("Remove the duplicate operator or correct the operand that was " &
-            "probably copied incorrectly.")),
+            "probably copied incorrectly."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Exception_Swallowed =>
         (Name        => To_Unbounded_String ("Exception_Swallowed"),
          Description => To_Unbounded_String
@@ -238,7 +318,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "substantive handling."),
          Guidance    => To_Unbounded_String
            ("Handle or log the exception, or re-raise it after required " &
-            "cleanup.")),
+            "cleanup."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
       Cyclomatic_Complexity =>
         (Name        => To_Unbounded_String ("Cyclomatic_Complexity"),
          Description => To_Unbounded_String
@@ -246,7 +328,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "threshold."),
          Guidance    => To_Unbounded_String
            ("Extract cohesive helpers or simplify branching so each subprogram " &
-            "has fewer independent paths.")),
+            "has fewer independent paths."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
       Constant_Condition =>
         (Name        => To_Unbounded_String ("Constant_Condition"),
          Description => To_Unbounded_String
@@ -254,7 +338,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "or always false."),
          Guidance    => To_Unbounded_String
            ("Remove dead branches, simplify the condition, or replace " &
-            "temporary debug logic with an explicit configuration guard.")),
+            "temporary debug logic with an explicit configuration guard."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Unreachable_Code =>
         (Name        => To_Unbounded_String ("Unreachable_Code"),
          Description => To_Unbounded_String
@@ -262,7 +348,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "return, raise, goto, or loop exit in the same statement list."),
          Guidance    => To_Unbounded_String
            ("Move the statement before the terminating statement, remove it, " &
-            "or make the terminating statement conditional.")),
+            "or make the terminating statement conditional."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
       Division_By_Zero =>
         (Name        => To_Unbounded_String ("Division_By_Zero"),
          Description => To_Unbounded_String
@@ -270,7 +358,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "statically zero."),
          Guidance    => To_Unbounded_String
            ("Guard the operation, change the divisor, or make the exceptional " &
-            "case explicit before evaluating the operation.")),
+            "case explicit before evaluating the operation."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Blocker),
       Reversed_Range =>
         (Name        => To_Unbounded_String ("Reversed_Range"),
          Description => To_Unbounded_String
@@ -278,7 +368,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "upper bound."),
          Guidance    => To_Unbounded_String
            ("Swap the bounds, use a reverse iteration form, or document an " &
-            "intentional null range with a clearer condition.")),
+            "intentional null range with a clearer condition."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Self_Assignment =>
         (Name        => To_Unbounded_String ("Self_Assignment"),
          Description => To_Unbounded_String
@@ -286,7 +378,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "syntactic expression."),
          Guidance    => To_Unbounded_String
            ("Remove the assignment or replace the right-hand side with the " &
-            "value that was intended to update the object.")),
+            "value that was intended to update the object."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Same_Operand =>
         (Name        => To_Unbounded_String ("Same_Operand"),
          Description => To_Unbounded_String
@@ -294,21 +388,27 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "on both sides."),
          Guidance    => To_Unbounded_String
            ("Check for a copied operand, simplify the expression, or add an " &
-            "explicit comment if the repetition is intentional.")),
+            "explicit comment if the repetition is intentional."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Duplicate_Condition =>
         (Name        => To_Unbounded_String ("Duplicate_Condition"),
          Description => To_Unbounded_String
            ("Find repeated conditions in the same if/elsif chain."),
          Guidance    => To_Unbounded_String
            ("Replace the repeated condition with the missing case or remove " &
-            "the unreachable branch.")),
+            "the unreachable branch."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Null_Statement =>
         (Name        => To_Unbounded_String ("Null_Statement"),
          Description => To_Unbounded_String
            ("Find null statements in executable code."),
          Guidance    => To_Unbounded_String
            ("Remove the placeholder or replace it with explicit handling so " &
-            "the empty action is intentional.")),
+            "the empty action is intentional."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       Empty_Exception_Handler =>
         (Name        => To_Unbounded_String ("Empty_Exception_Handler"),
          Description => To_Unbounded_String
@@ -316,7 +416,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "pragmas."),
          Guidance    => To_Unbounded_String
            ("Handle, log, re-raise, or narrowly document the exception instead " &
-            "of silently swallowing it.")),
+            "of silently swallowing it."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
       Unreachable_Branch =>
         (Name        => To_Unbounded_String ("Unreachable_Branch"),
          Description => To_Unbounded_String
@@ -324,28 +426,36 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "conditions earlier in the chain."),
          Guidance    => To_Unbounded_String
            ("Remove the branch or change the condition sequence so each branch " &
-            "can be selected.")),
+            "can be selected."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Contradictory_Condition =>
         (Name        => To_Unbounded_String ("Contradictory_Condition"),
          Description => To_Unbounded_String
            ("Find boolean expressions of the form X and not X or X or not X."),
          Guidance    => To_Unbounded_String
            ("Correct the copied or negated operand, or replace the expression " &
-            "with the intended constant value.")),
+            "with the intended constant value."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
       Identical_Branches =>
         (Name        => To_Unbounded_String ("Identical_Branches"),
          Description => To_Unbounded_String
            ("Find adjacent if, elsif, or else branches with identical bodies."),
          Guidance    => To_Unbounded_String
            ("Merge the conditions or restore the branch-specific operation " &
-            "that was probably lost during editing.")),
+            "that was probably lost during editing."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Repeated_Statement =>
         (Name        => To_Unbounded_String ("Repeated_Statement"),
          Description => To_Unbounded_String
            ("Find identical assignments repeated consecutively."),
          Guidance    => To_Unbounded_String
            ("Remove the duplicate or correct the operand that should differ " &
-            "in the second statement.")),
+            "in the second statement."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Ineffective_Operation =>
         (Name        => To_Unbounded_String ("Ineffective_Operation"),
          Description => To_Unbounded_String
@@ -353,7 +463,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "cannot affect the result."),
          Guidance    => To_Unbounded_String
            ("Remove the ineffective operation or correct a constant or operand " &
-            "that was entered incorrectly.")),
+            "that was entered incorrectly."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       Constant_Result_Operation =>
         (Name        => To_Unbounded_String ("Constant_Result_Operation"),
          Description => To_Unbounded_String
@@ -361,14 +473,145 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "boolean absorbing operand."),
          Guidance    => To_Unbounded_String
            ("Replace the expression with the constant when intentional, or " &
-            "correct the operand that unexpectedly forces the result.")),
+            "correct the operand that unexpectedly forces the result."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Empty_Loop =>
         (Name        => To_Unbounded_String ("Empty_Loop"),
          Description => To_Unbounded_String
            ("Find loops whose bodies contain only null statements or pragmas."),
          Guidance    => To_Unbounded_String
            ("Implement the missing loop body or remove the loop; an intentional " &
-            "wait should use an explicit delay or synchronization operation."))
+            "wait should use an explicit delay or synchronization operation."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      No_Recursion =>
+        (Name        => To_Unbounded_String ("No_Recursion"),
+         Description => To_Unbounded_String
+           ("Find subprograms that call themselves directly, which can make " &
+            "stack usage and termination harder to bound and verify."),
+         Guidance    => To_Unbounded_String
+           ("Replace the recursive call with an explicit loop and work list, " &
+            "or document and isolate an intentional recursive algorithm."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Multiple_Return =>
+        (Name        => To_Unbounded_String ("No_Multiple_Return"),
+         Description => To_Unbounded_String
+           ("Find subprograms with more than one return statement, which can " &
+            "make the exit points of a subprogram harder to audit."),
+         Guidance    => To_Unbounded_String
+           ("Restructure the subprogram around a single result variable and a " &
+            "single return statement at its end."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Non_Short_Circuit_Condition =>
+        (Name        => To_Unbounded_String ("Non_Short_Circuit_Condition"),
+         Description => To_Unbounded_String
+           ("Find plain and/or operators used in an if, elsif, exit-when, or " &
+            "while condition, where a guard clause typically requires " &
+            "short-circuit evaluation."),
+         Guidance    => To_Unbounded_String
+           ("Replace 'and'/'or' with 'and then'/'or else' unless evaluating " &
+            "both operands unconditionally is required and safe."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Address_Clause =>
+        (Name        => To_Unbounded_String ("Address_Clause"),
+         Description => To_Unbounded_String
+           ("Find address representation clauses, which let two objects " &
+            "alias the same storage outside the type system's checks."),
+         Guidance    => To_Unbounded_String
+           ("Prefer a normal declaration or an explicitly reviewed, isolated " &
+            "and documented overlay when aliasing is genuinely required."),
+         Quality     => Quality_Security,
+         Severity    => Severity_High),
+      Too_Many_Parameters =>
+        (Name        => To_Unbounded_String ("Too_Many_Parameters"),
+         Description => To_Unbounded_String
+           ("Find subprograms whose parameter count exceeds the configured " &
+            "threshold."),
+         Guidance    => To_Unbounded_String
+           ("Group related parameters into a record, or split the subprogram " &
+            "into smaller, more cohesive operations."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Deep_Nesting =>
+        (Name        => To_Unbounded_String ("Deep_Nesting"),
+         Description => To_Unbounded_String
+           ("Find subprograms whose control-flow nesting depth exceeds the " &
+            "configured threshold."),
+         Guidance    => To_Unbounded_String
+           ("Extract nested blocks into helper subprograms or invert " &
+            "conditions with early returns to flatten the structure."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Unused_Variable =>
+        (Name        => To_Unbounded_String ("Unused_Variable"),
+         Description => To_Unbounded_String
+           ("Find local object declarations that are never referenced by the " &
+            "enclosing subprogram's declarations or statements."),
+         Guidance    => To_Unbounded_String
+           ("Remove the declaration or use the object as intended."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Empty_If_Body =>
+        (Name        => To_Unbounded_String ("Empty_If_Body"),
+         Description => To_Unbounded_String
+           ("Find if statements with no elsif or else part whose then branch " &
+            "has no substantive statements, so the statement has no effect."),
+         Guidance    => To_Unbounded_String
+           ("Remove the if statement or implement the missing branch body."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Unnecessary_Else_After_Return =>
+        (Name        => To_Unbounded_String ("Unnecessary_Else_After_Return"),
+         Description => To_Unbounded_String
+           ("Find else parts that are unnecessary because the preceding then " &
+            "branch always returns, raises, or exits."),
+         Guidance    => To_Unbounded_String
+           ("Remove the else and dedent its statements to the enclosing " &
+            "block, now that the earlier branch always transfers control " &
+            "away."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Function_Side_Effect =>
+        (Name        => To_Unbounded_String ("Function_Side_Effect"),
+         Description => To_Unbounded_String
+           ("Find functions that assign to state other than their own local " &
+            "variables and parameters."),
+         Guidance    => To_Unbounded_String
+           ("Move the side effect to a procedure, or return the changed " &
+            "value instead of assigning it to shared state."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Redundant_Boolean_Comparison =>
+        (Name        => To_Unbounded_String ("Redundant_Boolean_Comparison"),
+         Description => To_Unbounded_String
+           ("Find equality or inequality comparisons against the literal " &
+            "True or False."),
+         Guidance    => To_Unbounded_String
+           ("Use the boolean expression directly, negating it with 'not' " &
+            "when comparing against False."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Long_Line =>
+        (Name        => To_Unbounded_String ("Long_Line"),
+         Description => To_Unbounded_String
+           ("Find source lines longer than the configured threshold."),
+         Guidance    => To_Unbounded_String
+           ("Wrap the line or shorten the expression so it fits within the " &
+            "project's line-length convention."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Trailing_Whitespace =>
+        (Name        => To_Unbounded_String ("Trailing_Whitespace"),
+         Description => To_Unbounded_String
+           ("Find source lines with trailing spaces or tabs."),
+         Guidance    => To_Unbounded_String
+           ("Remove the trailing whitespace."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low)
    );
 
    --  Runtime state and counters are indexed by the registry above so adding
@@ -381,6 +624,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
    List_Checks_Only  : Boolean := False;
    Invalid_Options   : Boolean := False;
    Default_Complexity_Threshold : constant Positive := 10;
+   Default_Nesting_Threshold     : constant Positive := 4;
+   Default_Parameter_Threshold   : constant Positive := 6;
+   Default_Line_Length_Threshold : constant Positive := 120;
    Maximum_Highlight_Width       : constant Positive := 120;
    Decimal_Base                  : constant Positive := 10;
    Minimum_Ada_Base              : constant Positive := 2;
@@ -390,7 +636,10 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
    Floating_Zero_Tolerance       : constant Long_Long_Float :=
      Long_Long_Float'Model_Epsilon;
 
-   Complexity_Threshold : Positive := Default_Complexity_Threshold;
+   Complexity_Threshold  : Positive := Default_Complexity_Threshold;
+   Nesting_Threshold     : Positive := Default_Nesting_Threshold;
+   Parameter_Threshold   : Positive := Default_Parameter_Threshold;
+   Line_Length_Threshold : Positive := Default_Line_Length_Threshold;
    Source_File_Count : Natural := 0;
    Violations        : Natural := 0;
    Rule_Violations   : array (Rule_Kind) of Natural := (others => 0);
@@ -543,18 +792,20 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
 
    --  Central sink for every check: counts the violation, and unless
    --  -quiet is set, prints its location, message, rule metadata, and a
-   --  source excerpt with a caret under the offending span.
-   procedure Report_Rule_Violation (Unit : Libadalang.Analysis.Analysis_Unit;
-                                   Node : Libadalang.Analysis.Ada_Node'Class;
-                                   Rule : Rule_Kind;
-                                   Message : String) is
-      Filename     : constant String := Unit.Get_Filename;
-      Line_Number  : constant Natural := Natural (Node.Sloc_Range.Start_Line);
-      Column       : constant Natural := Natural (Node.Sloc_Range.Start_Column);
+   --  source excerpt with a caret under the offending span. Shared by
+   --  Report_Rule_Violation (AST-node checks) and Report_Line_Violation
+   --  (raw source-text checks that have no single Ada_Node to anchor on).
+   procedure Report_Violation_At
+     (Filename    : String;
+      Line_Number : Natural;
+      Column      : Natural;
+      Caret_Width : Natural;
+      Rule        : Rule_Kind;
+      Message     : String)
+   is
       Rule_Name    : constant String :=
         Ada.Strings.Unbounded.To_String (Rule_Infos (Rule).Name);
       Source_Text  : constant String := Source_Line (Filename, Line_Number);
-      Caret_Width  : constant Natural := Highlight_Width (Node);
    begin
       if Is_Suppressed (Source_Text, Rule_Name) then
          return;
@@ -573,6 +824,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                    Ada.Strings.Unbounded.To_String (Rule_Infos (Rule).Description));
          Ada.Text_IO.Put_Line ("  advice: " &
                    Ada.Strings.Unbounded.To_String (Rule_Infos (Rule).Guidance));
+         Ada.Text_IO.Put_Line ("  quality: " &
+                   Quality_Name (Rule_Infos (Rule).Quality) & " (" &
+                   Severity_Name (Rule_Infos (Rule).Severity) & ")");
 
          if Source_Text /= "" then
             Ada.Text_IO.Put_Line ("  source:");
@@ -585,7 +839,43 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             end if;
          end if;
       end if;
+   end Report_Violation_At;
+
+   --  AST-node violation report: derives the location and caret width from
+   --  Node's source span.
+   procedure Report_Rule_Violation (Unit : Libadalang.Analysis.Analysis_Unit;
+                                   Node : Libadalang.Analysis.Ada_Node'Class;
+                                   Rule : Rule_Kind;
+                                   Message : String) is
+   begin
+      Report_Violation_At
+        (Filename    => Unit.Get_Filename,
+         Line_Number => Natural (Node.Sloc_Range.Start_Line),
+         Column      => Natural (Node.Sloc_Range.Start_Column),
+         Caret_Width => Highlight_Width (Node),
+         Rule        => Rule,
+         Message     => Message);
    end Report_Rule_Violation;
+
+   --  Raw source-text violation report, for checks (Long_Line,
+   --  Trailing_Whitespace) that scan file text directly rather than the
+   --  Libadalang AST and so have no Ada_Node to anchor a report on.
+   procedure Report_Line_Violation
+     (Filename    : String;
+      Line_Number : Natural;
+      Column      : Natural;
+      Caret_Width : Natural;
+      Rule        : Rule_Kind;
+      Message     : String) is
+   begin
+      Report_Violation_At
+        (Filename    => Filename,
+         Line_Number => Line_Number,
+         Column      => Column,
+         Caret_Width => Caret_Width,
+         Rule        => Rule,
+         Message     => Message);
+   end Report_Line_Violation;
 
    --  Prints command-line usage for -h/--help and after an option error.
    procedure Show_Help is
@@ -602,6 +892,12 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       Ada.Text_IO.Put_Line ("  -list-checks          List available checks");
       Ada.Text_IO.Put_Line
         ("  -complexity-threshold=<n>  Set complexity limit (default: 10)");
+      Ada.Text_IO.Put_Line
+        ("  -nesting-threshold=<n>     Set nesting depth limit (default: 4)");
+      Ada.Text_IO.Put_Line
+        ("  -parameter-threshold=<n>   Set parameter count limit (default: 6)");
+      Ada.Text_IO.Put_Line
+        ("  -line-length-threshold=<n> Set line length limit (default: 120)");
       Ada.Text_IO.Put_Line ("  -v, -verbose          Enable verbose output");
       Ada.Text_IO.Put_Line ("  -q, -quiet            Suppress summary output");
       Ada.Text_IO.Put_Line ("  --                    Treat items as files");
@@ -619,7 +915,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
    begin
       Ada.Text_IO.Put_Line ("Available checks:");
       for Rule in Rule_Kind loop
-         Ada.Text_IO.Put_Line ("  " & Ada.Strings.Unbounded.To_String (Rule_Infos (Rule).Name) & " - " &
+         Ada.Text_IO.Put_Line ("  " & Ada.Strings.Unbounded.To_String (Rule_Infos (Rule).Name) &
+                               " [" & Quality_Name (Rule_Infos (Rule).Quality) & "/" &
+                               Severity_Name (Rule_Infos (Rule).Severity) & "] - " &
                                Ada.Strings.Unbounded.To_String (Rule_Infos (Rule).Description));
          Ada.Text_IO.Put_Line ("    " &
                                Ada.Strings.Unbounded.To_String (Rule_Infos (Rule).Guidance));
@@ -736,6 +1034,45 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
            ("adalang-analyzer: invalid complexity threshold '" & Text & "'");
          Invalid_Options := True;
    end Set_Complexity_Threshold;
+
+   --  Parses the -nesting-threshold value; records an invalid-option error
+   --  instead of raising when Text isn't a positive integer.
+   procedure Set_Nesting_Threshold (Text : String) is
+   begin
+      Nesting_Threshold := Positive'Value
+        (Ada.Strings.Fixed.Trim (Text, Ada.Strings.Both));
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid nesting threshold '" & Text & "'");
+         Invalid_Options := True;
+   end Set_Nesting_Threshold;
+
+   --  Parses the -parameter-threshold value; records an invalid-option
+   --  error instead of raising when Text isn't a positive integer.
+   procedure Set_Parameter_Threshold (Text : String) is
+   begin
+      Parameter_Threshold := Positive'Value
+        (Ada.Strings.Fixed.Trim (Text, Ada.Strings.Both));
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid parameter threshold '" & Text & "'");
+         Invalid_Options := True;
+   end Set_Parameter_Threshold;
+
+   --  Parses the -line-length-threshold value; records an invalid-option
+   --  error instead of raising when Text isn't a positive integer.
+   procedure Set_Line_Length_Threshold (Text : String) is
+   begin
+      Line_Length_Threshold := Positive'Value
+        (Ada.Strings.Fixed.Trim (Text, Ada.Strings.Both));
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid line length threshold '" & Text & "'");
+         Invalid_Options := True;
+   end Set_Line_Length_Threshold;
 
    --  Small abstract domains support safe constant folding without executing
    --  analyzed code or assuming a value when evaluation is incomplete.
@@ -1450,6 +1787,27 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       end case;
    end Is_Null_Literal;
 
+   --  True when Node is the identifier "True" or "False" (case-insensitive),
+   --  i.e. a syntactic boolean literal rather than an evaluated expression.
+   --  Backs Redundant_Boolean_Comparison; uses the same spelling-based
+   --  heuristic as Boolean_Value's identifier case further below.
+   function Is_Boolean_Literal
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return False;
+      end if;
+
+      declare
+         Text : constant String := Normalize_Rule_Name (Node_Text (Node));
+      begin
+         return Text = "true" or else Text = "false";
+      end;
+   end Is_Boolean_Literal;
+
    --  Evaluates a relational operator over two statically known integers;
    --  Bool_Unknown if either operand isn't known or Op isn't relational.
    function Compare_Integers
@@ -1679,6 +2037,40 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       end if;
    end Report_Constant_Condition;
 
+   --  Reports Non_Short_Circuit_Condition for every plain "and"/"or"
+   --  operator anywhere within Cond's subtree. Shared by if/elsif/while/
+   --  exit-when condition sites, alongside Report_Constant_Condition.
+   procedure Report_Non_Short_Circuit_Operators
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Cond : Libadalang.Analysis.Ada_Node'Class)
+   is
+   begin
+      if Rule_States (Non_Short_Circuit_Condition) /= Enabled
+        or else Libadalang.Analysis.Is_Null (Cond)
+      then
+         return;
+      end if;
+
+      if Cond.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+         case Cond.As_Bin_Op.F_Op is
+            when Libadalang.Common.Ada_Op_And =>
+               Report_Rule_Violation
+                 (Unit, Cond, Non_Short_Circuit_Condition,
+                  "use 'and then' instead of 'and' in a condition");
+            when Libadalang.Common.Ada_Op_Or =>
+               Report_Rule_Violation
+                 (Unit, Cond, Non_Short_Circuit_Condition,
+                  "use 'or else' instead of 'or' in a condition");
+            when others =>
+               null;  --  adalang-analyzer: ignore Null_Statement
+         end case;
+      end if;
+
+      for I in 1 .. Cond.Children_Count loop
+         Report_Non_Short_Circuit_Operators (Unit, Cond.Child (I));
+      end loop;
+   end Report_Non_Short_Circuit_Operators;
+
    --  True when Node unconditionally transfers control out of the
    --  statement list it's in (return, raise, goto, or an unconditional
    --  exit), making any following statement in the same list unreachable.
@@ -1705,6 +2097,30 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             return False;
       end case;
    end Terminates_Statement;
+
+   --  True when List contains anything other than null statements and
+   --  pragmas, i.e. it does real work. Shared by Empty_Loop, Empty_If_Body,
+   --  and the exception-handler checks.
+   function Has_Substantive_Statement
+     (List : Libadalang.Analysis.Stmt_List) return Boolean is
+   begin
+      for I in 1 .. List.Children_Count loop
+         declare
+            Stmt : constant Libadalang.Analysis.Ada_Node := List.Child (I);
+         begin
+            if Libadalang.Analysis.Is_Null (Stmt)
+              or else Stmt.Kind = Libadalang.Common.Ada_Pragma_Node
+              or else Stmt.Kind = Libadalang.Common.Ada_Null_Stmt
+            then
+               null;  --  adalang-analyzer: ignore Null_Statement
+            else
+               return True;
+            end if;
+         end;
+      end loop;
+
+      return False;
+   end Has_Substantive_Statement;
 
    --  The declaration an identifier resolves to via Libadalang's semantic
    --  analysis, or No_Basic_Decl for anything else or when resolution
@@ -1885,12 +2301,40 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       return Libadalang.Analysis.No_Subp_Body;
    end Enclosing_Subprogram;
 
+   --  True when Call's callee resolves to Subprogram itself, i.e. Call is a
+   --  direct recursive call. Backs No_Recursion. Scoped to calls written
+   --  with an explicit call syntax (Call_Expr); a parameterless procedure
+   --  or function call written as a bare name is not recognized, keeping
+   --  detection conservative rather than risking a false positive from
+   --  misclassifying an ordinary name reference as a call.
+   function Is_Direct_Recursive_Call
+     (Call       : Libadalang.Analysis.Call_Expr;
+      Subprogram : Libadalang.Analysis.Subp_Body) return Boolean
+   is
+      Referenced : constant Libadalang.Analysis.Basic_Decl :=
+        Call.F_Name.P_Referenced_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Referenced) then
+         return False;
+      end if;
+
+      return Referenced.P_Canonical_Part =
+        Libadalang.Analysis.Basic_Decl (Subprogram).P_Canonical_Part;
+   exception
+      when others =>
+         return False;
+   end Is_Direct_Recursive_Call;
+
    --  True when some identifier under Node both spells Identifier and
-   --  resolves to Param. The text comparison is checked first (cheap) so
+   --  resolves to Decl. The text comparison is checked first (cheap) so
    --  that the semantic resolution call only runs on plausible matches.
-   function References_Parameter
+   --  Shared by Unused_Parameter (Decl is the parameter's Param_Spec) and
+   --  Unused_Variable (Decl is the local object's Object_Decl); matching by
+   --  spelling first lets it correctly tell apart names declared together
+   --  in one multi-name declaration, which all share the same Basic_Decl.
+   function References_Named_Declaration
      (Node       : Libadalang.Analysis.Ada_Node'Class;
-      Param      : Libadalang.Analysis.Param_Spec;
+      Decl       : Libadalang.Analysis.Basic_Decl;
       Identifier : String) return Boolean
    is
    begin
@@ -1906,20 +2350,20 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             --  Prefer semantic identity.  When Libadalang cannot resolve a
             --  name in an otherwise valid unit, conservatively treat the
             --  matching spelling as a use instead of emitting a false
-            --  Unused_Parameter diagnostic.
+            --  "unused" diagnostic.
             return Libadalang.Analysis.Is_Null (Referenced)
-              or else Referenced = Libadalang.Analysis.Basic_Decl (Param);
+              or else Referenced = Decl;
          end;
       end if;
 
       for I in 1 .. Node.Children_Count loop
-         if References_Parameter (Node.Child (I), Param, Identifier) then
+         if References_Named_Declaration (Node.Child (I), Decl, Identifier) then
             return True;
          end if;
       end loop;
 
       return False;
-   end References_Parameter;
+   end References_Named_Declaration;
 
    --  True when Node is an object or parameter declaration that introduces
    --  Name (compared via its canonical, case-folded spelling).
@@ -2094,31 +2538,179 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       return Result;
    end Cyclomatic_Value;
 
-   --  Runs the per-subprogram checks: Unused_Parameter (no reference in
-   --  either the local declarations or the statements) and
-   --  Cyclomatic_Complexity (base 1 plus every decision point in the body).
-   procedure Analyze_Subprogram
+   --  Deepest control-flow nesting level reached under Node, starting from
+   --  Depth. If, case, loop, extended-return, and declare-block statements
+   --  each add one level; elsif/else parts share their enclosing if
+   --  statement's level rather than adding their own. A nested subprogram
+   --  body stops the walk (it is scored separately in its own
+   --  Analyze_Subprogram call), matching Cyclomatic_Value's scoping.
+   function Max_Nesting_Depth
+     (Node : Libadalang.Analysis.Ada_Node'Class; Depth : Natural) return Natural
+   is
+      Result      : Natural := Depth;
+      Child_Depth : Natural := Depth;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return Depth;
+      end if;
+
+      if Node.Kind = Libadalang.Common.Ada_Subp_Body then
+         return Depth;
+      end if;
+
+      if Node.Kind in Libadalang.Common.Ada_If_Stmt
+           | Libadalang.Common.Ada_Case_Stmt
+           | Libadalang.Common.Ada_For_Loop_Stmt
+           | Libadalang.Common.Ada_While_Loop_Stmt
+           | Libadalang.Common.Ada_Loop_Stmt
+           | Libadalang.Common.Ada_Extended_Return_Stmt
+           | Libadalang.Common.Ada_Decl_Block
+      then
+         Child_Depth := Depth + 1;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         declare
+            Sub_Depth : constant Natural :=
+              Max_Nesting_Depth (Node.Child (I), Child_Depth);
+         begin
+            if Sub_Depth > Result then
+               Result := Sub_Depth;
+            end if;
+         end;
+      end loop;
+
+      return Result;
+   end Max_Nesting_Depth;
+
+   --  Number of return statements under Node, not descending into a nested
+   --  subprogram body (its own returns belong to that subprogram, not the
+   --  one being counted here). Backs No_Multiple_Return.
+   function Count_Return_Statements
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Natural
+   is
+      Result : Natural := 0;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return 0;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Return_Stmt
+            | Libadalang.Common.Ada_Extended_Return_Stmt =>
+            Result := 1;
+
+         when Libadalang.Common.Ada_Subp_Body =>
+            return 0;
+
+         when others =>
+            null;  --  adalang-analyzer: ignore Null_Statement
+      end case;
+
+      for I in 1 .. Node.Children_Count loop
+         Result := Result + Count_Return_Statements (Node.Child (I));
+      end loop;
+
+      return Result;
+   end Count_Return_Statements;
+
+   --  Runs the per-subprogram checks: Unused_Parameter and Unused_Variable
+   --  (no reference in either the local declarations or the statements),
+   --  Cyclomatic_Complexity (base 1 plus every decision point in the
+   --  body), Too_Many_Parameters, Deep_Nesting, and No_Multiple_Return.
+   procedure Analyze_Subprogram  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body)
    is
+      Param_Count : Natural := 0;
    begin
-      if Rule_States (Unused_Parameter) = Enabled then
+      if Rule_States (Unused_Parameter) = Enabled
+        or else Rule_States (Too_Many_Parameters) = Enabled
+      then
          for Param of Subprogram.F_Subp_Spec.P_Params loop
             for Id of Param.F_Ids loop
-               declare
-                  Name : constant String := Canonical_Text (Id);
-               begin
-                  if not References_Parameter
-                    (Subprogram.F_Decls, Param, Name)
-                    and then not References_Parameter
-                      (Subprogram.F_Stmts, Param, Name)
-                  then
-                     Report_Rule_Violation
-                       (Unit, Id, Unused_Parameter,
-                        "parameter '" & Node_Text (Id) & "' is never referenced");
-                  end if;
-               end;
+               Param_Count := Param_Count + 1;
+
+               if Rule_States (Unused_Parameter) = Enabled then
+                  declare
+                     Name : constant String := Canonical_Text (Id);
+                  begin
+                     if not References_Named_Declaration
+                       (Subprogram.F_Decls,
+                        Libadalang.Analysis.Basic_Decl (Param), Name)
+                       and then not References_Named_Declaration
+                         (Subprogram.F_Stmts,
+                          Libadalang.Analysis.Basic_Decl (Param), Name)
+                     then
+                        Report_Rule_Violation
+                          (Unit, Id, Unused_Parameter,
+                           "parameter '" & Node_Text (Id) &
+                             "' is never referenced");
+                     end if;
+                  end;
+               end if;
             end loop;
+         end loop;
+      end if;
+
+      if Rule_States (Too_Many_Parameters) = Enabled
+        and then Param_Count > Parameter_Threshold
+      then
+         Report_Rule_Violation
+           (Unit, Subprogram.F_Subp_Spec.P_Name, Too_Many_Parameters,
+            "parameter count " & To_Decimal (Param_Count) &
+              " exceeds threshold " & To_Decimal (Parameter_Threshold));
+      end if;
+
+      if Rule_States (Unused_Variable) = Enabled then
+         for I in 1 .. Subprogram.F_Decls.F_Decls.Children_Count loop
+            declare
+               Item : constant Libadalang.Analysis.Ada_Node :=
+                 Subprogram.F_Decls.F_Decls.Child (I);
+            begin
+               if not Libadalang.Analysis.Is_Null (Item)
+                 and then Item.Kind = Libadalang.Common.Ada_Object_Decl
+               then
+                  declare
+                     Decl : constant Libadalang.Analysis.Object_Decl :=
+                       Item.As_Object_Decl;
+                  begin
+                     for Id of Decl.F_Ids loop
+                        declare
+                           Name : constant String := Canonical_Text (Id);
+                           Basic : constant Libadalang.Analysis.Basic_Decl :=
+                             Libadalang.Analysis.Basic_Decl (Decl);
+                           Used_Elsewhere : Boolean := False;
+                        begin
+                           --  Scan sibling declarations only, skipping this
+                           --  declaration's own node: it always contains
+                           --  Id's defining occurrence, which would
+                           --  otherwise be misread as a use of itself.
+                           for J in 1 .. Subprogram.F_Decls.F_Decls.Children_Count loop
+                              if J /= I
+                                and then References_Named_Declaration
+                                  (Subprogram.F_Decls.F_Decls.Child (J),
+                                   Basic, Name)
+                              then
+                                 Used_Elsewhere := True;
+                                 exit;  --  adalang-analyzer: ignore No_Exit
+                              end if;
+                           end loop;
+
+                           if not Used_Elsewhere
+                             and then not References_Named_Declaration
+                               (Subprogram.F_Stmts, Basic, Name)
+                           then
+                              Report_Rule_Violation
+                                (Unit, Id, Unused_Variable,
+                                 "variable '" & Node_Text (Id) &
+                                   "' is never referenced");
+                           end if;
+                        end;
+                     end loop;
+                  end;
+               end if;
+            end;
          end loop;
       end if;
 
@@ -2134,6 +2726,34 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                   "cyclomatic complexity " & To_Decimal (Complexity)
                   & " exceeds threshold " &
                     To_Decimal (Complexity_Threshold));
+            end if;
+         end;
+      end if;
+
+      if Rule_States (Deep_Nesting) = Enabled then
+         declare
+            Depth : constant Natural :=
+              Max_Nesting_Depth (Subprogram.F_Stmts, 0);
+         begin
+            if Depth > Nesting_Threshold then
+               Report_Rule_Violation
+                 (Unit, Subprogram.F_Subp_Spec.P_Name, Deep_Nesting,
+                  "nesting depth " & To_Decimal (Depth) &
+                    " exceeds threshold " & To_Decimal (Nesting_Threshold));
+            end if;
+         end;
+      end if;
+
+      if Rule_States (No_Multiple_Return) = Enabled then
+         declare
+            Count : constant Natural :=
+              Count_Return_Statements (Subprogram.F_Stmts);
+         begin
+            if Count > 1 then
+               Report_Rule_Violation
+                 (Unit, Subprogram.F_Subp_Spec.P_Name, No_Multiple_Return,
+                  "subprogram has " & To_Decimal (Count) &
+                    " return statements");
             end if;
          end;
       end if;
@@ -2336,6 +2956,17 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "direct equality comparison on floating-point operands");
       end if;
 
+      if Rule_States (Redundant_Boolean_Comparison) = Enabled
+        and then Op in Libadalang.Common.Ada_Op_Eq
+          | Libadalang.Common.Ada_Op_Neq
+        and then (Is_Boolean_Literal (Expr.F_Left)
+                    xor Is_Boolean_Literal (Expr.F_Right))
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Redundant_Boolean_Comparison,
+            "comparison with a boolean literal can be simplified");
+      end if;
+
       if Rule_States (Reversed_Range) = Enabled
         and then Op = Libadalang.Common.Ada_Op_Double_Dot
         and then Left_Int.Known
@@ -2457,9 +3088,11 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       return False;
    end Is_Local_To_Subprogram;
 
-   --  Runs Self_Assignment (target and value are textually identical) and
+   --  Runs Self_Assignment (target and value are textually identical),
    --  Dead_Store (a simple-object assignment with no later read in the
-   --  enclosing subprogram) for one assignment statement.
+   --  enclosing subprogram), and Function_Side_Effect (a function body
+   --  assigning to something other than its own parameters or locals) for
+   --  one assignment statement.
    procedure Analyze_Assignment  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Assign_Stmt)
@@ -2495,6 +3128,32 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                Report_Rule_Violation
                  (Unit, Stmt, Dead_Store,
                   "assigned value is never read later in this subprogram");
+            end if;
+         end;
+      end if;
+
+      if Rule_States (Function_Side_Effect) = Enabled
+        and then Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+      then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Assigned_Declaration (Stmt);
+            Subprogram : constant Libadalang.Analysis.Subp_Body :=
+              Enclosing_Subprogram (Stmt);
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl)
+              and then not Libadalang.Analysis.Is_Null (Subprogram)
+              and then not Libadalang.Analysis.Is_Null (Subprogram.F_Subp_Spec)
+              and then not Libadalang.Analysis.Is_Null
+                (Subprogram.F_Subp_Spec.F_Subp_Kind)
+              and then Subprogram.F_Subp_Spec.F_Subp_Kind.Kind =
+                Libadalang.Common.Ada_Subp_Kind_Function
+              and then not Is_Local_To_Subprogram (Decl, Subprogram)
+            then
+               Report_Rule_Violation
+                 (Unit, Stmt, Function_Side_Effect,
+                  "function assigns to state outside its own parameters " &
+                    "and local variables");
             end if;
          end;
       end if;
@@ -2910,6 +3569,29 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
            & "always true");
       end if;
 
+      if Rule_States (Empty_If_Body) = Enabled
+        and then Alternatives.Children_Count = 0
+        and then Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
+        and then not Has_Substantive_Statement (Stmt.F_Then_Stmts)
+      then
+         Report_Rule_Violation
+           (Unit, Stmt, Empty_If_Body,
+            "if statement has no effect because its body is empty");
+      end if;
+
+      if Rule_States (Unnecessary_Else_After_Return) = Enabled
+        and then Alternatives.Children_Count = 0
+        and then not Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
+        and then Stmt.F_Then_Stmts.Children_Count > 0
+        and then Terminates_Statement
+          (Stmt.F_Then_Stmts.Child (Stmt.F_Then_Stmts.Children_Count))
+      then
+         Report_Rule_Violation
+           (Unit, Stmt.F_Else_Part, Unnecessary_Else_After_Return,
+            "else is unnecessary because the then branch always returns, " &
+              "raises, or exits");
+      end if;
+
       Report_Identical_Statement_Branches (Unit, Stmt);
    end Analyze_If_Statement;
 
@@ -2992,30 +3674,6 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       Report_Identical_Expression_Branches (Unit, Expr);
    end Analyze_If_Expression;
 
-   --  True when List contains anything other than null statements and
-   --  pragmas, i.e. it does real work. Shared by Empty_Loop and the
-   --  exception-handler checks below.
-   function Has_Substantive_Statement
-     (List : Libadalang.Analysis.Stmt_List) return Boolean is
-   begin
-      for I in 1 .. List.Children_Count loop
-         declare
-            Stmt : constant Libadalang.Analysis.Ada_Node := List.Child (I);
-         begin
-            if Libadalang.Analysis.Is_Null (Stmt)
-              or else Stmt.Kind = Libadalang.Common.Ada_Pragma_Node
-              or else Stmt.Kind = Libadalang.Common.Ada_Null_Stmt
-            then
-               null;  --  adalang-analyzer: ignore Null_Statement
-            else
-               return True;
-            end if;
-         end;
-      end loop;
-
-      return False;
-   end Has_Substantive_Statement;
-
    --  Reports Empty_Exception_Handler for any handler with no substantive
    --  body, and Exception_Swallowed specifically for a "when others"
    --  handler with no substantive body (the narrower, more actionable
@@ -3085,22 +3743,47 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
          when Libadalang.Common.Ada_Case_Stmt =>
             Analyze_Case_Statement (Unit, Node.As_Case_Stmt);
 
+         when Libadalang.Common.Ada_Call_Expr =>
+            if Rule_States (No_Recursion) = Enabled then
+               declare
+                  Subprogram : constant Libadalang.Analysis.Subp_Body :=
+                    Enclosing_Subprogram (Node);
+               begin
+                  if not Libadalang.Analysis.Is_Null (Subprogram)
+                    and then Is_Direct_Recursive_Call
+                      (Node.As_Call_Expr, Subprogram)
+                  then
+                     Report_Rule_Violation
+                       (Unit, Node, No_Recursion,
+                        "subprogram calls itself");
+                  end if;
+               end;
+            end if;
+
          when Libadalang.Common.Ada_If_Stmt =>
             Report_Constant_Condition
+              (Unit, Node.As_If_Stmt.F_Cond_Expr);
+            Report_Non_Short_Circuit_Operators
               (Unit, Node.As_If_Stmt.F_Cond_Expr);
             Analyze_If_Statement (Unit, Node.As_If_Stmt);
 
          when Libadalang.Common.Ada_Elsif_Stmt_Part =>
             Report_Constant_Condition
               (Unit, Node.As_Elsif_Stmt_Part.F_Cond_Expr);
+            Report_Non_Short_Circuit_Operators
+              (Unit, Node.As_Elsif_Stmt_Part.F_Cond_Expr);
 
          when Libadalang.Common.Ada_If_Expr =>
             Report_Constant_Condition
+              (Unit, Node.As_If_Expr.F_Cond_Expr);
+            Report_Non_Short_Circuit_Operators
               (Unit, Node.As_If_Expr.F_Cond_Expr);
             Analyze_If_Expression (Unit, Node.As_If_Expr);
 
          when Libadalang.Common.Ada_Elsif_Expr_Part =>
             Report_Constant_Condition
+              (Unit, Node.As_Elsif_Expr_Part.F_Cond_Expr);
+            Report_Non_Short_Circuit_Operators
               (Unit, Node.As_Elsif_Expr_Part.F_Cond_Expr);
 
          when Libadalang.Common.Ada_While_Loop_Stmt =>
@@ -3110,6 +3793,8 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             begin
                if not Libadalang.Analysis.Is_Null (Spec) then
                   Report_Constant_Condition
+                    (Unit, Spec.As_While_Loop_Spec.F_Expr);
+                  Report_Non_Short_Circuit_Operators
                     (Unit, Spec.As_While_Loop_Spec.F_Expr);
                end if;
                if Rule_States (Empty_Loop) = Enabled
@@ -3130,6 +3815,7 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             begin
                if not Libadalang.Analysis.Is_Null (Cond) then
                   Report_Constant_Condition (Unit, Cond);
+                  Report_Non_Short_Circuit_Operators (Unit, Cond);
                end if;
             end;
 
@@ -3234,6 +3920,26 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       if Rule_States (No_Access_To_Subp_Def) = Enabled and then Node.Kind = Libadalang.Common.Ada_Access_To_Subp_Def then
          Report_Rule_Violation (Unit, Node, No_Access_To_Subp_Def,
                                 "access-to-subprogram type definition used");
+      end if;
+      if Rule_States (Address_Clause) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Attribute_Def_Clause
+      then
+         declare
+            Clause     : constant Libadalang.Analysis.Attribute_Def_Clause :=
+              Node.As_Attribute_Def_Clause;
+            Attr_Expr  : constant Libadalang.Analysis.Name :=
+              Clause.F_Attribute_Expr;
+         begin
+            if not Libadalang.Analysis.Is_Null (Attr_Expr)
+              and then Attr_Expr.Kind = Libadalang.Common.Ada_Attribute_Ref
+              and then Normalize_Rule_Name
+                (Node_Text (Attr_Expr.As_Attribute_Ref.F_Attribute)) =
+                "address"
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Address_Clause, "address clause used");
+            end if;
+         end;
       end if;
       if Rule_States (No_Unchecked_Conversion) = Enabled
         and then Node.Kind =
@@ -3744,6 +4450,72 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       end;
    end Load_Project_File;
 
+   --  Runs the checks that scan Filename's raw source text one line at a
+   --  time rather than the parsed AST (Long_Line, Trailing_Whitespace).
+   --  Running independently of Evaluate_Node lets these still report on a
+   --  file that fails to parse. Any I/O failure is swallowed, same as
+   --  Source_Line, since these checks are best-effort and must not abort
+   --  analysis of the rest of the file.
+   procedure Check_Line_Based_Rules (Filename : String) is
+      File        : Ada.Text_IO.File_Type;
+      Line_Number : Natural := 0;
+   begin
+      if Rule_States (Long_Line) /= Enabled
+        and then Rule_States (Trailing_Whitespace) /= Enabled
+      then
+         return;
+      end if;
+
+      Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Filename);
+
+      while not Ada.Text_IO.End_Of_File (File) loop
+         declare
+            Line : constant String := Ada.Text_IO.Get_Line (File);
+         begin
+            Line_Number := Line_Number + 1;
+
+            if Rule_States (Long_Line) = Enabled
+              and then Line'Length > Line_Length_Threshold
+            then
+               Report_Line_Violation
+                 (Filename    => Filename,
+                  Line_Number => Line_Number,
+                  Column      => Line_Length_Threshold + 1,
+                  Caret_Width => Line'Length - Line_Length_Threshold,
+                  Rule        => Long_Line,
+                  Message     => "line length " & To_Decimal (Line'Length) &
+                    " exceeds threshold " & To_Decimal (Line_Length_Threshold));
+            end if;
+
+            if Rule_States (Trailing_Whitespace) = Enabled
+              and then Line'Length > 0
+              and then (Line (Line'Last) = ' '
+                        or else Line (Line'Last) = Ada.Characters.Latin_1.HT)
+            then
+               declare
+                  Trimmed_Length : constant Natural :=
+                    Ada.Strings.Fixed.Trim (Line, Ada.Strings.Right)'Length;
+               begin
+                  Report_Line_Violation
+                    (Filename    => Filename,
+                     Line_Number => Line_Number,
+                     Column      => Trimmed_Length + 1,
+                     Caret_Width => Line'Length - Trimmed_Length,
+                     Rule        => Trailing_Whitespace,
+                     Message     => "line has trailing whitespace");
+               end;
+            end if;
+         end;
+      end loop;
+
+      Ada.Text_IO.Close (File);
+   exception
+      when others =>
+         if Ada.Text_IO.Is_Open (File) then
+            Ada.Text_IO.Close (File);
+         end if;
+   end Check_Line_Based_Rules;
+
    --  Parses one file with Libadalang and, if it parsed cleanly, walks it
    --  with Evaluate_Node. Parse diagnostics are printed but do not stop
    --  the run; any other failure while processing this file is caught so
@@ -3760,6 +4532,8 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
 
       Source_File_Count := Source_File_Count + 1;
       Log_Verbose ("Parsing: " & Filename);
+
+      Check_Line_Based_Rules (Filename);
 
       Unit := Ctx.Get_From_File (Filename);
 
@@ -3838,6 +4612,54 @@ begin
             then
                Set_Complexity_Threshold
                  (Arg (Arg'First + 22 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+            elsif Arg = "-nesting-threshold" then
+               if Current_Arg = Argument_Count then
+                  Ada.Text_IO.Put_Line
+                    ("adalang-analyzer: expected positive threshold value");
+                  Invalid_Options := True;
+               else
+                  Set_Nesting_Threshold
+                    (Ada.Command_Line.Argument (Current_Arg + 1));
+                  Current_Arg := Current_Arg + 1;
+               end if;
+            elsif Arg'Length > 19  --  adalang-analyzer: ignore Magic_Number
+              and then Arg (Arg'First .. Arg'First + 18) =  --  adalang-analyzer: ignore Magic_Number
+                "-nesting-threshold="
+            then
+               Set_Nesting_Threshold
+                 (Arg (Arg'First + 19 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+            elsif Arg = "-parameter-threshold" then
+               if Current_Arg = Argument_Count then
+                  Ada.Text_IO.Put_Line
+                    ("adalang-analyzer: expected positive threshold value");
+                  Invalid_Options := True;
+               else
+                  Set_Parameter_Threshold
+                    (Ada.Command_Line.Argument (Current_Arg + 1));
+                  Current_Arg := Current_Arg + 1;
+               end if;
+            elsif Arg'Length > 21  --  adalang-analyzer: ignore Magic_Number
+              and then Arg (Arg'First .. Arg'First + 20) =  --  adalang-analyzer: ignore Magic_Number
+                "-parameter-threshold="
+            then
+               Set_Parameter_Threshold
+                 (Arg (Arg'First + 21 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+            elsif Arg = "-line-length-threshold" then
+               if Current_Arg = Argument_Count then
+                  Ada.Text_IO.Put_Line
+                    ("adalang-analyzer: expected positive threshold value");
+                  Invalid_Options := True;
+               else
+                  Set_Line_Length_Threshold
+                    (Ada.Command_Line.Argument (Current_Arg + 1));
+                  Current_Arg := Current_Arg + 1;
+               end if;
+            elsif Arg'Length > 23  --  adalang-analyzer: ignore Magic_Number
+              and then Arg (Arg'First .. Arg'First + 22) =  --  adalang-analyzer: ignore Magic_Number
+                "-line-length-threshold="
+            then
+               Set_Line_Length_Threshold
+                 (Arg (Arg'First + 23 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
             elsif Arg = "-P" then
                if Current_Arg = Argument_Count then
                   Ada.Text_IO.Put_Line ("adalang-analyzer: expected argument for -P");
@@ -3930,8 +4752,52 @@ begin
             if Rule_Violations (Rule) > 0 then
                Ada.Text_IO.Put_Line
                  ("  " & Ada.Strings.Unbounded.To_String (Rule_Infos (Rule).Name) &
-                  " : " & To_Decimal (Rule_Violations (Rule)));
+                  " : " & To_Decimal (Rule_Violations (Rule)) & "  [" &
+                  Quality_Name (Rule_Infos (Rule).Quality) & "/" &
+                  Severity_Name (Rule_Infos (Rule).Severity) & "]");
             end if;
+         end loop;
+
+         Ada.Text_IO.Put_Line ("");
+         Ada.Text_IO.Put_Line ("Violations by software quality:");
+
+         for Quality in Software_Quality loop
+            declare
+               Quality_Total : Natural := 0;
+            begin
+               for Rule in Rule_Kind loop
+                  if Rule_Infos (Rule).Quality = Quality then
+                     Quality_Total := Quality_Total + Rule_Violations (Rule);
+                  end if;
+               end loop;
+
+               if Quality_Total > 0 then
+                  Ada.Text_IO.Put_Line
+                    ("  " & Quality_Name (Quality) & " : " &
+                     To_Decimal (Quality_Total));
+               end if;
+            end;
+         end loop;
+
+         Ada.Text_IO.Put_Line ("");
+         Ada.Text_IO.Put_Line ("Violations by severity:");
+
+         for Severity in Issue_Severity loop
+            declare
+               Severity_Total : Natural := 0;
+            begin
+               for Rule in Rule_Kind loop
+                  if Rule_Infos (Rule).Severity = Severity then
+                     Severity_Total := Severity_Total + Rule_Violations (Rule);
+                  end if;
+               end loop;
+
+               if Severity_Total > 0 then
+                  Ada.Text_IO.Put_Line
+                    ("  " & Severity_Name (Severity) & " : " &
+                     To_Decimal (Severity_Total));
+               end if;
+            end;
          end loop;
       end if;
    end if;

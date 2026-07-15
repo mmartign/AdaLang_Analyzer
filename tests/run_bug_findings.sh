@@ -86,4 +86,43 @@ then
    exit 1
 fi
 
+new_checks='No_Recursion,No_Multiple_Return,Non_Short_Circuit_Condition,Address_Clause,Too_Many_Parameters,Deep_Nesting,Unused_Variable,Empty_If_Body,Unnecessary_Else_After_Return,Function_Side_Effect,Redundant_Boolean_Comparison,Long_Line,Trailing_Whitespace'
+new_checks_opts='-parameter-threshold=3 -nesting-threshold=3 -line-length-threshold=80'
+if "$analyzer" $new_checks_opts -checks="$new_checks" \
+     tests/new_checks_findings.adb >"$output" 2>&1
+then
+   echo "expected new_checks_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+for rule in \
+   No_Recursion \
+   No_Multiple_Return \
+   Non_Short_Circuit_Condition \
+   Address_Clause \
+   Too_Many_Parameters \
+   Deep_Nesting \
+   Unused_Variable \
+   Empty_If_Body \
+   Unnecessary_Else_After_Return \
+   Function_Side_Effect \
+   Redundant_Boolean_Comparison \
+   Long_Line \
+   Trailing_Whitespace
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "missing expected finding: $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if ! "$analyzer" -q $new_checks_opts -checks="$new_checks" \
+     tests/new_checks_clean.adb
+then
+   echo "new_checks_clean.adb unexpectedly produced a violation" >&2
+   "$analyzer" $new_checks_opts -checks="$new_checks" tests/new_checks_clean.adb >&2 || true
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"
