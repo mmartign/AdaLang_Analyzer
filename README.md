@@ -114,11 +114,31 @@ Checks can also be toggled with `+R<check>` and `-R<check>` switches:
   +RNo_Goto +RDivision_By_Zero src/main.adb
 ```
 
+Analyze the sources declared by a GNAT project file instead of listing
+files individually:
+
+```sh
+./bin/adalang_analyzer -checks='*' -P adalang_analyzer.gpr
+```
+
+`-P<project>.gpr` and `-P <project>.gpr` are both accepted, and any file
+names given on the command line are analyzed together with the project's
+sources. This is a lightweight, best-effort project reader rather than a
+full GPR implementation: it understands literal `for Source_Dirs use (...)`,
+`for Source_Files use (...)`, `for Excluded_Source_Files use (...)` (and its
+`Locally_Removed_Files` alias) attributes, recursive source directories
+written with a trailing `**`, and project extension via `extends "..."`
+(the extending project's sources take priority over same-named files
+inherited from the base project). Scenario variables, `case` statements,
+and sources pulled in through `with` of other project files are not
+evaluated.
+
 Useful options include:
 
 ```text
 -h, --help       Show command help
 -version         Show the version
+-P<project>.gpr  Analyze the sources of a GNAT project file
 -list-checks     List all available checks
 -checks=<list>   Enable or disable a comma-separated set of checks
 -complexity-threshold=<n>
