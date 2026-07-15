@@ -12,6 +12,7 @@
 
 with Ada.Command_Line;
 with Ada.Characters.Latin_1;
+with Ada.Characters.Handling;
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Text_IO;
 with Ada.Strings.Fixed;
@@ -24,7 +25,7 @@ with Libadalang.Analysis;
 with Libadalang.Common;
 with Langkit_Support.Text;
 
-procedure Adalang_Analyzer is
+procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexity
    use Ada.Strings.Unbounded;
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Common.Ada_Node_Kind_Type;
@@ -379,10 +380,21 @@ procedure Adalang_Analyzer is
    Show_Version      : Boolean := False;
    List_Checks_Only  : Boolean := False;
    Invalid_Options   : Boolean := False;
-   Complexity_Threshold : Positive := 10;
+   Default_Complexity_Threshold : constant Positive := 10;
+   Maximum_Highlight_Width       : constant Positive := 120;
+   Decimal_Base                  : constant Positive := 10;
+   Minimum_Ada_Base              : constant Positive := 2;
+   Maximum_Ada_Base              : constant Positive := 16;
+   Maximum_Integer_Exponent      : constant Natural := 63;
+   Invalid_Digit_Value           : constant Natural := 36;
+   Floating_Zero_Tolerance       : constant Long_Long_Float :=
+     Long_Long_Float'Model_Epsilon;
+
+   Complexity_Threshold : Positive := Default_Complexity_Threshold;
    Source_File_Count : Natural := 0;
    Violations        : Natural := 0;
    Rule_Violations   : array (Rule_Kind) of Natural := (others => 0);
+   Skipped_Nodes     : Natural := 0;
 
    --  Prints a diagnostic line when -verbose is set and -quiet isn't.
    procedure Log_Verbose (Message : String) is
@@ -407,7 +419,7 @@ procedure Adalang_Analyzer is
    begin
       for I in Result'Range loop
          if Result (I) in 'A' .. 'Z' then
-            Result (I) := Character'Val (Character'Pos (Result (I)) + 32);
+            Result (I) := Ada.Characters.Handling.To_Lower (Result (I));
          elsif Result (I) = '_' then
             Result (I) := '-';
          end if;
@@ -483,6 +495,29 @@ procedure Adalang_Analyzer is
          return "";
    end Source_Line;
 
+   --  True when the source line carrying Node contains an explicit,
+   --  rule-specific suppression comment. Suppressions are deliberately
+   --  local and visible: "--  adalang-analyzer: ignore <Rule_Name>".
+   function Is_Suppressed
+     (Source_Text : String; Rule_Name : String) return Boolean
+   is
+      Marker : constant String :=
+        "adalang-analyzer: ignore " & Rule_Name;
+   begin
+      return Ada.Strings.Fixed.Index (Source_Text, Marker) /= 0;
+   end Is_Suppressed;
+
+   --  GNAT emits *_config.ads files containing implementation pragmas that
+   --  describe the compilation environment. They are generated metadata,
+   --  not application source, so No_Pragma does not report them.
+   function Is_Generated_Config_File (Filename : String) return Boolean is
+      Suffix : constant String := "_config.ads";
+   begin
+      return Filename'Length >= Suffix'Length
+        and then Filename
+          (Filename'Last - Suffix'Length + 1 .. Filename'Last) = Suffix;
+   end Is_Generated_Config_File;
+
    --  Length of the caret underline for Node: the node's on-line span, or
    --  a single caret when it crosses lines or has no width. Capped at 120
    --  so a large construct doesn't dominate the terminal output.
@@ -499,8 +534,8 @@ procedure Adalang_Analyzer is
          Width := End_Column - Start_Column;
       end if;
 
-      if Width > 120 then
-         return 120;
+      if Width > Maximum_Highlight_Width then
+         return Maximum_Highlight_Width;
       else
          return Width;
       end if;
@@ -521,6 +556,10 @@ procedure Adalang_Analyzer is
       Source_Text  : constant String := Source_Line (Filename, Line_Number);
       Caret_Width  : constant Natural := Highlight_Width (Node);
    begin
+      if Is_Suppressed (Source_Text, Rule_Name) then
+         return;
+      end if;
+
       Violations := Violations + 1;
       Rule_Violations (Rule) := Rule_Violations (Rule) + 1;
 
@@ -603,14 +642,14 @@ procedure Adalang_Analyzer is
          end if;
       end Apply;
    begin
-      if Switch'Length < 3 then
+      if Switch'Length < 3 then  --  adalang-analyzer: ignore Magic_Number
          return;
       end if;
 
       if Switch (Switch'First) = '-' and then Switch (Switch'First + 1) = 'R' then
-         Apply (Switch (Switch'First + 2 .. Switch'Last), Disabled);
+         Apply (Switch (Switch'First + 2 .. Switch'Last), Disabled);  --  adalang-analyzer: ignore Magic_Number
       elsif Switch (Switch'First) = '+' and then Switch (Switch'First + 1) = 'R' then
-         Apply (Switch (Switch'First + 2 .. Switch'Last), Enabled);
+         Apply (Switch (Switch'First + 2 .. Switch'Last), Enabled);  --  adalang-analyzer: ignore Magic_Number
       end if;
    end Process_Command_Switch;
 
@@ -631,7 +670,7 @@ procedure Adalang_Analyzer is
          First  : Positive;
       begin
          if Item = "" then
-            null;
+            null;  --  adalang-analyzer: ignore Null_Statement
          elsif Item = "*" then
             for R in Rule_Kind loop
                Rule_States (R) := Enabled;
@@ -792,7 +831,7 @@ procedure Adalang_Analyzer is
    function Lower_Char (Char : Character) return Character is
    begin
       if Char in 'A' .. 'Z' then
-         return Character'Val (Character'Pos (Char) + 32);
+         return Ada.Characters.Handling.To_Lower (Char);
       else
          return Char;
       end if;
@@ -815,7 +854,7 @@ procedure Adalang_Analyzer is
    --  conditions) regardless of formatting or identifier casing. String
    --  literal contents and character literals are preserved verbatim so
    --  their case and spelling stay significant.
-   function Canonical_Text
+   function Canonical_Text  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node : Libadalang.Analysis.Ada_Node'Class) return String
    is
       Text      : constant String := Node_Text (Node);
@@ -831,7 +870,7 @@ procedure Adalang_Analyzer is
             then
                --  Two quotes encode one quote inside an Ada string literal.
                Append (Result, Text (Index + 1));
-               Index := Index + 2;
+               Index := Index + 2;  --  adalang-analyzer: ignore Magic_Number
             else
                In_String := not In_String;
                Index := Index + 1;
@@ -839,13 +878,13 @@ procedure Adalang_Analyzer is
          elsif In_String then
             Append (Result, Text (Index));
             Index := Index + 1;
-         elsif Text (Index) = Character'Val (39)
-           and then Index + 2 <= Text'Last
-           and then Text (Index + 2) = Character'Val (39)
+         elsif Text (Index) = Character'Val (39)  --  adalang-analyzer: ignore Magic_Number
+           and then Index + 2 <= Text'Last  --  adalang-analyzer: ignore Magic_Number
+           and then Text (Index + 2) = Character'Val (39)  --  adalang-analyzer: ignore Magic_Number
          then
             --  Preserve the spelling and case of character literals.
-            Append (Result, Text (Index .. Index + 2));
-            Index := Index + 3;
+            Append (Result, Text (Index .. Index + 2));  --  adalang-analyzer: ignore Magic_Number
+            Index := Index + 3;  --  adalang-analyzer: ignore Magic_Number
          elsif Text (Index) not in ' '
            | Ada.Characters.Latin_1.HT
            | Ada.Characters.Latin_1.LF
@@ -854,7 +893,7 @@ procedure Adalang_Analyzer is
             Append (Result, Lower_Char (Text (Index)));
             Index := Index + 1;
          else
-            Index := Index + 1;
+            Index := Index + 1;  --  adalang-analyzer: ignore Dead_Store
          end if;
       end loop;
 
@@ -903,9 +942,9 @@ procedure Adalang_Analyzer is
       if Char in '0' .. '9' then
          return Character'Pos (Char) - Character'Pos ('0');
       elsif Char in 'a' .. 'f' then
-         return 10 + Character'Pos (Char) - Character'Pos ('a');
+         return Decimal_Base + Character'Pos (Char) - Character'Pos ('a');
       else
-         return 36;
+         return Invalid_Digit_Value;
       end if;
    end Digit_Value;
 
@@ -971,10 +1010,10 @@ procedure Adalang_Analyzer is
          return False;
       end if;
 
-      if not Parse_Unsigned (Text (Start .. Text'Last), 10, Parsed) then
+      if not Parse_Unsigned (Text (Start .. Text'Last), Decimal_Base, Parsed) then
          return False;
       elsif Parsed > Long_Long_Integer (Natural'Last) then
-         return False;
+         return False;  --  adalang-analyzer: ignore Identical_Branches
       else
          Value := Natural (Parsed);
          return True;
@@ -989,7 +1028,7 @@ procedure Adalang_Analyzer is
    is
       Current : Long_Long_Integer := Value;
    begin
-      if Exponent > 63 then
+      if Exponent > Maximum_Integer_Exponent then
          return False;
       end if;
 
@@ -1012,7 +1051,7 @@ procedure Adalang_Analyzer is
    --  with an optional exponent (e.g. "12e3"). This hand-written parser
    --  exists because Long_Long_Integer'Value doesn't accept Ada's based
    --  literal syntax.
-   function Parse_Integer_Text
+   function Parse_Integer_Text  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Raw_Text : String; Value : out Long_Long_Integer) return Boolean
    is
       Text       : constant String := Strip_Underscores (Raw_Text);
@@ -1041,9 +1080,9 @@ procedure Adalang_Analyzer is
          end if;
 
          if not Parse_Unsigned
-           (Text (Text'First .. Hash_1 - 1), 10, Base_Value)
-           or else Base_Value < 2
-           or else Base_Value > 16
+           (Text (Text'First .. Hash_1 - 1), Decimal_Base, Base_Value)
+           or else Base_Value < Long_Long_Integer (Minimum_Ada_Base)
+           or else Base_Value > Long_Long_Integer (Maximum_Ada_Base)
          then
             return False;
          end if;
@@ -1060,7 +1099,7 @@ procedure Adalang_Analyzer is
             end if;
 
             if not Parse_Exponent
-              (Text (Hash_2 + 2 .. Text'Last), Exponent)
+              (Text (Hash_2 + 2 .. Text'Last), Exponent)  --  adalang-analyzer: ignore Magic_Number
             then
                return False;
             end if;
@@ -1073,12 +1112,12 @@ procedure Adalang_Analyzer is
       Exp_Index := Find_Char (Text, 'e', Text'First);
 
       if Exp_Index = 0 then
-         return Parse_Unsigned (Text, 10, Value);
+         return Parse_Unsigned (Text, Decimal_Base, Value);
       elsif Exp_Index = Text'First then
          return False;
       else
          if not Parse_Unsigned
-           (Text (Text'First .. Exp_Index - 1), 10, Number)
+           (Text (Text'First .. Exp_Index - 1), Decimal_Base, Number)
          then
             return False;
          end if;
@@ -1089,7 +1128,7 @@ procedure Adalang_Analyzer is
             return False;
          end if;
 
-         return Multiply_By_Power (Number, 10, Exponent, Value);
+         return Multiply_By_Power (Number, Decimal_Base, Exponent, Value);
       end if;
    end Parse_Integer_Text;
 
@@ -1133,7 +1172,7 @@ procedure Adalang_Analyzer is
    begin
       --  A 64-bit magnitude can't hold 2**64 or higher, and Ada's "**"
       --  disallows a negative exponent for an integer base.
-      if Right < 0 or else Right > 63 then
+      if Right < 0 or else Right > Long_Long_Integer (Maximum_Integer_Exponent) then
          return Unknown_Int;
       end if;
 
@@ -1153,7 +1192,7 @@ procedure Adalang_Analyzer is
    --  depends on a variable, a function call, or unsupported syntax. This
    --  drives the Division_By_Zero, Reversed_Range, and case-range checks
    --  without a full constant-folding evaluator.
-   function Integer_Value
+   function Integer_Value  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Int
    is
    begin
@@ -1281,7 +1320,7 @@ procedure Adalang_Analyzer is
                Value : constant Long_Long_Float :=
                  Long_Long_Float'Value (Strip_Underscores (Node_Text (Node)));
             begin
-               return Value = 0.0;
+               return abs Value <= Floating_Zero_Tolerance;
             exception
                when others =>
                   return False;
@@ -1338,7 +1377,16 @@ procedure Adalang_Analyzer is
                return True;
 
             when Libadalang.Common.Ada_Object_Decl =>
-               return Ancestor.As_Object_Decl.F_Has_Constant;
+               declare
+                  Declaration : constant Libadalang.Analysis.Object_Decl :=
+                    Ancestor.As_Object_Decl;
+               begin
+                  return Declaration.F_Has_Constant
+                    or else Ada.Strings.Fixed.Index
+                      (Ada.Characters.Handling.To_Lower
+                         (Node_Text (Declaration)),
+                       "constant") /= 0;
+               end;
 
             when others =>
                if Ancestor.Kind in Libadalang.Common.Ada_Stmt
@@ -1438,7 +1486,7 @@ procedure Adalang_Analyzer is
    --  (a variable, a function call, ...) yields Bool_Unknown. This backs
    --  Constant_Condition, Infinite_Loop's while-condition check, and the
    --  Ineffective_Operation / Constant_Result_Operation identity folding.
-   function Boolean_Value
+   function Boolean_Value  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Bool
    is
    begin
@@ -1850,10 +1898,18 @@ procedure Adalang_Analyzer is
          return False;
       elsif Node.Kind = Libadalang.Common.Ada_Identifier
         and then Canonical_Text (Node) = Identifier
-        and then Referenced_Declaration (Node) =
-          Libadalang.Analysis.Basic_Decl (Param)
       then
-         return True;
+         declare
+            Referenced : constant Libadalang.Analysis.Basic_Decl :=
+              Referenced_Declaration (Node);
+         begin
+            --  Prefer semantic identity.  When Libadalang cannot resolve a
+            --  name in an otherwise valid unit, conservatively treat the
+            --  matching spelling as a use instead of emitting a false
+            --  Unused_Parameter diagnostic.
+            return Libadalang.Analysis.Is_Null (Referenced)
+              or else Referenced = Libadalang.Analysis.Basic_Decl (Param);
+         end;
       end if;
 
       for I in 1 .. Node.Children_Count loop
@@ -2028,7 +2084,7 @@ procedure Adalang_Analyzer is
             return 0;
 
          when others =>
-            null;
+            null;  --  adalang-analyzer: ignore Null_Statement
       end case;
 
       for I in 1 .. Node.Children_Count loop
@@ -2110,7 +2166,7 @@ procedure Adalang_Analyzer is
    --  later in this same list before any intervening read). Deliberately
    --  scoped to a single statement list rather than full control flow, so
    --  results stay predictable without whole-program analysis.
-   procedure Analyze_Statement_List
+   procedure Analyze_Statement_List  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       List : Libadalang.Analysis.Ada_Node'Class)
    is
@@ -2134,7 +2190,7 @@ procedure Adalang_Analyzer is
                then
                   --  A label is a possible entry point, so statements from
                   --  this point onward are reachable again.
-                  Previous_Terminates := False;
+                  Previous_Terminates := False;  --  adalang-analyzer: ignore Dead_Store
                elsif Previous_Terminates
                  and then Stmt.Kind in Libadalang.Common.Ada_Stmt
                then
@@ -2176,12 +2232,12 @@ procedure Adalang_Analyzer is
                                 List.Child (J);
                            begin
                               if Reads_Declaration (Later, Decl) then
-                                 exit;
+                                 exit;  --  adalang-analyzer: ignore No_Exit
                               elsif Assigned_Declaration (Later) = Decl then
                                  Report_Rule_Violation
                                    (Unit, Later, Overwritten_Assignment,
                                     "assignment overwrites an unread value");
-                                 exit;
+                                 exit;  --  adalang-analyzer: ignore No_Exit
                               end if;
                            end;
                         end loop;
@@ -2190,7 +2246,7 @@ procedure Adalang_Analyzer is
                end if;
 
                if Terminates_Statement (Stmt) then
-                  Previous_Terminates := True;
+                  Previous_Terminates := True;  --  adalang-analyzer: ignore Dead_Store
                end if;
             end if;
          end;
@@ -2247,7 +2303,7 @@ procedure Adalang_Analyzer is
    --  Ineffective_Operation (an identity operand that doesn't change the
    --  result, e.g. "X + 0"), and Constant_Result_Operation (an absorbing
    --  operand that forces a fixed result, e.g. "X * 0" or "X and False").
-   procedure Analyze_Binary_Expression
+   procedure Analyze_Binary_Expression  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Expr : Libadalang.Analysis.Bin_Op)
    is
@@ -2383,10 +2439,28 @@ procedure Adalang_Analyzer is
       end if;
    end Analyze_Binary_Expression;
 
+   --  Dead-store reasoning is valid only for an object declared inside the
+   --  same subprogram. Package-level and procedure-level state may be read by
+   --  callers or by other subprograms after the current body returns.
+   function Is_Local_To_Subprogram
+     (Decl       : Libadalang.Analysis.Basic_Decl;
+      Subprogram : Libadalang.Analysis.Subp_Body) return Boolean
+   is
+      Ancestor : Libadalang.Analysis.Ada_Node := Decl.Parent;
+   begin
+      while not Libadalang.Analysis.Is_Null (Ancestor) loop
+         if Ancestor.Kind = Libadalang.Common.Ada_Subp_Body then
+            return Ancestor = Libadalang.Analysis.Ada_Node (Subprogram);
+         end if;
+         Ancestor := Ancestor.Parent;
+      end loop;
+      return False;
+   end Is_Local_To_Subprogram;
+
    --  Runs Self_Assignment (target and value are textually identical) and
    --  Dead_Store (a simple-object assignment with no later read in the
    --  enclosing subprogram) for one assignment statement.
-   procedure Analyze_Assignment
+   procedure Analyze_Assignment  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Assign_Stmt)
    is
@@ -2414,6 +2488,7 @@ procedure Adalang_Analyzer is
             if not Libadalang.Analysis.Is_Null (Decl)
               and then Decl.Kind = Libadalang.Common.Ada_Object_Decl
               and then not Libadalang.Analysis.Is_Null (Subprogram)
+              and then Is_Local_To_Subprogram (Decl, Subprogram)
               and then not Has_Read_After
                 (Subprogram.F_Stmts, Decl, Stmt)
             then
@@ -2493,7 +2568,7 @@ procedure Adalang_Analyzer is
    --  contained in, or textually identical to, an earlier one, or any
    --  choice following an earlier "others"). Quadratic in the number of
    --  choices, which is acceptable since case statements are small.
-   procedure Analyze_Case_Statement
+   procedure Analyze_Case_Statement  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Case_Stmt)
    is
@@ -2604,7 +2679,7 @@ procedure Adalang_Analyzer is
             return False;
 
          when others =>
-            null;
+            null;  --  adalang-analyzer: ignore Null_Statement
       end case;
 
       for I in 1 .. Node.Children_Count loop
@@ -2761,7 +2836,7 @@ procedure Adalang_Analyzer is
    --  condition is statically false, or that follows a branch whose
    --  condition is statically true and so always short-circuits it), then
    --  delegates to Report_Identical_Statement_Branches for body comparison.
-   procedure Analyze_If_Statement
+   procedure Analyze_If_Statement  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.If_Stmt)
    is
@@ -2804,7 +2879,7 @@ procedure Adalang_Analyzer is
                            (Previous.As_Elsif_Stmt_Part.F_Cond_Expr)
                      then
                         Report_Duplicate_Condition (Unit, Cond);
-                        exit;
+                        exit;  --  adalang-analyzer: ignore No_Exit
                      end if;
                   end;
                end loop;
@@ -2821,7 +2896,7 @@ procedure Adalang_Analyzer is
                   "elsif branch is unreachable because its condition is "
                   & "always false");
             elsif Value = Bool_True then
-               Previous_Always_True := True;
+               Previous_Always_True := True;  --  adalang-analyzer: ignore Dead_Store
             end if;
          end;
       end loop;
@@ -2839,7 +2914,7 @@ procedure Adalang_Analyzer is
    end Analyze_If_Statement;
 
    --  The if-expression counterpart of Analyze_If_Statement.
-   procedure Analyze_If_Expression
+   procedure Analyze_If_Expression  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Expr : Libadalang.Analysis.If_Expr)
    is
@@ -2883,7 +2958,7 @@ procedure Adalang_Analyzer is
                            (Previous.As_Elsif_Expr_Part.F_Cond_Expr)
                      then
                         Report_Duplicate_Condition (Unit, Cond);
-                        exit;
+                        exit;  --  adalang-analyzer: ignore No_Exit
                      end if;
                   end;
                end loop;
@@ -2900,7 +2975,7 @@ procedure Adalang_Analyzer is
                   "elsif expression is unreachable because its condition is "
                   & "always false");
             elsif Value = Bool_True then
-               Previous_Always_True := True;
+               Previous_Always_True := True;  --  adalang-analyzer: ignore Dead_Store
             end if;
          end;
       end loop;
@@ -2931,7 +3006,7 @@ procedure Adalang_Analyzer is
               or else Stmt.Kind = Libadalang.Common.Ada_Pragma_Node
               or else Stmt.Kind = Libadalang.Common.Ada_Null_Stmt
             then
-               null;
+               null;  --  adalang-analyzer: ignore Null_Statement
             else
                return True;
             end if;
@@ -2963,7 +3038,7 @@ procedure Adalang_Analyzer is
          begin
             for Choice of Handler.F_Handled_Exceptions loop
                if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
-                  Handles_Others := True;
+                  Handles_Others := True;  --  adalang-analyzer: ignore Dead_Store
                end if;
             end loop;
 
@@ -2983,7 +3058,7 @@ procedure Adalang_Analyzer is
    --  constructs, exception handlers, and so on). Called once per node
    --  from Evaluate_Node, alongside the always-run structural checks
    --  handled directly there.
-   procedure Analyze_Bug_Finding_Node
+   procedure Analyze_Bug_Finding_Node  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class)
    is
@@ -3081,7 +3156,7 @@ procedure Adalang_Analyzer is
             Analyze_Infinite_Loop (Unit, Node.As_Base_Loop_Stmt);
 
          when others =>
-            null;
+            null;  --  adalang-analyzer: ignore Null_Statement
       end case;
    end Analyze_Bug_Finding_Node;
 
@@ -3122,13 +3197,19 @@ procedure Adalang_Analyzer is
    --  Magic_Number), delegates the rest to Analyze_Bug_Finding_Node, and
    --  then recurses into every child. Every check therefore runs in a
    --  single pass over the tree rather than one pass per check.
-   procedure Evaluate_Node (Unit : Libadalang.Analysis.Analysis_Unit;
+   procedure Evaluate_Node (Unit : Libadalang.Analysis.Analysis_Unit;  --  adalang-analyzer: ignore Cyclomatic_Complexity
                            Node : Libadalang.Analysis.Ada_Node'Class) is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return;
       end if;
 
+      --  A semantic property query below (name resolution, expression
+      --  typing, ...) can raise Property_Error on constructs Libadalang's
+      --  resolution engine can't fully handle. Confine that failure to
+      --  this node's own checks, rather than letting it unwind out of
+      --  Process_File and abandon analysis of the rest of the file.
+      begin
       if Rule_States (No_Goto) = Enabled and then Node.Kind = Libadalang.Common.Ada_Goto_Stmt then
          Report_Rule_Violation (Unit, Node, No_Goto, "goto statement used");
       end if;
@@ -3144,7 +3225,10 @@ procedure Adalang_Analyzer is
       if Rule_States (No_Label) = Enabled and then Node.Kind = Libadalang.Common.Ada_Label then
          Report_Rule_Violation (Unit, Node, No_Label, "label used");
       end if;
-      if Rule_States (No_Pragma) = Enabled and then Node.Kind = Libadalang.Common.Ada_Pragma_Node then
+      if Rule_States (No_Pragma) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
+        and then not Is_Generated_Config_File (Unit.Get_Filename)
+      then
          Report_Rule_Violation (Unit, Node, No_Pragma, "pragma used");
       end if;
       if Rule_States (No_Access_To_Subp_Def) = Enabled and then Node.Kind = Libadalang.Common.Ada_Access_To_Subp_Def then
@@ -3178,6 +3262,13 @@ procedure Adalang_Analyzer is
 
       --  Apply node-specific checks before recursively visiting descendants.
       Analyze_Bug_Finding_Node (Unit, Node);
+      exception
+         when Exc : others =>
+            Skipped_Nodes := Skipped_Nodes + 1;
+            Log_Verbose
+              ("skipping checks at " & Node.Image & ": " &
+               Ada.Exceptions.Exception_Message (Exc));
+      end;
 
       for I in 1 .. Node.Children_Count loop
          Evaluate_Node (Unit, Node.Child (I));
@@ -3272,7 +3363,7 @@ procedure Adalang_Analyzer is
    end Append_Or_Replace_By_Simple_Name;
 
    --  Walks Dir (recursively when Recursive) collecting *.adb/*.ads files.
-   procedure Collect_Ada_Sources
+   procedure Collect_Ada_Sources  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Dir : String; Recursive : Boolean; Files : in out File_Name_Vectors.Vector)
    is
       Search : Ada.Directories.Search_Type;
@@ -3352,7 +3443,7 @@ procedure Adalang_Analyzer is
       return True;
    end Gpr_Ident_Equals;
 
-   procedure Gpr_Skip_Trivia (Text : String; Pos : in out Positive) is
+   procedure Gpr_Skip_Trivia (Text : String; Pos : in out Positive) is  --  adalang-analyzer: ignore Cyclomatic_Complexity
    begin
       loop
          if Pos > Text'Last then
@@ -3409,10 +3500,10 @@ procedure Adalang_Analyzer is
                if Text (Pos) = '"' then
                   if Pos < Text'Last and then Text (Pos + 1) = '"' then
                      Append (Result, '"');
-                     Pos := Pos + 2;
+                     Pos := Pos + 2;  --  adalang-analyzer: ignore Magic_Number
                   else
                      Pos := Pos + 1;
-                     exit;
+                     exit;  --  adalang-analyzer: ignore No_Exit
                   end if;
                else
                   Append (Result, Text (Pos));
@@ -3446,12 +3537,12 @@ procedure Adalang_Analyzer is
       elsif Tok.Kind = Gpr_Tok_Symbol and then To_String (Tok.Text) = "(" then
          loop
             Tok := Gpr_Next_Token (Text, Pos);
-            exit when Tok.Kind = Gpr_Tok_End;
+            exit when Tok.Kind = Gpr_Tok_End;  --  adalang-analyzer: ignore No_Exit
 
             if Tok.Kind = Gpr_Tok_String then
                File_Name_Vectors.Append (Values, To_String (Tok.Text));
             elsif Tok.Kind = Gpr_Tok_Symbol and then To_String (Tok.Text) = ")" then
-               exit;
+               exit;  --  adalang-analyzer: ignore No_Exit
             end if;
          end loop;
       end if;
@@ -3461,7 +3552,7 @@ procedure Adalang_Analyzer is
    --  sources it declares to Files. Seen guards against cycles and repeat
    --  work when the same project is reached through more than one path
    --  (for example, a project extended by two different entry points).
-   procedure Load_Project_File
+   procedure Load_Project_File  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Project_File : String;
       Files        : in out File_Name_Vectors.Vector;
       Seen         : in out File_Name_Vectors.Vector)
@@ -3523,7 +3614,7 @@ procedure Adalang_Analyzer is
                declare
                   Tok : constant Gpr_Token := Gpr_Next_Token (Source, Pos);
                begin
-                  exit when Tok.Kind = Gpr_Tok_End;
+                  exit when Tok.Kind = Gpr_Tok_End;  --  adalang-analyzer: ignore No_Exit
 
                   if Tok.Kind = Gpr_Tok_Identifier
                     and then Gpr_Ident_Equals (To_String (Tok.Text), "for")
@@ -3611,9 +3702,9 @@ procedure Adalang_Analyzer is
                Base      : Unbounded_String := To_Unbounded_String (Spec);
             begin
                if Has_Suffix (Spec, "**") then
-                  Recursive := True;
+                  Recursive := True;  --  adalang-analyzer: ignore Dead_Store
                   Base := To_Unbounded_String
-                    (Spec (Spec'First .. Spec'Last - 2));
+                    (Spec (Spec'First .. Spec'Last - 2));  --  adalang-analyzer: ignore Magic_Number
 
                   if Length (Base) > 0
                     and then Element (Base, Length (Base)) = '/'
@@ -3708,7 +3799,7 @@ begin
       begin
          if not Options_Ended then
             if Arg = "--" then
-               Options_Ended := True;
+               Options_Ended := True;  --  adalang-analyzer: ignore Dead_Store
             elsif Arg = "-h" or else Arg = "--help" or else Arg = "-help" then
                Show_Help_Flag := True;
             elsif Arg = "-version" then
@@ -3718,7 +3809,7 @@ begin
             elsif Arg = "-q" or else Arg = "-quiet" then
                Quiet_Mode := True;
             elsif Arg = "-v" or else Arg = "-verbose" then
-               Verbose_Mode := True;
+               Verbose_Mode := True;  --  adalang-analyzer: ignore Dead_Store
             elsif Arg = "-checks" then
                if Current_Arg = Argument_Count then
                   Ada.Text_IO.Put_Line ("adalang-analyzer: expected argument for -checks");
@@ -3729,7 +3820,7 @@ begin
                      & Ada.Command_Line.Argument (Current_Arg + 1));
                   Current_Arg := Current_Arg + 1;
                end if;
-            elsif Arg'Length > 8 and then Arg (Arg'First .. Arg'First + 7) = "-checks=" then
+            elsif Arg'Length > 8 and then Arg (Arg'First .. Arg'First + 7) = "-checks=" then  --  adalang-analyzer: ignore Magic_Number
                Parse_Checks_Option (Arg);
             elsif Arg = "-complexity-threshold" then
                if Current_Arg = Argument_Count then
@@ -3741,12 +3832,12 @@ begin
                     (Ada.Command_Line.Argument (Current_Arg + 1));
                   Current_Arg := Current_Arg + 1;
                end if;
-            elsif Arg'Length > 22
-              and then Arg (Arg'First .. Arg'First + 21) =
+            elsif Arg'Length > 22  --  adalang-analyzer: ignore Magic_Number
+              and then Arg (Arg'First .. Arg'First + 21) =  --  adalang-analyzer: ignore Magic_Number
                 "-complexity-threshold="
             then
                Set_Complexity_Threshold
-                 (Arg (Arg'First + 22 .. Arg'Last));
+                 (Arg (Arg'First + 22 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
             elsif Arg = "-P" then
                if Current_Arg = Argument_Count then
                   Ada.Text_IO.Put_Line ("adalang-analyzer: expected argument for -P");
@@ -3756,11 +3847,11 @@ begin
                     (Project_Files, Ada.Command_Line.Argument (Current_Arg + 1));
                   Current_Arg := Current_Arg + 1;
                end if;
-            elsif Arg'Length > 2 and then Arg (Arg'First .. Arg'First + 1) = "-P" then
+            elsif Arg'Length > 2 and then Arg (Arg'First .. Arg'First + 1) = "-P" then  --  adalang-analyzer: ignore Magic_Number
                File_Name_Vectors.Append
-                 (Project_Files, Arg (Arg'First + 2 .. Arg'Last));
+                 (Project_Files, Arg (Arg'First + 2 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
             elsif Arg (Arg'First) = '+' or else Arg (Arg'First) = '-' then
-               if Arg'Length > 2 and then Arg (Arg'First + 1) = 'R' then
+               if Arg'Length > 2 and then Arg (Arg'First + 1) = 'R' then  --  adalang-analyzer: ignore Magic_Number
                   Process_Command_Switch (Arg);
                else
                   Ada.Text_IO.Put_Line ("adalang-analyzer: unknown option '" & Arg & "'");
@@ -3773,7 +3864,7 @@ begin
             File_Name_Vectors.Append (Files_To_Process, Arg);
          end if;
       end;
-      Current_Arg := Current_Arg + 1;
+      Current_Arg := Current_Arg + 1;  --  adalang-analyzer: ignore Dead_Store
    end loop;
 
    if Show_Help_Flag then
@@ -3800,7 +3891,7 @@ begin
    if File_Name_Vectors.Is_Empty (Files_To_Process) then
       if Argument_Count > 0 then
          -- Options were provided, but no files
-         null;
+         null;  --  adalang-analyzer: ignore Null_Statement
       else
          Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error,
                                "adalang-analyzer: error: no source files provided.");
@@ -3820,6 +3911,16 @@ begin
       Ada.Text_IO.New_Line;
       Ada.Text_IO.Put_Line ("Files scanned : " & To_Decimal (Source_File_Count));
       Ada.Text_IO.Put_Line ("Violations    : " & To_Decimal (Violations));
+
+      if Skipped_Nodes > 0 then
+         --  Surfaced even without -verbose: a nonzero count here means
+         --  checks were silently incomplete at some source locations, not
+         --  just noisy diagnostics, so it belongs in the default summary.
+         Ada.Text_IO.Put_Line
+           ("Skipped checks: " & To_Decimal (Skipped_Nodes) &
+            " location(s) (semantic resolution limits; rerun with -v for" &
+            " details)");
+      end if;
 
       if Violations > 0 then
          Ada.Text_IO.Put_Line ("");
@@ -3843,5 +3944,5 @@ exception
    when E : others =>
       Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error,
                             "Internal error: " & Ada.Exceptions.Exception_Information (E));
-      Ada.Command_Line.Set_Exit_Status (2);
+      Ada.Command_Line.Set_Exit_Status (2);  --  adalang-analyzer: ignore Magic_Number
 end Adalang_Analyzer;
