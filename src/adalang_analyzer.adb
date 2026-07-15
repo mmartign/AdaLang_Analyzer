@@ -29,7 +29,9 @@ procedure Adalang_Analyzer is
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Common.Ada_Node_Kind_Type;
    use type Libadalang.Analysis.Basic_Decl;
+   use type Ada.Directories.File_Kind;
 
+   --  Whether a given check contributes violations during this run.
    type Rule_State is (Disabled, Enabled);
 
    --  This enumeration is the authoritative registry of selectable checks.
@@ -72,12 +74,15 @@ procedure Adalang_Analyzer is
       Empty_Loop
    );
 
+   --  The fixed metadata shown alongside every violation of a given check.
    type Rule_Info is record
       Name        : Ada.Strings.Unbounded.Unbounded_String;
       Description : Ada.Strings.Unbounded.Unbounded_String;
       Guidance    : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Static text for every check, indexed by Rule_Kind so it stays in sync
+   --  with the registry above.
    type Rule_Info_Array is array (Rule_Kind) of Rule_Info;
    Rule_Infos : constant Rule_Info_Array := ( --
       No_Goto =>
@@ -379,6 +384,7 @@ procedure Adalang_Analyzer is
    Violations        : Natural := 0;
    Rule_Violations   : array (Rule_Kind) of Natural := (others => 0);
 
+   --  Prints a diagnostic line when -verbose is set and -quiet isn't.
    procedure Log_Verbose (Message : String) is
    begin
       if Verbose_Mode and then not Quiet_Mode then
@@ -386,12 +392,16 @@ procedure Adalang_Analyzer is
       end if;
    end Log_Verbose;
 
+   --  Natural'Image without the leading space it adds for non-negative
+   --  values, for compact "line:column:" style output.
    function To_Decimal (N : Natural) return String is
       Result : String := Natural'Image (N);
    begin
       return Ada.Strings.Fixed.Trim (Result, Ada.Strings.Both);
    end To_Decimal;
 
+   --  Folds a check name to a case- and separator-insensitive form so
+   --  "No_Goto", "no-goto", and "NO_GOTO" all match the same check.
    function Normalize_Rule_Name (Name : String) return String is
       Result : String (Name'Range) := Name;
    begin
@@ -405,6 +415,8 @@ procedure Adalang_Analyzer is
       return Result;
    end Normalize_Rule_Name;
 
+   --  Resolves a check name typed on the command line to its Rule_Kind.
+   --  Found is False (with an arbitrary result) when no check matches.
    function Lookup_Rule_Kind (Name : String; Found : out Boolean) return Rule_Kind is
       Normalized : constant String := Normalize_Rule_Name (Name);
    begin
@@ -421,6 +433,8 @@ procedure Adalang_Analyzer is
       return No_Goto;
    end Lookup_Rule_Kind;
 
+   --  Count copies of Char, used to draw the "^^^" underline beneath a
+   --  reported source excerpt.
    function Repeat_Char (Char : Character; Count : Natural) return String is
    begin
       if Count = 0 then
@@ -434,6 +448,10 @@ procedure Adalang_Analyzer is
       end;
    end Repeat_Char;
 
+   --  Re-reads Filename to fetch the text of one line for the violation
+   --  report. Returns "" rather than raising if the file or line is
+   --  unavailable, since the excerpt is a display convenience, not
+   --  required for the violation itself to be valid.
    function Source_Line (Filename : String; Line_Number : Natural) return String is
       File         : Ada.Text_IO.File_Type;
       Current_Line : Natural := 0;
@@ -465,6 +483,9 @@ procedure Adalang_Analyzer is
          return "";
    end Source_Line;
 
+   --  Length of the caret underline for Node: the node's on-line span, or
+   --  a single caret when it crosses lines or has no width. Capped at 120
+   --  so a large construct doesn't dominate the terminal output.
    function Highlight_Width
      (Node : Libadalang.Analysis.Ada_Node'Class) return Natural
    is
@@ -485,6 +506,9 @@ procedure Adalang_Analyzer is
       end if;
    end Highlight_Width;
 
+   --  Central sink for every check: counts the violation, and unless
+   --  -quiet is set, prints its location, message, rule metadata, and a
+   --  source excerpt with a caret under the offending span.
    procedure Report_Rule_Violation (Unit : Libadalang.Analysis.Analysis_Unit;
                                    Node : Libadalang.Analysis.Ada_Node'Class;
                                    Rule : Rule_Kind;
@@ -524,6 +548,7 @@ procedure Adalang_Analyzer is
       end if;
    end Report_Rule_Violation;
 
+   --  Prints command-line usage for -h/--help and after an option error.
    procedure Show_Help is
    begin
       Ada.Text_IO.Put_Line ("Usage: adalang-analyzer [options] <source_files>");
@@ -533,6 +558,7 @@ procedure Adalang_Analyzer is
       Ada.Text_IO.Put_Line ("Options:");
       Ada.Text_IO.Put_Line ("  -h, --help            Show this help and exit");
       Ada.Text_IO.Put_Line ("  -version              Show version and exit");
+      Ada.Text_IO.Put_Line ("  -P<project>.gpr       Analyze the sources of a GNAT project file");
       Ada.Text_IO.Put_Line ("  -checks=<list>        Enable/disable checks");
       Ada.Text_IO.Put_Line ("  -list-checks          List available checks");
       Ada.Text_IO.Put_Line
@@ -542,11 +568,14 @@ procedure Adalang_Analyzer is
       Ada.Text_IO.Put_Line ("  --                    Treat items as files");
    end Show_Help;
 
+   --  Prints the tool's version for -version.
    procedure Print_Version is
    begin
       Ada.Text_IO.Put_Line ("adalang-analyzer version 0.1.0-dev");
    end Print_Version;
 
+   --  Prints every registered check with its description and remediation
+   --  guidance, for -list-checks.
    procedure Print_Check_List is
    begin
       Ada.Text_IO.Put_Line ("Available checks:");
@@ -558,6 +587,8 @@ procedure Adalang_Analyzer is
       end loop;
    end Print_Check_List;
 
+   --  Applies a GCC-style "+R<check>" / "-R<check>" switch, enabling or
+   --  disabling exactly the named check.
    procedure Process_Command_Switch (Switch : String) is
       procedure Apply (Name : String; Mode : Rule_State) is
          Found : Boolean;
@@ -583,9 +614,14 @@ procedure Adalang_Analyzer is
       end if;
    end Process_Command_Switch;
 
+   --  Applies a "-checks=<list>" option: a comma-separated list of check
+   --  names, each optionally prefixed with '+' (enable, the default) or
+   --  '-' (disable), plus the special items "*" (enable all) and "-*"
+   --  (disable all).
    procedure Parse_Checks_Option (Option : String) is
       List_Text : constant String := Option (Option'First + 8 .. Option'Last);
 
+      --  Applies one comma-separated item from the -checks= list.
       procedure Apply_Check_Item (Item_Untrimmed : String) is
          Item   : constant String :=
            Ada.Strings.Fixed.Trim (Item_Untrimmed, Ada.Strings.Both);
@@ -649,6 +685,8 @@ procedure Adalang_Analyzer is
       end if;
    end Parse_Checks_Option;
 
+   --  Parses the -complexity-threshold value; records an invalid-option
+   --  error instead of raising when Text isn't a positive integer.
    procedure Set_Complexity_Threshold (Text : String) is
    begin
       Complexity_Threshold := Positive'Value
@@ -743,11 +781,14 @@ procedure Adalang_Analyzer is
 
    Unknown_Int : constant Abstract_Int := (Known => False, Value => 0);
 
+   --  Wraps a known value as an Abstract_Int.
    function Known_Int (Value : Long_Long_Integer) return Abstract_Int is
    begin
       return (Known => True, Value => Value);
    end Known_Int;
 
+   --  ASCII-only lower-casing; avoids pulling in Ada.Characters.Handling
+   --  for the single case this tool needs (Ada source is ASCII-identified).
    function Lower_Char (Char : Character) return Character is
    begin
       if Char in 'A' .. 'Z' then
@@ -757,6 +798,7 @@ procedure Adalang_Analyzer is
       end if;
    end Lower_Char;
 
+   --  Verbatim source text spanned by Node, or "" for a null node.
    function Node_Text
      (Node : Libadalang.Analysis.Ada_Node'Class) return String is
    begin
@@ -768,6 +810,11 @@ procedure Adalang_Analyzer is
       end if;
    end Node_Text;
 
+   --  Whitespace-stripped, lower-cased source text of Node, used to compare
+   --  expressions for textual equality (e.g. duplicate operands, repeated
+   --  conditions) regardless of formatting or identifier casing. String
+   --  literal contents and character literals are preserved verbatim so
+   --  their case and spelling stay significant.
    function Canonical_Text
      (Node : Libadalang.Analysis.Ada_Node'Class) return String
    is
@@ -814,6 +861,9 @@ procedure Adalang_Analyzer is
       return To_String (Result);
    end Canonical_Text;
 
+   --  Removes numeric-literal digit-group underscores (e.g. "1_000") and
+   --  lower-cases the rest, producing a form Long_Long_Integer'Value /
+   --  Long_Long_Float'Value or this unit's own parser can consume.
    function Strip_Underscores (Text : String) return String is
       Result : Unbounded_String;
    begin
@@ -826,6 +876,9 @@ procedure Adalang_Analyzer is
       return To_String (Result);
    end Strip_Underscores;
 
+   --  Index of the first occurrence of Char at or after From, or 0 if
+   --  there is none (mirrors Ada.Strings.Fixed.Index's "not found" case
+   --  without needing that package's Mapping/Pattern machinery).
    function Find_Char
      (Text : String; Char : Character; From : Positive) return Natural
    is
@@ -843,6 +896,8 @@ procedure Adalang_Analyzer is
       return 0;
    end Find_Char;
 
+   --  Value of a base-16 digit (0-9, a-f); 36 (an impossible digit in any
+   --  Ada numeric base, which range up to 16) signals "not a digit".
    function Digit_Value (Char : Character) return Natural is
    begin
       if Char in '0' .. '9' then
@@ -854,6 +909,10 @@ procedure Adalang_Analyzer is
       end if;
    end Digit_Value;
 
+   --  Parses Text as an unsigned integer in the given Base, rejecting
+   --  out-of-range digits and overflow rather than raising, since this
+   --  parser must degrade to Unknown_Int instead of crashing on whatever
+   --  numeric literal spelling appears in the analyzed source.
    function Parse_Unsigned
      (Text : String; Base : Positive; Value : out Long_Long_Integer)
       return Boolean
@@ -888,6 +947,9 @@ procedure Adalang_Analyzer is
       return True;
    end Parse_Unsigned;
 
+   --  Parses the "e<digits>" suffix of an Ada numeric literal (Text is the
+   --  part after 'e'); a missing suffix is a valid exponent of 0. A '-'
+   --  sign is rejected because Ada only allows positive exponents here.
    function Parse_Exponent
      (Text : String; Value : out Natural) return Boolean
    is
@@ -919,6 +981,8 @@ procedure Adalang_Analyzer is
       end if;
    end Parse_Exponent;
 
+   --  Computes Value * Base**Exponent, returning False on overflow instead
+   --  of raising Constraint_Error so the caller can fall back to Unknown_Int.
    function Multiply_By_Power
      (Value : Long_Long_Integer; Base : Positive; Exponent : Natural;
       Result : out Long_Long_Integer) return Boolean
@@ -943,6 +1007,11 @@ procedure Adalang_Analyzer is
       return True;
    end Multiply_By_Power;
 
+   --  Parses an Ada integer literal, including the based form
+   --  "<base>#<digits>#[e<exponent>]" (e.g. "16#FF#") and the decimal form
+   --  with an optional exponent (e.g. "12e3"). This hand-written parser
+   --  exists because Long_Long_Integer'Value doesn't accept Ada's based
+   --  literal syntax.
    function Parse_Integer_Text
      (Raw_Text : String; Value : out Long_Long_Integer) return Boolean
    is
@@ -1024,6 +1093,9 @@ procedure Adalang_Analyzer is
       end if;
    end Parse_Integer_Text;
 
+   --  Safe_Add/Sub/Mul/Pow fold a binary integer operation, collapsing to
+   --  Unknown_Int on overflow rather than propagating Constraint_Error out
+   --  of the analyzer.
    function Safe_Add
      (Left : Long_Long_Integer; Right : Long_Long_Integer) return Abstract_Int
    is
@@ -1059,6 +1131,8 @@ procedure Adalang_Analyzer is
    is
       Result : Long_Long_Integer := 1;
    begin
+      --  A 64-bit magnitude can't hold 2**64 or higher, and Ada's "**"
+      --  disallows a negative exponent for an integer base.
       if Right < 0 or else Right > 63 then
          return Unknown_Int;
       end if;
@@ -1073,6 +1147,12 @@ procedure Adalang_Analyzer is
          return Unknown_Int;
    end Safe_Pow;
 
+   --  Statically evaluates Node as an integer expression when its value is
+   --  determined purely by literals and constant arithmetic (+, -, abs,
+   --  and the binary operators), returning Unknown_Int for anything that
+   --  depends on a variable, a function call, or unsupported syntax. This
+   --  drives the Division_By_Zero, Reversed_Range, and case-range checks
+   --  without a full constant-folding evaluator.
    function Integer_Value
      (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Int
    is
@@ -1180,6 +1260,8 @@ procedure Adalang_Analyzer is
          return Unknown_Int;
    end Integer_Value;
 
+   --  True when Node statically evaluates to 0, covering both integer and
+   --  real literals (Integer_Value only handles the integer case).
    function Is_Static_Zero
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
@@ -1219,6 +1301,7 @@ procedure Adalang_Analyzer is
       end case;
    end Is_Static_Zero;
 
+   --  True when Node statically evaluates to 1 (integer or real).
    function Is_Static_One
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
@@ -1241,6 +1324,9 @@ procedure Adalang_Analyzer is
          return False;
    end Is_Static_One;
 
+   --  True when Node's nearest enclosing statement/declaration is itself a
+   --  named-number or constant object declaration, i.e. Node is the value
+   --  being given a name rather than a "magic number" used inline.
    function Is_In_Named_Constant_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
@@ -1270,6 +1356,9 @@ procedure Adalang_Analyzer is
          return False;
    end Is_In_Named_Constant_Declaration;
 
+   --  True when a numeric literal is exempt from Magic_Number: 0, 1, and
+   --  -1 are conventionally self-explanatory, and a literal that is
+   --  itself the definition of a named constant is, by definition, named.
    function Is_Allowed_Magic_Number
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
    begin
@@ -1292,6 +1381,8 @@ procedure Adalang_Analyzer is
          return False;
    end Is_Floating_Expression;
 
+   --  True when Node is (or parenthesizes/qualifies) the literal "null",
+   --  used to recognize "X = null" style comparisons as statically decided.
    function Is_Null_Literal
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
    begin
@@ -1311,6 +1402,8 @@ procedure Adalang_Analyzer is
       end case;
    end Is_Null_Literal;
 
+   --  Evaluates a relational operator over two statically known integers;
+   --  Bool_Unknown if either operand isn't known or Op isn't relational.
    function Compare_Integers
      (Op : Libadalang.Common.Ada_Node_Kind_Type;
       Left : Abstract_Int; Right : Abstract_Int) return Abstract_Bool
@@ -1338,6 +1431,13 @@ procedure Adalang_Analyzer is
       end case;
    end Compare_Integers;
 
+   --  Statically evaluates Node as a boolean expression: the literals
+   --  True/False, "not", "and"/"or"/"xor" (and their short-circuit forms),
+   --  relational and equality comparisons on statically known integers,
+   --  "= null"/"/= null", and static membership tests. Anything else
+   --  (a variable, a function call, ...) yields Bool_Unknown. This backs
+   --  Constant_Condition, Infinite_Loop's while-condition check, and the
+   --  Ineffective_Operation / Constant_Result_Operation identity folding.
    function Boolean_Value
      (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Bool
    is
@@ -1514,6 +1614,8 @@ procedure Adalang_Analyzer is
       end case;
    end Boolean_Value;
 
+   --  Reports Constant_Condition when Cond statically evaluates to a fixed
+   --  boolean. Shared by if/elsif/while/exit-when condition sites.
    procedure Report_Constant_Condition
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Cond : Libadalang.Analysis.Ada_Node'Class)
@@ -1529,6 +1631,9 @@ procedure Adalang_Analyzer is
       end if;
    end Report_Constant_Condition;
 
+   --  True when Node unconditionally transfers control out of the
+   --  statement list it's in (return, raise, goto, or an unconditional
+   --  exit), making any following statement in the same list unreachable.
    function Terminates_Statement
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
@@ -1553,6 +1658,9 @@ procedure Adalang_Analyzer is
       end case;
    end Terminates_Statement;
 
+   --  The declaration an identifier resolves to via Libadalang's semantic
+   --  analysis, or No_Basic_Decl for anything else or when resolution
+   --  fails (e.g. on source with unresolved references).
    function Referenced_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Basic_Decl
@@ -1570,6 +1678,9 @@ procedure Adalang_Analyzer is
          return Libadalang.Analysis.No_Basic_Decl;
    end Referenced_Declaration;
 
+   --  True when any identifier under Node resolves to Decl. Used as the
+   --  "is this object mentioned at all" building block for the
+   --  Unused_Parameter check.
    function References_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class;
       Decl : Libadalang.Analysis.Basic_Decl) return Boolean
@@ -1596,6 +1707,10 @@ procedure Adalang_Analyzer is
       return False;
    end References_Declaration;
 
+   --  True when Node contains a read of Decl, as opposed to only a write.
+   --  A plain assignment's simple identifier destination doesn't count as
+   --  a read; everything else that mentions Decl does. Drives
+   --  Overwritten_Assignment's "was the earlier value read first" check.
    function Reads_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class;
       Decl : Libadalang.Analysis.Basic_Decl) return Boolean
@@ -1631,6 +1746,10 @@ procedure Adalang_Analyzer is
       return False;
    end Reads_Declaration;
 
+   --  The declaration written by an assignment statement whose destination
+   --  is a plain identifier, or No_Basic_Decl for anything else (Node
+   --  isn't an assignment, or its destination is a more complex form like
+   --  an array/record component).
    function Assigned_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Basic_Decl is
@@ -1646,11 +1765,17 @@ procedure Adalang_Analyzer is
       return Referenced_Declaration (Node.As_Assign_Stmt.F_Dest);
    end Assigned_Declaration;
 
+   --  True when some read of Decl occurs at or after Assignment's source
+   --  position within Node's subtree, in source (textual) order. This is
+   --  the Dead_Store check: an assignment whose value is never read again
+   --  in the subprogram is very likely dead code.
    function Has_Read_After
      (Node       : Libadalang.Analysis.Ada_Node'Class;
       Decl       : Libadalang.Analysis.Basic_Decl;
       Assignment : Libadalang.Analysis.Assign_Stmt) return Boolean
    is
+      --  Whether Candidate starts at or after the end of Assignment, used
+      --  to ignore reads that are the assignment's own destination/value.
       function Starts_After_Assignment
         (Candidate : Libadalang.Analysis.Ada_Node'Class) return Boolean is
       begin
@@ -1694,6 +1819,8 @@ procedure Adalang_Analyzer is
       return False;
    end Has_Read_After;
 
+   --  Walks up from Node to the nearest enclosing subprogram body, or
+   --  No_Subp_Body if Node isn't inside one.
    function Enclosing_Subprogram
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Subp_Body
@@ -1710,6 +1837,9 @@ procedure Adalang_Analyzer is
       return Libadalang.Analysis.No_Subp_Body;
    end Enclosing_Subprogram;
 
+   --  True when some identifier under Node both spells Identifier and
+   --  resolves to Param. The text comparison is checked first (cheap) so
+   --  that the semantic resolution call only runs on plausible matches.
    function References_Parameter
      (Node       : Libadalang.Analysis.Ada_Node'Class;
       Param      : Libadalang.Analysis.Param_Spec;
@@ -1735,6 +1865,8 @@ procedure Adalang_Analyzer is
       return False;
    end References_Parameter;
 
+   --  True when Node is an object or parameter declaration that introduces
+   --  Name (compared via its canonical, case-folded spelling).
    function Declares_Name
      (Node : Libadalang.Analysis.Ada_Node'Class;
       Name : String) return Boolean
@@ -1759,9 +1891,17 @@ procedure Adalang_Analyzer is
       return False;
    end Declares_Name;
 
+   --  True when Decl's Name is already declared by an object or parameter
+   --  in some scope that textually encloses Decl's own scope, i.e. Decl
+   --  hides an outer declaration of the same name. The search walks the
+   --  whole compilation unit from its root because Libadalang doesn't
+   --  expose an "enclosing scopes" iterator directly usable here; the
+   --  Is_Ancestor_Of check filters candidates down to genuine ancestors.
    function Shadows_Enclosing_Declaration
      (Decl : Libadalang.Analysis.Object_Decl; Name : String) return Boolean
    is
+      --  The nearest subprogram body, declare block, or package body
+      --  enclosing Node, i.e. its lexical scope for shadowing purposes.
       function Scope_Of
         (Node : Libadalang.Analysis.Ada_Node'Class)
          return Libadalang.Analysis.Ada_Node
@@ -1780,6 +1920,7 @@ procedure Adalang_Analyzer is
          return Libadalang.Analysis.No_Ada_Node;
       end Scope_Of;
 
+      --  True when Possible_Ancestor is a syntactic ancestor of Node.
       function Is_Ancestor_Of
         (Possible_Ancestor : Libadalang.Analysis.Ada_Node;
          Node              : Libadalang.Analysis.Ada_Node'Class)
@@ -1801,6 +1942,8 @@ procedure Adalang_Analyzer is
       Current_Scope : constant Libadalang.Analysis.Ada_Node := Scope_Of (Decl);
       Root          : Libadalang.Analysis.Ada_Node := Current_Node;
 
+      --  Searches the subtree rooted at Node for a declaration of Name
+      --  whose scope both differs from Decl's own scope and encloses it.
       function Has_Outer_Declaration
         (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
       is
@@ -1838,6 +1981,12 @@ procedure Adalang_Analyzer is
       return Has_Outer_Declaration (Root);
    end Shadows_Enclosing_Declaration;
 
+   --  Sums the decision points in Node's subtree (if/elsif, loops,
+   --  exception handlers each add 1, an N-way case adds N-1, and each
+   --  short-circuit "and then"/"or else" adds 1), the standard count of
+   --  independent paths added to a base complexity of 1 per subprogram.
+   --  A nested subprogram body stops the walk and contributes 0, since it
+   --  is scored separately when Analyze_Subprogram visits it in turn.
    function Cyclomatic_Value
      (Node : Libadalang.Analysis.Ada_Node'Class) return Natural
    is
@@ -1889,6 +2038,9 @@ procedure Adalang_Analyzer is
       return Result;
    end Cyclomatic_Value;
 
+   --  Runs the per-subprogram checks: Unused_Parameter (no reference in
+   --  either the local declarations or the statements) and
+   --  Cyclomatic_Complexity (base 1 plus every decision point in the body).
    procedure Analyze_Subprogram
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body)
@@ -1931,6 +2083,7 @@ procedure Adalang_Analyzer is
       end if;
    end Analyze_Subprogram;
 
+   --  Runs Shadowed_Declaration for each name introduced by Decl.
    procedure Analyze_Object_Declaration
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Decl : Libadalang.Analysis.Object_Decl) is
@@ -1948,6 +2101,15 @@ procedure Adalang_Analyzer is
       end if;
    end Analyze_Object_Declaration;
 
+   --  Walks one statement list in source order for three intraprocedural,
+   --  single-pass checks: Unreachable_Code (anything after an
+   --  unconditional transfer of control, until a label resets
+   --  reachability), Repeated_Statement (an assignment textually
+   --  identical to the one immediately before it), and
+   --  Overwritten_Assignment (an assignment to the same object recurring
+   --  later in this same list before any intervening read). Deliberately
+   --  scoped to a single statement list rather than full control flow, so
+   --  results stay predictable without whole-program analysis.
    procedure Analyze_Statement_List
      (Unit : Libadalang.Analysis.Analysis_Unit;
       List : Libadalang.Analysis.Ada_Node'Class)
@@ -2035,6 +2197,9 @@ procedure Adalang_Analyzer is
       end loop;
    end Analyze_Statement_List;
 
+   --  True when Possible_Not is "not X" and Other's canonical text is
+   --  exactly X, i.e. the two operands are syntactic negations of each
+   --  other. Backs Contradictory_Condition ("X and not X", "X or not X").
    function Is_Negation_Of
      (Possible_Not : Libadalang.Analysis.Ada_Node'Class;
       Other        : Libadalang.Analysis.Ada_Node'Class) return Boolean
@@ -2048,6 +2213,9 @@ procedure Adalang_Analyzer is
           Canonical_Text (Other);
    end Is_Negation_Of;
 
+   --  True for operators where "X op X" is suspicious rather than a
+   --  routine identity (e.g. "+" and "*" are excluded: "X + X" and
+   --  "X * X" are ordinary, intentional expressions).
    function Interesting_Same_Operand_Op
      (Op : Libadalang.Common.Ada_Node_Kind_Type) return Boolean is
    begin
@@ -2073,6 +2241,12 @@ procedure Adalang_Analyzer is
       end case;
    end Interesting_Same_Operand_Op;
 
+   --  Runs every check keyed on a binary operator: Division_By_Zero,
+   --  Floating_Equality, Reversed_Range, Same_Operand,
+   --  Contradictory_Condition, Duplicate_Boolean_Operand,
+   --  Ineffective_Operation (an identity operand that doesn't change the
+   --  result, e.g. "X + 0"), and Constant_Result_Operation (an absorbing
+   --  operand that forces a fixed result, e.g. "X * 0" or "X and False").
    procedure Analyze_Binary_Expression
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Expr : Libadalang.Analysis.Bin_Op)
@@ -2209,6 +2383,9 @@ procedure Adalang_Analyzer is
       end if;
    end Analyze_Binary_Expression;
 
+   --  Runs Self_Assignment (target and value are textually identical) and
+   --  Dead_Store (a simple-object assignment with no later read in the
+   --  enclosing subprogram) for one assignment statement.
    procedure Analyze_Assignment
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Assign_Stmt)
@@ -2248,6 +2425,8 @@ procedure Adalang_Analyzer is
       end if;
    end Analyze_Assignment;
 
+   --  Reports Duplicate_Boolean_Operand for a double negation ("not not X"),
+   --  looking through one level of parentheses around the inner operand.
    procedure Analyze_Unary_Expression
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Expr : Libadalang.Analysis.Un_Op)
@@ -2271,12 +2450,17 @@ procedure Adalang_Analyzer is
       end if;
    end Analyze_Unary_Expression;
 
+   --  A statically evaluated case-choice range, used to detect overlapping
+   --  or wholly-covered case alternatives.
    type Static_Interval is record
       Known : Boolean := False;
       Low   : Long_Long_Integer := 0;
       High  : Long_Long_Integer := 0;
    end record;
 
+   --  The [Low, High] range covered by one case choice: a single value for
+   --  a plain expression, or the statically evaluated bounds of a ".."
+   --  range choice. Known is False when either bound can't be evaluated.
    function Choice_Interval
      (Choice : Libadalang.Analysis.Ada_Node'Class) return Static_Interval
    is
@@ -2303,6 +2487,12 @@ procedure Adalang_Analyzer is
       return (Known => False, Low => 0, High => 0);
    end Choice_Interval;
 
+   --  Compares every case choice against every earlier choice (in
+   --  alternative order) to flag Overlapping_Case_Ranges (ranges that
+   --  intersect) and Unreachable_Case_Alternative (a choice wholly
+   --  contained in, or textually identical to, an earlier one, or any
+   --  choice following an earlier "others"). Quadratic in the number of
+   --  choices, which is acceptable since case statements are small.
    procedure Analyze_Case_Statement
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Case_Stmt)
@@ -2388,6 +2578,10 @@ procedure Adalang_Analyzer is
       end loop;
    end Analyze_Case_Statement;
 
+   --  True when Node's subtree contains a statement that can end this
+   --  loop: exit, return, or raise. A nested loop is not descended into,
+   --  since its own exit/return/raise terminates that inner loop, not the
+   --  outer one being checked by Analyze_Infinite_Loop.
    function Has_Loop_Termination
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
@@ -2422,6 +2616,10 @@ procedure Adalang_Analyzer is
       return False;
    end Has_Loop_Termination;
 
+   --  Reports Infinite_Loop for a bare "loop" (always unconditional) or a
+   --  "while" loop whose condition is statically True, when its body has
+   --  no exit/return/raise. "for" loops are never unconditional (they
+   --  terminate when the range is exhausted) and so are never flagged.
    procedure Analyze_Infinite_Loop
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Loop_Node : Libadalang.Analysis.Base_Loop_Stmt)
@@ -2450,6 +2648,9 @@ procedure Adalang_Analyzer is
       end if;
    end Analyze_Infinite_Loop;
 
+   --  Reports Unreachable_Branch for Node, tolerating a null Node so
+   --  callers can pass an absent else-part without a guard at each call
+   --  site.
    procedure Report_Unreachable_Branch
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class;
@@ -2462,6 +2663,7 @@ procedure Adalang_Analyzer is
       end if;
    end Report_Unreachable_Branch;
 
+   --  Reports Duplicate_Condition for Cond.
    procedure Report_Duplicate_Condition
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Cond : Libadalang.Analysis.Ada_Node'Class) is
@@ -2473,6 +2675,9 @@ procedure Adalang_Analyzer is
       end if;
    end Report_Duplicate_Condition;
 
+   --  Reports Identical_Branches when an if/elsif/else statement chain has
+   --  two textually identical bodies immediately adjacent to each other
+   --  (then-vs-first-elsif, elsif-vs-elsif, or last-elsif-vs-else).
    procedure Report_Identical_Statement_Branches
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.If_Stmt)
@@ -2512,6 +2717,7 @@ procedure Adalang_Analyzer is
       end if;
    end Report_Identical_Statement_Branches;
 
+   --  The if-expression counterpart of Report_Identical_Statement_Branches.
    procedure Report_Identical_Expression_Branches
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Expr : Libadalang.Analysis.If_Expr)
@@ -2549,6 +2755,12 @@ procedure Adalang_Analyzer is
       end if;
    end Report_Identical_Expression_Branches;
 
+   --  Walks an if/elsif/else statement's condition chain to flag
+   --  Duplicate_Condition (a condition textually repeating the "if" or an
+   --  earlier "elsif") and Unreachable_Branch (a branch whose own
+   --  condition is statically false, or that follows a branch whose
+   --  condition is statically true and so always short-circuits it), then
+   --  delegates to Report_Identical_Statement_Branches for body comparison.
    procedure Analyze_If_Statement
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.If_Stmt)
@@ -2626,6 +2838,7 @@ procedure Adalang_Analyzer is
       Report_Identical_Statement_Branches (Unit, Stmt);
    end Analyze_If_Statement;
 
+   --  The if-expression counterpart of Analyze_If_Statement.
    procedure Analyze_If_Expression
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Expr : Libadalang.Analysis.If_Expr)
@@ -2704,6 +2917,9 @@ procedure Adalang_Analyzer is
       Report_Identical_Expression_Branches (Unit, Expr);
    end Analyze_If_Expression;
 
+   --  True when List contains anything other than null statements and
+   --  pragmas, i.e. it does real work. Shared by Empty_Loop and the
+   --  exception-handler checks below.
    function Has_Substantive_Statement
      (List : Libadalang.Analysis.Stmt_List) return Boolean is
    begin
@@ -2725,6 +2941,10 @@ procedure Adalang_Analyzer is
       return False;
    end Has_Substantive_Statement;
 
+   --  Reports Empty_Exception_Handler for any handler with no substantive
+   --  body, and Exception_Swallowed specifically for a "when others"
+   --  handler with no substantive body (the narrower, more actionable
+   --  case of silently discarding an unanticipated exception).
    procedure Analyze_Exception_Handler
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Handler : Libadalang.Analysis.Exception_Handler) is
@@ -2758,6 +2978,11 @@ procedure Adalang_Analyzer is
       end if;
    end Analyze_Exception_Handler;
 
+   --  Dispatches Node to the check(s) keyed on its specific syntactic
+   --  kind (statement lists, operators, assignments, if/case/loop
+   --  constructs, exception handlers, and so on). Called once per node
+   --  from Evaluate_Node, alongside the always-run structural checks
+   --  handled directly there.
    procedure Analyze_Bug_Finding_Node
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class)
@@ -2860,6 +3085,11 @@ procedure Adalang_Analyzer is
       end case;
    end Analyze_Bug_Finding_Node;
 
+   --  True when Name denotes Ada.Unchecked_Conversion, either by its fully
+   --  qualified spelling or, for an unqualified "Unchecked_Conversion",
+   --  by resolving the name and checking its fully qualified declaration.
+   --  Falls back to the qualified-spelling check alone when resolution
+   --  fails, rather than risk flagging an unrelated same-named generic.
    function Is_Ada_Unchecked_Conversion
      (Name : Libadalang.Analysis.Name'Class) return Boolean
    is
@@ -2886,6 +3116,12 @@ procedure Adalang_Analyzer is
          return Written_Name = "ada.unchecked_conversion";
    end Is_Ada_Unchecked_Conversion;
 
+   --  The single recursive AST walk that drives the whole analysis: for
+   --  each node it runs the checks that only need the node's own kind
+   --  (the restricted-construct rules, No_Unchecked_Conversion,
+   --  Magic_Number), delegates the rest to Analyze_Bug_Finding_Node, and
+   --  then recurses into every child. Every check therefore runs in a
+   --  single pass over the tree rather than one pass per check.
    procedure Evaluate_Node (Unit : Libadalang.Analysis.Analysis_Unit;
                            Node : Libadalang.Analysis.Ada_Node'Class) is
    begin
@@ -2948,6 +3184,479 @@ procedure Adalang_Analyzer is
       end loop;
    end Evaluate_Node;
 
+   --  Collected source file names are stored in an indefinite vector because
+   --  the GPR loader below needs to grow lists whose length isn't known
+   --  until the project file (and any project it extends) has been read.
+   package File_Name_Vectors is new Ada.Containers.Indefinite_Vectors
+     (Index_Type   => Positive,
+      Element_Type => String);
+
+   --  ------------------------------------------------------------------
+   --  Minimal GNAT project (.gpr) file support.
+   --
+   --  This is a best-effort reader, not a GPR language implementation: it
+   --  recognizes the literal forms "for <Attribute> use <value>;" and
+   --  "extends <string>" by lexical scanning, and ignores everything else
+   --  (scenario variables, case statements, package sections, "with"
+   --  imports of other projects). It supports exactly the attributes
+   --  needed to discover Ada source files: Source_Dirs, Source_Files,
+   --  Excluded_Source_Files / Locally_Removed_Files, and project
+   --  extension via "extends". Directory entries ending in "**" are
+   --  walked recursively, matching GPR's recursive source dir syntax.
+   --  ------------------------------------------------------------------
+
+   function Has_Suffix (Text : String; Suffix : String) return Boolean is
+   begin
+      return Text'Length >= Suffix'Length
+        and then Text (Text'Last - Suffix'Length + 1 .. Text'Last) = Suffix;
+   end Has_Suffix;
+
+   function Directory_Name_Of (Path : String) return String is
+      Last_Slash : Natural := 0;
+   begin
+      for I in Path'Range loop
+         if Path (I) = '/' then
+            Last_Slash := I;
+         end if;
+      end loop;
+
+      if Last_Slash = 0 then
+         return ".";
+      else
+         return Path (Path'First .. Last_Slash - 1);
+      end if;
+   end Directory_Name_Of;
+
+   function Join_Path (Dir : String; Name : String) return String is
+   begin
+      if Dir = "" or else Dir = "." then
+         return Name;
+      elsif Dir (Dir'Last) = '/' then
+         return Dir & Name;
+      else
+         return Dir & "/" & Name;
+      end if;
+   end Join_Path;
+
+   function Vector_Contains
+     (Items : File_Name_Vectors.Vector; Item : String) return Boolean is
+   begin
+      for I of Items loop
+         if I = Item then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Vector_Contains;
+
+   --  Adds Name, replacing any existing entry with the same simple file
+   --  name. This gives an extending project's own sources priority over
+   --  the same-named files inherited from the project it extends.
+   procedure Append_Or_Replace_By_Simple_Name
+     (Files : in out File_Name_Vectors.Vector; Name : String)
+   is
+      Target : constant String := Ada.Directories.Simple_Name (Name);
+   begin
+      for Index in File_Name_Vectors.First_Index (Files) ..
+                   File_Name_Vectors.Last_Index (Files)
+      loop
+         if Ada.Directories.Simple_Name
+              (File_Name_Vectors.Element (Files, Index)) = Target
+         then
+            File_Name_Vectors.Replace_Element (Files, Index, Name);
+            return;
+         end if;
+      end loop;
+
+      File_Name_Vectors.Append (Files, Name);
+   end Append_Or_Replace_By_Simple_Name;
+
+   --  Walks Dir (recursively when Recursive) collecting *.adb/*.ads files.
+   procedure Collect_Ada_Sources
+     (Dir : String; Recursive : Boolean; Files : in out File_Name_Vectors.Vector)
+   is
+      Search : Ada.Directories.Search_Type;
+      Item   : Ada.Directories.Directory_Entry_Type;
+   begin
+      if not Ada.Directories.Exists (Dir)
+        or else Ada.Directories.Kind (Dir) /= Ada.Directories.Directory
+      then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: warning: project source directory not found: "
+            & Dir);
+         return;
+      end if;
+
+      Ada.Directories.Start_Search
+        (Search, Dir, "*",
+         (Ada.Directories.Ordinary_File => True,
+          Ada.Directories.Directory     => True,
+          Ada.Directories.Special_File  => False));
+
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Item);
+
+         declare
+            Name : constant String := Ada.Directories.Simple_Name (Item);
+         begin
+            if Ada.Directories.Kind (Item) = Ada.Directories.Directory then
+               if Recursive and then Name /= "." and then Name /= ".." then
+                  Collect_Ada_Sources (Join_Path (Dir, Name), True, Files);
+               end if;
+            elsif Has_Suffix (Name, ".adb") or else Has_Suffix (Name, ".ads")
+            then
+               declare
+                  Full : constant String := Join_Path (Dir, Name);
+               begin
+                  if not Vector_Contains (Files, Full) then
+                     File_Name_Vectors.Append (Files, Full);
+                  end if;
+               end;
+            end if;
+         end;
+      end loop;
+
+      Ada.Directories.End_Search (Search);
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: warning: could not read directory: " & Dir);
+   end Collect_Ada_Sources;
+
+   --  A tiny lexer for the subset of GPR syntax this reader understands:
+   --  identifiers, double-quoted string literals (with "" escaping), and
+   --  single-character punctuation. "--" starts a comment to end of line.
+   type Gpr_Token_Kind is (Gpr_Tok_Identifier, Gpr_Tok_String, Gpr_Tok_Symbol, Gpr_Tok_End);
+
+   type Gpr_Token is record
+      Kind : Gpr_Token_Kind := Gpr_Tok_End;
+      Text : Unbounded_String := Null_Unbounded_String;
+   end record;
+
+   function Gpr_Ident_Equals (Left : String; Right : String) return Boolean is
+   begin
+      if Left'Length /= Right'Length then
+         return False;
+      end if;
+
+      for I in 0 .. Left'Length - 1 loop
+         if Lower_Char (Left (Left'First + I)) /=
+            Lower_Char (Right (Right'First + I))
+         then
+            return False;
+         end if;
+      end loop;
+
+      return True;
+   end Gpr_Ident_Equals;
+
+   procedure Gpr_Skip_Trivia (Text : String; Pos : in out Positive) is
+   begin
+      loop
+         if Pos > Text'Last then
+            return;
+         elsif Text (Pos) = ' ' or else Text (Pos) = Ada.Characters.Latin_1.HT
+           or else Text (Pos) = Ada.Characters.Latin_1.LF
+           or else Text (Pos) = Ada.Characters.Latin_1.CR
+         then
+            Pos := Pos + 1;
+         elsif Pos < Text'Last and then Text (Pos) = '-'
+           and then Text (Pos + 1) = '-'
+         then
+            while Pos <= Text'Last
+              and then Text (Pos) /= Ada.Characters.Latin_1.LF
+            loop
+               Pos := Pos + 1;
+            end loop;
+         else
+            return;
+         end if;
+      end loop;
+   end Gpr_Skip_Trivia;
+
+   function Gpr_Next_Token (Text : String; Pos : in out Positive) return Gpr_Token is
+   begin
+      Gpr_Skip_Trivia (Text, Pos);
+
+      if Pos > Text'Last then
+         return (Kind => Gpr_Tok_End, Text => Null_Unbounded_String);
+      end if;
+
+      if Text (Pos) in 'A' .. 'Z' | 'a' .. 'z' then
+         declare
+            Start : constant Positive := Pos;
+         begin
+            while Pos <= Text'Last
+              and then Text (Pos) in 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_'
+            loop
+               Pos := Pos + 1;
+            end loop;
+
+            return (Kind => Gpr_Tok_Identifier,
+                    Text => To_Unbounded_String (Text (Start .. Pos - 1)));
+         end;
+      end if;
+
+      if Text (Pos) = '"' then
+         declare
+            Result : Unbounded_String;
+         begin
+            Pos := Pos + 1;
+
+            while Pos <= Text'Last loop
+               if Text (Pos) = '"' then
+                  if Pos < Text'Last and then Text (Pos + 1) = '"' then
+                     Append (Result, '"');
+                     Pos := Pos + 2;
+                  else
+                     Pos := Pos + 1;
+                     exit;
+                  end if;
+               else
+                  Append (Result, Text (Pos));
+                  Pos := Pos + 1;
+               end if;
+            end loop;
+
+            return (Kind => Gpr_Tok_String, Text => Result);
+         end;
+      end if;
+
+      declare
+         Symbol : constant String := Text (Pos .. Pos);
+      begin
+         Pos := Pos + 1;
+         return (Kind => Gpr_Tok_Symbol, Text => To_Unbounded_String (Symbol));
+      end;
+   end Gpr_Next_Token;
+
+   --  Reads either a single string or a parenthesized, comma-separated
+   --  string list, as used on the right of "use" in a GPR attribute.
+   --  Anything else (a variable reference, concatenation, ...) is simply
+   --  not collected, consistent with this reader's best-effort scope.
+   procedure Gpr_Read_String_List
+     (Text : String; Pos : in out Positive; Values : in out File_Name_Vectors.Vector)
+   is
+      Tok : Gpr_Token := Gpr_Next_Token (Text, Pos);
+   begin
+      if Tok.Kind = Gpr_Tok_String then
+         File_Name_Vectors.Append (Values, To_String (Tok.Text));
+      elsif Tok.Kind = Gpr_Tok_Symbol and then To_String (Tok.Text) = "(" then
+         loop
+            Tok := Gpr_Next_Token (Text, Pos);
+            exit when Tok.Kind = Gpr_Tok_End;
+
+            if Tok.Kind = Gpr_Tok_String then
+               File_Name_Vectors.Append (Values, To_String (Tok.Text));
+            elsif Tok.Kind = Gpr_Tok_Symbol and then To_String (Tok.Text) = ")" then
+               exit;
+            end if;
+         end loop;
+      end if;
+   end Gpr_Read_String_List;
+
+   --  Reads Project_File (appending ".gpr" if omitted) and appends the Ada
+   --  sources it declares to Files. Seen guards against cycles and repeat
+   --  work when the same project is reached through more than one path
+   --  (for example, a project extended by two different entry points).
+   procedure Load_Project_File
+     (Project_File : String;
+      Files        : in out File_Name_Vectors.Vector;
+      Seen         : in out File_Name_Vectors.Vector)
+   is
+      Actual : constant String :=
+        (if Has_Suffix (Project_File, ".gpr") then Project_File
+         else Project_File & ".gpr");
+   begin
+      if Vector_Contains (Seen, Actual) then
+         return;
+      end if;
+      File_Name_Vectors.Append (Seen, Actual);
+
+      if not Ada.Directories.Exists (Actual) then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: project file not found: " & Actual);
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+
+      Log_Verbose ("Reading project: " & Actual);
+
+      declare
+         Project_Dir : constant String := Directory_Name_Of (Actual);
+
+         function Resolve (Spec : String) return String is
+         begin
+            if Spec = "" then
+               return Project_Dir;
+            elsif Spec (Spec'First) = '/' then
+               return Spec;
+            else
+               return Join_Path (Project_Dir, Spec);
+            end if;
+         end Resolve;
+
+         Input  : Ada.Text_IO.File_Type;
+         Buffer : Unbounded_String;
+         Pos    : Positive := 1;
+
+         Dir_Specs      : File_Name_Vectors.Vector;
+         File_Specs     : File_Name_Vectors.Vector;
+         Excluded_Specs : File_Name_Vectors.Vector;
+         Extends_Spec   : Unbounded_String := Null_Unbounded_String;
+         Collected      : File_Name_Vectors.Vector;
+      begin
+         Ada.Text_IO.Open (Input, Ada.Text_IO.In_File, Actual);
+         while not Ada.Text_IO.End_Of_File (Input) loop
+            Append (Buffer, Ada.Text_IO.Get_Line (Input));
+            Append (Buffer, Ada.Characters.Latin_1.LF);
+         end loop;
+         Ada.Text_IO.Close (Input);
+
+         declare
+            Source : constant String := To_String (Buffer);
+         begin
+            loop
+               declare
+                  Tok : constant Gpr_Token := Gpr_Next_Token (Source, Pos);
+               begin
+                  exit when Tok.Kind = Gpr_Tok_End;
+
+                  if Tok.Kind = Gpr_Tok_Identifier
+                    and then Gpr_Ident_Equals (To_String (Tok.Text), "for")
+                  then
+                     declare
+                        Attr_Tok : constant Gpr_Token :=
+                          Gpr_Next_Token (Source, Pos);
+                     begin
+                        if Attr_Tok.Kind = Gpr_Tok_Identifier then
+                           declare
+                              Use_Tok : constant Gpr_Token :=
+                                Gpr_Next_Token (Source, Pos);
+                           begin
+                              if Use_Tok.Kind = Gpr_Tok_Identifier
+                                and then Gpr_Ident_Equals
+                                           (To_String (Use_Tok.Text), "use")
+                              then
+                                 declare
+                                    Attr_Name : constant String :=
+                                      To_String (Attr_Tok.Text);
+                                    Values : File_Name_Vectors.Vector;
+                                 begin
+                                    Gpr_Read_String_List (Source, Pos, Values);
+
+                                    if Gpr_Ident_Equals
+                                         (Attr_Name, "Source_Dirs")
+                                    then
+                                       for V of Values loop
+                                          File_Name_Vectors.Append
+                                            (Dir_Specs, V);
+                                       end loop;
+                                    elsif Gpr_Ident_Equals
+                                            (Attr_Name, "Source_Files")
+                                    then
+                                       for V of Values loop
+                                          File_Name_Vectors.Append
+                                            (File_Specs, V);
+                                       end loop;
+                                    elsif Gpr_Ident_Equals
+                                            (Attr_Name, "Excluded_Source_Files")
+                                      or else Gpr_Ident_Equals
+                                                (Attr_Name,
+                                                 "Locally_Removed_Files")
+                                    then
+                                       for V of Values loop
+                                          File_Name_Vectors.Append
+                                            (Excluded_Specs, V);
+                                       end loop;
+                                    end if;
+                                 end;
+                              end if;
+                           end;
+                        end if;
+                     end;
+                  elsif Tok.Kind = Gpr_Tok_Identifier
+                    and then Gpr_Ident_Equals (To_String (Tok.Text), "extends")
+                  then
+                     declare
+                        Str_Tok : constant Gpr_Token :=
+                          Gpr_Next_Token (Source, Pos);
+                     begin
+                        if Str_Tok.Kind = Gpr_Tok_String then
+                           Extends_Spec := Str_Tok.Text;
+                        end if;
+                     end;
+                  end if;
+               end;
+            end loop;
+         end;
+
+         --  Follow the extension chain first so the child project's own
+         --  sources can override same-named files inherited from the base.
+         if Length (Extends_Spec) > 0 then
+            Load_Project_File
+              (Resolve (To_String (Extends_Spec)), Files, Seen);
+         end if;
+
+         if File_Name_Vectors.Is_Empty (Dir_Specs) then
+            File_Name_Vectors.Append (Dir_Specs, "");
+         end if;
+
+         for Spec of Dir_Specs loop
+            declare
+               Recursive : Boolean := False;
+               Base      : Unbounded_String := To_Unbounded_String (Spec);
+            begin
+               if Has_Suffix (Spec, "**") then
+                  Recursive := True;
+                  Base := To_Unbounded_String
+                    (Spec (Spec'First .. Spec'Last - 2));
+
+                  if Length (Base) > 0
+                    and then Element (Base, Length (Base)) = '/'
+                  then
+                     Base := To_Unbounded_String
+                       (Slice (Base, 1, Length (Base) - 1));
+                  end if;
+               end if;
+
+               Collect_Ada_Sources
+                 (Resolve (To_String (Base)), Recursive, Collected);
+            end;
+         end loop;
+
+         if not File_Name_Vectors.Is_Empty (File_Specs) then
+            declare
+               Filtered : File_Name_Vectors.Vector;
+            begin
+               for F of Collected loop
+                  if Vector_Contains
+                       (File_Specs, Ada.Directories.Simple_Name (F))
+                  then
+                     File_Name_Vectors.Append (Filtered, F);
+                  end if;
+               end loop;
+               Collected := Filtered;
+            end;
+         end if;
+
+         for F of Collected loop
+            if not Vector_Contains
+                     (Excluded_Specs, Ada.Directories.Simple_Name (F))
+            then
+               Append_Or_Replace_By_Simple_Name (Files, F);
+            end if;
+         end loop;
+      end;
+   end Load_Project_File;
+
+   --  Parses one file with Libadalang and, if it parsed cleanly, walks it
+   --  with Evaluate_Node. Parse diagnostics are printed but do not stop
+   --  the run; any other failure while processing this file is caught so
+   --  one bad file can't abort analysis of the rest.
    procedure Process_File (Filename : String; Ctx : Libadalang.Analysis.Analysis_Context) is
       Unit : Libadalang.Analysis.Analysis_Unit;
    begin
@@ -2981,17 +3690,18 @@ procedure Adalang_Analyzer is
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    end Process_File;
 
-   package File_Name_Vectors is new Ada.Containers.Indefinite_Vectors
-     (Index_Type   => Positive,
-      Element_Type => String);
-
    Files_To_Process : File_Name_Vectors.Vector;
+   Project_Files    : File_Name_Vectors.Vector;
+   Seen_Projects    : File_Name_Vectors.Vector;
    Argument_Count   : Natural := Ada.Command_Line.Argument_Count;
    Current_Arg      : Natural := 1;
    Options_Ended    : Boolean := False;
    Ctx              : Libadalang.Analysis.Analysis_Context;
 
 begin
+   --  Left-to-right scan of the command line: switches update the mode
+   --  flags/rule states above, everything else (or anything after "--")
+   --  is collected as either a project file (-P) or a source file name.
    while Current_Arg <= Argument_Count loop
       declare
          Arg : constant String := Ada.Command_Line.Argument (Current_Arg);
@@ -3037,6 +3747,18 @@ begin
             then
                Set_Complexity_Threshold
                  (Arg (Arg'First + 22 .. Arg'Last));
+            elsif Arg = "-P" then
+               if Current_Arg = Argument_Count then
+                  Ada.Text_IO.Put_Line ("adalang-analyzer: expected argument for -P");
+                  Invalid_Options := True;
+               else
+                  File_Name_Vectors.Append
+                    (Project_Files, Ada.Command_Line.Argument (Current_Arg + 1));
+                  Current_Arg := Current_Arg + 1;
+               end if;
+            elsif Arg'Length > 2 and then Arg (Arg'First .. Arg'First + 1) = "-P" then
+               File_Name_Vectors.Append
+                 (Project_Files, Arg (Arg'First + 2 .. Arg'Last));
             elsif Arg (Arg'First) = '+' or else Arg (Arg'First) = '-' then
                if Arg'Length > 2 and then Arg (Arg'First + 1) = 'R' then
                   Process_Command_Switch (Arg);
@@ -3067,7 +3789,15 @@ begin
    elsif List_Checks_Only then
       Print_Check_List;
       return;
-   elsif File_Name_Vectors.Is_Empty (Files_To_Process) then
+   end if;
+
+   --  Project files contribute their own Ada sources on top of any file
+   --  names given directly on the command line.
+   for P of Project_Files loop
+      Load_Project_File (P, Files_To_Process, Seen_Projects);
+   end loop;
+
+   if File_Name_Vectors.Is_Empty (Files_To_Process) then
       if Argument_Count > 0 then
          -- Options were provided, but no files
          null;
