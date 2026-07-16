@@ -101,6 +101,19 @@ findings predictable without requiring whole-program control-flow analysis.
 `Function_Side_Effect` only flags assignments through a simple identifier
 destination, to avoid false positives from unresolved or complex constructs.
 
+`Division_By_Zero` and `Constant_Condition` are additionally strengthened by a
+flow-sensitive constant-propagation pass that tracks a variable's value across
+straight-line code, `if`/`elsif`/`else` and `case` branches (joining at merge
+points), declare blocks, and loops. A loop havocs every variable its body
+assigns before interpreting the body once, so a value known before the loop
+is never wrongly assumed to survive a reassignment that happens later in the
+same loop body. This lets both checks catch cases only reachable through an
+earlier assignment, not just literal constants, e.g. `X := 0; ... Y := 10 /
+X;`. The pass tracks exact known values rather than value ranges, and
+conservatively stops tracking at constructs it does not model (`select`,
+`accept`, `goto` targets) and for subprogram or declare-block bodies with
+their own exception handlers.
+
 ## Requirements
 
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
