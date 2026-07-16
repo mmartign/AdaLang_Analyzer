@@ -1179,9 +1179,47 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
 
    Max_Flow_Vars : constant := 64;
 
+   --  A lower and/or upper bound a variable is known to stay within, even
+   --  when its exact value isn't known. Either side can be absent on its
+   --  own (Has_Low/Has_High), unlike Abstract_Int's all-or-nothing Known:
+   --  "X > 0" only ever tells us a lower bound, never an upper one. A
+   --  variable whose exact value is known (Abstract_Int.Known) is always
+   --  also representable here as the degenerate range [V, V].
+   type Abstract_Range is record
+      Has_Low  : Boolean := False;
+      Low      : Long_Long_Integer := 0;
+      Has_High : Boolean := False;
+      High     : Long_Long_Integer := 0;
+   end record;
+
+   Unknown_Range : constant Abstract_Range := (others => <>);
+
+   --  The range implied by a known exact value: both bounds equal Value.
+   function Range_From_Int (Value : Abstract_Int) return Abstract_Range is
+   begin
+      if Value.Known then
+         return
+           (Has_Low => True, Low => Value.Value,
+            Has_High => True, High => Value.Value);
+      else
+         return Unknown_Range;
+      end if;
+   end Range_From_Int;
+
+   --  A binding tracks the Abstract_Int, Abstract_Bool, and Abstract_Range
+   --  a variable may be statically known to hold. Only one of Value /
+   --  Bool_Value is ever meaningful for a given Decl (a variable's declared
+   --  type is either integer or boolean, never both), so a plain object's
+   --  Bool_Value simply stays Bool_Unknown and vice versa. Range_Value is
+   --  meaningful only alongside Value (a boolean variable has no useful
+   --  range), and is always at least as wide as the degenerate range
+   --  implied by Value when Value is known.
    type Flow_Binding is record
-      Decl  : Libadalang.Analysis.Ada_Node := Libadalang.Analysis.No_Ada_Node;
-      Value : Abstract_Int := Unknown_Int;
+      Decl        : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Value       : Abstract_Int := Unknown_Int;
+      Bool_Value  : Abstract_Bool := Bool_Unknown;
+      Range_Value : Abstract_Range := Unknown_Range;
    end record;
 
    type Flow_Binding_Array is array (1 .. Max_Flow_Vars) of Flow_Binding;
@@ -1212,10 +1250,53 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       return Unknown_Int;
    end Flow_Lookup;
 
-   --  Records that Key now holds Value, replacing any prior binding. Silently
-   --  drops the update once Max_Flow_Vars bindings are in use: a subprogram
-   --  with that many live scalars is rare, and losing precision there is
-   --  safe (Flow_Lookup simply reports Unknown for what didn't fit).
+   --  The Abstract_Bool known for Key, or Bool_Unknown if Key isn't tracked
+   --  as a boolean. Mirrors Flow_Lookup for the boolean half of a binding.
+   function Flow_Bool_Lookup
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return Bool_Unknown;
+      end if;
+
+      for I in 1 .. State.Count loop
+         if State.Bindings (I).Decl = Key then
+            return State.Bindings (I).Bool_Value;
+         end if;
+      end loop;
+
+      return Bool_Unknown;
+   end Flow_Bool_Lookup;
+
+   --  The Abstract_Range known for Key, or Unknown_Range if Key isn't
+   --  tracked. Mirrors Flow_Lookup for the range half of a binding.
+   function Flow_Range_Lookup
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) return Abstract_Range
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return Unknown_Range;
+      end if;
+
+      for I in 1 .. State.Count loop
+         if State.Bindings (I).Decl = Key then
+            return State.Bindings (I).Range_Value;
+         end if;
+      end loop;
+
+      return Unknown_Range;
+   end Flow_Range_Lookup;
+
+   --  Records that Key now holds Value, replacing any prior binding, and
+   --  widens its tracked range to at least the degenerate range [Value,
+   --  Value] implied by an exact known Value (narrowing an existing wider
+   --  range down to that point where applicable). Silently drops the
+   --  update once Max_Flow_Vars bindings are in use: a subprogram with
+   --  that many live scalars is rare, and losing precision there is safe
+   --  (Flow_Lookup simply reports Unknown for what didn't fit).
    procedure Flow_Set
      (State : in out Flow_State;
       Key   : Libadalang.Analysis.Ada_Node;
@@ -1229,19 +1310,81 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       for I in 1 .. State.Count loop
          if State.Bindings (I).Decl = Key then
             State.Bindings (I).Value := Value;
+            if Value.Known then
+               State.Bindings (I).Range_Value := Range_From_Int (Value);
+            end if;
             return;
          end if;
       end loop;
 
       if State.Count < Max_Flow_Vars then
          State.Count := State.Count + 1;
-         State.Bindings (State.Count) := (Decl => Key, Value => Value);
+         State.Bindings (State.Count) :=
+           (Decl => Key, Value => Value, Bool_Value => Bool_Unknown,
+            Range_Value => Range_From_Int (Value));
       end if;
    end Flow_Set;
 
-   --  Marks Key as no longer statically known, e.g. because it was passed
-   --  to a call this analysis can't see through. A no-op when Key was
-   --  never tracked, so this never grows the table.
+   --  Records that Key now holds Bool_Value, mirroring Flow_Set for the
+   --  boolean half of a binding.
+   procedure Flow_Bool_Set
+     (State      : in out Flow_State;
+      Key        : Libadalang.Analysis.Ada_Node;
+      Bool_Value : Abstract_Bool)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return;
+      end if;
+
+      for I in 1 .. State.Count loop
+         if State.Bindings (I).Decl = Key then
+            State.Bindings (I).Bool_Value := Bool_Value;
+            return;
+         end if;
+      end loop;
+
+      if State.Count < Max_Flow_Vars then
+         State.Count := State.Count + 1;
+         State.Bindings (State.Count) :=
+           (Decl => Key, Value => Unknown_Int, Bool_Value => Bool_Value,
+            Range_Value => Unknown_Range);
+      end if;
+   end Flow_Bool_Set;
+
+   --  Records that Key is now known to stay within Range_Value, replacing
+   --  any prior range (e.g. after a branch condition narrows it), without
+   --  touching Value or Bool_Value. Unlike Flow_Set, this does not imply
+   --  Key's exact value became known, so it never creates a binding on its
+   --  own past Max_Flow_Vars slots, matching Flow_Set/Flow_Bool_Set.
+   procedure Flow_Range_Set
+     (State       : in out Flow_State;
+      Key         : Libadalang.Analysis.Ada_Node;
+      Range_Value : Abstract_Range)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return;
+      end if;
+
+      for I in 1 .. State.Count loop
+         if State.Bindings (I).Decl = Key then
+            State.Bindings (I).Range_Value := Range_Value;
+            return;
+         end if;
+      end loop;
+
+      if State.Count < Max_Flow_Vars then
+         State.Count := State.Count + 1;
+         State.Bindings (State.Count) :=
+           (Decl => Key, Value => Unknown_Int, Bool_Value => Bool_Unknown,
+            Range_Value => Range_Value);
+      end if;
+   end Flow_Range_Set;
+
+   --  Marks Key as no longer statically known in any domain, e.g. because
+   --  it was passed to a call this analysis can't see through. A no-op
+   --  when Key was never tracked, so this never grows the table.
    procedure Flow_Havoc
      (State : in out Flow_State;
       Key   : Libadalang.Analysis.Ada_Node)
@@ -1254,27 +1397,72 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       for I in 1 .. State.Count loop
          if State.Bindings (I).Decl = Key then
             State.Bindings (I).Value := Unknown_Int;
+            State.Bindings (I).Bool_Value := Bool_Unknown;
+            State.Bindings (I).Range_Value := Unknown_Range;
             return;
          end if;
       end loop;
    end Flow_Havoc;
 
-   --  The state true after either of two branches: a binding survives only
-   --  where both sides agree on the same known value, which is exactly
-   --  what makes it safe to describe a merged point as "X is always N".
+   --  The tightest range covering both Left and Right: the lower bound
+   --  survives only when both sides have one (the lower of the two), and
+   --  likewise for the upper bound -- a side with no bound in a direction
+   --  means "could be arbitrarily far that way", which the union must
+   --  respect.
+   function Range_Union (Left, Right : Abstract_Range) return Abstract_Range is
+      Result : Abstract_Range;
+   begin
+      if Left.Has_Low and then Right.Has_Low then
+         Result.Has_Low := True;
+         Result.Low := Long_Long_Integer'Min (Left.Low, Right.Low);
+      end if;
+
+      if Left.Has_High and then Right.Has_High then
+         Result.Has_High := True;
+         Result.High := Long_Long_Integer'Max (Left.High, Right.High);
+      end if;
+
+      return Result;
+   end Range_Union;
+
+   --  The state true after either of two branches: an exact-value binding
+   --  survives only where both sides agree on the same known value, which
+   --  is exactly what makes it safe to describe a merged point as "X is
+   --  always N" (or, for the boolean half, "X is always true/false"). A
+   --  range binding instead survives as the union of both sides' ranges,
+   --  since either branch could have run.
    function Flow_Join (Left, Right : Flow_State) return Flow_State is
       Result : Flow_State := Empty_Flow_State;
    begin
       for I in 1 .. Left.Count loop
          declare
+            Decl        : constant Libadalang.Analysis.Ada_Node :=
+              Left.Bindings (I).Decl;
             Left_Value  : constant Abstract_Int := Left.Bindings (I).Value;
             Right_Value : constant Abstract_Int :=
-              Flow_Lookup (Right, Left.Bindings (I).Decl);
+              Flow_Lookup (Right, Decl);
+            Left_Bool   : constant Abstract_Bool :=
+              Left.Bindings (I).Bool_Value;
+            Right_Bool  : constant Abstract_Bool :=
+              Flow_Bool_Lookup (Right, Decl);
+            Left_Range  : constant Abstract_Range :=
+              Left.Bindings (I).Range_Value;
+            Right_Range : constant Abstract_Range :=
+              Flow_Range_Lookup (Right, Decl);
          begin
             if Left_Value.Known and then Right_Value.Known
               and then Left_Value.Value = Right_Value.Value
             then
-               Flow_Set (Result, Left.Bindings (I).Decl, Left_Value);
+               Flow_Set (Result, Decl, Left_Value);
+            end if;
+
+            if Left_Bool /= Bool_Unknown and then Left_Bool = Right_Bool then
+               Flow_Bool_Set (Result, Decl, Left_Bool);
+            end if;
+
+            if Left_Range.Has_Low or else Left_Range.Has_High then
+               Flow_Range_Set
+                 (Result, Decl, Range_Union (Left_Range, Right_Range));
             end if;
          end;
       end loop;
@@ -1642,12 +1830,23 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
          return Unknown_Int;
    end Safe_Pow;
 
+   --  Forward declaration: Integer_Value and Boolean_Value are mutually
+   --  recursive once conditional expressions are folded, since an "if"
+   --  expression's condition is boolean-valued even when the expression
+   --  itself yields an integer (Boolean_Value's full definition, and its
+   --  own documentation, are further below).
+   function Boolean_Value
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State := Empty_Flow_State) return Abstract_Bool;
+
    --  Statically evaluates Node as an integer expression when its value is
-   --  determined purely by literals and constant arithmetic (+, -, abs,
-   --  and the binary operators), returning Unknown_Int for anything that
-   --  depends on a variable, a function call, or unsupported syntax. This
-   --  drives the Division_By_Zero, Reversed_Range, and case-range checks
-   --  without a full constant-folding evaluator.
+   --  determined purely by literals, constant arithmetic (+, -, abs, and
+   --  the binary operators), a flow-tracked identifier, or an "if"
+   --  expression whose condition itself resolves; returning Unknown_Int
+   --  for anything that depends on an untracked variable, a function call,
+   --  or unsupported syntax. This drives the Division_By_Zero,
+   --  Reversed_Range, and case-range checks without a full constant-folding
+   --  evaluator.
    function Integer_Value  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State := Empty_Flow_State) return Abstract_Int
@@ -1755,6 +1954,49 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                   when others =>
                      return Unknown_Int;
                end case;
+            end;
+
+         when Libadalang.Common.Ada_If_Expr =>
+            declare
+               If_Node : constant Libadalang.Analysis.If_Expr :=
+                 Node.As_If_Expr;
+
+               --  Evaluates the elsif/else chain starting at Index, mirroring
+               --  Interpret_Else_Chain's statement-level logic for the
+               --  expression form of if/elsif/else.
+               function Elsif_Value (Index : Positive) return Abstract_Int is
+               begin
+                  if Index > If_Node.F_Alternatives.Children_Count then
+                     return Integer_Value (If_Node.F_Else_Expr, State);
+                  end if;
+
+                  declare
+                     Alt  : constant Libadalang.Analysis.Elsif_Expr_Part :=
+                       If_Node.F_Alternatives.Child (Index)
+                         .As_Elsif_Expr_Part;
+                     Cond : constant Abstract_Bool :=
+                       Boolean_Value (Alt.F_Cond_Expr, State);
+                  begin
+                     if Cond = Bool_True then
+                        return Integer_Value (Alt.F_Then_Expr, State);
+                     elsif Cond = Bool_False then
+                        return Elsif_Value (Index + 1);
+                     else
+                        return Unknown_Int;
+                     end if;
+                  end;
+               end Elsif_Value;
+
+               Cond : constant Abstract_Bool :=
+                 Boolean_Value (If_Node.F_Cond_Expr, State);
+            begin
+               if Cond = Bool_True then
+                  return Integer_Value (If_Node.F_Then_Expr, State);
+               elsif Cond = Bool_False then
+                  return Elsif_Value (1);
+               else
+                  return Unknown_Int;
+               end if;
             end;
 
          when others =>
@@ -1966,13 +2208,107 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       end case;
    end Compare_Integers;
 
+   --  The Abstract_Range Node is statically known to fall within: a
+   --  flow-tracked identifier's own range, or the degenerate [V, V] range
+   --  implied by Integer_Value when Node's exact value can be folded.
+   --  Backs Compare_Range, the range-based fallback Boolean_Value uses
+   --  when Compare_Integers can't decide a relational comparison from
+   --  exact values alone.
+   function Range_Value
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Abstract_Range
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return Unknown_Range;
+      end if;
+
+      if Node.Kind = Libadalang.Common.Ada_Identifier then
+         return Flow_Range_Lookup
+           (State,
+            Libadalang.Analysis.Ada_Node
+              (Node.As_Name.P_Referenced_Defining_Name));
+      elsif Node.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Range_Value (Node.As_Paren_Expr.F_Expr, State);
+      else
+         return Range_From_Int (Integer_Value (Node, State));
+      end if;
+   end Range_Value;
+
+   --  Evaluates a relational operator from two Abstract_Ranges, deciding
+   --  the outcome only when one side's range is provably entirely above or
+   --  below the other's (e.g. Left.Low > Right.High proves "Left > Right"
+   --  regardless of which exact values within those ranges are actually
+   --  involved). Bool_Unknown whenever the ranges could overlap or aren't
+   --  known; never claims equality, only disjointness, since two
+   --  overlapping ranges don't prove their values equal.
+   function Compare_Range
+     (Op   : Libadalang.Common.Ada_Node_Kind_Type;
+      Left : Abstract_Range; Right : Abstract_Range) return Abstract_Bool
+   is
+   begin
+      case Op is
+         when Libadalang.Common.Ada_Op_Gt =>
+            if Left.Has_Low and then Right.Has_High
+              and then Left.Low > Right.High
+            then
+               return Bool_True;
+            elsif Left.Has_High and then Right.Has_Low
+              and then Left.High <= Right.Low
+            then
+               return Bool_False;
+            else
+               return Bool_Unknown;
+            end if;
+
+         when Libadalang.Common.Ada_Op_Gte =>
+            if Left.Has_Low and then Right.Has_High
+              and then Left.Low >= Right.High
+            then
+               return Bool_True;
+            elsif Left.Has_High and then Right.Has_Low
+              and then Left.High < Right.Low
+            then
+               return Bool_False;
+            else
+               return Bool_Unknown;
+            end if;
+
+         when Libadalang.Common.Ada_Op_Lt =>
+            return Compare_Range (Libadalang.Common.Ada_Op_Gt, Right, Left);
+
+         when Libadalang.Common.Ada_Op_Lte =>
+            return Compare_Range (Libadalang.Common.Ada_Op_Gte, Right, Left);
+
+         when Libadalang.Common.Ada_Op_Eq =>
+            if (Left.Has_High and then Right.Has_Low
+                and then Left.High < Right.Low)
+              or else (Right.Has_High and then Left.Has_Low
+                       and then Right.High < Left.Low)
+            then
+               return Bool_False;
+            else
+               return Bool_Unknown;
+            end if;
+
+         when Libadalang.Common.Ada_Op_Neq =>
+            return Not_Bool
+              (Compare_Range (Libadalang.Common.Ada_Op_Eq, Left, Right));
+
+         when others =>
+            return Bool_Unknown;
+      end case;
+   end Compare_Range;
+
    --  Statically evaluates Node as a boolean expression: the literals
-   --  True/False, "not", "and"/"or"/"xor" (and their short-circuit forms),
-   --  relational and equality comparisons on statically known integers,
-   --  "= null"/"/= null", and static membership tests. Anything else
-   --  (a variable, a function call, ...) yields Bool_Unknown. This backs
-   --  Constant_Condition, Infinite_Loop's while-condition check, and the
-   --  Ineffective_Operation / Constant_Result_Operation identity folding.
+   --  True/False, a flow-tracked boolean identifier, "not", "and"/"or"/
+   --  "xor" (and their short-circuit forms), relational and equality
+   --  comparisons on statically known integers, "= null"/"/= null", static
+   --  membership tests, and an "if" expression whose condition itself
+   --  resolves. Anything else (an untracked variable, a function call, ...)
+   --  yields Bool_Unknown. This backs Constant_Condition, Infinite_Loop's
+   --  while-condition check, and the Ineffective_Operation /
+   --  Constant_Result_Operation identity folding.
    function Boolean_Value  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State := Empty_Flow_State) return Abstract_Bool
@@ -1995,7 +2331,10 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                elsif Text = "false" then
                   return Bool_False;
                else
-                  return Bool_Unknown;
+                  return Flow_Bool_Lookup
+                    (State,
+                     Libadalang.Analysis.Ada_Node
+                       (Node.As_Name.P_Referenced_Defining_Name));
                end if;
             end;
 
@@ -2032,17 +2371,23 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                      return Or_Bool (Left, Right);
                   when Libadalang.Common.Ada_Op_Eq =>
                      declare
-                        Bool_Result : constant Abstract_Bool :=
+                        Bool_Result  : constant Abstract_Bool :=
                           Eq_Bool (Left, Right);
-                        Int_Result  : constant Abstract_Bool :=
+                        Int_Result   : constant Abstract_Bool :=
                           Compare_Integers
                             (Op, Integer_Value (Expr.F_Left, State),
                              Integer_Value (Expr.F_Right, State));
+                        Range_Result : constant Abstract_Bool :=
+                          Compare_Range
+                            (Op, Range_Value (Expr.F_Left, State),
+                             Range_Value (Expr.F_Right, State));
                      begin
                         if Bool_Result /= Bool_Unknown then
                            return Bool_Result;
                         elsif Int_Result /= Bool_Unknown then
                            return Int_Result;
+                        elsif Range_Result /= Bool_Unknown then
+                           return Range_Result;
                         elsif Is_Null_Literal (Expr.F_Left)
                           and then Is_Null_Literal (Expr.F_Right)
                         then
@@ -2053,17 +2398,23 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                      end;
                   when Libadalang.Common.Ada_Op_Neq =>
                      declare
-                        Bool_Result : constant Abstract_Bool :=
+                        Bool_Result  : constant Abstract_Bool :=
                           Not_Bool (Eq_Bool (Left, Right));
-                        Int_Result  : constant Abstract_Bool :=
+                        Int_Result   : constant Abstract_Bool :=
                           Compare_Integers
                             (Op, Integer_Value (Expr.F_Left, State),
                              Integer_Value (Expr.F_Right, State));
+                        Range_Result : constant Abstract_Bool :=
+                          Compare_Range
+                            (Op, Range_Value (Expr.F_Left, State),
+                             Range_Value (Expr.F_Right, State));
                      begin
                         if Bool_Result /= Bool_Unknown then
                            return Bool_Result;
                         elsif Int_Result /= Bool_Unknown then
                            return Int_Result;
+                        elsif Range_Result /= Bool_Unknown then
+                           return Range_Result;
                         elsif Is_Null_Literal (Expr.F_Left)
                           and then Is_Null_Literal (Expr.F_Right)
                         then
@@ -2078,9 +2429,20 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                      | Libadalang.Common.Ada_Op_Lte
                      | Libadalang.Common.Ada_Op_Gt
                      | Libadalang.Common.Ada_Op_Gte =>
-                     return Compare_Integers
-                       (Op, Integer_Value (Expr.F_Left, State),
-                        Integer_Value (Expr.F_Right, State));
+                     declare
+                        Int_Result : constant Abstract_Bool :=
+                          Compare_Integers
+                            (Op, Integer_Value (Expr.F_Left, State),
+                             Integer_Value (Expr.F_Right, State));
+                     begin
+                        if Int_Result /= Bool_Unknown then
+                           return Int_Result;
+                        else
+                           return Compare_Range
+                             (Op, Range_Value (Expr.F_Left, State),
+                              Range_Value (Expr.F_Right, State));
+                        end if;
+                     end;
                   when others =>
                      return Bool_Unknown;
                end case;
@@ -2146,6 +2508,47 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                   return Bool_From (Matches);
                else
                   return Bool_From (not Matches);
+               end if;
+            end;
+
+         when Libadalang.Common.Ada_If_Expr =>
+            declare
+               If_Node : constant Libadalang.Analysis.If_Expr :=
+                 Node.As_If_Expr;
+
+               --  Mirrors Integer_Value's Elsif_Value for the boolean case.
+               function Elsif_Value (Index : Positive) return Abstract_Bool is
+               begin
+                  if Index > If_Node.F_Alternatives.Children_Count then
+                     return Boolean_Value (If_Node.F_Else_Expr, State);
+                  end if;
+
+                  declare
+                     Alt  : constant Libadalang.Analysis.Elsif_Expr_Part :=
+                       If_Node.F_Alternatives.Child (Index)
+                         .As_Elsif_Expr_Part;
+                     Cond : constant Abstract_Bool :=
+                       Boolean_Value (Alt.F_Cond_Expr, State);
+                  begin
+                     if Cond = Bool_True then
+                        return Boolean_Value (Alt.F_Then_Expr, State);
+                     elsif Cond = Bool_False then
+                        return Elsif_Value (Index + 1);
+                     else
+                        return Bool_Unknown;
+                     end if;
+                  end;
+               end Elsif_Value;
+
+               Cond : constant Abstract_Bool :=
+                 Boolean_Value (If_Node.F_Cond_Expr, State);
+            begin
+               if Cond = Bool_True then
+                  return Boolean_Value (If_Node.F_Then_Expr, State);
+               elsif Cond = Bool_False then
+                  return Elsif_Value (1);
+               else
+                  return Bool_Unknown;
                end if;
             end;
 
@@ -2951,16 +3354,25 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                      Scan_Expression_For_Flow_Bugs (Unit, Default, State);
 
                      declare
-                        Value : constant Abstract_Int :=
+                        Value      : constant Abstract_Int :=
                           Integer_Value (Default, State);
+                        Bool_Value : constant Abstract_Bool :=
+                          Boolean_Value (Default, State);
                      begin
-                        if Value.Known then
-                           for Id of Decl.F_Ids loop
+                        for Id of Decl.F_Ids loop
+                           if Value.Known then
                               Flow_Set
                                 (State,
                                  Libadalang.Analysis.Ada_Node (Id), Value);
-                           end loop;
-                        end if;
+                           end if;
+
+                           if Bool_Value /= Bool_Unknown then
+                              Flow_Bool_Set
+                                (State,
+                                 Libadalang.Analysis.Ada_Node (Id),
+                                 Bool_Value);
+                           end if;
+                        end loop;
                      end;
                   end if;
                end;
@@ -2997,6 +3409,235 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       end if;
    end Join_Results;
 
+   --  Op with its operands conceptually swapped: the operator to use when
+   --  the tracked identifier is the right-hand operand of a comparison
+   --  (e.g. "0 < X" is narrowed the same way as "X > 0"). Eq/Neq are their
+   --  own mirror.
+   function Mirror_Comparison
+     (Op : Libadalang.Common.Ada_Node_Kind_Type)
+      return Libadalang.Common.Ada_Node_Kind_Type
+   is
+   begin
+      case Op is
+         when Libadalang.Common.Ada_Op_Lt =>
+            return Libadalang.Common.Ada_Op_Gt;
+         when Libadalang.Common.Ada_Op_Lte =>
+            return Libadalang.Common.Ada_Op_Gte;
+         when Libadalang.Common.Ada_Op_Gt =>
+            return Libadalang.Common.Ada_Op_Lt;
+         when Libadalang.Common.Ada_Op_Gte =>
+            return Libadalang.Common.Ada_Op_Lte;
+         when others =>
+            return Op;
+      end case;
+   end Mirror_Comparison;
+
+   --  Narrows Key's tracked range in True_State / False_State to reflect
+   --  "Key <Op> Bound" holding or not holding, when Bound is statically
+   --  known. A no-op (both states left exactly as they entered) when Bound
+   --  isn't known or Key is null, which is always sound -- it just forgoes
+   --  the extra precision.
+   procedure Narrow_Identifier_By_Comparison
+     (Key         : Libadalang.Analysis.Ada_Node;
+      Op          : Libadalang.Common.Ada_Node_Kind_Type;
+      Bound       : Abstract_Int;
+      True_State  : in out Flow_State;
+      False_State : in out Flow_State)
+   is
+      Existing    : constant Abstract_Range :=
+        Flow_Range_Lookup (True_State, Key);
+      True_Range  : Abstract_Range := Existing;
+      False_Range : Abstract_Range := Existing;
+   begin
+      if not Bound.Known or else Libadalang.Analysis.Is_Null (Key) then
+         return;
+      end if;
+
+      case Op is
+         when Libadalang.Common.Ada_Op_Gt =>
+            --  Key > Bound: true narrows Key's low bound up to Bound + 1;
+            --  false narrows its high bound down to Bound.
+            if not True_Range.Has_Low or else True_Range.Low < Bound.Value + 1
+            then
+               True_Range := (Has_Low => True, Low => Bound.Value + 1,
+                               Has_High => True_Range.Has_High,
+                               High => True_Range.High);
+            end if;
+            if not False_Range.Has_High or else False_Range.High > Bound.Value
+            then
+               False_Range := (Has_High => True, High => Bound.Value,
+                                Has_Low => False_Range.Has_Low,
+                                Low => False_Range.Low);
+            end if;
+
+         when Libadalang.Common.Ada_Op_Gte =>
+            if not True_Range.Has_Low or else True_Range.Low < Bound.Value then
+               True_Range := (Has_Low => True, Low => Bound.Value,
+                               Has_High => True_Range.Has_High,
+                               High => True_Range.High);
+            end if;
+            if not False_Range.Has_High
+              or else False_Range.High > Bound.Value - 1
+            then
+               False_Range := (Has_High => True, High => Bound.Value - 1,
+                                Has_Low => False_Range.Has_Low,
+                                Low => False_Range.Low);
+            end if;
+
+         when Libadalang.Common.Ada_Op_Lt =>
+            if not True_Range.Has_High
+              or else True_Range.High > Bound.Value - 1
+            then
+               True_Range := (Has_High => True, High => Bound.Value - 1,
+                               Has_Low => True_Range.Has_Low,
+                               Low => True_Range.Low);
+            end if;
+            if not False_Range.Has_Low or else False_Range.Low < Bound.Value
+            then
+               False_Range := (Has_Low => True, Low => Bound.Value,
+                                Has_High => False_Range.Has_High,
+                                High => False_Range.High);
+            end if;
+
+         when Libadalang.Common.Ada_Op_Lte =>
+            if not True_Range.Has_High or else True_Range.High > Bound.Value
+            then
+               True_Range := (Has_High => True, High => Bound.Value,
+                               Has_Low => True_Range.Has_Low,
+                               Low => True_Range.Low);
+            end if;
+            if not False_Range.Has_Low
+              or else False_Range.Low < Bound.Value + 1
+            then
+               False_Range := (Has_Low => True, Low => Bound.Value + 1,
+                                Has_High => False_Range.Has_High,
+                                High => False_Range.High);
+            end if;
+
+         when Libadalang.Common.Ada_Op_Eq =>
+            --  Key = Bound: true pins Key to the single value Bound; false
+            --  doesn't imply a bound in either direction, so False_Range
+            --  is left as Existing.
+            True_Range :=
+              (Has_Low => True, Low => Bound.Value,
+               Has_High => True, High => Bound.Value);
+
+         when others =>
+            return;
+      end case;
+
+      Flow_Range_Set (True_State, Key, True_Range);
+      Flow_Range_Set (False_State, Key, False_Range);
+   exception
+      when others =>
+         null;
+   end Narrow_Identifier_By_Comparison;
+
+   --  Returns the states true after Cond holds (True_State) and after it
+   --  doesn't (False_State), narrowing a tracked identifier's range for the
+   --  handful of shapes this recognizes: a direct comparison against a
+   --  statically known expression on either side, and "not"/"and"/
+   --  "and then"/"or"/"or else" built from such comparisons. Anything else
+   --  -- a comparison between two unresolved expressions, a function call,
+   --  ... -- leaves both states identical to State, which is always sound.
+   procedure Narrow_By_Condition  --  adalang-analyzer: ignore Cyclomatic_Complexity
+     (Cond        : Libadalang.Analysis.Ada_Node'Class;
+      State       : Flow_State;
+      True_State  : out Flow_State;
+      False_State : out Flow_State)
+   is
+   begin
+      True_State := State;
+      False_State := State;
+
+      if Libadalang.Analysis.Is_Null (Cond) then
+         return;
+      end if;
+
+      if Cond.Kind = Libadalang.Common.Ada_Paren_Expr then
+         Narrow_By_Condition
+           (Cond.As_Paren_Expr.F_Expr, State, True_State, False_State);
+         return;
+      end if;
+
+      if Cond.Kind = Libadalang.Common.Ada_Un_Op
+        and then Cond.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Not
+      then
+         --  "not Inner" is true exactly when Inner is false, so its
+         --  narrowed states are Inner's swapped.
+         Narrow_By_Condition
+           (Cond.As_Un_Op.F_Expr, State, False_State, True_State);
+         return;
+      end if;
+
+      if Cond.Kind not in Libadalang.Common.Ada_Bin_Op_Range then
+         return;
+      end if;
+
+      declare
+         Expr : constant Libadalang.Analysis.Bin_Op := Cond.As_Bin_Op;
+         Op   : constant Libadalang.Common.Ada_Node_Kind_Type := Expr.F_Op;
+      begin
+         case Op is
+            when Libadalang.Common.Ada_Op_And
+               | Libadalang.Common.Ada_Op_And_Then =>
+               --  Both operands must hold for Cond to be true, so True_State
+               --  narrows by each in turn; the false side of a conjunction
+               --  can't be narrowed (only one operand need be false).
+               declare
+                  Left_True, Left_False   : Flow_State;
+                  Right_True, Right_False : Flow_State;
+               begin
+                  Narrow_By_Condition (Expr.F_Left, State, Left_True, Left_False);
+                  Narrow_By_Condition
+                    (Expr.F_Right, Left_True, Right_True, Right_False);
+                  True_State := Right_True;
+               end;
+
+            when Libadalang.Common.Ada_Op_Or
+               | Libadalang.Common.Ada_Op_Or_Else =>
+               --  Symmetric to the conjunction case (De Morgan): neither
+               --  operand can hold for Cond to be false.
+               declare
+                  Left_True, Left_False   : Flow_State;
+                  Right_True, Right_False : Flow_State;
+               begin
+                  Narrow_By_Condition (Expr.F_Left, State, Left_True, Left_False);
+                  Narrow_By_Condition
+                    (Expr.F_Right, Left_False, Right_True, Right_False);
+                  False_State := Right_False;
+               end;
+
+            when Libadalang.Common.Ada_Op_Lt | Libadalang.Common.Ada_Op_Lte
+               | Libadalang.Common.Ada_Op_Gt | Libadalang.Common.Ada_Op_Gte
+               | Libadalang.Common.Ada_Op_Eq =>
+               declare
+                  Left_Is_Id  : constant Boolean :=
+                    Expr.F_Left.Kind = Libadalang.Common.Ada_Identifier;
+                  Right_Is_Id : constant Boolean :=
+                    Expr.F_Right.Kind = Libadalang.Common.Ada_Identifier;
+               begin
+                  if Left_Is_Id and then not Right_Is_Id then
+                     Narrow_Identifier_By_Comparison
+                       (Libadalang.Analysis.Ada_Node
+                          (Expr.F_Left.As_Name.P_Referenced_Defining_Name),
+                        Op, Integer_Value (Expr.F_Right, State),
+                        True_State, False_State);
+                  elsif Right_Is_Id and then not Left_Is_Id then
+                     Narrow_Identifier_By_Comparison
+                       (Libadalang.Analysis.Ada_Node
+                          (Expr.F_Right.As_Name.P_Referenced_Defining_Name),
+                        Mirror_Comparison (Op), Integer_Value (Expr.F_Left, State),
+                        True_State, False_State);
+                  end if;
+               end;
+
+            when others =>
+               null;  --  adalang-analyzer: ignore Null_Statement
+         end case;
+      end;
+   end Narrow_By_Condition;
+
    --  Forward declaration: Interpret_Else_Chain, Interpret_If, and
    --  Interpret_Loop all call back into Interpret_Statements, which is
    --  defined after Interpret_Statement further below.
@@ -3007,7 +3648,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
 
    --  Interprets Stmt.F_Alternatives (I .. end) and Stmt.F_Else_Part as one
    --  chain of conditions, since each elsif is semantically nested inside
-   --  the previous condition's negation.
+   --  the previous condition's negation. State already carries every prior
+   --  condition's false-narrowing (from Interpret_If or an earlier level of
+   --  this same chain), so a later elsif's own narrowing compounds on top.
    function Interpret_Else_Chain
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Stmt  : Libadalang.Analysis.If_Stmt;
@@ -3035,16 +3678,21 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
          Check_Flow_Condition (Unit, Cond, State);
 
          declare
-            Cond_Value : constant Abstract_Bool := Boolean_Value (Cond, State);
+            Cond_Value              : constant Abstract_Bool :=
+              Boolean_Value (Cond, State);
+            True_State, False_State : Flow_State;
          begin
+            Narrow_By_Condition (Cond, State, True_State, False_State);
+
             if Cond_Value = Bool_True then
-               return Interpret_Statements (Unit, Alt.F_Stmts, State);
+               return Interpret_Statements (Unit, Alt.F_Stmts, True_State);
             elsif Cond_Value = Bool_False then
-               return Interpret_Else_Chain (Unit, Stmt, Index + 1, State);
+               return
+                 Interpret_Else_Chain (Unit, Stmt, Index + 1, False_State);
             else
                return Join_Results
-                 (Interpret_Statements (Unit, Alt.F_Stmts, State),
-                  Interpret_Else_Chain (Unit, Stmt, Index + 1, State));
+                 (Interpret_Statements (Unit, Alt.F_Stmts, True_State),
+                  Interpret_Else_Chain (Unit, Stmt, Index + 1, False_State));
             end if;
          end;
       end;
@@ -3052,7 +3700,9 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
 
    --  Interprets an if statement: picks the live branch when the condition
    --  resolves (via State) to a known value, otherwise interprets both
-   --  branches from copies of the entering State and joins the results.
+   --  branches from copies of the entering State (narrowed, where the
+   --  condition has a recognizable shape, by Narrow_By_Condition) and joins
+   --  the results.
    function Interpret_If
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Stmt  : Libadalang.Analysis.If_Stmt;
@@ -3064,19 +3714,63 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       Check_Flow_Condition (Unit, Cond, State);
 
       declare
-         Cond_Value : constant Abstract_Bool := Boolean_Value (Cond, State);
+         Cond_Value               : constant Abstract_Bool :=
+           Boolean_Value (Cond, State);
+         True_State, False_State  : Flow_State;
       begin
-         if Cond_Value = Bool_True then
-            return Interpret_Statements (Unit, Stmt.F_Then_Stmts, State);
-         elsif Cond_Value = Bool_False then
-            return Interpret_Else_Chain (Unit, Stmt, 1, State);
-         end if;
-      end;
+         Narrow_By_Condition (Cond, State, True_State, False_State);
 
-      return Join_Results
-        (Interpret_Statements (Unit, Stmt.F_Then_Stmts, State),
-         Interpret_Else_Chain (Unit, Stmt, 1, State));
+         if Cond_Value = Bool_True then
+            return Interpret_Statements (Unit, Stmt.F_Then_Stmts, True_State);
+         elsif Cond_Value = Bool_False then
+            return Interpret_Else_Chain (Unit, Stmt, 1, False_State);
+         end if;
+
+         return Join_Results
+           (Interpret_Statements (Unit, Stmt.F_Then_Stmts, True_State),
+            Interpret_Else_Chain (Unit, Stmt, 1, False_State));
+      end;
    end Interpret_If;
+
+   --  The Abstract_Range implied by a for-loop's iteration expression: the
+   --  independently-known low/high bounds of a "Low .. High" range (the
+   --  common shape for a numeric for loop). Anything else this pass
+   --  doesn't specifically model (a subtype mark, a container iterator,
+   --  an attribute reference, ...) yields Unknown_Range, which simply
+   --  forgoes seeding the loop variable's range.
+   function For_Loop_Range
+     (Iter_Expr : Libadalang.Analysis.Ada_Node'Class;
+      State     : Flow_State) return Abstract_Range
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Iter_Expr)
+        or else Iter_Expr.Kind /= Libadalang.Common.Ada_Bin_Op
+        or else Iter_Expr.As_Bin_Op.F_Op /=
+          Libadalang.Common.Ada_Op_Double_Dot
+      then
+         return Unknown_Range;
+      end if;
+
+      declare
+         Low    : constant Abstract_Int :=
+           Integer_Value (Iter_Expr.As_Bin_Op.F_Left, State);
+         High   : constant Abstract_Int :=
+           Integer_Value (Iter_Expr.As_Bin_Op.F_Right, State);
+         Result : Abstract_Range;
+      begin
+         if Low.Known then
+            Result.Has_Low := True;
+            Result.Low := Low.Value;
+         end if;
+
+         if High.Known then
+            Result.Has_High := True;
+            Result.High := High.Value;
+         end if;
+
+         return Result;
+      end;
+   end For_Loop_Range;
 
    --  Interprets a loop: every variable assigned anywhere in the body (and
    --  every actual parameter of any call within it) is havoced before the
@@ -3085,7 +3779,11 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
    --  this, a variable's pre-loop value would wrongly look like it still
    --  held after a reassignment later in the same loop body. The state
    --  after the loop is the join of "never entered" and "ran the body",
-   --  since a while/for loop may execute zero times.
+   --  since a while/for loop may execute zero times. A while loop's body is
+   --  additionally entered from the condition's true-narrowing (still
+   --  havoced afterward for anything the body itself reassigns), and a for
+   --  loop's own control variable is seeded with its statically known
+   --  range, when it has one.
    function Interpret_Loop
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Stmt  : Libadalang.Analysis.Ada_Node'Class;
@@ -3102,17 +3800,34 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
          begin
             if not Libadalang.Analysis.Is_Null (Spec) then
                declare
-                  Cond : constant Libadalang.Analysis.Expr :=
-                    Spec.As_While_Loop_Spec.F_Expr;
+                  Cond                     : constant Libadalang.Analysis.Expr
+                    := Spec.As_While_Loop_Spec.F_Expr;
+                  True_State, False_State  : Flow_State;
                begin
                   Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
                   Check_Flow_Condition (Unit, Cond, State);
+                  Narrow_By_Condition (Cond, State, True_State, False_State);
+                  Havoced := True_State;
                end;
             end if;
          end;
       end if;
 
       Havoc_Effects_In (Body_Stmts, Havoced);
+
+      if Stmt.Kind = Libadalang.Common.Ada_For_Loop_Stmt then
+         declare
+            Spec : constant Libadalang.Analysis.For_Loop_Spec :=
+              Stmt.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
+         begin
+            if Spec.F_Loop_Type.Kind = Libadalang.Common.Ada_Iter_Type_In then
+               Flow_Range_Set
+                 (Havoced,
+                  Libadalang.Analysis.Ada_Node (Spec.F_Var_Decl.F_Id),
+                  For_Loop_Range (Spec.F_Iter_Expr, State));
+            end if;
+         end;
+      end if;
 
       declare
          Body_Result : constant Flow_Result :=
@@ -3124,12 +3839,88 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       end;
    end Interpret_Loop;
 
-   --  Interprets a case statement: every alternative is interpreted from a
-   --  copy of the entering State (no attempt is made to statically pick a
-   --  single alternative even when the selector is known -- that would
-   --  need the same choice-range matching Choice_Interval already does for
-   --  Overlapping_Case_Ranges, which this pass doesn't reuse), and the
-   --  results are joined the same way an if statement's branches are.
+   --  A statically evaluated case-choice range, used to detect overlapping
+   --  or wholly-covered case alternatives, and (via State) to let
+   --  Interpret_Case pick a single live alternative.
+   type Static_Interval is record
+      Known : Boolean := False;
+      Low   : Long_Long_Integer := 0;
+      High  : Long_Long_Integer := 0;
+   end record;
+
+   --  The [Low, High] range covered by one case choice: a single value for
+   --  a plain expression, or the statically evaluated bounds of a ".."
+   --  range choice. Known is False when either bound can't be evaluated.
+   --  State is Empty_Flow_State for the plain literal-only callers further
+   --  below; Interpret_Case passes its own flow state so a choice written
+   --  in terms of an earlier assignment (a named constant, say) can still
+   --  be resolved.
+   function Choice_Interval
+     (Choice : Libadalang.Analysis.Ada_Node'Class;
+      State  : Flow_State := Empty_Flow_State) return Static_Interval
+   is
+      Value : constant Abstract_Int := Integer_Value (Choice, State);
+   begin
+      if Value.Known then
+         return (Known => True, Low => Value.Value, High => Value.Value);
+      elsif Choice.Kind = Libadalang.Common.Ada_Bin_Op
+        and then Choice.As_Bin_Op.F_Op =
+          Libadalang.Common.Ada_Op_Double_Dot
+      then
+         declare
+            Low  : constant Abstract_Int :=
+              Integer_Value (Choice.As_Bin_Op.F_Left, State);
+            High : constant Abstract_Int :=
+              Integer_Value (Choice.As_Bin_Op.F_Right, State);
+         begin
+            if Low.Known and then High.Known then
+               return (Known => True, Low => Low.Value, High => High.Value);
+            end if;
+         end;
+      end if;
+
+      return (Known => False, Low => 0, High => 0);
+   end Choice_Interval;
+
+   --  True when Selector (already confirmed Known) is covered by one of
+   --  Alt's choices, or Alt is the "when others" alternative. Ada requires
+   --  "when others" to be the final alternative, so by the time it's
+   --  reached here every earlier, numerically-resolvable alternative has
+   --  already been checked and none matched.
+   function Case_Alternative_Matches
+     (Alt      : Libadalang.Analysis.Case_Stmt_Alternative;
+      Selector : Abstract_Int;
+      State    : Flow_State) return Boolean
+   is
+   begin
+      for Choice of Alt.F_Choices loop
+         if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
+            return True;
+         end if;
+
+         declare
+            Range_Value : constant Static_Interval :=
+              Choice_Interval (Choice, State);
+         begin
+            if Range_Value.Known
+              and then Selector.Value >= Range_Value.Low
+              and then Selector.Value <= Range_Value.High
+            then
+               return True;
+            end if;
+         end;
+      end loop;
+
+      return False;
+   end Case_Alternative_Matches;
+
+   --  Interprets a case statement. When the selector's value is known from
+   --  State, only the one alternative it statically matches is interpreted
+   --  (mirroring how Interpret_If picks a single branch); a choice this
+   --  pass can't resolve simply never matches, so an unresolvable choice
+   --  only costs precision, never soundness, falling back to interpreting
+   --  every alternative from a copy of the entering State and joining the
+   --  results, the same way an if statement's branches are joined.
    function Interpret_Case
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Stmt  : Libadalang.Analysis.Case_Stmt;
@@ -3137,28 +3928,46 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
    is
       Alternatives : constant Libadalang.Analysis.Case_Stmt_Alternative_List :=
         Stmt.F_Alternatives;
-      Result       : Flow_Result := (State => State, Terminated => False);
-      First        : Boolean := True;
+      Selector     : constant Abstract_Int :=
+        Integer_Value (Stmt.F_Expr, State);
    begin
       Scan_Expression_For_Flow_Bugs (Unit, Stmt.F_Expr, State);
 
-      for I in 1 .. Alternatives.Children_Count loop
-         declare
-            Alt    : constant Libadalang.Analysis.Case_Stmt_Alternative :=
-              Alternatives.Child (I).As_Case_Stmt_Alternative;
-            Branch : constant Flow_Result :=
-              Interpret_Statements (Unit, Alt.F_Stmts, State);
-         begin
-            if First then
-               Result := Branch;
-               First := False;
-            else
-               Result := Join_Results (Result, Branch);
-            end if;
-         end;
-      end loop;
+      if Selector.Known then
+         for I in 1 .. Alternatives.Children_Count loop
+            declare
+               Alt : constant Libadalang.Analysis.Case_Stmt_Alternative :=
+                 Alternatives.Child (I).As_Case_Stmt_Alternative;
+            begin
+               if Case_Alternative_Matches (Alt, Selector, State) then
+                  return Interpret_Statements (Unit, Alt.F_Stmts, State);
+               end if;
+            end;
+         end loop;
+      end if;
 
-      return Result;
+      declare
+         Result : Flow_Result := (State => State, Terminated => False);
+         First  : Boolean := True;
+      begin
+         for I in 1 .. Alternatives.Children_Count loop
+            declare
+               Alt    : constant Libadalang.Analysis.Case_Stmt_Alternative :=
+                 Alternatives.Child (I).As_Case_Stmt_Alternative;
+               Branch : constant Flow_Result :=
+                 Interpret_Statements (Unit, Alt.F_Stmts, State);
+            begin
+               if First then
+                  Result := Branch;
+                  First := False;
+               else
+                  Result := Join_Results (Result, Branch);
+               end if;
+            end;
+         end loop;
+
+         return Result;
+      end;
    end Interpret_Case;
 
    --  Interprets a declare block: seeds its own local declarations'
@@ -3211,12 +4020,15 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                Havoc_Effects_In (Assign.F_Expr, Next);
 
                declare
-                  Target : constant Libadalang.Analysis.Ada_Node :=
+                  Target     : constant Libadalang.Analysis.Ada_Node :=
                     Flow_Assigned_Name (Stmt);
-                  Value  : constant Abstract_Int :=
+                  Value      : constant Abstract_Int :=
                     Integer_Value (Assign.F_Expr, State);
+                  Bool_Value : constant Abstract_Bool :=
+                    Boolean_Value (Assign.F_Expr, State);
                begin
                   Flow_Set (Next, Target, Value);
+                  Flow_Bool_Set (Next, Target, Bool_Value);
                end;
 
                return (State => Next, Terminated => False);
@@ -3910,43 +4722,6 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             "double negation can be simplified");
       end if;
    end Analyze_Unary_Expression;
-
-   --  A statically evaluated case-choice range, used to detect overlapping
-   --  or wholly-covered case alternatives.
-   type Static_Interval is record
-      Known : Boolean := False;
-      Low   : Long_Long_Integer := 0;
-      High  : Long_Long_Integer := 0;
-   end record;
-
-   --  The [Low, High] range covered by one case choice: a single value for
-   --  a plain expression, or the statically evaluated bounds of a ".."
-   --  range choice. Known is False when either bound can't be evaluated.
-   function Choice_Interval
-     (Choice : Libadalang.Analysis.Ada_Node'Class) return Static_Interval
-   is
-      Value : constant Abstract_Int := Integer_Value (Choice);
-   begin
-      if Value.Known then
-         return (Known => True, Low => Value.Value, High => Value.Value);
-      elsif Choice.Kind = Libadalang.Common.Ada_Bin_Op
-        and then Choice.As_Bin_Op.F_Op =
-          Libadalang.Common.Ada_Op_Double_Dot
-      then
-         declare
-            Low  : constant Abstract_Int :=
-              Integer_Value (Choice.As_Bin_Op.F_Left);
-            High : constant Abstract_Int :=
-              Integer_Value (Choice.As_Bin_Op.F_Right);
-         begin
-            if Low.Known and then High.Known then
-               return (Known => True, Low => Low.Value, High => High.Value);
-            end if;
-         end;
-      end if;
-
-      return (Known => False, Low => 0, High => 0);
-   end Choice_Interval;
 
    --  Compares every case choice against every earlier choice (in
    --  alternative order) to flag Overlapping_Case_Ranges (ranges that

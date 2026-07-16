@@ -102,17 +102,41 @@ findings predictable without requiring whole-program control-flow analysis.
 destination, to avoid false positives from unresolved or complex constructs.
 
 `Division_By_Zero` and `Constant_Condition` are additionally strengthened by a
-flow-sensitive constant-propagation pass that tracks a variable's value across
-straight-line code, `if`/`elsif`/`else` and `case` branches (joining at merge
-points), declare blocks, and loops. A loop havocs every variable its body
-assigns before interpreting the body once, so a value known before the loop
-is never wrongly assumed to survive a reassignment that happens later in the
-same loop body. This lets both checks catch cases only reachable through an
-earlier assignment, not just literal constants, e.g. `X := 0; ... Y := 10 /
-X;`. The pass tracks exact known values rather than value ranges, and
-conservatively stops tracking at constructs it does not model (`select`,
-`accept`, `goto` targets) and for subprogram or declare-block bodies with
-their own exception handlers.
+flow-sensitive abstract-execution pass that tracks both a variable's known
+integer value and its known boolean value across straight-line code,
+`if`/`elsif`/`else` and `case` branches, declare blocks, and loops. A loop
+havocs every variable its body assigns before interpreting the body once, so
+a value known before the loop is never wrongly assumed to survive a
+reassignment that happens later in the same loop body. A `case` statement
+whose selector is statically known interprets only the one alternative it
+actually matches, rather than joining every alternative, so an assignment
+made in that single live branch is not diluted away at the merge point the
+way it would be if two disagreeing branches were joined. An `if` expression
+whose condition itself resolves is folded to its live branch's value the
+same way. This lets both checks catch cases only reachable through an
+earlier assignment or a resolved conditional, not just literal constants,
+e.g. `X := 0; ... Y := 10 / X;`, `Flag := True; ... if Flag then ...`, or
+`case Selector is when 5 => D := 0; when others => D := 2; end case; ...
+Y := 10 / D;` when `Selector` is known to be 5.
+
+Alongside each variable's exact known value, the same pass tracks a
+best-effort *range* it is known to stay within, independently bounded from
+below and/or above (unlike the exact-value domain, which is all-or-nothing).
+A comparison against `if`/`elsif`/`while` narrows that range for the
+branch(es) where the comparison is known to hold or not hold, including
+through `not`, `and`/`and then`, and `or`/`or else`, so `if X > 0 then if
+X >= 1 then ...` proves the inner condition constant even when `X`'s exact
+value is never known. A `for` loop's own control variable is seeded from its
+`Low .. High` bounds the same way, so `for I in 1 .. N loop if I > 0 then
+...` is provably true on every iteration despite `I` changing each pass.
+Range narrowing only ever tightens a bound it can prove, and joining two
+branches unions rather than intersects their ranges, so an unresolvable or
+unrelated comparison simply leaves the range as wide (and the check as
+silent) as it already was.
+
+The pass conservatively stops tracking at constructs it does not model
+(`select`, `accept`, `goto` targets) and for subprogram or declare-block
+bodies with their own exception handlers.
 
 ## Requirements
 
