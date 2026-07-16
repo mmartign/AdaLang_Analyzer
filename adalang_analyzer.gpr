@@ -8,11 +8,17 @@ project AdaLang_Analyzer is
    for Object_Dir use "obj/" & Adalang_Analyzer_Config.Build_Profile;
    for Create_Missing_Dirs use "True";
    for Exec_Dir use "bin";
-   for Main use ("adalang_analyzer.adb");
+   for Main use ("adalang_analyzer-driver.adb");
 
    package Compiler is
       for Default_Switches ("Ada") use Adalang_Analyzer_Config.Ada_Compiler_Switches;
    end Compiler;
+
+   package Builder is
+      --  Keep the historical binary name even though the Main source file
+      --  is now the child procedure Adalang_Analyzer.Driver.
+      for Executable ("adalang_analyzer-driver.adb") use "adalang_analyzer";
+   end Builder;
 
    package Binder is
       for Switches ("Ada") use ("-Es"); --  Symbolic traceback
