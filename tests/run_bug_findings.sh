@@ -125,4 +125,26 @@ then
    exit 1
 fi
 
+flow_checks='Division_By_Zero,Constant_Condition'
+if "$analyzer" -checks="$flow_checks" tests/flow_findings.adb >"$output" 2>&1
+then
+   echo "expected flow_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+for rule in Division_By_Zero Constant_Condition
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "missing expected finding: $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if ! "$analyzer" -q -checks="$flow_checks" tests/flow_clean.adb; then
+   echo "flow_clean.adb unexpectedly produced a violation" >&2
+   "$analyzer" -checks="$flow_checks" tests/flow_clean.adb >&2 || true
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

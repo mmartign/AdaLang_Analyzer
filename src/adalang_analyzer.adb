@@ -1163,6 +1163,125 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       return (Known => True, Value => Value);
    end Known_Int;
 
+   --  ------------------------------------------------------------------
+   --  Flow-sensitive constant propagation (best effort).
+   --
+   --  A Flow_State is a small association from a variable's defining name
+   --  (not its Basic_Decl: a multi-name declaration like "X, Y : Integer"
+   --  shares one Basic_Decl but has distinct defining names, and this map
+   --  must not conflate X with Y) to the Abstract_Int it is statically
+   --  known to hold at one point in a subprogram body. It backs a second,
+   --  stateful walk (see Interpret_Subprogram_Flow) that runs alongside
+   --  the ordinary node-local checks and lets Division_By_Zero and
+   --  Constant_Condition see values learned from an earlier assignment,
+   --  not just literals.
+   --  ------------------------------------------------------------------
+
+   Max_Flow_Vars : constant := 64;
+
+   type Flow_Binding is record
+      Decl  : Libadalang.Analysis.Ada_Node := Libadalang.Analysis.No_Ada_Node;
+      Value : Abstract_Int := Unknown_Int;
+   end record;
+
+   type Flow_Binding_Array is array (1 .. Max_Flow_Vars) of Flow_Binding;
+
+   type Flow_State is record
+      Count    : Natural := 0;
+      Bindings : Flow_Binding_Array;
+   end record;
+
+   Empty_Flow_State : constant Flow_State := (Count => 0, Bindings => (others => <>));
+
+   --  The Abstract_Int known for Key, or Unknown_Int if Key isn't tracked.
+   function Flow_Lookup
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) return Abstract_Int
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return Unknown_Int;
+      end if;
+
+      for I in 1 .. State.Count loop
+         if State.Bindings (I).Decl = Key then
+            return State.Bindings (I).Value;
+         end if;
+      end loop;
+
+      return Unknown_Int;
+   end Flow_Lookup;
+
+   --  Records that Key now holds Value, replacing any prior binding. Silently
+   --  drops the update once Max_Flow_Vars bindings are in use: a subprogram
+   --  with that many live scalars is rare, and losing precision there is
+   --  safe (Flow_Lookup simply reports Unknown for what didn't fit).
+   procedure Flow_Set
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node;
+      Value : Abstract_Int)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return;
+      end if;
+
+      for I in 1 .. State.Count loop
+         if State.Bindings (I).Decl = Key then
+            State.Bindings (I).Value := Value;
+            return;
+         end if;
+      end loop;
+
+      if State.Count < Max_Flow_Vars then
+         State.Count := State.Count + 1;
+         State.Bindings (State.Count) := (Decl => Key, Value => Value);
+      end if;
+   end Flow_Set;
+
+   --  Marks Key as no longer statically known, e.g. because it was passed
+   --  to a call this analysis can't see through. A no-op when Key was
+   --  never tracked, so this never grows the table.
+   procedure Flow_Havoc
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return;
+      end if;
+
+      for I in 1 .. State.Count loop
+         if State.Bindings (I).Decl = Key then
+            State.Bindings (I).Value := Unknown_Int;
+            return;
+         end if;
+      end loop;
+   end Flow_Havoc;
+
+   --  The state true after either of two branches: a binding survives only
+   --  where both sides agree on the same known value, which is exactly
+   --  what makes it safe to describe a merged point as "X is always N".
+   function Flow_Join (Left, Right : Flow_State) return Flow_State is
+      Result : Flow_State := Empty_Flow_State;
+   begin
+      for I in 1 .. Left.Count loop
+         declare
+            Left_Value  : constant Abstract_Int := Left.Bindings (I).Value;
+            Right_Value : constant Abstract_Int :=
+              Flow_Lookup (Right, Left.Bindings (I).Decl);
+         begin
+            if Left_Value.Known and then Right_Value.Known
+              and then Left_Value.Value = Right_Value.Value
+            then
+               Flow_Set (Result, Left.Bindings (I).Decl, Left_Value);
+            end if;
+         end;
+      end loop;
+
+      return Result;
+   end Flow_Join;
+
    --  ASCII-only lower-casing; avoids pulling in Ada.Characters.Handling
    --  for the single case this tool needs (Ada source is ASCII-identified).
    function Lower_Char (Char : Character) return Character is
@@ -1530,7 +1649,8 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
    --  drives the Division_By_Zero, Reversed_Range, and case-range checks
    --  without a full constant-folding evaluator.
    function Integer_Value  --  adalang-analyzer: ignore Cyclomatic_Complexity
-     (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Int
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State := Empty_Flow_State) return Abstract_Int
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
@@ -1549,16 +1669,23 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                end if;
             end;
 
+         when Libadalang.Common.Ada_Identifier =>
+            return Flow_Lookup
+              (State,
+               Libadalang.Analysis.Ada_Node
+                 (Node.As_Name.P_Referenced_Defining_Name));
+
          when Libadalang.Common.Ada_Paren_Expr =>
-            return Integer_Value (Node.As_Paren_Expr.F_Expr);
+            return Integer_Value (Node.As_Paren_Expr.F_Expr, State);
 
          when Libadalang.Common.Ada_Qual_Expr =>
-            return Integer_Value (Node.As_Qual_Expr.F_Suffix);
+            return Integer_Value (Node.As_Qual_Expr.F_Suffix, State);
 
          when Libadalang.Common.Ada_Un_Op =>
             declare
                Expr  : constant Libadalang.Analysis.Un_Op := Node.As_Un_Op;
-               Value : constant Abstract_Int := Integer_Value (Expr.F_Expr);
+               Value : constant Abstract_Int :=
+                 Integer_Value (Expr.F_Expr, State);
             begin
                if not Value.Known then
                   return Unknown_Int;
@@ -1589,8 +1716,10 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
          when Libadalang.Common.Ada_Bin_Op_Range =>
             declare
                Expr  : constant Libadalang.Analysis.Bin_Op := Node.As_Bin_Op;
-               Left  : constant Abstract_Int := Integer_Value (Expr.F_Left);
-               Right : constant Abstract_Int := Integer_Value (Expr.F_Right);
+               Left  : constant Abstract_Int :=
+                 Integer_Value (Expr.F_Left, State);
+               Right : constant Abstract_Int :=
+                 Integer_Value (Expr.F_Right, State);
             begin
                if not Left.Known or else not Right.Known then
                   return Unknown_Int;
@@ -1845,7 +1974,8 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
    --  Constant_Condition, Infinite_Loop's while-condition check, and the
    --  Ineffective_Operation / Constant_Result_Operation identity folding.
    function Boolean_Value  --  adalang-analyzer: ignore Cyclomatic_Complexity
-     (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Bool
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State := Empty_Flow_State) return Abstract_Bool
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
@@ -1870,14 +2000,14 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
             end;
 
          when Libadalang.Common.Ada_Paren_Expr =>
-            return Boolean_Value (Node.As_Paren_Expr.F_Expr);
+            return Boolean_Value (Node.As_Paren_Expr.F_Expr, State);
 
          when Libadalang.Common.Ada_Un_Op =>
             declare
                Expr : constant Libadalang.Analysis.Un_Op := Node.As_Un_Op;
             begin
                if Expr.F_Op = Libadalang.Common.Ada_Op_Not then
-                  return Not_Bool (Boolean_Value (Expr.F_Expr));
+                  return Not_Bool (Boolean_Value (Expr.F_Expr, State));
                else
                   return Bool_Unknown;
                end if;
@@ -1886,8 +2016,10 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
          when Libadalang.Common.Ada_Bin_Op_Range =>
             declare
                Expr  : constant Libadalang.Analysis.Bin_Op := Node.As_Bin_Op;
-               Left  : constant Abstract_Bool := Boolean_Value (Expr.F_Left);
-               Right : constant Abstract_Bool := Boolean_Value (Expr.F_Right);
+               Left  : constant Abstract_Bool :=
+                 Boolean_Value (Expr.F_Left, State);
+               Right : constant Abstract_Bool :=
+                 Boolean_Value (Expr.F_Right, State);
                Op    : constant Libadalang.Common.Ada_Node_Kind_Type :=
                  Expr.F_Op;
             begin
@@ -1904,8 +2036,8 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                           Eq_Bool (Left, Right);
                         Int_Result  : constant Abstract_Bool :=
                           Compare_Integers
-                            (Op, Integer_Value (Expr.F_Left),
-                             Integer_Value (Expr.F_Right));
+                            (Op, Integer_Value (Expr.F_Left, State),
+                             Integer_Value (Expr.F_Right, State));
                      begin
                         if Bool_Result /= Bool_Unknown then
                            return Bool_Result;
@@ -1925,8 +2057,8 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                           Not_Bool (Eq_Bool (Left, Right));
                         Int_Result  : constant Abstract_Bool :=
                           Compare_Integers
-                            (Op, Integer_Value (Expr.F_Left),
-                             Integer_Value (Expr.F_Right));
+                            (Op, Integer_Value (Expr.F_Left, State),
+                             Integer_Value (Expr.F_Right, State));
                      begin
                         if Bool_Result /= Bool_Unknown then
                            return Bool_Result;
@@ -1947,8 +2079,8 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                      | Libadalang.Common.Ada_Op_Gt
                      | Libadalang.Common.Ada_Op_Gte =>
                      return Compare_Integers
-                       (Op, Integer_Value (Expr.F_Left),
-                        Integer_Value (Expr.F_Right));
+                       (Op, Integer_Value (Expr.F_Left, State),
+                        Integer_Value (Expr.F_Right, State));
                   when others =>
                      return Bool_Unknown;
                end case;
@@ -1959,7 +2091,7 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                Expr      : constant Libadalang.Analysis.Membership_Expr :=
                  Node.As_Membership_Expr;
                Subject   : constant Abstract_Int :=
-                 Integer_Value (Expr.F_Expr);
+                 Integer_Value (Expr.F_Expr, State);
                Known_All : Boolean := True;
                Matches   : Boolean := False;
             begin
@@ -1978,9 +2110,11 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                      then
                         declare
                            Left_Bound  : constant Abstract_Int :=
-                             Integer_Value (Alternative.As_Bin_Op.F_Left);
+                             Integer_Value
+                               (Alternative.As_Bin_Op.F_Left, State);
                            Right_Bound : constant Abstract_Int :=
-                             Integer_Value (Alternative.As_Bin_Op.F_Right);
+                             Integer_Value
+                               (Alternative.As_Bin_Op.F_Right, State);
                         begin
                            if Left_Bound.Known and then Right_Bound.Known then
                               Matches := Matches or else
@@ -1993,7 +2127,7 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                      else
                         declare
                            Value : constant Abstract_Int :=
-                             Integer_Value (Alternative);
+                             Integer_Value (Alternative, State);
                         begin
                            if Value.Known then
                               Matches := Matches or else
@@ -2614,6 +2748,593 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
       return Result;
    end Count_Return_Statements;
 
+   --  The defining name an identifier resolves to, or No_Ada_Node for
+   --  anything else. The Flow_State key type (see above); kept distinct
+   --  from Referenced_Declaration, which resolves to the shared Basic_Decl
+   --  and so cannot tell apart two names introduced by one multi-name
+   --  declaration.
+   function Flow_Referenced_Name
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return Libadalang.Analysis.No_Ada_Node;
+      end if;
+
+      return Libadalang.Analysis.Ada_Node
+        (Node.As_Name.P_Referenced_Defining_Name);
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Flow_Referenced_Name;
+
+   --  The defining name written by an assignment whose destination is a
+   --  plain identifier, or No_Ada_Node for anything else (a more complex
+   --  destination such as an array or record component).
+   function Flow_Assigned_Name
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Assign_Stmt
+        or else Node.As_Assign_Stmt.F_Dest.Kind /=
+          Libadalang.Common.Ada_Identifier
+      then
+         return Libadalang.Analysis.No_Ada_Node;
+      end if;
+
+      return Flow_Referenced_Name (Node.As_Assign_Stmt.F_Dest);
+   end Flow_Assigned_Name;
+
+   --  Havocs every identifier anywhere under Node. Used to invalidate a
+   --  call's actual parameters wholesale (mode information isn't consulted,
+   --  so this is deliberately over-conservative rather than risk treating
+   --  an out-mode actual as unchanged).
+   procedure Havoc_Identifiers_In
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : in out Flow_State)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return;
+      end if;
+
+      if Node.Kind = Libadalang.Common.Ada_Identifier then
+         Flow_Havoc (State, Flow_Referenced_Name (Node));
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         Havoc_Identifiers_In (Node.Child (I), State);
+      end loop;
+   end Havoc_Identifiers_In;
+
+   --  Invalidates whatever Node's own evaluation could change: every actual
+   --  parameter of any call found within it (Ada_Call_Expr also covers
+   --  indexing and conversions, which are harmless to over-invalidate), and
+   --  every variable directly assigned to, when Node is itself a statement
+   --  list containing assignments (the pre-loop-body havoc case). Does not
+   --  descend into a nested subprogram body, which is analyzed separately
+   --  on its own terms.
+   procedure Havoc_Effects_In
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : in out Flow_State)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Assign_Stmt =>
+            Flow_Havoc (State, Flow_Assigned_Name (Node));
+
+         when Libadalang.Common.Ada_Call_Expr =>
+            Havoc_Identifiers_In (Node, State);
+            return;
+
+         when Libadalang.Common.Ada_Subp_Body =>
+            return;
+
+         when others =>
+            null;  --  adalang-analyzer: ignore Null_Statement
+      end case;
+
+      for I in 1 .. Node.Children_Count loop
+         Havoc_Effects_In (Node.Child (I), State);
+      end loop;
+   end Havoc_Effects_In;
+
+   --  Reports Division_By_Zero for every "/", "mod", or "rem" under Node
+   --  whose right operand is only known to be zero once State's earlier
+   --  assignments are taken into account (a plain literal zero is already
+   --  caught by Analyze_Binary_Expression, so this only adds cases that
+   --  check would miss).
+   procedure Scan_Expression_For_Flow_Bugs
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return;
+      end if;
+
+      if Rule_States (Division_By_Zero) = Enabled
+        and then Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
+      then
+         declare
+            Expr  : constant Libadalang.Analysis.Bin_Op := Node.As_Bin_Op;
+            Right : constant Abstract_Int :=
+              Integer_Value (Expr.F_Right, State);
+         begin
+            if Expr.F_Op in Libadalang.Common.Ada_Op_Div
+                | Libadalang.Common.Ada_Op_Mod
+                | Libadalang.Common.Ada_Op_Rem
+              and then not Is_Static_Zero (Expr.F_Right)
+              and then Right.Known
+              and then Right.Value = 0
+            then
+               Report_Rule_Violation
+                 (Unit, Expr.F_Right, Division_By_Zero,
+                  "right operand is zero here based on an earlier " &
+                    "assignment");
+            end if;
+         end;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         Scan_Expression_For_Flow_Bugs (Unit, Node.Child (I), State);
+      end loop;
+   end Scan_Expression_For_Flow_Bugs;
+
+   --  Reports Constant_Condition for Cond when State's earlier assignments
+   --  resolve it to a known value that plain literal evaluation (no state)
+   --  could not -- the literal-only case is already handled at the call
+   --  site that also reports Non_Short_Circuit_Condition.
+   procedure Check_Flow_Condition
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Cond  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State)
+   is
+   begin
+      if Rule_States (Constant_Condition) /= Enabled
+        or else Libadalang.Analysis.Is_Null (Cond)
+        or else Boolean_Value (Cond) /= Bool_Unknown
+      then
+         return;
+      end if;
+
+      declare
+         Flow_Value : constant Abstract_Bool := Boolean_Value (Cond, State);
+      begin
+         if Flow_Value /= Bool_Unknown then
+            Report_Rule_Violation
+              (Unit, Cond, Constant_Condition,
+               "condition is always " & Bool_Name (Flow_Value) &
+                 " based on an earlier assignment");
+         end if;
+      end;
+   end Check_Flow_Condition;
+
+   --  Seeds State from every "Name : T := Default;" in Decls, when Default
+   --  statically evaluates (possibly using State itself, so an earlier
+   --  constant can feed a later one's initializer).
+   procedure Seed_Declarations
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Decls : Libadalang.Analysis.Declarative_Part;
+      State : in out Flow_State)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Decls) then
+         return;
+      end if;
+
+      for I in 1 .. Decls.F_Decls.Children_Count loop
+         declare
+            Item : constant Libadalang.Analysis.Ada_Node :=
+              Decls.F_Decls.Child (I);
+         begin
+            if not Libadalang.Analysis.Is_Null (Item)
+              and then Item.Kind = Libadalang.Common.Ada_Object_Decl
+            then
+               declare
+                  Decl    : constant Libadalang.Analysis.Object_Decl :=
+                    Item.As_Object_Decl;
+                  Default : constant Libadalang.Analysis.Expr :=
+                    Decl.F_Default_Expr;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Default) then
+                     Scan_Expression_For_Flow_Bugs (Unit, Default, State);
+
+                     declare
+                        Value : constant Abstract_Int :=
+                          Integer_Value (Default, State);
+                     begin
+                        if Value.Known then
+                           for Id of Decl.F_Ids loop
+                              Flow_Set
+                                (State,
+                                 Libadalang.Analysis.Ada_Node (Id), Value);
+                           end loop;
+                        end if;
+                     end;
+                  end if;
+               end;
+            end if;
+         end;
+      end loop;
+   end Seed_Declarations;
+
+   --  The outcome of interpreting a statement or statement list: the
+   --  resulting Flow_State, and whether control can fall through to
+   --  whatever follows (False once a return, raise, or unconditional exit
+   --  has been seen).
+   type Flow_Result is record
+      State      : Flow_State;
+      Terminated : Boolean;
+   end record;
+
+   --  Combines two branches reaching the same merge point. A branch that
+   --  terminates contributes nothing to the merged state; if both do, the
+   --  merge point itself is unreachable, which is reported by other checks,
+   --  not this one -- Empty_Flow_State here is just an inert placeholder.
+   function Join_Results (Left, Right : Flow_Result) return Flow_Result is
+   begin
+      if Left.Terminated and then Right.Terminated then
+         return (State => Empty_Flow_State, Terminated => True);
+      elsif Left.Terminated then
+         return (State => Right.State, Terminated => False);
+      elsif Right.Terminated then
+         return (State => Left.State, Terminated => False);
+      else
+         return
+           (State => Flow_Join (Left.State, Right.State),
+            Terminated => False);
+      end if;
+   end Join_Results;
+
+   --  Forward declaration: Interpret_Else_Chain, Interpret_If, and
+   --  Interpret_Loop all call back into Interpret_Statements, which is
+   --  defined after Interpret_Statement further below.
+   function Interpret_Statements
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      List  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Flow_Result;
+
+   --  Interprets Stmt.F_Alternatives (I .. end) and Stmt.F_Else_Part as one
+   --  chain of conditions, since each elsif is semantically nested inside
+   --  the previous condition's negation.
+   function Interpret_Else_Chain
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Stmt  : Libadalang.Analysis.If_Stmt;
+      Index : Positive;
+      State : Flow_State) return Flow_Result
+   is
+      Alternatives : constant Libadalang.Analysis.Elsif_Stmt_Part_List :=
+        Stmt.F_Alternatives;
+   begin
+      if Index > Alternatives.Children_Count then
+         if Libadalang.Analysis.Is_Null (Stmt.F_Else_Part) then
+            return (State => State, Terminated => False);
+         else
+            return
+              Interpret_Statements (Unit, Stmt.F_Else_Part.F_Stmts, State);
+         end if;
+      end if;
+
+      declare
+         Alt  : constant Libadalang.Analysis.Elsif_Stmt_Part :=
+           Alternatives.Child (Index).As_Elsif_Stmt_Part;
+         Cond : constant Libadalang.Analysis.Expr := Alt.F_Cond_Expr;
+      begin
+         Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
+         Check_Flow_Condition (Unit, Cond, State);
+
+         declare
+            Cond_Value : constant Abstract_Bool := Boolean_Value (Cond, State);
+         begin
+            if Cond_Value = Bool_True then
+               return Interpret_Statements (Unit, Alt.F_Stmts, State);
+            elsif Cond_Value = Bool_False then
+               return Interpret_Else_Chain (Unit, Stmt, Index + 1, State);
+            else
+               return Join_Results
+                 (Interpret_Statements (Unit, Alt.F_Stmts, State),
+                  Interpret_Else_Chain (Unit, Stmt, Index + 1, State));
+            end if;
+         end;
+      end;
+   end Interpret_Else_Chain;
+
+   --  Interprets an if statement: picks the live branch when the condition
+   --  resolves (via State) to a known value, otherwise interprets both
+   --  branches from copies of the entering State and joins the results.
+   function Interpret_If
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Stmt  : Libadalang.Analysis.If_Stmt;
+      State : Flow_State) return Flow_Result
+   is
+      Cond : constant Libadalang.Analysis.Expr := Stmt.F_Cond_Expr;
+   begin
+      Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
+      Check_Flow_Condition (Unit, Cond, State);
+
+      declare
+         Cond_Value : constant Abstract_Bool := Boolean_Value (Cond, State);
+      begin
+         if Cond_Value = Bool_True then
+            return Interpret_Statements (Unit, Stmt.F_Then_Stmts, State);
+         elsif Cond_Value = Bool_False then
+            return Interpret_Else_Chain (Unit, Stmt, 1, State);
+         end if;
+      end;
+
+      return Join_Results
+        (Interpret_Statements (Unit, Stmt.F_Then_Stmts, State),
+         Interpret_Else_Chain (Unit, Stmt, 1, State));
+   end Interpret_If;
+
+   --  Interprets a loop: every variable assigned anywhere in the body (and
+   --  every actual parameter of any call within it) is havoced before the
+   --  body is interpreted once, since a later iteration could reach any
+   --  point in the body with that variable already reassigned -- without
+   --  this, a variable's pre-loop value would wrongly look like it still
+   --  held after a reassignment later in the same loop body. The state
+   --  after the loop is the join of "never entered" and "ran the body",
+   --  since a while/for loop may execute zero times.
+   function Interpret_Loop
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Stmt  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Flow_Result
+   is
+      Body_Stmts : constant Libadalang.Analysis.Stmt_List :=
+        Stmt.As_Base_Loop_Stmt.F_Stmts;
+      Havoced    : Flow_State := State;
+   begin
+      if Stmt.Kind = Libadalang.Common.Ada_While_Loop_Stmt then
+         declare
+            Spec : constant Libadalang.Analysis.Loop_Spec :=
+              Stmt.As_While_Loop_Stmt.F_Spec;
+         begin
+            if not Libadalang.Analysis.Is_Null (Spec) then
+               declare
+                  Cond : constant Libadalang.Analysis.Expr :=
+                    Spec.As_While_Loop_Spec.F_Expr;
+               begin
+                  Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
+                  Check_Flow_Condition (Unit, Cond, State);
+               end;
+            end if;
+         end;
+      end if;
+
+      Havoc_Effects_In (Body_Stmts, Havoced);
+
+      declare
+         Body_Result : constant Flow_Result :=
+           Interpret_Statements (Unit, Body_Stmts, Havoced);
+      begin
+         return
+           (State => Flow_Join (State, Body_Result.State),
+            Terminated => False);
+      end;
+   end Interpret_Loop;
+
+   --  Interprets a case statement: every alternative is interpreted from a
+   --  copy of the entering State (no attempt is made to statically pick a
+   --  single alternative even when the selector is known -- that would
+   --  need the same choice-range matching Choice_Interval already does for
+   --  Overlapping_Case_Ranges, which this pass doesn't reuse), and the
+   --  results are joined the same way an if statement's branches are.
+   function Interpret_Case
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Stmt  : Libadalang.Analysis.Case_Stmt;
+      State : Flow_State) return Flow_Result
+   is
+      Alternatives : constant Libadalang.Analysis.Case_Stmt_Alternative_List :=
+        Stmt.F_Alternatives;
+      Result       : Flow_Result := (State => State, Terminated => False);
+      First        : Boolean := True;
+   begin
+      Scan_Expression_For_Flow_Bugs (Unit, Stmt.F_Expr, State);
+
+      for I in 1 .. Alternatives.Children_Count loop
+         declare
+            Alt    : constant Libadalang.Analysis.Case_Stmt_Alternative :=
+              Alternatives.Child (I).As_Case_Stmt_Alternative;
+            Branch : constant Flow_Result :=
+              Interpret_Statements (Unit, Alt.F_Stmts, State);
+         begin
+            if First then
+               Result := Branch;
+               First := False;
+            else
+               Result := Join_Results (Result, Branch);
+            end if;
+         end;
+      end loop;
+
+      return Result;
+   end Interpret_Case;
+
+   --  Interprets a declare block: seeds its own local declarations'
+   --  initializers into a copy of the entering State, then interprets its
+   --  statements the same way a subprogram body's are (see
+   --  Interpret_Subprogram_Flow). Skipped, the same conservative way, when
+   --  the block has its own exception handlers.
+   function Interpret_Decl_Block
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Block : Libadalang.Analysis.Decl_Block;
+      State : Flow_State) return Flow_Result
+   is
+      Handled : constant Libadalang.Analysis.Handled_Stmts := Block.F_Stmts;
+   begin
+      if Libadalang.Analysis.Is_Null (Handled)
+        or else Handled.F_Exceptions.Children_Count > 0
+      then
+         return (State => Empty_Flow_State, Terminated => False);
+      end if;
+
+      declare
+         Seeded : Flow_State := State;
+      begin
+         Seed_Declarations (Unit, Block.F_Decls, Seeded);
+         return Interpret_Statements (Unit, Handled.F_Stmts, Seeded);
+      end;
+   end Interpret_Decl_Block;
+
+   --  Interprets one statement, threading State to the next. Anything not
+   --  explicitly modeled here (select, accept, goto/label targets, ...)
+   --  clears all tracked bindings rather than risk carrying a stale one
+   --  across a construct this pass doesn't understand; Terminates_Statement
+   --  still recognizes return/raise/goto/unconditional-exit so reachability
+   --  past them is handled uniformly.
+   function Interpret_Statement
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Stmt  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Flow_Result
+   is
+   begin
+      case Stmt.Kind is
+         when Libadalang.Common.Ada_Assign_Stmt =>
+            declare
+               Assign : constant Libadalang.Analysis.Assign_Stmt :=
+                 Stmt.As_Assign_Stmt;
+               Next   : Flow_State := State;
+            begin
+               Scan_Expression_For_Flow_Bugs (Unit, Assign.F_Expr, State);
+               Havoc_Effects_In (Assign.F_Dest, Next);
+               Havoc_Effects_In (Assign.F_Expr, Next);
+
+               declare
+                  Target : constant Libadalang.Analysis.Ada_Node :=
+                    Flow_Assigned_Name (Stmt);
+                  Value  : constant Abstract_Int :=
+                    Integer_Value (Assign.F_Expr, State);
+               begin
+                  Flow_Set (Next, Target, Value);
+               end;
+
+               return (State => Next, Terminated => False);
+            end;
+
+         when Libadalang.Common.Ada_Call_Stmt =>
+            declare
+               Next : Flow_State := State;
+            begin
+               Havoc_Effects_In (Stmt.As_Call_Stmt.F_Call, Next);
+               return (State => Next, Terminated => False);
+            end;
+
+         when Libadalang.Common.Ada_If_Stmt =>
+            return Interpret_If (Unit, Stmt.As_If_Stmt, State);
+
+         when Libadalang.Common.Ada_Case_Stmt =>
+            return Interpret_Case (Unit, Stmt.As_Case_Stmt, State);
+
+         when Libadalang.Common.Ada_Decl_Block =>
+            return Interpret_Decl_Block (Unit, Stmt.As_Decl_Block, State);
+
+         when Libadalang.Common.Ada_While_Loop_Stmt
+            | Libadalang.Common.Ada_For_Loop_Stmt
+            | Libadalang.Common.Ada_Loop_Stmt =>
+            return Interpret_Loop (Unit, Stmt, State);
+
+         when Libadalang.Common.Ada_Null_Stmt
+            | Libadalang.Common.Ada_Label
+            | Libadalang.Common.Ada_Pragma_Node =>
+            return (State => State, Terminated => False);
+
+         when Libadalang.Common.Ada_Exit_Stmt =>
+            declare
+               Cond : constant Libadalang.Analysis.Expr :=
+                 Stmt.As_Exit_Stmt.F_Cond_Expr;
+            begin
+               if Libadalang.Analysis.Is_Null (Cond) then
+                  return (State => State, Terminated => True);
+               end if;
+
+               Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
+               Check_Flow_Condition (Unit, Cond, State);
+               return (State => State, Terminated => False);
+            end;
+
+         when others =>
+            if Terminates_Statement (Stmt) then
+               return (State => State, Terminated => True);
+            else
+               return (State => Empty_Flow_State, Terminated => False);
+            end if;
+      end case;
+   end Interpret_Statement;
+
+   function Interpret_Statements
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      List  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Flow_Result
+   is
+      Current : Flow_State := State;
+   begin
+      if Libadalang.Analysis.Is_Null (List) then
+         return (State => Current, Terminated => False);
+      end if;
+
+      for I in 1 .. List.Children_Count loop
+         declare
+            Stmt : constant Libadalang.Analysis.Ada_Node := List.Child (I);
+         begin
+            if not Libadalang.Analysis.Is_Null (Stmt) then
+               declare
+                  Step : constant Flow_Result :=
+                    Interpret_Statement (Unit, Stmt, Current);
+               begin
+                  Current := Step.State;
+                  if Step.Terminated then
+                     return (State => Current, Terminated => True);
+                  end if;
+               end;
+            end if;
+         end;
+      end loop;
+
+      return (State => Current, Terminated => False);
+   end Interpret_Statements;
+
+   --  Runs the flow-sensitive pass over one subprogram body: seeds State
+   --  from its declarations' initializers, then walks its statements,
+   --  strengthening Division_By_Zero and Constant_Condition with values
+   --  learned from assignments the plain literal-only evaluation in
+   --  Analyze_Binary_Expression / Analyze_Bug_Finding_Node can't see.
+   --  Skipped for a body with exception handlers: an exception raised
+   --  partway through would jump to the handler with only a prefix of the
+   --  assignments applied, which this straight-line model doesn't account
+   --  for.
+   procedure Interpret_Subprogram_Flow
+     (Unit       : Libadalang.Analysis.Analysis_Unit;
+      Subprogram : Libadalang.Analysis.Subp_Body)
+   is
+      Handled : constant Libadalang.Analysis.Handled_Stmts :=
+        Subprogram.F_Stmts;
+   begin
+      if Libadalang.Analysis.Is_Null (Handled)
+        or else Handled.F_Exceptions.Children_Count > 0
+      then
+         return;
+      end if;
+
+      declare
+         State  : Flow_State := Empty_Flow_State;
+         Ignore : Flow_Result;  --  adalang-analyzer: ignore Dead_Store
+      begin
+         Seed_Declarations (Unit, Subprogram.F_Decls, State);
+         Ignore := Interpret_Statements (Unit, Handled.F_Stmts, State);
+      end;
+   end Interpret_Subprogram_Flow;
+
    --  Runs the per-subprogram checks: Unused_Parameter and Unused_Variable
    --  (no reference in either the local declarations or the statements),
    --  Cyclomatic_Complexity (base 1 plus every decision point in the
@@ -2756,6 +3477,12 @@ procedure Adalang_Analyzer is  --  adalang-analyzer: ignore Cyclomatic_Complexit
                     " return statements");
             end if;
          end;
+      end if;
+
+      if Rule_States (Division_By_Zero) = Enabled
+        or else Rule_States (Constant_Condition) = Enabled
+      then
+         Interpret_Subprogram_Flow (Unit, Subprogram);
       end if;
    end Analyze_Subprogram;
 
