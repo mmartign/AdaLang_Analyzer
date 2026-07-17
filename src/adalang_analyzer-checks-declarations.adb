@@ -7,7 +7,6 @@
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;      use Adalang_Analyzer.Ada_Text;
-with Adalang_Analyzer.Checks.Data_Flow;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Interp;
 with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
@@ -40,12 +39,13 @@ package body Adalang_Analyzer.Checks.Declarations is
       then
          declare
             Referenced : constant Libadalang.Analysis.Basic_Decl :=
-              Data_Flow.Referenced_Declaration (Node);
+              Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
          begin
-            --  Prefer semantic identity.  When Libadalang cannot resolve a
-            --  name in an otherwise valid unit, conservatively treat the
-            --  matching spelling as a use instead of emitting a false
-            --  "unused" diagnostic.
+            --  Use the declaration named directly in the source, rather than
+            --  the canonical storage object used by the data-flow checks. A
+            --  write through an object rename is a use of the rename itself.
+            --  When Libadalang cannot resolve a name in an otherwise valid
+            --  unit, conservatively treat the matching spelling as a use.
             return Libadalang.Analysis.Is_Null (Referenced)
               or else Referenced = Decl;
          end;

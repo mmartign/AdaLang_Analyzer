@@ -32,10 +32,25 @@ private package Adalang_Analyzer.Checks.Data_Flow is
    function Assigned_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Basic_Decl;
-   --  The declaration written by an assignment statement whose destination
-   --  is a plain identifier, or No_Basic_Decl for anything else (Node
-   --  isn't an assignment, or its destination is a more complex form like
-   --  an array/record component).
+   --  The declaration written by a plain identifier assignment or by a
+   --  statically indexed array-component assignment.
+
+   function Is_Trackable_Assignment
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True for simple-object assignments and array components whose indices
+   --  contain no identifiers. Dynamic indices are deliberately excluded: two
+   --  textual Arr (I) destinations need not denote the same element if I
+   --  changes between them.
+
+   function Same_Assigned_Target
+     (Left, Right : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Left and Right assign the same tracked scalar or component.
+
+   function Reads_Assigned_Target
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      Assignment : Libadalang.Analysis.Assign_Stmt) return Boolean;
+   --  True when Node reads the exact target written by Assignment. A read of
+   --  a whole array conservatively counts as reading each tracked component.
 
    function Has_Read_After
      (Node       : Libadalang.Analysis.Ada_Node'Class;
@@ -45,6 +60,13 @@ private package Adalang_Analyzer.Checks.Data_Flow is
    --  position within Node's subtree, in source (textual) order. This is
    --  the Dead_Store check: an assignment whose value is never read again
    --  in the subprogram is very likely dead code.
+
+   function Has_Read_After_Node
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      Decl       : Libadalang.Analysis.Basic_Decl;
+      Write_Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  General form used for writes performed by calls through out/in-out
+   --  actual parameters.
 
    function Enclosing_Subprogram
      (Node : Libadalang.Analysis.Ada_Node'Class)

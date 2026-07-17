@@ -13,7 +13,11 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Text_IO;
 
+with GNATCOLL.VFS;
+
 with Libadalang.Analysis;
+with Libadalang.Auto_Provider;
+with Libadalang.Unit_Files;
 
 with Adalang_Analyzer.Checks;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
@@ -21,6 +25,7 @@ with Adalang_Analyzer.Project_Files; use Adalang_Analyzer.Project_Files;
 with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;         use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Text_Utils;    use Adalang_Analyzer.Text_Utils;
+with Adalang_Analyzer.Unit_Provider;
 
 package body Adalang_Analyzer.CLI is
 
@@ -529,7 +534,32 @@ package body Adalang_Analyzer.CLI is
          return;
       end if;
 
-      Ctx := Libadalang.Analysis.Create_Context;
+      --  Build semantic unit lookup from the complete source set.  The
+      --  default Libadalang provider derives unit filenames relative to the
+      --  process working directory, so a package body passed as
+      --  "../sources/foo.adb" cannot otherwise find its sibling foo.ads.
+      --  The auto provider records the actual paths supplied directly or
+      --  discovered through -P, making semantic checks independent of where
+      --  the analyzer was launched.
+      declare
+         Input_Files : GNATCOLL.VFS.File_Array
+           (File_Name_Vectors.First_Index (Files_To_Process) ..
+              File_Name_Vectors.Last_Index (Files_To_Process));
+      begin
+         for Index in Input_Files'Range loop
+            Input_Files (Index) := GNATCOLL.VFS.Create_From_UTF8
+              (File_Name_Vectors.Element (Files_To_Process, Index),
+               Normalize => True);
+         end loop;
+
+         Ctx := Libadalang.Analysis.Create_Context
+           (Unit_Provider =>
+              Adalang_Analyzer.Unit_Provider.Create
+                (Primary =>
+                   Libadalang.Auto_Provider.Create_Auto_Provider_Reference
+                     (Input_Files),
+                 Fallback => Libadalang.Unit_Files.Default_Provider));
+      end;
 
       for F of Files_To_Process loop
          Process_File (F, Ctx);

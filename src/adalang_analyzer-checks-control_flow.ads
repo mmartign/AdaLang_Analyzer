@@ -43,6 +43,12 @@ private package Adalang_Analyzer.Checks.Control_Flow is
    --  assigning to something other than its own parameters or locals) for
    --  one assignment statement.
 
+   procedure Analyze_Call_Statement
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Stmt : Libadalang.Analysis.Call_Stmt);
+   --  Reports Dead_Store when a local simple object receives an out/in-out
+   --  result from a call and that result is never subsequently read.
+
    procedure Analyze_Case_Statement
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Case_Stmt);
