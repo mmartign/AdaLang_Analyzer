@@ -147,4 +147,32 @@ if ! "$analyzer" -q -checks="$flow_checks" tests/flow_clean.adb; then
    exit 1
 fi
 
+spark_checks='SPARK_Mode,Constant_Condition,Division_By_Zero'
+if "$analyzer" -checks="$spark_checks" tests/spark_findings.adb \
+     >"$output" 2>&1
+then
+   echo "expected spark_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+for rule in SPARK_Mode Constant_Condition Division_By_Zero
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "missing expected SPARK finding: $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if ! "$analyzer" -q -checks="$flow_checks" tests/spark_clean.adb; then
+   echo "spark_clean.adb retained stale state across a contracted call" >&2
+   "$analyzer" -checks="$flow_checks" tests/spark_clean.adb >&2 || true
+   exit 1
+fi
+
+if ! "$analyzer" --help | grep -F -- '--spark' >/dev/null; then
+   echo "--spark is missing from command help" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

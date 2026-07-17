@@ -27,6 +27,8 @@ package Adalang_Analyzer.Flow_Interp is
    --  neither check is enabled, or when the body has exception handlers
    --  (a raise partway through would jump to the handler with only a
    --  prefix of the assignments applied, which this straight-line model
-   --  doesn't account for).
+   --  doesn't account for). SPARK Pre contracts narrow the entry state,
+   --  Post contracts are scanned in the exit state, and calls invalidate
+   --  state named by their Global and Depends contracts.
 
 end Adalang_Analyzer.Flow_Interp;
