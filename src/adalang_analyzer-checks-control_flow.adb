@@ -262,23 +262,41 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                  and then Stmt.Kind = Libadalang.Common.Ada_Assign_Stmt
                then
                   declare
+                     Assignment : constant Libadalang.Analysis.Assign_Stmt :=
+                       Stmt.As_Assign_Stmt;
                      Decl : constant Libadalang.Analysis.Basic_Decl :=
                        Data_Flow.Assigned_Declaration (Stmt);
+                     Target_Text : constant String :=
+                       Canonical_Text (Assignment.F_Dest);
+                     Is_Self_Assignment : constant Boolean :=
+                       Target_Text /= ""
+                       and then Target_Text =
+                         Canonical_Text (Assignment.F_Expr);
                   begin
-                     if not Libadalang.Analysis.Is_Null (Decl) then
+                     --  A self-assignment does not establish a distinct new
+                     --  value, and Self_Assignment already diagnoses it more
+                     --  precisely.  Do not treat the next real write as also
+                     --  overwriting the no-op assignment.
+                     if Data_Flow.Is_Trackable_Assignment (Stmt)
+                       and then not Libadalang.Analysis.Is_Null (Decl)
+                       and then not Is_Self_Assignment
+                     then
                         for J in I + 1 .. List.Children_Count loop
                            declare
                               Later : constant Libadalang.Analysis.Ada_Node :=
                                 List.Child (J);
                            begin
-                              if Data_Flow.Reads_Declaration (Later, Decl) then
+                              if Data_Flow.Reads_Assigned_Target
+                                (Later, Assignment)
+                              then
                                  exit;  --  adalang-analyzer: ignore No_Exit
-                              elsif Data_Flow.Assigned_Declaration (Later) =
-                                Decl
+                              elsif Data_Flow.Same_Assigned_Target
+                                (Stmt, Later)
                               then
                                  Report_Rule_Violation
-                                   (Unit, Later, Overwritten_Assignment,
-                                    "assignment overwrites an unread value");
+                                   (Unit, Stmt, Overwritten_Assignment,
+                                    "assigned value is overwritten before " &
+                                      "it is read");
                                  exit;  --  adalang-analyzer: ignore No_Exit
                               end if;
                            end;
@@ -304,7 +322,15 @@ package body Adalang_Analyzer.Checks.Control_Flow is
    begin
       if Rule_States (Self_Assignment) = Enabled
         and then Target_Text /= ""
-        and then Target_Text = Value_Text
+        and then
+          (Target_Text = Value_Text
+           or else
+             (Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+              and then Stmt.F_Expr.Kind = Libadalang.Common.Ada_Identifier
+              and then not Libadalang.Analysis.Is_Null
+                (Data_Flow.Assigned_Declaration (Stmt))
+              and then Data_Flow.Assigned_Declaration (Stmt) =
+                Data_Flow.Referenced_Declaration (Stmt.F_Expr)))
       then
          Report_Rule_Violation
            (Unit, Stmt, Self_Assignment,
@@ -312,7 +338,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       end if;
 
       if Rule_States (Dead_Store) = Enabled
-        and then Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+        and then Data_Flow.Is_Trackable_Assignment (Stmt)
       then
          declare
             Decl : constant Libadalang.Analysis.Basic_Decl :=
@@ -360,6 +386,100 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          end;
       end if;
    end Analyze_Assignment;
+
+   procedure Analyze_Call_Statement
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Stmt : Libadalang.Analysis.Call_Stmt)
+   is
+      Call : constant Libadalang.Analysis.Name := Stmt.F_Call;
+   begin
+      if Rule_States (Dead_Store) /= Enabled
+        or else Call.Kind /= Libadalang.Common.Ada_Call_Expr
+      then
+         return;
+      end if;
+
+      declare
+         Suffix : constant Libadalang.Analysis.Ada_Node :=
+           Call.As_Call_Expr.F_Suffix;
+      begin
+         for Index in 1 .. Suffix.Children_Count loop
+            declare
+               Child : constant Libadalang.Analysis.Ada_Node :=
+                 Suffix.Child (Index);
+            begin
+               if Child.Kind = Libadalang.Common.Ada_Param_Assoc then
+                  declare
+                     Assoc  : constant Libadalang.Analysis.Param_Assoc :=
+                       Child.As_Param_Assoc;
+                     Actual : constant Libadalang.Analysis.Expr :=
+                       Assoc.F_R_Expr;
+                     Is_Output : Boolean := False;
+                  begin
+                     for Formal_Name of
+                       Assoc.P_Get_Params (Imprecise_Fallback => True)
+                     loop
+                        declare
+                           Ancestor : Libadalang.Analysis.Ada_Node :=
+                             Formal_Name.Parent;
+                        begin
+                           while not Libadalang.Analysis.Is_Null (Ancestor)
+                             and then Ancestor.Kind not in
+                               Libadalang.Common.Ada_Param_Spec_Range
+                           loop
+                              Ancestor := Ancestor.Parent;
+                           end loop;
+
+                           if not Libadalang.Analysis.Is_Null (Ancestor)
+                             and then Ancestor.As_Param_Spec.F_Mode.Kind in
+                               Libadalang.Common.Ada_Mode_Out_Range
+                                 | Libadalang.Common.Ada_Mode_In_Out_Range
+                           then
+                              Is_Output := True;
+                              exit;  --  adalang-analyzer: ignore No_Exit
+                           end if;
+                        end;
+                     end loop;
+
+                     if Is_Output
+                       and then Actual.Kind =
+                         Libadalang.Common.Ada_Identifier
+                     then
+                        declare
+                           Decl : constant Libadalang.Analysis.Basic_Decl :=
+                             Data_Flow.Referenced_Declaration (Actual);
+                           Subprogram : constant
+                             Libadalang.Analysis.Subp_Body :=
+                               Data_Flow.Enclosing_Subprogram (Stmt);
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Decl)
+                             and then Decl.Kind in
+                               Libadalang.Common.Ada_Object_Decl_Range
+                             and then not Libadalang.Analysis.Is_Null
+                               (Subprogram)
+                             and then Is_Local_To_Subprogram
+                               (Decl, Subprogram)
+                             and then not Data_Flow.Has_Read_After_Node
+                               (Subprogram.F_Stmts, Decl, Stmt)
+                           then
+                              Report_Rule_Violation
+                                (Unit, Actual, Dead_Store,
+                                 "output value assigned by call is never " &
+                                   "read later in this subprogram");
+                           end if;
+                        end;
+                     end if;
+                  exception
+                     when others =>
+                        --  An unresolved call profile is conservatively
+                        --  skipped.
+                        null;  --  adalang-analyzer: ignore Null_Statement
+                  end;
+               end if;
+            end;
+         end loop;
+      end;
+   end Analyze_Call_Statement;
 
    procedure Analyze_Case_Statement  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;

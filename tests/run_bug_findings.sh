@@ -47,6 +47,79 @@ do
    fi
 done
 
+#  Semantic lookup must use the paths supplied to the analyzer, rather than
+#  assuming that sibling units live in the process working directory.  Keep
+#  the body first to match shell glob ordering in the original regression.
+provider_checks='Floating_Equality,Overwritten_Assignment'
+if "$analyzer" -checks="$provider_checks" \
+     tests/provider_path_findings.adb \
+     tests/provider_path_findings.ads >"$output" 2>&1
+then
+   echo "expected provider_path_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+for rule in Floating_Equality Overwritten_Assignment
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "missing path-independent semantic finding: $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if [ "$(grep -c '\[Overwritten_Assignment\]' "$output")" -ne 1 ] \
+  || ! grep -F \
+       "provider_path_findings.adb:8:7: warning:" "$output" >/dev/null
+then
+   echo "overwritten assignment must identify only the earlier wasted write" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+precision_checks='Dead_Store,Overwritten_Assignment'
+if "$analyzer" -checks="$precision_checks" \
+     tests/data_flow_precision_findings.adb >"$output" 2>&1
+then
+   echo "expected data_flow_precision_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Dead_Store\]' "$output")" -ne 2 ] \
+  || [ "$(grep -c '\[Overwritten_Assignment\]' "$output")" -ne 1 ] \
+  || ! grep -F \
+       "data_flow_precision_findings.adb:17:4: warning:" "$output" >/dev/null \
+  || ! grep -F \
+       "data_flow_precision_findings.adb:19:4: warning:" "$output" >/dev/null \
+  || ! grep -F \
+       "data_flow_precision_findings.adb:21:4: warning:" "$output" >/dev/null
+then
+   echo "unexpected nested-read or array-component data-flow findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+call_checks='Self_Assignment,Dead_Store,Unused_Variable'
+if "$analyzer" -checks="$call_checks" \
+     tests/call_and_rename_findings.adb >"$output" 2>&1
+then
+   echo "expected call_and_rename_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Self_Assignment\]' "$output")" -ne 1 ] \
+  || [ "$(grep -c '\[Dead_Store\]' "$output")" -ne 1 ] \
+  || [ "$(grep -c '\[Unused_Variable\]' "$output")" -ne 0 ] \
+  || ! grep -F \
+       "call_and_rename_findings.adb:19:4: warning:" "$output" >/dev/null \
+  || ! grep -F \
+       "call_and_rename_findings.adb:25:10: warning:" "$output" >/dev/null
+then
+   echo "unexpected rename or call-output data-flow findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 if ! "$analyzer" -q -checks="$high_value_checks" tests/high_value_clean.adb; then
    echo "high_value_clean.adb unexpectedly produced a violation" >&2
    exit 1

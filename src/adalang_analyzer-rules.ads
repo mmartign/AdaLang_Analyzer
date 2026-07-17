@@ -335,8 +335,8 @@ package Adalang_Analyzer.Rules is
       Self_Assignment =>
         (Name        => To_Unbounded_String ("Self_Assignment"),
          Description => To_Unbounded_String
-           ("Find assignments where the target and value are the same " &
-            "syntactic expression."),
+           ("Find assignments whose target and value designate the same " &
+            "object, including through a simple object rename."),
          Guidance    => To_Unbounded_String
            ("Remove the assignment or replace the right-hand side with the " &
             "value that was intended to update the object."),

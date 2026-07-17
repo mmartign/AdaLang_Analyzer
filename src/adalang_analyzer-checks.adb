@@ -154,6 +154,9 @@ package body Adalang_Analyzer.Checks is
          when Libadalang.Common.Ada_Assign_Stmt =>
             Control_Flow.Analyze_Assignment (Unit, Node.As_Assign_Stmt);
 
+         when Libadalang.Common.Ada_Call_Stmt =>
+            Control_Flow.Analyze_Call_Statement (Unit, Node.As_Call_Stmt);
+
          when Libadalang.Common.Ada_Object_Decl =>
             Declarations.Analyze_Object_Declaration
               (Unit, Node.As_Object_Decl);

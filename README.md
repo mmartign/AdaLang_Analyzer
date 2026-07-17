@@ -46,7 +46,7 @@ The analyzer currently provides the following checks:
 | Control flow | `Unreachable_Code` | Maintainability | Medium | Reports statements following an unconditional transfer of control. |
 | Arithmetic | `Division_By_Zero` | Reliability | Blocker | Reports statically detectable division, `mod`, or `rem` by zero. |
 | Arithmetic | `Reversed_Range` | Reliability | Medium | Reports static ranges whose lower bound exceeds their upper bound. |
-| Assignment | `Self_Assignment` | Reliability | Medium | Reports assignments whose target and value are the same expression. |
+| Assignment | `Self_Assignment` | Reliability | Medium | Reports assignments whose target and value designate the same object, including through simple renames. |
 | Expression | `Same_Operand` | Reliability | Medium | Reports suspicious binary expressions with identical operands. |
 | Conditional | `Duplicate_Condition` | Reliability | Medium | Reports repeated conditions in an `if`/`elsif` chain. |
 | Style | `Null_Statement` | Maintainability | Low | Reports executable `null` statements. |
@@ -93,10 +93,17 @@ runtime:
   and "Violations by severity" rollups.
 
 The data-flow checks are intraprocedural and deliberately conservative.
-`Dead_Store` follows resolved simple-object assignments in source order,
-`Overwritten_Assignment` stays within one statement list, and the case checks
-compare statically evaluable integer literals and ranges. These boundaries keep
-findings predictable without requiring whole-program control-flow analysis.
+`Dead_Store` follows resolved simple-object assignments and statically indexed
+array components in source order, `Overwritten_Assignment` stays within one
+statement list, and the case checks compare statically evaluable integer
+literals and ranges. Dynamically indexed components are not equated because an
+index can change between two textually identical destinations. These boundaries
+keep findings predictable without requiring whole-program control-flow
+analysis. Calls with resolved `out` or `in out` formal parameters are treated as
+writes to simple local-object actuals, so an output value that is never consumed
+can be reported as a dead store. Simple object renames are resolved to their
+underlying declaration. Explicit access dereferences remain outside the tracked
+target model because soundly equating them requires points-to/alias analysis.
 `No_Recursion` and `Function_Side_Effect` are likewise scoped conservatively:
 `No_Recursion` only recognizes calls written with an explicit call syntax, and
 `Function_Side_Effect` only flags assignments through a simple identifier
