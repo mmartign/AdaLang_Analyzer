@@ -314,6 +314,38 @@ package body Adalang_Analyzer.Checks is
       --  this node's own checks, rather than letting it unwind out of
       --  Process_File and abandon analysis of the rest of the file.
       begin
+      if Rule_States (SPARK_Mode) = Enabled then
+         if Node.Kind = Libadalang.Common.Ada_Aspect_Assoc then
+            declare
+               Aspect : constant Libadalang.Analysis.Aspect_Assoc :=
+                 Node.As_Aspect_Assoc;
+            begin
+               if Canonical_Text (Aspect.F_Id) = "spark_mode"
+                 and then Canonical_Text (Aspect.F_Expr) = "off"
+               then
+                  Report_Rule_Violation
+                    (Unit, Node, SPARK_Mode,
+                     "SPARK_Mode is explicitly disabled");
+               end if;
+            end;
+         elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node then
+            declare
+               Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
+                 Node.As_Pragma_Node;
+            begin
+               if Canonical_Text (Pragma_Node.F_Id) = "spark_mode" then
+                  for Arg of Pragma_Node.F_Args loop
+                     if Canonical_Text (Arg.P_Assoc_Expr) = "off" then
+                        Report_Rule_Violation
+                          (Unit, Node, SPARK_Mode,
+                           "SPARK_Mode is explicitly disabled");
+                        exit;
+                     end if;
+                  end loop;
+               end if;
+            end;
+         end if;
+      end if;
       if Rule_States (No_Goto) = Enabled and then Node.Kind = Libadalang.Common.Ada_Goto_Stmt then
          Report_Rule_Violation (Unit, Node, No_Goto, "goto statement used");
       end if;

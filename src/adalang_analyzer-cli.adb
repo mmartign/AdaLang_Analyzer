@@ -43,6 +43,8 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line ("  -checks=<list>        Enable/disable checks");
       Ada.Text_IO.Put_Line ("  -list-checks          List available checks");
       Ada.Text_IO.Put_Line
+        ("  --spark               Enable proof-focused SPARK checks");
+      Ada.Text_IO.Put_Line
         ("  -complexity-threshold=<n>  Set complexity limit (default: 10)");
       Ada.Text_IO.Put_Line
         ("  -nesting-threshold=<n>     Set nesting depth limit (default: 4)");
@@ -173,6 +175,29 @@ package body Adalang_Analyzer.CLI is
          Apply_Check_Item (List_Text (Start .. List_Text'Last));
       end if;
    end Parse_Checks_Option;
+
+   --  Selects a compact set of checks that tend to block proof, obscure
+   --  data dependencies, or leave the SPARK subset. Later command-line
+   --  check switches can still refine this preset.
+   procedure Enable_SPARK_Preset is
+      SPARK_Rules : constant array (Positive range <>) of Rule_Kind :=
+        (No_Goto, No_Abort, No_Raise, No_Access_To_Subp_Def,
+         No_Unchecked_Conversion, Floating_Equality, Dead_Store,
+         Overwritten_Assignment, Infinite_Loop, Constant_Condition,
+         Unreachable_Code, Division_By_Zero, Reversed_Range,
+         Self_Assignment, Contradictory_Condition, No_Recursion,
+         Non_Short_Circuit_Condition, Address_Clause,
+         Function_Side_Effect, SPARK_Mode);
+   begin
+      SPARK_Analysis_Mode := True;
+      for Rule in Rule_Kind loop
+         Rule_States (Rule) := Disabled;
+      end loop;
+
+      for Rule of SPARK_Rules loop
+         Rule_States (Rule) := Enabled;
+      end loop;
+   end Enable_SPARK_Preset;
 
    --  Parses the -complexity-threshold value; records an invalid-option
    --  error instead of raising when Text isn't a positive integer.
@@ -358,6 +383,8 @@ package body Adalang_Analyzer.CLI is
                   Show_Version := True;
                elsif Arg = "-list-checks" or else Arg = "-list-rules" then
                   List_Checks_Only := True;
+               elsif Arg = "--spark" or else Arg = "-spark" then
+                  Enable_SPARK_Preset;
                elsif Arg = "-q" or else Arg = "-quiet" then
                   Quiet_Mode := True;
                elsif Arg = "-v" or else Arg = "-verbose" then

@@ -71,6 +71,7 @@ The analyzer currently provides the following checks:
 | Expression | `Redundant_Boolean_Comparison` | Maintainability | Low | Reports equality/inequality comparisons against the literal `True`/`False`. |
 | Style | `Long_Line` | Maintainability | Low | Reports source lines longer than the configured threshold. |
 | Style | `Trailing_Whitespace` | Maintainability | Low | Reports source lines with trailing spaces or tabs. |
+| SPARK | `SPARK_Mode` | Reliability | High | Reports regions that explicitly set `SPARK_Mode` to `Off`. |
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
@@ -100,6 +101,14 @@ findings predictable without requiring whole-program control-flow analysis.
 `No_Recursion` only recognizes calls written with an explicit call syntax, and
 `Function_Side_Effect` only flags assignments through a simple identifier
 destination, to avoid false positives from unresolved or complex constructs.
+
+SPARK contracts participate in the flow-sensitive pass. A `Pre` aspect
+narrows the abstract state at subprogram entry, a `Post` aspect is scanned
+using the state established by the body, and `Global`/`Depends` contracts
+invalidate state that a call may update. This is a conservative,
+intraprocedural interpretation rather than a replacement for GNATprove:
+unsupported contract expressions remain unknown, and contract inputs may be
+invalidated when the analyzer cannot distinguish their mode safely.
 
 `Division_By_Zero` and `Constant_Condition` are additionally strengthened by a
 flow-sensitive abstract-execution pass that tracks both a variable's known
@@ -210,6 +219,7 @@ Useful options include:
 -version         Show the version
 -P<project>.gpr  Analyze the sources of a GNAT project file
 -list-checks     List all available checks
+--spark          Enable a proof-focused preset (later check switches refine it)
 -checks=<list>   Enable or disable a comma-separated set of checks
 -complexity-threshold=<n>
                  Set the Cyclomatic_Complexity limit (default: 10)
@@ -226,6 +236,48 @@ Useful options include:
 
 The command exits unsuccessfully when it finds a violation or cannot process
 the requested input, which makes it suitable for scripts and CI checks.
+
+## Commercial Value & Professional Services
+
+AdaLang Analyzer is developed and maintained by
+[Spazio IT](https://spazioit.com/), a company with deep expertise in
+safety-critical and high-integrity Ada/SPARK systems.
+
+### Why Organizations Choose AdaLang Analyzer
+
+- **Cost-effective daily static analysis** — fast, lightweight, and easy to
+  integrate into CI pipelines, reducing reliance on expensive proprietary
+  tools for routine checks.
+- **Strong safety & certification focus** — designed with ASIL, DO-178C, and
+  EN 50128 workflows in mind. Helps catch issues early that complicate formal
+  verification with GNATprove.
+- **SPARK readiness** — understands `SPARK_Mode`, participates in
+  contract-based flow analysis, and highlights patterns likely to generate
+  difficult proof obligations.
+- **Customizable & transparent** — fully open source (GPL), with clear rule
+  classifications and remediation guidance. Easy to extend or integrate into
+  your toolchain.
+
+### Professional Services from Spazio IT
+
+We offer commercial support and services around AdaLang Analyzer, including:
+
+- **Enterprise support & maintenance contracts**
+- **Custom rule development** tailored to your coding standards or
+  certification needs
+- **Tool qualification** assistance for DO-178C / ISO 26262 (TCL3) and
+  similar standards
+- **SPARK adoption consulting** — gap analysis, proof readiness reviews, and
+  verification workflow optimization
+- **Training workshops** on static analysis, formal methods, and best
+  practices with Ada/SPARK
+
+Whether you need a lightweight daily checker or full support for a
+certification campaign, Spazio IT can help you maximize the value of AdaLang
+Analyzer in your environment.
+
+**Contact us** at [info@spazioit.com](mailto:info@spazioit.com) for a demo,
+pilot project, or consultation.
 
 ## Contributing
 

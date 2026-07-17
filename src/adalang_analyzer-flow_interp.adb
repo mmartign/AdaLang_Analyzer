@@ -5,6 +5,7 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Libadalang.Common;
+with Langkit_Support.Text;
 
 with Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Config;      use Adalang_Analyzer.Config;
@@ -16,6 +17,21 @@ with Adalang_Analyzer.Rules;
 package body Adalang_Analyzer.Flow_Interp is
 
    use type Libadalang.Common.Ada_Node_Kind_Type;
+
+   --  Fetches an aspect from any declaration/body part. Missing or
+   --  unresolved contracts are represented by a null expression.
+   function Contract_Expression
+     (Decl : Libadalang.Analysis.Basic_Decl'Class;
+      Name : String) return Libadalang.Analysis.Expr
+   is
+   begin
+      return Decl.P_Get_Aspect_Spec_Expr
+        (Langkit_Support.Text.To_Unbounded_Text
+           (Langkit_Support.Text.To_Text (Name)));
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Contract_Expression;
 
    --  The defining name an identifier resolves to, or No_Ada_Node for
    --  anything else. The Flow_State key type; kept distinct from a
@@ -80,6 +96,31 @@ package body Adalang_Analyzer.Flow_Interp is
       end loop;
    end Havoc_Identifiers_In;
 
+   --  Invalidates state mentioned by a called subprogram's SPARK
+   --  Global/Depends contracts. Treating inputs conservatively as unknown
+   --  can cost precision, but cannot preserve a stale constant.
+   procedure Havoc_Contract_Effects
+     (Call  : Libadalang.Analysis.Name'Class;
+      State : in out Flow_State)
+   is
+      Decl : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Call.Kind = Libadalang.Common.Ada_Call_Expr then
+         Decl := Call.As_Call_Expr.F_Name.P_Referenced_Decl;
+      else
+         Decl := Call.P_Referenced_Decl;
+      end if;
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return;
+      end if;
+
+      Havoc_Identifiers_In (Contract_Expression (Decl, "Global"), State);
+      Havoc_Identifiers_In (Contract_Expression (Decl, "Depends"), State);
+   exception
+      when others =>
+         null;  --  Existing actual-parameter havoc remains the fallback.
+   end Havoc_Contract_Effects;
+
    --  Invalidates whatever Node's own evaluation could change: every actual
    --  parameter of any call found within it (Ada_Call_Expr also covers
    --  indexing and conversions, which are harmless to over-invalidate), and
@@ -101,6 +142,7 @@ package body Adalang_Analyzer.Flow_Interp is
             Flow_Havoc (State, Flow_Assigned_Name (Node));
 
          when Libadalang.Common.Ada_Call_Expr =>
+            Havoc_Contract_Effects (Node.As_Call_Expr.F_Name, State);
             Havoc_Identifiers_In (Node, State);
             return;
 
@@ -631,6 +673,7 @@ package body Adalang_Analyzer.Flow_Interp is
             declare
                Next : Flow_State := State;
             begin
+               Havoc_Contract_Effects (Stmt.As_Call_Stmt.F_Call, Next);
                Havoc_Effects_In (Stmt.As_Call_Stmt.F_Call, Next);
                return (State => Next, Terminated => False);
             end;
@@ -727,10 +770,29 @@ package body Adalang_Analyzer.Flow_Interp is
 
       declare
          State  : Flow_State := Empty_Flow_State;
-         Ignore : Flow_Result;  --  adalang-analyzer: ignore Dead_Store
+         Result : Flow_Result;
+         Pre    : constant Libadalang.Analysis.Expr :=
+           Contract_Expression (Subprogram, "Pre");
+         Post   : constant Libadalang.Analysis.Expr :=
+           Contract_Expression (Subprogram, "Post");
       begin
          Seed_Declarations (Unit, Subprogram.F_Decls, State);
-         Ignore := Interpret_Statements (Unit, Handled.F_Stmts, State);
+
+         if not Libadalang.Analysis.Is_Null (Pre) then
+            declare
+               True_State, False_State : Flow_State;
+            begin
+               Scan_Expression_For_Flow_Bugs (Unit, Pre, State);
+               Narrow_By_Condition (Pre, State, True_State, False_State);
+               State := True_State;
+            end;
+         end if;
+
+         Result := Interpret_Statements (Unit, Handled.F_Stmts, State);
+
+         if not Libadalang.Analysis.Is_Null (Post) then
+            Scan_Expression_For_Flow_Bugs (Unit, Post, Result.State);
+         end if;
       end;
    end Interpret_Subprogram_Flow;
 

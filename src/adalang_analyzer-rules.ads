@@ -64,7 +64,8 @@ package Adalang_Analyzer.Rules is
       Function_Side_Effect,
       Redundant_Boolean_Comparison,
       Long_Line,
-      Trailing_Whitespace
+      Trailing_Whitespace,
+      SPARK_Mode
    );
 
    type Software_Quality is
@@ -578,7 +579,17 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Remove the trailing whitespace."),
          Quality     => Quality_Maintainability,
-         Severity    => Severity_Low)
+         Severity    => Severity_Low),
+      SPARK_Mode =>
+        (Name        => To_Unbounded_String ("SPARK_Mode"),
+         Description => To_Unbounded_String
+           ("Find declarations or regions that explicitly disable " &
+            "SPARK_Mode and therefore leave the formally analyzable subset."),
+         Guidance    => To_Unbounded_String
+           ("Remove SPARK_Mode => Off, or isolate and justify the smallest " &
+            "possible non-SPARK boundary."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High)
    );
 
    function Lookup_Rule_Kind
