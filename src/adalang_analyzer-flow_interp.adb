@@ -13,6 +13,7 @@ with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
 with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;
+with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Flow_Interp is
 
@@ -74,10 +75,151 @@ package body Adalang_Analyzer.Flow_Interp is
       return Flow_Referenced_Name (Node.As_Assign_Stmt.F_Dest);
    end Flow_Assigned_Name;
 
-   --  Havocs every identifier anywhere under Node. Used to invalidate a
-   --  call's actual parameters wholesale (mode information isn't consulted,
-   --  so this is deliberately over-conservative rather than risk treating
-   --  an out-mode actual as unchanged).
+   function Normalized_Text
+     (Node : Libadalang.Analysis.Ada_Node'Class) return String is
+   begin
+      return Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Node));
+   end Normalized_Text;
+
+   function Call_Declaration
+     (Call : Libadalang.Analysis.Name'Class)
+      return Libadalang.Analysis.Basic_Decl is
+   begin
+      if Call.Kind = Libadalang.Common.Ada_Call_Expr then
+         return Call.As_Call_Expr.F_Name.P_Referenced_Decl;
+      else
+         return Call.P_Referenced_Decl;
+      end if;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Call_Declaration;
+
+   function Effective_SPARK_Enabled
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is
+      Aspect : Libadalang.Analysis.Aspect;
+   begin
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return True;
+      end if;
+
+      Aspect := Decl.P_Get_Aspect
+        (Langkit_Support.Text.To_Unbounded_Text
+           (Langkit_Support.Text.To_Text ("SPARK_Mode")));
+
+      return not Libadalang.Analysis.Exists (Aspect)
+        or else Libadalang.Analysis.Is_Null
+          (Libadalang.Analysis.Value (Aspect))
+        or else Normalized_Text (Libadalang.Analysis.Value (Aspect)) /= "off";
+   exception
+      when others =>
+         return True;
+   end Effective_SPARK_Enabled;
+
+   function Formal_Mode
+     (Param : Libadalang.Analysis.Defining_Name'Class)
+      return Libadalang.Common.Ada_Node_Kind_Type
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Param);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_Param_Spec then
+            return Current.As_Param_Spec.F_Mode;
+         end if;
+         Current := Current.Parent;
+      end loop;
+
+      return Libadalang.Common.Ada_Mode_Default;
+   exception
+      when others =>
+         return Libadalang.Common.Ada_Mode_Default;
+   end Formal_Mode;
+
+   function Formal_Is_Writable
+     (Param : Libadalang.Analysis.Defining_Name'Class) return Boolean is
+   begin
+      return Formal_Mode (Param) in Libadalang.Common.Ada_Mode_Out
+        | Libadalang.Common.Ada_Mode_In_Out;
+   end Formal_Is_Writable;
+
+   procedure Seed_Formal_Values
+     (Call            : Libadalang.Analysis.Name'Class;
+      Caller_State    : Flow_State;
+      Include_Outputs : Boolean;
+      Contract_State  : in out Flow_State)
+   is
+   begin
+      for Pair of Call.P_Call_Params loop
+         if Include_Outputs
+           or else not Formal_Is_Writable
+             (Libadalang.Analysis.Param (Pair))
+         then
+            declare
+               Key : constant Libadalang.Analysis.Ada_Node :=
+                 Libadalang.Analysis.Ada_Node
+                   (Libadalang.Analysis.Param (Pair));
+            begin
+               Flow_Set
+                 (Contract_State, Key,
+                  Integer_Value
+                    (Libadalang.Analysis.Actual (Pair), Caller_State));
+               Flow_Bool_Set
+                 (Contract_State, Key,
+                  Boolean_Value
+                    (Libadalang.Analysis.Actual (Pair), Caller_State));
+               Flow_Range_Set
+                 (Contract_State, Key,
+                  Range_Value
+                    (Libadalang.Analysis.Actual (Pair), Caller_State));
+            end;
+         end if;
+      end loop;
+   exception
+      when others =>
+         null;
+   end Seed_Formal_Values;
+
+   procedure Check_Call_Precondition
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Call  : Libadalang.Analysis.Name'Class;
+      State : Flow_State)
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Call_Declaration (Call);
+   begin
+      if Config.Rule_States (Rules.Known_Precondition_Failure) /=
+           Config.Enabled
+        or else Libadalang.Analysis.Is_Null (Decl)
+        or else not Effective_SPARK_Enabled (Decl)
+      then
+         return;
+      end if;
+
+      declare
+         Pre : constant Libadalang.Analysis.Expr :=
+           Contract_Expression (Decl, "Pre");
+         Contract_State : Flow_State := Empty_Flow_State;
+      begin
+         if Libadalang.Analysis.Is_Null (Pre) then
+            return;
+         end if;
+
+         Seed_Formal_Values
+           (Call, State, Include_Outputs => True,
+            Contract_State => Contract_State);
+
+         if Boolean_Value (Pre, Contract_State) = Bool_False then
+            Report.Report_Rule_Violation
+              (Unit, Call, Rules.Known_Precondition_Failure,
+               "actual arguments make the precondition false");
+         end if;
+      end;
+   end Check_Call_Precondition;
+
+   --  Havocs every identifier anywhere under Node. Used for contract outputs
+   --  and as the conservative fallback when formal/actual resolution fails.
    procedure Havoc_Identifiers_In
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : in out Flow_State)
@@ -96,38 +238,153 @@ package body Adalang_Analyzer.Flow_Interp is
       end loop;
    end Havoc_Identifiers_In;
 
-   --  Invalidates state mentioned by a called subprogram's SPARK
-   --  Global/Depends contracts. Treating inputs conservatively as unknown
-   --  can cost precision, but cannot preserve a stale constant.
-   procedure Havoc_Contract_Effects
+   --  Invalidates outputs named by a called subprogram's SPARK Global
+   --  contract. Input and Proof_In associations are read-only and therefore
+   --  preserve their abstract values. A malformed or unrecognized aggregate
+   --  falls back to invalidating every identifier it contains.
+   procedure Havoc_Global_Effects
      (Call  : Libadalang.Analysis.Name'Class;
       State : in out Flow_State)
    is
-      Decl : Libadalang.Analysis.Basic_Decl;
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Call_Declaration (Call);
    begin
-      if Call.Kind = Libadalang.Common.Ada_Call_Expr then
-         Decl := Call.As_Call_Expr.F_Name.P_Referenced_Decl;
-      else
-         Decl := Call.P_Referenced_Decl;
-      end if;
       if Libadalang.Analysis.Is_Null (Decl) then
          return;
       end if;
 
-      Havoc_Identifiers_In (Contract_Expression (Decl, "Global"), State);
-      Havoc_Identifiers_In (Contract_Expression (Decl, "Depends"), State);
+      declare
+         Global : constant Libadalang.Analysis.Expr :=
+           Contract_Expression (Decl, "Global");
+      begin
+         if Libadalang.Analysis.Is_Null (Global) then
+            return;
+         elsif Global.Kind not in Libadalang.Common.Ada_Base_Aggregate
+         then
+            --  The shorthand form denotes inputs only.
+            return;
+         end if;
+
+         for Item of Global.As_Base_Aggregate.F_Assocs loop
+            if Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
+               declare
+                  Assoc : constant Libadalang.Analysis.Aggregate_Assoc :=
+                    Item.As_Aggregate_Assoc;
+                  Mode  : constant String :=
+                    (if Assoc.F_Designators.Children_Count = 0 then ""
+                     else Normalized_Text (Assoc.F_Designators.Child (1)));
+               begin
+                  if Mode = "output" or else Mode = "in_out" then
+                     Havoc_Identifiers_In (Assoc.F_R_Expr, State);
+                  elsif Mode /= "input" and then Mode /= "proof_in" then
+                     Havoc_Identifiers_In (Global, State);
+                     return;
+                  end if;
+               end;
+            else
+               Havoc_Identifiers_In (Global, State);
+               return;
+            end if;
+         end loop;
+      end;
    exception
       when others =>
-         null;  --  Existing actual-parameter havoc remains the fallback.
-   end Havoc_Contract_Effects;
+         null;
+   end Havoc_Global_Effects;
 
-   --  Invalidates whatever Node's own evaluation could change: every actual
-   --  parameter of any call found within it (Ada_Call_Expr also covers
-   --  indexing and conversions, which are harmless to over-invalidate), and
-   --  every variable directly assigned to, when Node is itself a statement
-   --  list containing assignments (the pre-loop-body havoc case). Does not
-   --  descend into a nested subprogram body, which is analyzed separately
-   --  on its own terms.
+   procedure Havoc_Call_Actuals
+     (Call  : Libadalang.Analysis.Name'Class;
+      State : in out Flow_State)
+   is
+   begin
+      for Pair of Call.P_Call_Params loop
+         if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
+            Havoc_Identifiers_In
+              (Libadalang.Analysis.Actual (Pair), State);
+         end if;
+      end loop;
+   exception
+      when others =>
+         Havoc_Identifiers_In (Call, State);
+   end Havoc_Call_Actuals;
+
+   procedure Apply_Call_Postcondition
+     (Call  : Libadalang.Analysis.Name'Class;
+      State : in out Flow_State)
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Call_Declaration (Call);
+   begin
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else not Effective_SPARK_Enabled (Decl)
+      then
+         return;
+      end if;
+
+      declare
+         Post : constant Libadalang.Analysis.Expr :=
+           Contract_Expression (Decl, "Post");
+         Contract_State : Flow_State := Empty_Flow_State;
+         True_State, False_State : Flow_State;
+      begin
+         if Libadalang.Analysis.Is_Null (Post) then
+            return;
+         end if;
+
+         Seed_Formal_Values
+           (Call, State, Include_Outputs => False,
+            Contract_State => Contract_State);
+         Narrow_By_Condition
+           (Post, Contract_State, True_State, False_State);
+
+         if Boolean_Value (Post, Contract_State) = Bool_False then
+            return;
+         end if;
+
+         for Pair of Call.P_Call_Params loop
+            if Formal_Is_Writable (Libadalang.Analysis.Param (Pair))
+              and then Libadalang.Analysis.Actual (Pair).Kind =
+                Libadalang.Common.Ada_Identifier
+            then
+               declare
+                  Formal_Key : constant Libadalang.Analysis.Ada_Node :=
+                    Libadalang.Analysis.Ada_Node
+                      (Libadalang.Analysis.Param (Pair));
+                  Actual_Key : constant Libadalang.Analysis.Ada_Node :=
+                    Flow_Referenced_Name
+                      (Libadalang.Analysis.Actual (Pair));
+                  Value : Abstract_Int :=
+                    Flow_Lookup (True_State, Formal_Key);
+                  Bounds : constant Abstract_Range :=
+                    Flow_Range_Lookup (True_State, Formal_Key);
+               begin
+                  if not Value.Known
+                    and then Bounds.Has_Low
+                    and then Bounds.Has_High
+                    and then Bounds.Low = Bounds.High
+                  then
+                     Value := Known_Int (Bounds.Low);
+                  end if;
+
+                  Flow_Set (State, Actual_Key, Value);
+                  Flow_Bool_Set
+                    (State, Actual_Key,
+                     Flow_Bool_Lookup (True_State, Formal_Key));
+                  Flow_Range_Set (State, Actual_Key, Bounds);
+               end;
+            end if;
+         end loop;
+      end;
+   exception
+      when others =>
+         null;
+   end Apply_Call_Postcondition;
+
+   --  Invalidates whatever Node's own evaluation could change: writable
+   --  actual parameters and Global outputs of calls found within it, and
+   --  every variable directly assigned to when Node is a statement list
+   --  containing assignments (the pre-loop-body havoc case). Does not
+   --  descend into a nested subprogram body, which is analyzed separately.
    procedure Havoc_Effects_In
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : in out Flow_State)
@@ -142,8 +399,8 @@ package body Adalang_Analyzer.Flow_Interp is
             Flow_Havoc (State, Flow_Assigned_Name (Node));
 
          when Libadalang.Common.Ada_Call_Expr =>
-            Havoc_Contract_Effects (Node.As_Call_Expr.F_Name, State);
-            Havoc_Identifiers_In (Node, State);
+            Havoc_Global_Effects (Node.As_Call_Expr.F_Name, State);
+            Havoc_Call_Actuals (Node.As_Call_Expr.F_Name, State);
             return;
 
          when Libadalang.Common.Ada_Subp_Body =>
@@ -194,6 +451,11 @@ package body Adalang_Analyzer.Flow_Interp is
                     "assignment");
             end if;
          end;
+      end if;
+
+      if Node.Kind = Libadalang.Common.Ada_Call_Expr then
+         Check_Call_Precondition
+           (Unit, Node.As_Call_Expr.F_Name, State);
       end if;
 
       for I in 1 .. Node.Children_Count loop
@@ -672,9 +934,13 @@ package body Adalang_Analyzer.Flow_Interp is
          when Libadalang.Common.Ada_Call_Stmt =>
             declare
                Next : Flow_State := State;
+               Call : constant Libadalang.Analysis.Name :=
+                 Stmt.As_Call_Stmt.F_Call;
             begin
-               Havoc_Contract_Effects (Stmt.As_Call_Stmt.F_Call, Next);
-               Havoc_Effects_In (Stmt.As_Call_Stmt.F_Call, Next);
+               Check_Call_Precondition (Unit, Call, State);
+               Havoc_Global_Effects (Call, Next);
+               Havoc_Call_Actuals (Call, Next);
+               Apply_Call_Postcondition (Call, Next);
                return (State => Next, Terminated => False);
             end;
 
@@ -761,6 +1027,10 @@ package body Adalang_Analyzer.Flow_Interp is
    begin
       if (Config.Rule_States (Rules.Division_By_Zero) /= Config.Enabled
           and then Config.Rule_States (Rules.Constant_Condition) /=
+            Config.Enabled
+          and then Config.Rule_States (Rules.Known_Precondition_Failure) /=
+            Config.Enabled
+          and then Config.Rule_States (Rules.Known_Postcondition_Failure) /=
             Config.Enabled)
         or else Libadalang.Analysis.Is_Null (Handled)
         or else Handled.F_Exceptions.Children_Count > 0
@@ -792,6 +1062,16 @@ package body Adalang_Analyzer.Flow_Interp is
 
          if not Libadalang.Analysis.Is_Null (Post) then
             Scan_Expression_For_Flow_Bugs (Unit, Post, Result.State);
+
+            if Config.Rule_States (Rules.Known_Postcondition_Failure) =
+                 Config.Enabled
+              and then Effective_SPARK_Enabled (Subprogram)
+              and then Boolean_Value (Post, Result.State) = Bool_False
+            then
+               Report.Report_Rule_Violation
+                 (Unit, Post, Rules.Known_Postcondition_Failure,
+                  "subprogram body makes the postcondition false");
+            end if;
          end if;
       end;
    end Interpret_Subprogram_Flow;

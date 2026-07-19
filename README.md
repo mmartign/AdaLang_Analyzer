@@ -72,6 +72,8 @@ The analyzer currently provides the following checks:
 | Style | `Long_Line` | Maintainability | Low | Reports source lines longer than the configured threshold. |
 | Style | `Trailing_Whitespace` | Maintainability | Low | Reports source lines with trailing spaces or tabs. |
 | SPARK | `SPARK_Mode` | Reliability | High | Reports regions that explicitly set `SPARK_Mode` to `Off`. |
+| SPARK | `Known_Precondition_Failure` | Reliability | High | Reports calls whose actual values make a precondition false. |
+| SPARK | `Known_Postcondition_Failure` | Reliability | High | Reports bodies whose resulting state makes their postcondition false. |
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
@@ -110,12 +112,21 @@ target model because soundly equating them requires points-to/alias analysis.
 destination, to avoid false positives from unresolved or complex constructs.
 
 SPARK contracts participate in the flow-sensitive pass. A `Pre` aspect
-narrows the abstract state at subprogram entry, a `Post` aspect is scanned
-using the state established by the body, and `Global`/`Depends` contracts
-invalidate state that a call may update. This is a conservative,
+narrows the abstract state at subprogram entry, and resolved formal-to-actual
+parameter mappings allow a call with statically incompatible arguments to be
+reported as a `Known_Precondition_Failure`. A `Post` aspect is evaluated using
+the state established by the body, and facts it establishes for simple `out`
+and `in out` parameters are transferred back to the caller. A postcondition
+that the body makes statically false is reported as a
+`Known_Postcondition_Failure`.
+
+Effective `SPARK_Mode` inherited through a declaration is respected by these
+contract checks. `Global` contracts distinguish read-only `Input` and
+`Proof_In` state from `Output` and `In_Out` state that a call may modify,
+avoiding the previous loss of all global facts. This remains a conservative,
 intraprocedural interpretation rather than a replacement for GNATprove:
-unsupported contract expressions remain unknown, and contract inputs may be
-invalidated when the analyzer cannot distinguish their mode safely.
+unsupported contract expressions and complex actual parameters remain
+unknown.
 
 `Division_By_Zero` and `Constant_Condition` are additionally strengthened by a
 flow-sensitive abstract-execution pass that tracks both a variable's known
