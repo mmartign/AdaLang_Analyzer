@@ -11,6 +11,19 @@ with Libadalang.Analysis;
 --  shadowed declarations. Private to the Checks subsystem.
 private package Adalang_Analyzer.Checks.Declarations is
 
+   procedure Begin_Traversal;
+   --  Reset the lexical-scope cache before walking a compilation unit.
+
+   procedure Enter_Node (Node : Libadalang.Analysis.Ada_Node'Class);
+   procedure Leave_Node (Node : Libadalang.Analysis.Ada_Node'Class);
+   --  Push/pop the scopes recognized by Shadowed_Declaration.
+
+   procedure Register_Declaration
+     (Node : Libadalang.Analysis.Ada_Node'Class);
+   --  Add object and parameter names to the current lexical scope. Object
+   --  declarations are registered after they have been checked, so a lookup
+   --  only observes enclosing scopes rather than sibling declarations.
+
    procedure Analyze_Subprogram
      (Unit       : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body);

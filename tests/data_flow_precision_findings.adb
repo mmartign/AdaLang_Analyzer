@@ -22,9 +22,16 @@ begin
    Arr (3) := Arr (1);
    Ada.Text_IO.Put_Line (Integer'Image (Arr (3)));
 
-   --  Dynamic indices are intentionally not equated: Index could change or
-   --  alias another expression between writes.
+   --  An unchanged dynamic index identifies the same component.
    Arr (Index) := 20;
-   Index := 2;
    Arr (Index) := 30;
+   Ada.Text_IO.Put_Line (Integer'Image (Arr (Index)));
+
+   --  Once the index changes, equal destination text no longer proves that
+   --  the two assignments designate the same component.
+   Index := 2;
+   Arr (Index) := 40;
+   Index := 1;
+   Arr (Index) := 50;
+   Ada.Text_IO.Put_Line (Integer'Image (Arr (Index)));
 end Data_Flow_Precision_Findings;

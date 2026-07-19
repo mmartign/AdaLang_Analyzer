@@ -85,8 +85,8 @@ then
    exit 1
 fi
 
-if [ "$(grep -c '\[Dead_Store\]' "$output")" -ne 2 ] \
-  || [ "$(grep -c '\[Overwritten_Assignment\]' "$output")" -ne 1 ] \
+if [ "$(grep -c '\[Dead_Store\]' "$output")" -ne 3 ] \
+  || [ "$(grep -c '\[Overwritten_Assignment\]' "$output")" -ne 2 ] \
   || ! grep -F \
        "data_flow_precision_findings.adb:17:4: warning:" "$output" >/dev/null \
   || ! grep -F \
@@ -96,6 +96,31 @@ if [ "$(grep -c '\[Dead_Store\]' "$output")" -ne 2 ] \
 then
    echo "unexpected nested-read or array-component data-flow findings" >&2
    cat "$output" >&2
+   exit 1
+fi
+
+parameter_mode_checks='Wrong_Parameter_Mode,Dead_Store'
+if "$analyzer" -checks="$parameter_mode_checks" \
+     tests/parameter_mode_findings.adb >"$output" 2>&1
+then
+   echo "expected parameter_mode_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Wrong_Parameter_Mode\]' "$output")" -ne 2 ] \
+  || [ "$(grep -c '\[Dead_Store\]' "$output")" -ne 0 ]
+then
+   echo "unexpected parameter-mode findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks="$parameter_mode_checks" \
+     tests/parameter_mode_clean.adb
+then
+   echo "parameter_mode_clean.adb unexpectedly produced a violation" >&2
+   "$analyzer" -checks="$parameter_mode_checks" \
+     tests/parameter_mode_clean.adb >&2 || true
    exit 1
 fi
 

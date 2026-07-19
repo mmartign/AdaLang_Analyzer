@@ -33,6 +33,7 @@ The analyzer currently provides the following checks:
 | Numerical safety | `Floating_Equality` | Reliability | Medium | Reports `=` and `/=` applied to floating-point operands. |
 | Maintainability | `Magic_Number` | Maintainability | Low | Reports unexplained numeric literals other than 0, 1, and -1 outside named constant declarations. |
 | Data flow | `Unused_Parameter` | Maintainability | Low | Reports subprogram parameters that are never referenced. |
+| Data flow | `Wrong_Parameter_Mode` | Maintainability | Medium | Reports `in out` parameters that are only read or only written. |
 | Data flow | `Dead_Store` | Maintainability | Medium | Reports assignments whose value is never read later in the subprogram. |
 | Data flow | `Overwritten_Assignment` | Reliability | Medium | Reports assignments overwritten before an intervening read. |
 | Scope | `Shadowed_Declaration` | Reliability | Medium | Reports local objects hiding declarations in enclosing subprograms. |
@@ -95,17 +96,19 @@ runtime:
   and "Violations by severity" rollups.
 
 The data-flow checks are intraprocedural and deliberately conservative.
-`Dead_Store` follows resolved simple-object assignments and statically indexed
-array components in source order, `Overwritten_Assignment` stays within one
-statement list, and the case checks compare statically evaluable integer
-literals and ranges. Dynamically indexed components are not equated because an
-index can change between two textually identical destinations. These boundaries
-keep findings predictable without requiring whole-program control-flow
-analysis. Calls with resolved `out` or `in out` formal parameters are treated as
-writes to simple local-object actuals, so an output value that is never consumed
-can be reported as a dead store. Simple object renames are resolved to their
-underlying declaration. Explicit access dereferences remain outside the tracked
-target model because soundly equating them requires points-to/alias analysis.
+`Dead_Store` follows resolved simple-object and array-component assignments in
+source order, while `Overwritten_Assignment` stays within one statement list.
+Textually equal dynamic components such as `Arr (I)` are equated only while no
+intervening assignment or potentially mutating call changes `I`. The case
+checks compare statically evaluable integer literals and ranges. These
+boundaries keep findings predictable without requiring whole-program
+control-flow analysis. Calls with resolved `out` formal parameters are treated
+as writes to simple local-object actuals, so an output value that is never
+consumed can be reported as a dead store. An `in out` actual also consumes its
+incoming value and is not reduced to a pure-output dead store. Simple object
+renames are resolved to their underlying declaration. Explicit access
+dereferences remain outside the tracked target model because soundly equating
+them requires points-to/alias analysis.
 `No_Recursion` and `Function_Side_Effect` are likewise scoped conservatively:
 `No_Recursion` only recognizes calls written with an explicit call syntax, and
 `Function_Side_Effect` only flags assignments through a simple identifier
