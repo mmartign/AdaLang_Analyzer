@@ -53,6 +53,9 @@ gnatcoll_iconv = "^26.0.0"
 langkit_support = "^26.0.0"
 
 [[depends-on]]
+libgpr2 = "^26.0.0"
+
+[[depends-on]]
 prettier_ada = "^26.0.0"
 
 [[depends-on]]
