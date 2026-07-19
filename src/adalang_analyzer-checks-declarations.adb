@@ -449,8 +449,8 @@ package body Adalang_Analyzer.Checks.Declarations is
          end;
       end if;
 
-      --  Interpret_Subprogram_Flow itself no-ops unless Division_By_Zero or
-      --  Constant_Condition is enabled, so the guard lives there.
+      --  Interpret_Subprogram_Flow itself no-ops unless a flow-sensitive or
+      --  contract-aware rule is enabled, so the guard lives there.
       Flow_Interp.Interpret_Subprogram_Flow (Unit, Subprogram);
    end Analyze_Subprogram;
 

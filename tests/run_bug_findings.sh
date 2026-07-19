@@ -220,7 +220,7 @@ if ! "$analyzer" -q -checks="$flow_checks" tests/flow_clean.adb; then
    exit 1
 fi
 
-spark_checks='SPARK_Mode,Constant_Condition,Division_By_Zero'
+spark_checks='SPARK_Mode,Constant_Condition,Division_By_Zero,Known_Precondition_Failure,Known_Postcondition_Failure'
 if "$analyzer" -checks="$spark_checks" tests/spark_findings.adb \
      >"$output" 2>&1
 then
@@ -228,7 +228,12 @@ then
    exit 1
 fi
 
-for rule in SPARK_Mode Constant_Condition Division_By_Zero
+for rule in \
+   SPARK_Mode \
+   Constant_Condition \
+   Division_By_Zero \
+   Known_Precondition_Failure \
+   Known_Postcondition_Failure
 do
    if ! grep -F "[$rule]" "$output" >/dev/null; then
       echo "missing expected SPARK finding: $rule" >&2
@@ -237,9 +242,31 @@ do
    fi
 done
 
-if ! "$analyzer" -q -checks="$flow_checks" tests/spark_clean.adb; then
+if [ "$(grep -c '\[Known_Precondition_Failure\]' "$output")" -ne 1 ] \
+  || [ "$(grep -c '\[Known_Postcondition_Failure\]' "$output")" -ne 1 ]
+then
+   echo "unexpected duplicate or disabled-region contract finding" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if "$analyzer" --spark tests/spark_findings.adb >"$output" 2>&1; then
+   echo "the SPARK preset unexpectedly found no violations" >&2
+   exit 1
+fi
+
+for rule in Known_Precondition_Failure Known_Postcondition_Failure
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "the --spark preset is missing $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if ! "$analyzer" -q -checks="$spark_checks" tests/spark_clean.adb; then
    echo "spark_clean.adb retained stale state across a contracted call" >&2
-   "$analyzer" -checks="$flow_checks" tests/spark_clean.adb >&2 || true
+   "$analyzer" -checks="$spark_checks" tests/spark_clean.adb >&2 || true
    exit 1
 fi
 

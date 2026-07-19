@@ -192,7 +192,8 @@ package body Adalang_Analyzer.CLI is
          Unreachable_Code, Division_By_Zero, Reversed_Range,
          Self_Assignment, Contradictory_Condition, No_Recursion,
          Non_Short_Circuit_Condition, Address_Clause,
-         Function_Side_Effect, SPARK_Mode);
+         Function_Side_Effect, SPARK_Mode,
+         Known_Precondition_Failure, Known_Postcondition_Failure);
    begin
       SPARK_Analysis_Mode := True;
       for Rule in Rule_Kind loop

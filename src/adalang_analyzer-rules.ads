@@ -65,7 +65,9 @@ package Adalang_Analyzer.Rules is
       Redundant_Boolean_Comparison,
       Long_Line,
       Trailing_Whitespace,
-      SPARK_Mode
+      SPARK_Mode,
+      Known_Precondition_Failure,
+      Known_Postcondition_Failure
    );
 
    type Software_Quality is
@@ -588,6 +590,26 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Remove SPARK_Mode => Off, or isolate and justify the smallest " &
             "possible non-SPARK boundary."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Precondition_Failure =>
+        (Name        => To_Unbounded_String ("Known_Precondition_Failure"),
+         Description => To_Unbounded_String
+           ("Find calls whose actual arguments make a SPARK precondition " &
+            "statically false."),
+         Guidance    => To_Unbounded_String
+           ("Change the arguments or establish the required condition " &
+            "before making the call."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Postcondition_Failure =>
+        (Name        => To_Unbounded_String ("Known_Postcondition_Failure"),
+         Description => To_Unbounded_String
+           ("Find subprogram bodies whose resulting abstract state makes " &
+            "their SPARK postcondition statically false."),
+         Guidance    => To_Unbounded_String
+           ("Correct the implementation or revise a postcondition that does " &
+            "not describe the intended result."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High)
    );
