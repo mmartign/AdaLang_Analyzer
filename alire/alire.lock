@@ -619,8 +619,8 @@ xmlada = "~26.0.0"
 crate = "libgpr2"
 fulfilment = "solved"
 pinned = false
-transitivity = "indirect"
-versions = "^26"
+transitivity = "direct"
+versions = "^26.0.0"
 [solution.state.release]
 authors = [
 "AdaCore",
@@ -922,7 +922,7 @@ crate = "xmlada"
 fulfilment = "solved"
 pinned = false
 transitivity = "indirect"
-versions = "~26.0.0"
+versions = "^26.0.0"
 [solution.state.release]
 authors = [
 "AdaCore",
