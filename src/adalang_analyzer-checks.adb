@@ -311,6 +311,11 @@ package body Adalang_Analyzer.Checks is
          return;
       end if;
 
+      if Libadalang.Analysis.Is_Null (Node.Parent) then
+         Declarations.Begin_Traversal;
+      end if;
+      Declarations.Enter_Node (Node);
+
       --  A semantic property query below (name resolution, expression
       --  typing, ...) can raise Property_Error on constructs Libadalang's
       --  resolution engine can't fully handle. Confine that failure to
@@ -429,9 +434,12 @@ package body Adalang_Analyzer.Checks is
                Ada.Exceptions.Exception_Message (Exc));
       end;
 
+      Declarations.Register_Declaration (Node);
+
       for I in 1 .. Node.Children_Count loop
          Evaluate_Node (Unit, Node.Child (I));
       end loop;
+      Declarations.Leave_Node (Node);
    end Evaluate_Node;
 
 end Adalang_Analyzer.Checks;

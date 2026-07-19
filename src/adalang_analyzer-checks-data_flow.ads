@@ -33,14 +33,13 @@ private package Adalang_Analyzer.Checks.Data_Flow is
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Basic_Decl;
    --  The declaration written by a plain identifier assignment or by a
-   --  statically indexed array-component assignment.
+   --  array-component assignment.
 
    function Is_Trackable_Assignment
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
-   --  True for simple-object assignments and array components whose indices
-   --  contain no identifiers. Dynamic indices are deliberately excluded: two
-   --  textual Arr (I) destinations need not denote the same element if I
-   --  changes between them.
+   --  True for simple-object assignments and side-effect-free array-component
+   --  indices. Dynamic index variables are tracked and invalidated when an
+   --  intervening assignment changes one of them.
 
    function Same_Assigned_Target
      (Left, Right : Libadalang.Analysis.Ada_Node'Class) return Boolean;

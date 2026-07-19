@@ -120,6 +120,42 @@ package body Adalang_Analyzer.Checks.Data_Flow is
      (Node : Libadalang.Analysis.Ada_Node'Class;
       Decl : Libadalang.Analysis.Basic_Decl) return Boolean
    is
+      function Association_Reads_Actual
+        (Assoc : Libadalang.Analysis.Param_Assoc) return Boolean
+      is
+         Found_Formal : Boolean := False;
+      begin
+         for Formal_Name of
+           Assoc.P_Get_Params (Imprecise_Fallback => True)
+         loop
+            declare
+               Ancestor : Libadalang.Analysis.Ada_Node := Formal_Name.Parent;
+            begin
+               while not Libadalang.Analysis.Is_Null (Ancestor)
+                 and then Ancestor.Kind not in
+                   Libadalang.Common.Ada_Param_Spec_Range
+               loop
+                  Ancestor := Ancestor.Parent;
+               end loop;
+
+               if not Libadalang.Analysis.Is_Null (Ancestor) then
+                  Found_Formal := True;
+                  if Ancestor.As_Param_Spec.F_Mode.Kind not in
+                    Libadalang.Common.Ada_Mode_Out_Range
+                  then
+                     return True;
+                  end if;
+               end if;
+            end;
+         end loop;
+
+         --  If resolution fails, retaining a possible read avoids creating a
+         --  dead-store false positive on incomplete code.
+         return not Found_Formal;
+      exception
+         when others =>
+            return True;
+      end Association_Reads_Actual;
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return False;
@@ -134,6 +170,31 @@ package body Adalang_Analyzer.Checks.Data_Flow is
               or else (Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier
                        and then References_Declaration (Stmt.F_Dest, Decl));
          end;
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
+         if Reads_Declaration (Node.As_Call_Expr.F_Name, Decl) then
+            return True;
+         end if;
+
+         for I in 1 .. Node.As_Call_Expr.F_Suffix.Children_Count loop
+            declare
+               Child : constant Libadalang.Analysis.Ada_Node :=
+                 Node.As_Call_Expr.F_Suffix.Child (I);
+            begin
+               if Child.Kind = Libadalang.Common.Ada_Param_Assoc
+                 and then Child.As_Param_Assoc.F_R_Expr.Kind =
+                   Libadalang.Common.Ada_Identifier
+                 and then Matches_Declaration
+                   (Child.As_Param_Assoc.F_R_Expr, Decl)
+               then
+                  if Association_Reads_Actual (Child.As_Param_Assoc) then
+                     return True;
+                  end if;
+               elsif Reads_Declaration (Child, Decl) then
+                  return True;
+               end if;
+            end;
+         end loop;
+         return False;
       end if;
 
       if Node.Kind = Libadalang.Common.Ada_Identifier
@@ -178,22 +239,33 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       end;
    end Assigned_Declaration;
 
-   function Contains_Identifier
+   function Is_Trackable_Index
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
-         return False;
-      elsif Node.Kind = Libadalang.Common.Ada_Identifier then
          return True;
+      elsif Node.Kind = Libadalang.Common.Ada_Identifier then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Referenced_Declaration (Node);
+         begin
+            return not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
+                | Libadalang.Common.Ada_Param_Spec_Range;
+         end;
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
+         --  Calls used as indices can mutate hidden state between textual
+         --  occurrences, so only ordinary expressions are cacheable.
+         return False;
       end if;
 
       for I in 1 .. Node.Children_Count loop
-         if Contains_Identifier (Node.Child (I)) then
-            return True;
+         if not Is_Trackable_Index (Node.Child (I)) then
+            return False;
          end if;
       end loop;
-      return False;
-   end Contains_Identifier;
+      return True;
+   end Is_Trackable_Index;
 
    function Is_Trackable_Assignment
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
@@ -209,10 +281,127 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          return Dest.Kind = Libadalang.Common.Ada_Identifier
            or else
              (Dest.Kind = Libadalang.Common.Ada_Call_Expr
-              and then not Contains_Identifier
-                (Dest.As_Call_Expr.F_Suffix));
+              and then Is_Trackable_Index (Dest.As_Call_Expr.F_Suffix));
       end;
    end Is_Trackable_Assignment;
+
+   function Indices_Unchanged_Between
+     (Assignment : Libadalang.Analysis.Assign_Stmt;
+      Later      : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Dest : constant Libadalang.Analysis.Name := Assignment.F_Dest;
+
+      function Is_Index_Declaration
+        (Decl : Libadalang.Analysis.Basic_Decl;
+         Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Identifier
+           and then Referenced_Declaration (Node) = Decl
+         then
+            return True;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            if Is_Index_Declaration (Decl, Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Is_Index_Declaration;
+
+      function Is_Strictly_Between
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         return
+           (Natural (Node.Sloc_Range.Start_Line) >
+              Natural (Assignment.Sloc_Range.End_Line)
+            or else
+             (Natural (Node.Sloc_Range.Start_Line) =
+                Natural (Assignment.Sloc_Range.End_Line)
+              and then Natural (Node.Sloc_Range.Start_Column) >=
+                Natural (Assignment.Sloc_Range.End_Column)))
+           and then
+           (Natural (Node.Sloc_Range.End_Line) <
+              Natural (Later.Sloc_Range.Start_Line)
+            or else
+              (Natural (Node.Sloc_Range.End_Line) =
+                Natural (Later.Sloc_Range.Start_Line)
+              and then Natural (Node.Sloc_Range.End_Column) <=
+                Natural (Later.Sloc_Range.Start_Column)));
+      end Is_Strictly_Between;
+
+      function Contains_Index_Write
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+         function References_An_Index
+           (Candidate : Libadalang.Analysis.Ada_Node'Class) return Boolean
+         is
+         begin
+            if Libadalang.Analysis.Is_Null (Candidate) then
+               return False;
+            elsif Candidate.Kind = Libadalang.Common.Ada_Identifier then
+               declare
+                  Referenced : constant Libadalang.Analysis.Basic_Decl :=
+                    Referenced_Declaration (Candidate);
+               begin
+                  return not Libadalang.Analysis.Is_Null (Referenced)
+                    and then Is_Index_Declaration
+                      (Referenced, Dest.As_Call_Expr.F_Suffix);
+               end;
+            end if;
+
+            for I in 1 .. Candidate.Children_Count loop
+               if References_An_Index (Candidate.Child (I)) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end References_An_Index;
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt
+           and then Is_Strictly_Between (Node)
+         then
+            declare
+               Written : constant Libadalang.Analysis.Basic_Decl :=
+                 Assigned_Declaration (Node);
+            begin
+               return not Libadalang.Analysis.Is_Null (Written)
+                 and then Is_Index_Declaration
+                   (Written, Dest.As_Call_Expr.F_Suffix);
+            end;
+         elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt
+           and then Is_Strictly_Between (Node)
+           and then References_An_Index (Node)
+         then
+            --  Without a fully resolved profile, a call mentioning an index
+            --  might pass it as out or in out. Invalidating is conservative.
+            return True;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            if Contains_Index_Write (Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Contains_Index_Write;
+
+      Root : Libadalang.Analysis.Ada_Node := Assignment.As_Ada_Node;
+   begin
+      if Dest.Kind /= Libadalang.Common.Ada_Call_Expr then
+         return True;
+      end if;
+
+      while not Libadalang.Analysis.Is_Null (Root.Parent) loop
+         Root := Root.Parent;
+      end loop;
+      return not Contains_Index_Write (Root);
+   end Indices_Unchanged_Between;
 
    function Same_Assigned_Target
      (Left, Right : Libadalang.Analysis.Ada_Node'Class) return Boolean is
@@ -221,7 +410,9 @@ package body Adalang_Analyzer.Checks.Data_Flow is
         and then Is_Trackable_Assignment (Right)
         and then Assigned_Declaration (Left) = Assigned_Declaration (Right)
         and then Canonical_Text (Left.As_Assign_Stmt.F_Dest) =
-          Canonical_Text (Right.As_Assign_Stmt.F_Dest);
+          Canonical_Text (Right.As_Assign_Stmt.F_Dest)
+        and then Indices_Unchanged_Between
+          (Left.As_Assign_Stmt, Right);
    end Same_Assigned_Target;
 
    function Reads_Assigned_Target
@@ -249,7 +440,7 @@ package body Adalang_Analyzer.Checks.Data_Flow is
              (Candidate.As_Call_Expr.F_Name, Target_Decl)
          then
             if Canonical_Text (Candidate) = Target_Text then
-               return True;
+               return Indices_Unchanged_Between (Assignment, Candidate);
             end if;
 
             --  A different component is not a read of this target. Its index

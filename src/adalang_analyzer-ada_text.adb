@@ -14,6 +14,12 @@ with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Ada_Text is
 
+   Next_Character_Offset       : constant Positive := 1;
+   Escaped_Quote_Length        : constant Positive := 2;
+   Closing_Apostrophe_Offset   : constant Positive := 2;
+   Character_Literal_Length    : constant Positive := 3;
+   Apostrophe                  : constant Character := Character'Val (39);
+
    function Node_Text
      (Node : Libadalang.Analysis.Ada_Node'Class) return String is
    begin
@@ -37,34 +43,35 @@ package body Adalang_Analyzer.Ada_Text is
          if Text (Index) = '"' then
             Append (Result, Text (Index));
             if In_String and then Index < Text'Last
-              and then Text (Index + 1) = '"'
+              and then Text (Index + Next_Character_Offset) = '"'
             then
                --  Two quotes encode one quote inside an Ada string literal.
-               Append (Result, Text (Index + 1));
-               Index := Index + 2;  --  adalang-analyzer: ignore Magic_Number
+               Append (Result, Text (Index + Next_Character_Offset));
+               Index := Index + Escaped_Quote_Length;
             else
                In_String := not In_String;
-               Index := Index + 1;
+               Index := Index + Next_Character_Offset;
             end if;
          elsif In_String then
             Append (Result, Text (Index));
-            Index := Index + 1;
-         elsif Text (Index) = Character'Val (39)  --  adalang-analyzer: ignore Magic_Number
-           and then Index + 2 <= Text'Last  --  adalang-analyzer: ignore Magic_Number
-           and then Text (Index + 2) = Character'Val (39)  --  adalang-analyzer: ignore Magic_Number
+            Index := Index + Next_Character_Offset;
+         elsif Text (Index) = Apostrophe
+           and then Index + Closing_Apostrophe_Offset <= Text'Last
+           and then Text (Index + Closing_Apostrophe_Offset) = Apostrophe
          then
             --  Preserve the spelling and case of character literals.
-            Append (Result, Text (Index .. Index + 2));  --  adalang-analyzer: ignore Magic_Number
-            Index := Index + 3;  --  adalang-analyzer: ignore Magic_Number
+            Append
+              (Result, Text (Index .. Index + Closing_Apostrophe_Offset));
+            Index := Index + Character_Literal_Length;
          elsif Text (Index) not in ' '
            | Ada.Characters.Latin_1.HT
            | Ada.Characters.Latin_1.LF
            | Ada.Characters.Latin_1.CR
          then
             Append (Result, Text_Utils.Lower_Char (Text (Index)));
-            Index := Index + 1;
+            Index := Index + Next_Character_Offset;
          else
-            Index := Index + 1;  --  adalang-analyzer: ignore Dead_Store
+            Index := Index + Next_Character_Offset;
          end if;
       end loop;
 

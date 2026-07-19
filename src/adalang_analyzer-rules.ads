@@ -27,6 +27,7 @@ package Adalang_Analyzer.Rules is
       Floating_Equality,
       Magic_Number,
       Unused_Parameter,
+      Wrong_Parameter_Mode,
       Dead_Store,
       Overwritten_Assignment,
       Shadowed_Declaration,
@@ -205,6 +206,16 @@ package Adalang_Analyzer.Rules is
             "externally required profile must retain it."),
          Quality     => Quality_Maintainability,
          Severity    => Severity_Low),
+      Wrong_Parameter_Mode =>
+        (Name        => To_Unbounded_String ("Wrong_Parameter_Mode"),
+         Description => To_Unbounded_String
+           ("Find in out parameters that are only read or only written by " &
+            "their subprogram body."),
+         Guidance    => To_Unbounded_String
+           ("Use mode in for read-only parameters and mode out for " &
+            "write-only parameters so the profile states the true contract."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
       Dead_Store =>
         (Name        => To_Unbounded_String ("Dead_Store"),
          Description => To_Unbounded_String

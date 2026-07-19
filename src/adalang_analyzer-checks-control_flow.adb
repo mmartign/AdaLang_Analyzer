@@ -414,7 +414,8 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                        Child.As_Param_Assoc;
                      Actual : constant Libadalang.Analysis.Expr :=
                        Assoc.F_R_Expr;
-                     Is_Output : Boolean := False;
+                     Is_Out_Only : Boolean := False;
+                     Is_In_Out   : Boolean := False;
                   begin
                      for Formal_Name of
                        Assoc.P_Get_Params (Imprecise_Fallback => True)
@@ -430,18 +431,25 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                               Ancestor := Ancestor.Parent;
                            end loop;
 
-                           if not Libadalang.Analysis.Is_Null (Ancestor)
-                             and then Ancestor.As_Param_Spec.F_Mode.Kind in
-                               Libadalang.Common.Ada_Mode_Out_Range
-                                 | Libadalang.Common.Ada_Mode_In_Out_Range
-                           then
-                              Is_Output := True;
-                              exit;  --  adalang-analyzer: ignore No_Exit
+                           if not Libadalang.Analysis.Is_Null (Ancestor) then
+                              if Ancestor.As_Param_Spec.F_Mode.Kind in
+                                Libadalang.Common.Ada_Mode_In_Out_Range
+                              then
+                                 Is_In_Out := True;
+                              elsif Ancestor.As_Param_Spec.F_Mode.Kind in
+                                Libadalang.Common.Ada_Mode_Out_Range
+                              then
+                                 Is_Out_Only := True;
+                              end if;
                            end if;
                         end;
                      end loop;
 
-                     if Is_Output
+                     --  An in out actual consumes its incoming value at the
+                     --  call boundary. Do not reduce that read/write contract
+                     --  to a pure output dead store; pure out actuals remain
+                     --  eligible for the existing result-not-read diagnostic.
+                     if Is_Out_Only and then not Is_In_Out
                        and then Actual.Kind =
                          Libadalang.Common.Ada_Identifier
                      then
