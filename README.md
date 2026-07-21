@@ -73,6 +73,12 @@ The analyzer currently provides the following checks:
 | Style | `Long_Line` | Maintainability | Low | Reports source lines longer than the configured threshold. |
 | Style | `Trailing_Whitespace` | Maintainability | Low | Reports source lines with trailing spaces or tabs. |
 | SPARK | `SPARK_Mode` | Reliability | High | Reports regions that explicitly set `SPARK_Mode` to `Off`. |
+| SPARK | `Missing_Global_Contract` | Maintainability | Medium | Reports subprograms that access global state without an explicit `Global` contract. |
+| SPARK | `Global_Contract_Mismatch` | Reliability | High | Reports actual global reads or writes that an existing `Global` contract does not permit. |
+| SPARK | `Missing_Depends_Contract` | Maintainability | Medium | Reports subprograms with outputs but no explicit `Depends` contract. |
+| SPARK | `Incomplete_Depends_Contract` | Reliability | High | Reports writable parameters or global outputs omitted from `Depends`. |
+| SPARK | `Depends_Contract_Mismatch` | Reliability | High | Compares inferred data and control flow with declared `Depends` input-to-output relations. |
+| SPARK | `Uninitialized_Output` | Reliability | High | Reports `out` parameters not demonstrably initialized on every normal return path. |
 | SPARK | `Known_Precondition_Failure` | Reliability | High | Reports calls whose actual values make a precondition false. |
 | SPARK | `Known_Postcondition_Failure` | Reliability | High | Reports bodies whose resulting state makes their postcondition false. |
 
@@ -124,12 +130,32 @@ that the body makes statically false is reported as a
 `Known_Postcondition_Failure`.
 
 Effective `SPARK_Mode` inherited through a declaration is respected by these
-contract checks. `Global` contracts distinguish read-only `Input` and
+contract checks. The SPARK-readiness pass separately compares semantic global
+reads and writes with `Global` modes, follows the declared global effects of
+resolved callees, checks that every writable formal or declared global output
+has a `Depends` association, and performs branch-sensitive definite
+initialization for scalar `out` parameters. It also infers input-to-output
+information flow for explicit `Depends` contracts. Expression data flow,
+conditional control flow, loop and exit conditions, normal-return paths,
+exception handlers, global state, and resolved calls with dependency summaries
+all participate. This detects missing and demonstrably extra edges, incorrect
+`null` associations, omitted self-dependencies (`=>+`), incomplete input
+coverage, and output dependencies on `Proof_In` state.
+
+Missing explicit `Global` and `Depends` contracts are selectable
+maintainability findings: SPARK permits tools to synthesize defaults, but
+explicit contracts make review and regression checking substantially
+stronger.
+
+For abstract execution, `Global` contracts distinguish read-only `Input` and
 `Proof_In` state from `Output` and `In_Out` state that a call may modify,
-avoiding the previous loss of all global facts. This remains a conservative,
-intraprocedural interpretation rather than a replacement for GNATprove:
-unsupported contract expressions and complex actual parameters remain
-unknown.
+avoiding the previous loss of all global facts. The readiness checks are
+conservative for component-level assignment targets, aliasing, unresolved
+calls, dispatching, and exceptional prefixes. Dependency sets reach a fixed
+point through loops; at unsupported boundaries the analyzer suppresses
+precision-dependent "extra edge" findings while retaining conservative
+"may depend" information. These checks establish inexpensive flow properties;
+they do not generate verification conditions or replace GNATprove.
 
 `Division_By_Zero` and `Constant_Condition` are additionally strengthened by a
 flow-sensitive abstract-execution pass that tracks both a variable's known
@@ -270,9 +296,9 @@ safety-critical and high-integrity Ada/SPARK systems.
 - **Strong safety & certification focus** — designed with ASIL, DO-178C, and
   EN 50128 workflows in mind. Helps catch issues early that complicate formal
   verification with GNATprove.
-- **SPARK readiness** — understands `SPARK_Mode`, participates in
-  contract-based flow analysis, and highlights patterns likely to generate
-  difficult proof obligations.
+- **SPARK readiness** — checks effective `SPARK_Mode`, `Global` access modes,
+  inferred `Depends` relations, definite output initialization, and known
+  contract failures before the more expensive proof stage.
 - **Customizable & transparent** — fully open source (GPL), with clear rule
   classifications and remediation guidance. Easy to extend or integrate into
   your toolchain.

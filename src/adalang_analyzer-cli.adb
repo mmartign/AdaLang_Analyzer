@@ -193,9 +193,11 @@ package body Adalang_Analyzer.CLI is
          Self_Assignment, Contradictory_Condition, No_Recursion,
          Non_Short_Circuit_Condition, Address_Clause,
          Function_Side_Effect, SPARK_Mode,
+         Missing_Global_Contract, Global_Contract_Mismatch,
+         Missing_Depends_Contract, Incomplete_Depends_Contract,
+         Depends_Contract_Mismatch, Uninitialized_Output,
          Known_Precondition_Failure, Known_Postcondition_Failure);
    begin
-      SPARK_Analysis_Mode := True;
       for Rule in Rule_Kind loop
          Rule_States (Rule) := Disabled;
       end loop;

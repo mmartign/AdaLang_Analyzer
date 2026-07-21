@@ -15,6 +15,8 @@ with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Interp;
 with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;         use Adalang_Analyzer.Rules;
+with Adalang_Analyzer.SPARK_Dependency_Analysis;
+with Adalang_Analyzer.SPARK_Readiness;
 with Adalang_Analyzer.Text_Utils;    use Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Checks.Declarations is
@@ -640,6 +642,8 @@ package body Adalang_Analyzer.Checks.Declarations is
 
       --  Interpret_Subprogram_Flow itself no-ops unless a flow-sensitive or
       --  contract-aware rule is enabled, so the guard lives there.
+      SPARK_Readiness.Analyze_Subprogram (Unit, Subprogram);
+      SPARK_Dependency_Analysis.Analyze_Subprogram (Unit, Subprogram);
       Flow_Interp.Interpret_Subprogram_Flow (Unit, Subprogram);
    end Analyze_Subprogram;
 

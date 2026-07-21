@@ -31,8 +31,9 @@ private package Adalang_Analyzer.Checks.Declarations is
    --  (no reference in either the local declarations or the statements),
    --  Cyclomatic_Complexity (base 1 plus every decision point in the
    --  body), Too_Many_Parameters, Deep_Nesting, No_Multiple_Return, and
-   --  (via Adalang_Analyzer.Flow_Interp) the flow-sensitive strengthening
-   --  of Division_By_Zero and Constant_Condition.
+   --  SPARK flow-contract readiness, and (via
+   --  Adalang_Analyzer.Flow_Interp) the flow-sensitive strengthening of
+   --  Division_By_Zero and Constant_Condition.
 
    procedure Analyze_Object_Declaration
      (Unit : Libadalang.Analysis.Analysis_Unit;

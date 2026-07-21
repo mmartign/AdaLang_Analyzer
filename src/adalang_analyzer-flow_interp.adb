@@ -25,10 +25,27 @@ package body Adalang_Analyzer.Flow_Interp is
      (Decl : Libadalang.Analysis.Basic_Decl'Class;
       Name : String) return Libadalang.Analysis.Expr
    is
+      Result : Libadalang.Analysis.Expr;
    begin
-      return Decl.P_Get_Aspect_Spec_Expr
+      Result := Decl.P_Get_Aspect_Spec_Expr
         (Langkit_Support.Text.To_Unbounded_Text
            (Langkit_Support.Text.To_Text (Name)));
+      if Libadalang.Analysis.Is_Null (Result)
+        and then Decl.Kind = Libadalang.Common.Ada_Subp_Body
+      then
+         declare
+            Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
+              Decl.As_Subp_Body.P_Decl_Part
+                (Imprecise_Fallback => True);
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl_Part) then
+               Result := Decl_Part.P_Get_Aspect_Spec_Expr
+                 (Langkit_Support.Text.To_Unbounded_Text
+                    (Langkit_Support.Text.To_Text (Name)));
+            end if;
+         end;
+      end if;
+      return Result;
    exception
       when others =>
          return Libadalang.Analysis.No_Expr;
@@ -274,9 +291,9 @@ package body Adalang_Analyzer.Flow_Interp is
                     (if Assoc.F_Designators.Children_Count = 0 then ""
                      else Normalized_Text (Assoc.F_Designators.Child (1)));
                begin
-                  if Mode = "output" or else Mode = "in_out" then
+                  if Mode = "output" or else Mode = "in-out" then
                      Havoc_Identifiers_In (Assoc.F_R_Expr, State);
-                  elsif Mode /= "input" and then Mode /= "proof_in" then
+                  elsif Mode /= "input" and then Mode /= "proof-in" then
                      Havoc_Identifiers_In (Global, State);
                      return;
                   end if;

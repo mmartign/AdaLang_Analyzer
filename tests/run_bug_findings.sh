@@ -300,4 +300,144 @@ if ! "$analyzer" --help | grep -F -- '--spark' >/dev/null; then
    exit 1
 fi
 
+spark_readiness_checks='Missing_Global_Contract,Global_Contract_Mismatch,Missing_Depends_Contract,Incomplete_Depends_Contract,Uninitialized_Output'
+if "$analyzer" -checks="$spark_readiness_checks" \
+     tests/spark_readiness_findings.adb >"$output" 2>&1
+then
+   echo "expected spark_readiness_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+for rule in \
+   Missing_Global_Contract \
+   Global_Contract_Mismatch \
+   Missing_Depends_Contract \
+   Incomplete_Depends_Contract \
+   Uninitialized_Output
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "missing expected SPARK readiness finding: $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if "$analyzer" --spark tests/spark_readiness_findings.adb \
+     >"$output" 2>&1
+then
+   echo "the SPARK readiness preset unexpectedly found no violations" >&2
+   exit 1
+fi
+
+for rule in \
+   Missing_Global_Contract \
+   Global_Contract_Mismatch \
+   Missing_Depends_Contract \
+   Incomplete_Depends_Contract \
+   Uninitialized_Output
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "the --spark preset is missing readiness check $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if ! "$analyzer" -q -checks="$spark_readiness_checks" \
+     tests/spark_readiness_clean.adb
+then
+   echo "spark_readiness_clean.adb unexpectedly produced a violation" >&2
+   "$analyzer" -checks="$spark_readiness_checks" \
+      tests/spark_readiness_clean.adb >&2 || true
+   exit 1
+fi
+
+if ! "$analyzer" -q --spark tests/spark_readiness_clean.adb; then
+   echo "the clean SPARK readiness fixture fails the full preset" >&2
+   "$analyzer" --spark tests/spark_readiness_clean.adb >&2 || true
+   exit 1
+fi
+
+if "$analyzer" -checks='Depends_Contract_Mismatch' \
+     tests/spark_dependency_findings.adb >"$output" 2>&1
+then
+   echo "expected spark_dependency_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if ! grep -F '[Depends_Contract_Mismatch]' "$output" >/dev/null; then
+   echo "missing inferred Depends mismatch findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+for text in \
+   "may depend on input 'B'" \
+   "no such flow is inferred" \
+   "may depend on input 'Flag'" \
+   "may depend on input 'X'" \
+   "input 'B' is missing from the Depends relation" \
+   "may depend on input 'A'" \
+   "may depend on input 'N'"
+do
+   if ! grep -F "$text" "$output" >/dev/null; then
+      echo "missing expected dependency diagnostic: $text" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if ! grep -F "depends on Proof_In global 'Proof'" "$output" >/dev/null; then
+   echo "missing Proof_In dependency diagnostic" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks='Depends_Contract_Mismatch' \
+     tests/spark_dependency_clean.adb
+then
+   echo "spark_dependency_clean.adb unexpectedly produced a violation" >&2
+   "$analyzer" -checks='Depends_Contract_Mismatch' \
+      tests/spark_dependency_clean.adb >&2 || true
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks='Depends_Contract_Mismatch' \
+     tests/spark_dependency_separate_clean.ads \
+     tests/spark_dependency_separate_clean.adb
+then
+   echo "separate spec/body Depends mapping produced a false positive" >&2
+   "$analyzer" -checks='Depends_Contract_Mismatch' \
+      tests/spark_dependency_separate_clean.ads \
+      tests/spark_dependency_separate_clean.adb >&2 || true
+   exit 1
+fi
+
+if "$analyzer" -checks='Depends_Contract_Mismatch' \
+     tests/spark_dependency_separate_findings.ads \
+     tests/spark_dependency_separate_findings.adb >"$output" 2>&1
+then
+   echo "separate spec/body dependency mismatch was not detected" >&2
+   exit 1
+fi
+
+if ! grep -F "may depend on input 'A'" "$output" >/dev/null; then
+   echo "missing separate spec/body dependency diagnostic" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if "$analyzer" --spark tests/spark_dependency_findings.adb \
+     >"$output" 2>&1
+then
+   echo "the SPARK preset unexpectedly missed dependency mismatches" >&2
+   exit 1
+fi
+
+if ! grep -F '[Depends_Contract_Mismatch]' "$output" >/dev/null; then
+   echo "the --spark preset is missing Depends_Contract_Mismatch" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"
