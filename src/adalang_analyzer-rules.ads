@@ -67,6 +67,12 @@ package Adalang_Analyzer.Rules is
       Long_Line,
       Trailing_Whitespace,
       SPARK_Mode,
+      Missing_Global_Contract,
+      Global_Contract_Mismatch,
+      Missing_Depends_Contract,
+      Incomplete_Depends_Contract,
+      Depends_Contract_Mismatch,
+      Uninitialized_Output,
       Known_Precondition_Failure,
       Known_Postcondition_Failure
    );
@@ -601,6 +607,66 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Remove SPARK_Mode => Off, or isolate and justify the smallest " &
             "possible non-SPARK boundary."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Missing_Global_Contract =>
+        (Name        => To_Unbounded_String ("Missing_Global_Contract"),
+         Description => To_Unbounded_String
+           ("Find SPARK subprograms that access global state without an " &
+            "explicit Global contract."),
+         Guidance    => To_Unbounded_String
+           ("Add a Global aspect that classifies every global object as " &
+            "Input, Output, In_Out, or Proof_In."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Global_Contract_Mismatch =>
+        (Name        => To_Unbounded_String ("Global_Contract_Mismatch"),
+         Description => To_Unbounded_String
+           ("Find global reads or writes that are omitted from a SPARK " &
+            "Global contract or declared with an incompatible mode."),
+         Guidance    => To_Unbounded_String
+           ("Make the Global contract agree with the implementation's " &
+            "actual reads and writes."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Missing_Depends_Contract =>
+        (Name        => To_Unbounded_String ("Missing_Depends_Contract"),
+         Description => To_Unbounded_String
+           ("Find SPARK subprograms with outputs but no explicit Depends " &
+            "contract."),
+         Guidance    => To_Unbounded_String
+           ("Add a Depends aspect documenting the inputs on which each " &
+            "output depends."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Incomplete_Depends_Contract =>
+        (Name        => To_Unbounded_String ("Incomplete_Depends_Contract"),
+         Description => To_Unbounded_String
+           ("Find writable parameters or global outputs omitted from a " &
+            "SPARK Depends contract."),
+         Guidance    => To_Unbounded_String
+           ("Add a dependency association for every output, using null " &
+            "when its value is independent of all inputs."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Depends_Contract_Mismatch =>
+        (Name        => To_Unbounded_String ("Depends_Contract_Mismatch"),
+         Description => To_Unbounded_String
+           ("Find SPARK Depends associations that disagree with inferred " &
+            "input-to-output information flow."),
+         Guidance    => To_Unbounded_String
+           ("Add missing input dependencies, remove demonstrably extra " &
+            "ones, or use null only for input-independent outputs."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Uninitialized_Output =>
+        (Name        => To_Unbounded_String ("Uninitialized_Output"),
+         Description => To_Unbounded_String
+           ("Find out parameters whose complete initialization cannot be " &
+            "established on every normal return path."),
+         Guidance    => To_Unbounded_String
+           ("Assign the complete out parameter on every path before the " &
+            "subprogram returns."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
       Known_Precondition_Failure =>

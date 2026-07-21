@@ -19,8 +19,6 @@ package Adalang_Analyzer.Config is
 
    Verbose_Mode : Boolean := False;
    Quiet_Mode   : Boolean := False;
-   SPARK_Analysis_Mode : Boolean := False;
-
    Default_Complexity_Threshold  : constant Positive := 10;
    Default_Nesting_Threshold     : constant Positive := 4;
    Default_Parameter_Threshold   : constant Positive := 6;
