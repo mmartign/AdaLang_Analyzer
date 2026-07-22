@@ -8,11 +8,13 @@ with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Langkit_Support.Text;
 with Libadalang.Common;
 
-with Adalang_Analyzer.Ada_Text;   use Adalang_Analyzer.Ada_Text;
-with Adalang_Analyzer.Config;     use Adalang_Analyzer.Config;
-with Adalang_Analyzer.Report;     use Adalang_Analyzer.Report;
-with Adalang_Analyzer.Rules;      use Adalang_Analyzer.Rules;
-with Adalang_Analyzer.Text_Utils; use Adalang_Analyzer.Text_Utils;
+with Adalang_Analyzer.Ada_Text;    use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Config;      use Adalang_Analyzer.Config;
+with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
+with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
+with Adalang_Analyzer.Report;      use Adalang_Analyzer.Report;
+with Adalang_Analyzer.Rules;       use Adalang_Analyzer.Rules;
+with Adalang_Analyzer.Text_Utils;  use Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.SPARK_Readiness is
 
@@ -298,36 +300,95 @@ package body Adalang_Analyzer.SPARK_Readiness is
    end Formal_Mode;
 
    procedure Collect_Accesses
-     (Node  : Libadalang.Analysis.Ada_Node'Class;
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Node  : Libadalang.Analysis.Ada_Node'Class;
       Root  : Libadalang.Analysis.Subp_Body;
       Items : in out Access_Vectors.Vector;
       As_Write : Boolean := False);
 
+   --  One actual's canonical text and whether the formal it feeds is
+   --  written, tracked so Collect_Call can flag a later actual that aliases
+   --  an earlier one when at least one side is written. Backs
+   --  Aliasing_Between_Parameters.
+   type Actual_Alias_Info is record
+      Text            : Unbounded_String;
+      Node            : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Is_Written_Side : Boolean := False;
+   end record;
+
+   package Actual_Alias_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Actual_Alias_Info);
+
+   procedure Check_Actual_Aliasing
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Actual  : Libadalang.Analysis.Expr'Class;
+      Written : Boolean;
+      Seen    : in out Actual_Alias_Vectors.Vector)
+   is
+      Text : constant String := Canonical_Text (Actual);
+   begin
+      if Text = ""
+        or else Actual.Kind not in Libadalang.Common.Ada_Identifier
+          | Libadalang.Common.Ada_Dotted_Name
+      then
+         return;
+      end if;
+
+      for Prior of Seen loop
+         if To_String (Prior.Text) = Text
+           and then (Prior.Is_Written_Side or else Written)
+         then
+            Report_Rule_Violation
+              (Unit, Actual, Aliasing_Between_Parameters,
+               "actual parameter aliases an earlier actual in the same " &
+                 "call, and at least one of them is written");
+         end if;
+      end loop;
+
+      Seen.Append
+        ((Text            => To_Unbounded_String (Text),
+          Node            => Libadalang.Analysis.Ada_Node (Actual),
+          Is_Written_Side => Written));
+   end Check_Actual_Aliasing;
+
    procedure Collect_Call
-     (Call  : Libadalang.Analysis.Name'Class;
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Call  : Libadalang.Analysis.Name'Class;
       Root  : Libadalang.Analysis.Subp_Body;
       Items : in out Access_Vectors.Vector)
    is
-      Decl : Libadalang.Analysis.Basic_Decl;
+      Decl  : Libadalang.Analysis.Basic_Decl;
+      Seen  : Actual_Alias_Vectors.Vector;
+      Check_Aliasing : constant Boolean :=
+        Rule_States (Aliasing_Between_Parameters) = Enabled;
    begin
       for Pair of Call.P_Call_Params loop
          declare
             Mode : constant Libadalang.Common.Ada_Node_Kind_Type :=
               Formal_Mode (Libadalang.Analysis.Param (Pair));
          begin
+            if Check_Aliasing then
+               Check_Actual_Aliasing
+                 (Unit, Libadalang.Analysis.Actual (Pair),
+                  Mode in Libadalang.Common.Ada_Mode_Out
+                    | Libadalang.Common.Ada_Mode_In_Out,
+                  Seen);
+            end if;
+
             if Mode = Libadalang.Common.Ada_Mode_Out then
                Collect_Accesses
-                 (Libadalang.Analysis.Actual (Pair), Root, Items,
+                 (Unit, Libadalang.Analysis.Actual (Pair), Root, Items,
                   As_Write => True);
             elsif Mode = Libadalang.Common.Ada_Mode_In_Out then
                Collect_Accesses
-                 (Libadalang.Analysis.Actual (Pair), Root, Items);
+                 (Unit, Libadalang.Analysis.Actual (Pair), Root, Items);
                Collect_Accesses
-                 (Libadalang.Analysis.Actual (Pair), Root, Items,
+                 (Unit, Libadalang.Analysis.Actual (Pair), Root, Items,
                   As_Write => True);
             else
                Collect_Accesses
-                 (Libadalang.Analysis.Actual (Pair), Root, Items);
+                 (Unit, Libadalang.Analysis.Actual (Pair), Root, Items);
             end if;
          end;
       end loop;
@@ -358,7 +419,8 @@ package body Adalang_Analyzer.SPARK_Readiness is
    end Collect_Call;
 
    procedure Collect_Accesses
-     (Node  : Libadalang.Analysis.Ada_Node'Class;
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Node  : Libadalang.Analysis.Ada_Node'Class;
       Root  : Libadalang.Analysis.Subp_Body;
       Items : in out Access_Vectors.Vector;
       As_Write : Boolean := False)
@@ -370,14 +432,14 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return;
       elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
          Collect_Accesses
-           (Node.As_Assign_Stmt.F_Dest, Root, Items, As_Write => True);
-         Collect_Accesses (Node.As_Assign_Stmt.F_Expr, Root, Items);
+           (Unit, Node.As_Assign_Stmt.F_Dest, Root, Items, As_Write => True);
+         Collect_Accesses (Unit, Node.As_Assign_Stmt.F_Expr, Root, Items);
          return;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
-         Collect_Call (Node.As_Call_Expr.F_Name, Root, Items);
+         Collect_Call (Unit, Node.As_Call_Expr.F_Name, Root, Items);
          return;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt then
-         Collect_Call (Node.As_Call_Stmt.F_Call, Root, Items);
+         Collect_Call (Unit, Node.As_Call_Stmt.F_Call, Root, Items);
          return;
       elsif Node.Kind = Libadalang.Common.Ada_Identifier then
          Include_Identifier
@@ -387,7 +449,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
       end if;
 
       for I in 1 .. Node.Children_Count loop
-         Collect_Accesses (Node.Child (I), Root, Items, As_Write);
+         Collect_Accesses (Unit, Node.Child (I), Root, Items, As_Write);
       end loop;
    end Collect_Accesses;
 
@@ -610,6 +672,338 @@ package body Adalang_Analyzer.SPARK_Readiness is
       end loop;
    end Collect_Depends_Outputs;
 
+   --  True when Subprogram is declared directly in a protected body's
+   --  declarative part, i.e. it is itself a protected operation. Stops at
+   --  the first enclosing body of any kind, so a subprogram nested inside
+   --  another subprogram that happens to live in a protected body is not
+   --  treated as a protected operation itself -- the same conservative,
+   --  direct-syntax-only scoping used elsewhere in this analyzer (compare
+   --  No_Recursion, which only recognizes an explicit call syntax).
+   function Is_Protected_Operation_Body
+     (Subprogram : Libadalang.Analysis.Subp_Body) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Subprogram).Parent;
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         case Current.Kind is
+            when Libadalang.Common.Ada_Protected_Body =>
+               return True;
+            when Libadalang.Common.Ada_Subp_Body
+               | Libadalang.Common.Ada_Package_Body
+               | Libadalang.Common.Ada_Task_Body =>
+               return False;
+            when others =>
+               Current := Current.Parent;
+         end case;
+      end loop;
+      return False;
+   end Is_Protected_Operation_Body;
+
+   --  True when Node's name resolves to an entry declaration, i.e. Node
+   --  denotes an entry call.
+   function Is_Entry_Call (Node : Libadalang.Analysis.Name'Class)
+     return Boolean
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Node.P_Referenced_Decl (Imprecise_Fallback => True);
+   begin
+      return not Libadalang.Analysis.Is_Null (Decl)
+        and then Decl.Kind = Libadalang.Common.Ada_Entry_Decl;
+   exception
+      when others =>
+         return False;
+   end Is_Entry_Call;
+
+   --  Reports Potentially_Blocking_Operation for every delay statement or
+   --  entry call directly under Node, not descending into a nested
+   --  subprogram body (its own blocking constructs, if any, are only
+   --  reachable through a call this analyzer does not trace -- the same
+   --  intraprocedural limit documented for the rest of this package).
+   procedure Scan_For_Blocking_Operations
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Node : Libadalang.Analysis.Ada_Node'Class)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Subp_Body =>
+            return;
+
+         when Libadalang.Common.Ada_Delay_Stmt =>
+            Report_Rule_Violation
+              (Unit, Node, Potentially_Blocking_Operation,
+               "delay statement used inside a protected operation");
+            return;
+
+         when Libadalang.Common.Ada_Call_Expr =>
+            if Is_Entry_Call (Node.As_Call_Expr.F_Name) then
+               Report_Rule_Violation
+                 (Unit, Node, Potentially_Blocking_Operation,
+                  "entry call used inside a protected operation");
+            end if;
+
+         when Libadalang.Common.Ada_Call_Stmt =>
+            if Is_Entry_Call (Node.As_Call_Stmt.F_Call) then
+               Report_Rule_Violation
+                 (Unit, Node, Potentially_Blocking_Operation,
+                  "entry call used inside a protected operation");
+            end if;
+
+         when others =>
+            null;
+      end case;
+
+      for I in 1 .. Node.Children_Count loop
+         Scan_For_Blocking_Operations (Unit, Node.Child (I));
+      end loop;
+   end Scan_For_Blocking_Operations;
+
+   procedure Check_Potentially_Blocking
+     (Unit       : Libadalang.Analysis.Analysis_Unit;
+      Subprogram : Libadalang.Analysis.Subp_Body)
+   is
+   begin
+      if Is_Protected_Operation_Body (Subprogram) then
+         Scan_For_Blocking_Operations (Unit, Subprogram.F_Stmts);
+      end if;
+   exception
+      when others =>
+         null;
+   end Check_Potentially_Blocking;
+
+   --  True when Field is declared as a component directly in List (the
+   --  fixed part, or one variant's own component list). Does not descend
+   --  into a nested variant part inside List -- this check only models one
+   --  level of variant nesting.
+   function Component_Declared_In
+     (List  : Libadalang.Analysis.Component_List;
+      Field : String) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (List) then
+         return False;
+      end if;
+      for Item of List.F_Components loop
+         if Item.Kind = Libadalang.Common.Ada_Component_Decl then
+            for Id of Item.As_Component_Decl.F_Ids loop
+               if Normalize_Rule_Name (Node_Text (Id)) = Field then
+                  return True;
+               end if;
+            end loop;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Component_Declared_In;
+
+   --  The variant in Part whose own component list declares Field, or
+   --  No_Variant when Field belongs to the fixed part or cannot be found.
+   function Owning_Variant
+     (Part  : Libadalang.Analysis.Variant_Part;
+      Field : String) return Libadalang.Analysis.Variant
+   is
+   begin
+      for V of Part.F_Variant loop
+         if Component_Declared_In (V.F_Components, Field) then
+            return Libadalang.Analysis.Variant (V);
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Variant;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Variant;
+   end Owning_Variant;
+
+   --  True when Choice provably matches a known discriminant value: an
+   --  integer choice/range containing Value_Int, or an identifier choice
+   --  (enumeration literal) spelled exactly like Value_Text.
+   function Choice_Matches_Known_Value
+     (Choice     : Libadalang.Analysis.Ada_Node'Class;
+      Value_Text : String;
+      Value_Int  : Abstract_Int) return Boolean
+   is
+   begin
+      if Value_Int.Known then
+         declare
+            Interval : constant Static_Interval := Choice_Interval (Choice);
+         begin
+            return Interval.Known
+              and then Value_Int.Value >= Interval.Low
+              and then Value_Int.Value <= Interval.High;
+         end;
+      end if;
+      return Value_Text /= "" and then Canonical_Text (Choice) = Value_Text;
+   end Choice_Matches_Known_Value;
+
+   --  The variant Part selects for a known discriminant value, or No_Variant
+   --  when no alternative can be proven to match. A non-"others" match
+   --  always wins; "others" is only used as a fallback when no sibling
+   --  alternative matches, mirroring how a case statement resolves choices.
+   function Selected_Variant
+     (Part       : Libadalang.Analysis.Variant_Part;
+      Value_Text : String;
+      Value_Int  : Abstract_Int) return Libadalang.Analysis.Variant
+   is
+      Fallback : Libadalang.Analysis.Variant := Libadalang.Analysis.No_Variant;
+   begin
+      for V of Part.F_Variant loop
+         for Choice of V.F_Choices loop
+            if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
+               Fallback := Libadalang.Analysis.Variant (V);
+            elsif Choice_Matches_Known_Value (Choice, Value_Text, Value_Int)
+            then
+               return Libadalang.Analysis.Variant (V);
+            end if;
+         end loop;
+      end loop;
+      return Fallback;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Variant;
+   end Selected_Variant;
+
+   procedure Check_Discriminant_Access  --  adalang-analyzer: ignore Cyclomatic_Complexity
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Node : Libadalang.Analysis.Dotted_Name'Class)
+   is
+      Suffix : constant Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Node.F_Suffix);
+      Prefix : constant Libadalang.Analysis.Expr :=
+        Libadalang.Analysis.Expr (Node.F_Prefix);
+   begin
+      if Libadalang.Analysis.Is_Null (Suffix)
+        or else Suffix.Kind /= Libadalang.Common.Ada_Identifier
+        or else Libadalang.Analysis.Is_Null (Prefix)
+        or else Prefix.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return;
+      end if;
+
+      declare
+         Field_Name     : constant String :=
+           Normalize_Rule_Name (Node_Text (Suffix));
+         Prefix_Type    : constant Libadalang.Analysis.Base_Type_Decl :=
+           Prefix.P_Expression_Type;
+         Part           : Libadalang.Analysis.Variant_Part :=
+           Libadalang.Analysis.No_Variant_Part;
+         Actual_Variant : Libadalang.Analysis.Variant :=
+           Libadalang.Analysis.No_Variant;
+         Decl           : Libadalang.Analysis.Basic_Decl;
+         Constraint     : Libadalang.Analysis.Constraint :=
+           Libadalang.Analysis.No_Constraint;
+         Value          : Libadalang.Analysis.Expr :=
+           Libadalang.Analysis.No_Expr;
+      begin
+         if Libadalang.Analysis.Is_Null (Prefix_Type)
+           or else Prefix_Type.Kind not in Libadalang.Common.Ada_Type_Decl
+           or else Prefix_Type.As_Type_Decl.F_Type_Def.Kind /=
+             Libadalang.Common.Ada_Record_Type_Def
+           or else Prefix_Type.As_Type_Decl.F_Type_Def.As_Record_Type_Def
+             .F_Record_Def.Kind /= Libadalang.Common.Ada_Record_Def
+         then
+            return;
+         end if;
+
+         declare
+            Components : constant Libadalang.Analysis.Component_List :=
+              Prefix_Type.As_Type_Decl.F_Type_Def.As_Record_Type_Def
+                .F_Record_Def.As_Record_Def.F_Components;
+         begin
+            if Libadalang.Analysis.Is_Null (Components) then
+               return;
+            end if;
+            Part := Components.F_Variant_Part;
+         end;
+
+         if Libadalang.Analysis.Is_Null (Part) then
+            return;
+         end if;
+
+         Actual_Variant := Owning_Variant (Part, Field_Name);
+         if Libadalang.Analysis.Is_Null (Actual_Variant) then
+            --  The fixed part or an unresolved shape: nothing provably
+            --  wrong.
+            return;
+         end if;
+
+         Decl :=
+           Prefix.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+         if Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.Kind /= Libadalang.Common.Ada_Object_Decl
+           or else Libadalang.Analysis.Is_Null
+             (Decl.As_Object_Decl.F_Type_Expr)
+           or else Decl.As_Object_Decl.F_Type_Expr.Kind /=
+             Libadalang.Common.Ada_Subtype_Indication
+         then
+            return;
+         end if;
+
+         Constraint :=
+           Decl.As_Object_Decl.F_Type_Expr.As_Subtype_Indication
+             .F_Constraint;
+         if Libadalang.Analysis.Is_Null (Constraint)
+           or else Constraint.Kind /=
+             Libadalang.Common.Ada_Composite_Constraint
+           or else not Constraint.As_Composite_Constraint
+             .P_Is_Discriminant_Constraint
+         then
+            return;
+         end if;
+
+         declare
+            Discr_Text : constant String :=
+              Normalize_Rule_Name (Node_Text (Part.F_Discr_Name));
+         begin
+            for Pair of
+              Constraint.As_Composite_Constraint.P_Discriminant_Params
+            loop
+               if Normalize_Rule_Name
+                    (Node_Text (Libadalang.Analysis.Param (Pair))) =
+                  Discr_Text
+               then
+                  Value := Libadalang.Analysis.Expr
+                    (Libadalang.Analysis.Actual (Pair));
+                  exit;  --  adalang-analyzer: ignore No_Exit
+               end if;
+            end loop;
+         end;
+
+         if Libadalang.Analysis.Is_Null (Value) then
+            return;
+         end if;
+
+         declare
+            Value_Int  : constant Abstract_Int := Integer_Value (Value);
+            Value_Text : constant String :=
+              (if Value.Kind = Libadalang.Common.Ada_Identifier
+               then Canonical_Text (Value)
+               else "");
+            Selected   : constant Libadalang.Analysis.Variant :=
+              Selected_Variant (Part, Value_Text, Value_Int);
+         begin
+            if not Libadalang.Analysis.Is_Null (Selected)
+              and then Libadalang.Analysis.Ada_Node (Selected) /=
+                Libadalang.Analysis.Ada_Node (Actual_Variant)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Known_Discriminant_Check_Failure,
+                  "component '" & Node_Text (Suffix) &
+                    "' belongs to a variant excluded by the object's " &
+                    "discriminant constraint");
+            end if;
+         end;
+      end;
+   exception
+      when others =>
+         null;
+   end Check_Discriminant_Access;
+
    procedure Analyze_Subprogram
      (Unit       : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body)
@@ -619,7 +1013,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
         or else Rule_States (Global_Contract_Mismatch) = Enabled
         or else Rule_States (Missing_Depends_Contract) = Enabled
         or else Rule_States (Incomplete_Depends_Contract) = Enabled
-        or else Rule_States (Uninitialized_Output) = Enabled;
+        or else Rule_States (Uninitialized_Output) = Enabled
+        or else Rule_States (Aliasing_Between_Parameters) = Enabled
+        or else Rule_States (Potentially_Blocking_Operation) = Enabled;
       Actual_Global   : Access_Vectors.Vector;
       Declared_Global : Access_Vectors.Vector;
       Outputs         : Access_Vectors.Vector;
@@ -636,7 +1032,11 @@ package body Adalang_Analyzer.SPARK_Readiness is
 
       Global := Contract_Expression (Subprogram, "Global");
       Depends := Contract_Expression (Subprogram, "Depends");
-      Collect_Accesses (Subprogram.F_Stmts, Subprogram, Actual_Global);
+      Collect_Accesses (Unit, Subprogram.F_Stmts, Subprogram, Actual_Global);
+
+      if Rule_States (Potentially_Blocking_Operation) = Enabled then
+         Check_Potentially_Blocking (Unit, Subprogram);
+      end if;
       Parse_Global (Global, Subprogram, Name_Node, Declared_Global);
 
       if Rule_States (Missing_Global_Contract) = Enabled

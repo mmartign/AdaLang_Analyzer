@@ -150,6 +150,39 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       end if;
    end Report_Identical_Statement_Branches;
 
+   --  Reports Identical_Case_Alternative when two adjacent case alternatives
+   --  have textually identical bodies. Adjacent-only, matching
+   --  Report_Identical_Statement_Branches's if/elsif comparison.
+   procedure Report_Identical_Case_Alternatives
+     (Unit         : Libadalang.Analysis.Analysis_Unit;
+      Alternatives : Libadalang.Analysis.Case_Stmt_Alternative_List)
+   is
+      Previous : Unbounded_String;
+      Has_Previous : Boolean := False;
+   begin
+      if Rule_States (Identical_Case_Alternative) /= Enabled then
+         return;
+      end if;
+
+      for Alt of Alternatives loop
+         declare
+            Current : constant String := Canonical_Text (Alt.F_Stmts);
+         begin
+            if Has_Previous
+              and then Current /= ""
+              and then Current = To_String (Previous)
+            then
+               Report_Rule_Violation
+                 (Unit, Alt.F_Stmts, Identical_Case_Alternative,
+                  "case alternative body is identical to the preceding " &
+                    "alternative");
+            end if;
+            Previous := To_Unbounded_String (Current);
+            Has_Previous := True;
+         end;
+      end loop;
+   end Report_Identical_Case_Alternatives;
+
    --  The if-expression counterpart of Report_Identical_Statement_Branches.
    procedure Report_Identical_Expression_Branches
      (Unit : Libadalang.Analysis.Analysis_Unit;
@@ -496,6 +529,8 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       Alternatives : constant Libadalang.Analysis.Case_Stmt_Alternative_List :=
         Stmt.F_Alternatives;
    begin
+      Report_Identical_Case_Alternatives (Unit, Alternatives);
+
       if Rule_States (Unreachable_Case_Alternative) /= Enabled
         and then Rule_States (Overlapping_Case_Ranges) /= Enabled
       then
@@ -573,6 +608,62 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          end;
       end loop;
    end Analyze_Case_Statement;
+
+   --  True when Node's subtree contains a pragma spelled Pragma_Name,
+   --  without descending into a nested loop or subprogram body -- their own
+   --  Loop_Invariant/Loop_Variant pragmas belong to that inner loop, not the
+   --  one Analyze_Loop_Variant_Presence is currently checking. Mirrors
+   --  Has_Loop_Termination's nested-loop scoping above.
+   function Has_Loop_Pragma
+     (Node        : Libadalang.Analysis.Ada_Node'Class;
+      Pragma_Name : String) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_For_Loop_Stmt
+            | Libadalang.Common.Ada_Loop_Stmt
+            | Libadalang.Common.Ada_While_Loop_Stmt
+            | Libadalang.Common.Ada_Subp_Body =>
+            return False;
+
+         when Libadalang.Common.Ada_Pragma_Node =>
+            return
+              Canonical_Text (Node.As_Pragma_Node.F_Id) = Pragma_Name;
+
+         when others =>
+            null;  --  adalang-analyzer: ignore Null_Statement
+      end case;
+
+      for I in 1 .. Node.Children_Count loop
+         if Has_Loop_Pragma (Node.Child (I), Pragma_Name) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   end Has_Loop_Pragma;
+
+   --  Reports Missing_Loop_Variant when Loop_Node carries a Loop_Invariant
+   --  pragma (signalling proof intent) but no Loop_Variant pragma, so
+   --  GNATprove has no termination measure to check.
+   procedure Analyze_Loop_Variant_Presence
+     (Unit      : Libadalang.Analysis.Analysis_Unit;
+      Loop_Node : Libadalang.Analysis.Base_Loop_Stmt)
+   is
+   begin
+      if Rule_States (Missing_Loop_Variant) = Enabled
+        and then Has_Loop_Pragma (Loop_Node.F_Stmts, "loop_invariant")
+        and then not Has_Loop_Pragma (Loop_Node.F_Stmts, "loop_variant")
+      then
+         Report_Rule_Violation
+           (Unit, Loop_Node, Missing_Loop_Variant,
+            "loop has a Loop_Invariant pragma but no Loop_Variant pragma");
+      end if;
+   end Analyze_Loop_Variant_Presence;
 
    procedure Analyze_Infinite_Loop
      (Unit : Libadalang.Analysis.Analysis_Unit;
@@ -780,6 +871,19 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       Report_Identical_Expression_Branches (Unit, Expr);
    end Analyze_If_Expression;
 
+   --  True when Handler's own choice list handles "when others".
+   function Handles_Others
+     (Handler : Libadalang.Analysis.Exception_Handler) return Boolean
+   is
+   begin
+      for Choice of Handler.F_Handled_Exceptions loop
+         if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Handles_Others;
+
    procedure Analyze_Exception_Handler
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Handler : Libadalang.Analysis.Exception_Handler) is
@@ -792,24 +896,34 @@ package body Adalang_Analyzer.Checks.Control_Flow is
             "exception handler contains no substantive statements");
       end if;
 
-      if Rule_States (Exception_Swallowed) = Enabled then
+      if Rule_States (Handler_Order) = Enabled then
          declare
-            Handles_Others : Boolean := False;
+            Earlier : Libadalang.Analysis.Ada_Node :=
+              Libadalang.Analysis.Ada_Node (Handler).Previous_Sibling;
          begin
-            for Choice of Handler.F_Handled_Exceptions loop
-               if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
-                  Handles_Others := True;  --  adalang-analyzer: ignore Dead_Store
+            while not Libadalang.Analysis.Is_Null (Earlier) loop
+               if Earlier.Kind = Libadalang.Common.Ada_Exception_Handler
+                 and then Handles_Others (Earlier.As_Exception_Handler)
+               then
+                  Report_Rule_Violation
+                    (Unit, Handler, Handler_Order,
+                     "handler is unreachable because an earlier when " &
+                       "others handler already catches every exception");
+                  exit;  --  adalang-analyzer: ignore No_Exit
                end if;
+               Earlier := Earlier.Previous_Sibling;
             end loop;
-
-            if Handles_Others
-              and then not Has_Substantive_Statement (Handler.F_Stmts)
-            then
-               Report_Rule_Violation
-                 (Unit, Handler, Exception_Swallowed,
-                  "when others handler silently discards the exception");
-            end if;
          end;
+      end if;
+
+      if Rule_States (Exception_Swallowed) = Enabled then
+         if Handles_Others (Handler)
+           and then not Has_Substantive_Statement (Handler.F_Stmts)
+         then
+            Report_Rule_Violation
+              (Unit, Handler, Exception_Swallowed,
+               "when others handler silently discards the exception");
+         end if;
       end if;
    end Analyze_Exception_Handler;
 

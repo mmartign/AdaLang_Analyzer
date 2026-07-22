@@ -78,7 +78,14 @@ package Adalang_Analyzer.Rules is
       Known_Assertion_Failure,
       Known_Range_Check_Failure,
       Known_Index_Check_Failure,
-      Known_Overflow_Failure
+      Known_Overflow_Failure,
+      Identical_Case_Alternative,
+      Redundant_Type_Conversion,
+      Handler_Order,
+      Aliasing_Between_Parameters,
+      Missing_Loop_Variant,
+      Known_Discriminant_Check_Failure,
+      Potentially_Blocking_Operation
    );
 
    type Software_Quality is
@@ -731,6 +738,84 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Reorder or widen the computation, or establish tighter operand " &
             "bounds before performing it."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Identical_Case_Alternative =>
+        (Name        => To_Unbounded_String ("Identical_Case_Alternative"),
+         Description => To_Unbounded_String
+           ("Find adjacent case alternatives with identical bodies."),
+         Guidance    => To_Unbounded_String
+           ("Merge the choices into one alternative or restore the " &
+            "choice-specific handling that was probably lost during " &
+            "editing."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Redundant_Type_Conversion =>
+        (Name        => To_Unbounded_String ("Redundant_Type_Conversion"),
+         Description => To_Unbounded_String
+           ("Find explicit type conversions whose operand already has the " &
+            "target subtype, so the conversion has no effect."),
+         Guidance    => To_Unbounded_String
+           ("Remove the conversion, or correct the operand or target type " &
+            "that was probably intended to differ."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Handler_Order =>
+        (Name        => To_Unbounded_String ("Handler_Order"),
+         Description => To_Unbounded_String
+           ("Find a when others handler that precedes a more specific " &
+            "handler in the same exception handler list, making the later " &
+            "handler unreachable."),
+         Guidance    => To_Unbounded_String
+           ("Move the when others handler after every specific handler it " &
+            "currently precedes."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Aliasing_Between_Parameters =>
+        (Name        => To_Unbounded_String ("Aliasing_Between_Parameters"),
+         Description => To_Unbounded_String
+           ("Find calls that pass the same object or component as two " &
+            "actual parameters when at least one of the corresponding " &
+            "formals is written, which SPARK forbids and plain Ada leaves " &
+            "unspecified."),
+         Guidance    => To_Unbounded_String
+           ("Pass a distinct copy of the object, or restructure the call " &
+            "so no written formal aliases another actual."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Missing_Loop_Variant =>
+        (Name        => To_Unbounded_String ("Missing_Loop_Variant"),
+         Description => To_Unbounded_String
+           ("Find loops that carry a Loop_Invariant pragma but no " &
+            "Loop_Variant pragma, so GNATprove cannot prove termination."),
+         Guidance    => To_Unbounded_String
+           ("Add a Loop_Variant pragma identifying an expression that " &
+            "strictly decreases or increases on every iteration."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Known_Discriminant_Check_Failure =>
+        (Name        => To_Unbounded_String
+           ("Known_Discriminant_Check_Failure"),
+         Description => To_Unbounded_String
+           ("Find accesses to a variant-part component that a statically " &
+            "known discriminant constraint provably excludes."),
+         Guidance    => To_Unbounded_String
+           ("Access a component that the object's discriminant constraint " &
+            "actually permits, or correct the constraint."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Potentially_Blocking_Operation =>
+        (Name        => To_Unbounded_String
+           ("Potentially_Blocking_Operation"),
+         Description => To_Unbounded_String
+           ("Find entry calls and delay statements written directly in a " &
+            "protected procedure or function body, which the Ravenscar " &
+            "and SPARK profiles forbid because they can block while " &
+            "holding the protected lock."),
+         Guidance    => To_Unbounded_String
+           ("Move the blocking operation outside the protected operation, " &
+            "or restructure the protocol so the protected body only " &
+            "performs non-blocking actions."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High)
    );

@@ -21,6 +21,7 @@ with Adalang_Analyzer.Flow_Domain;          use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;            use Adalang_Analyzer.Flow_Eval;
 with Adalang_Analyzer.Report;               use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;                use Adalang_Analyzer.Rules;
+with Adalang_Analyzer.SPARK_Readiness;
 with Adalang_Analyzer.Text_Utils;           use Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Checks is
@@ -196,6 +197,12 @@ package body Adalang_Analyzer.Checks is
          when Libadalang.Common.Ada_Case_Stmt =>
             Control_Flow.Analyze_Case_Statement (Unit, Node.As_Case_Stmt);
 
+         when Libadalang.Common.Ada_Dotted_Name =>
+            if Rule_States (Known_Discriminant_Check_Failure) = Enabled then
+               SPARK_Readiness.Check_Discriminant_Access
+                 (Unit, Node.As_Dotted_Name);
+            end if;
+
          when Libadalang.Common.Ada_Call_Expr =>
             if Rule_States (No_Recursion) = Enabled then
                declare
@@ -260,6 +267,8 @@ package body Adalang_Analyzer.Checks is
                end if;
                Control_Flow.Analyze_Infinite_Loop
                  (Unit, Node.As_Base_Loop_Stmt);
+               Control_Flow.Analyze_Loop_Variant_Presence
+                 (Unit, Node.As_Base_Loop_Stmt);
             end;
 
          when Libadalang.Common.Ada_Exit_Stmt =>
@@ -311,6 +320,8 @@ package body Adalang_Analyzer.Checks is
                   "loop body contains no substantive statements");
             end if;
             Control_Flow.Analyze_Infinite_Loop (Unit, Node.As_Base_Loop_Stmt);
+            Control_Flow.Analyze_Loop_Variant_Presence
+              (Unit, Node.As_Base_Loop_Stmt);
 
          when others =>
             null;  --  adalang-analyzer: ignore Null_Statement
