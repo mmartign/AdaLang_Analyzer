@@ -506,4 +506,108 @@ if ! grep -F '[Depends_Contract_Mismatch]' "$output" >/dev/null; then
    exit 1
 fi
 
+general_checks2='Identical_Case_Alternative,Redundant_Type_Conversion,Handler_Order'
+if "$analyzer" -checks="$general_checks2" \
+     tests/general_checks2_findings.adb >"$output" 2>&1
+then
+   echo "expected general_checks2_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Identical_Case_Alternative\]' "$output")" -ne 1 ] \
+  || [ "$(grep -c '\[Redundant_Type_Conversion\]' "$output")" -ne 1 ] \
+  || [ "$(grep -c '\[Handler_Order\]' "$output")" -ne 1 ]
+then
+   echo "unexpected general_checks2 findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks="$general_checks2" \
+     tests/general_checks2_clean.adb
+then
+   echo "general_checks2_clean.adb unexpectedly produced a violation" >&2
+   "$analyzer" -checks="$general_checks2" \
+      tests/general_checks2_clean.adb >&2 || true
+   exit 1
+fi
+
+spark_checks2='Aliasing_Between_Parameters,Missing_Loop_Variant,Potentially_Blocking_Operation'
+if "$analyzer" -checks="$spark_checks2" \
+     tests/spark_checks2_findings.adb >"$output" 2>&1
+then
+   echo "expected spark_checks2_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Aliasing_Between_Parameters\]' "$output")" -ne 1 ] \
+  || [ "$(grep -c '\[Missing_Loop_Variant\]' "$output")" -ne 1 ] \
+  || [ "$(grep -c '\[Potentially_Blocking_Operation\]' "$output")" -ne 1 ]
+then
+   echo "unexpected spark_checks2 findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks="$spark_checks2" \
+     tests/spark_checks2_clean.adb
+then
+   echo "spark_checks2_clean.adb unexpectedly produced a violation" >&2
+   "$analyzer" -checks="$spark_checks2" \
+      tests/spark_checks2_clean.adb >&2 || true
+   exit 1
+fi
+
+if "$analyzer" --spark tests/spark_checks2_findings.adb >"$output" 2>&1; then
+   echo "the SPARK preset unexpectedly missed the new SPARK checks" >&2
+   exit 1
+fi
+
+for rule in \
+   Aliasing_Between_Parameters \
+   Missing_Loop_Variant \
+   Potentially_Blocking_Operation
+do
+   if ! grep -F "[$rule]" "$output" >/dev/null; then
+      echo "the --spark preset is missing $rule" >&2
+      cat "$output" >&2
+      exit 1
+   fi
+done
+
+if "$analyzer" -checks='Known_Discriminant_Check_Failure' \
+     tests/discriminant_check_findings.adb >"$output" 2>&1
+then
+   echo "expected discriminant_check_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Known_Discriminant_Check_Failure\]' "$output")" -ne 1 ]
+then
+   echo "unexpected discriminant-check findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks='Known_Discriminant_Check_Failure' \
+     tests/discriminant_check_clean.adb
+then
+   echo "discriminant_check_clean.adb unexpectedly produced a violation" >&2
+   "$analyzer" -checks='Known_Discriminant_Check_Failure' \
+      tests/discriminant_check_clean.adb >&2 || true
+   exit 1
+fi
+
+if "$analyzer" --spark tests/discriminant_check_findings.adb >"$output" 2>&1
+then
+   echo "the SPARK preset unexpectedly missed Known_Discriminant_Check_Failure" >&2
+   exit 1
+fi
+
+if ! grep -F '[Known_Discriminant_Check_Failure]' "$output" >/dev/null; then
+   echo "the --spark preset is missing Known_Discriminant_Check_Failure" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

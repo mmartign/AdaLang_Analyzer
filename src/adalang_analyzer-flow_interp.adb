@@ -17,6 +17,7 @@ with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Flow_Interp is
 
+   use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Common.Ada_Node_Kind_Type;
    use type Rules.Rule_Kind;
 
@@ -680,6 +681,27 @@ package body Adalang_Analyzer.Flow_Interp is
                     (Unit, Value, Decl.As_Base_Type_Decl, State,
                      Rules.Known_Range_Check_Failure,
                      "value is outside the target subtype range");
+
+                  if Config.Rule_States (Rules.Redundant_Type_Conversion) =
+                       Config.Enabled
+                  then
+                     declare
+                        Value_Type : constant
+                          Libadalang.Analysis.Base_Type_Decl :=
+                            Value.P_Expression_Type;
+                     begin
+                        if not Libadalang.Analysis.Is_Null (Value_Type)
+                          and then Libadalang.Analysis.Ada_Node (Value_Type) =
+                            Libadalang.Analysis.Ada_Node
+                              (Decl.As_Base_Type_Decl)
+                        then
+                           Report.Report_Rule_Violation
+                             (Unit, Call, Rules.Redundant_Type_Conversion,
+                              "conversion has no effect because the " &
+                                "operand already has this type");
+                        end if;
+                     end;
+                  end if;
                end if;
             end;
 
@@ -1447,6 +1469,8 @@ package body Adalang_Analyzer.Flow_Interp is
           and then Config.Rule_States (Rules.Known_Index_Check_Failure) /=
             Config.Enabled
           and then Config.Rule_States (Rules.Known_Overflow_Failure) /=
+            Config.Enabled
+          and then Config.Rule_States (Rules.Redundant_Type_Conversion) /=
             Config.Enabled)
         or else Libadalang.Analysis.Is_Null (Handled)
         or else Handled.F_Exceptions.Children_Count > 0

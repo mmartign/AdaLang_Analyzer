@@ -62,6 +62,12 @@ private package Adalang_Analyzer.Checks.Control_Flow is
    --  "while" loop whose condition is statically True, when its body has
    --  no exit/return/raise.
 
+   procedure Analyze_Loop_Variant_Presence
+     (Unit      : Libadalang.Analysis.Analysis_Unit;
+      Loop_Node : Libadalang.Analysis.Base_Loop_Stmt);
+   --  Reports Missing_Loop_Variant when Loop_Node has a Loop_Invariant
+   --  pragma but no Loop_Variant pragma.
+
    procedure Analyze_If_Statement
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.If_Stmt);

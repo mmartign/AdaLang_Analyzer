@@ -85,6 +85,13 @@ The analyzer currently provides the following checks:
 | SPARK | `Known_Range_Check_Failure` | Reliability | High | Reports values provably outside an assignment, initialization, or conversion subtype. |
 | SPARK | `Known_Index_Check_Failure` | Reliability | High | Reports array indices provably outside the corresponding index subtype. |
 | SPARK | `Known_Overflow_Failure` | Reliability | High | Reports integer arithmetic provably outside the operation's base type. |
+| Case analysis | `Identical_Case_Alternative` | Reliability | Medium | Reports adjacent case alternatives with identical bodies. |
+| Expression | `Redundant_Type_Conversion` | Maintainability | Low | Reports explicit type conversions whose operand already has the target subtype. |
+| Exception handling | `Handler_Order` | Reliability | High | Reports a `when others` handler that precedes, and thereby shadows, a more specific handler in the same list. |
+| Data flow | `Aliasing_Between_Parameters` | Reliability | High | Reports calls that pass the same object or component as two actual parameters when at least one corresponding formal is written. |
+| SPARK | `Missing_Loop_Variant` | Maintainability | Medium | Reports loops with a `Loop_Invariant` pragma but no `Loop_Variant` pragma. |
+| SPARK | `Known_Discriminant_Check_Failure` | Reliability | High | Reports accesses to a variant-part component that a statically known discriminant constraint provably excludes. |
+| SPARK | `Potentially_Blocking_Operation` | Reliability | High | Reports entry calls and delay statements written directly in a protected procedure or function body. |
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
@@ -216,6 +223,25 @@ silent) as it already was.
 The pass conservatively stops tracking at constructs it does not model
 (`select`, `accept`, `goto` targets) and for subprogram or declare-block
 bodies with their own exception handlers.
+
+Four further checks strengthen the SPARK-readiness layer without attempting
+proof. `Aliasing_Between_Parameters` walks each call's actual parameters
+alongside their resolved formal modes and reports two actuals that are
+textually the same object or component when at least one of the
+corresponding formals is written — the same anti-aliasing legality rule
+GNATprove enforces, checked here by simple structural comparison rather than
+points-to analysis. `Missing_Loop_Variant` flags a loop that carries a
+`Loop_Invariant` pragma without a matching `Loop_Variant`, since GNATprove
+needs the latter to prove termination. `Known_Discriminant_Check_Failure`
+resolves a selected component's variant part and the accessing object's own
+discriminant constraint (when it is a literal or enumeration-literal
+constant) and reports an access to a component that constraint provably
+excludes, the same way a `case` statement with a statically known selector is
+resolved to its one live alternative. `Potentially_Blocking_Operation` walks
+a protected procedure or function body — not descending into a nested
+subprogram — and reports a `delay` statement or a call resolving to an entry
+declaration, both of which the Ravenscar and SPARK profiles forbid inside a
+protected operation because they can block while the protected lock is held.
 
 ## Requirements
 
