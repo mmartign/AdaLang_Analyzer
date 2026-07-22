@@ -74,7 +74,11 @@ package Adalang_Analyzer.Rules is
       Depends_Contract_Mismatch,
       Uninitialized_Output,
       Known_Precondition_Failure,
-      Known_Postcondition_Failure
+      Known_Postcondition_Failure,
+      Known_Assertion_Failure,
+      Known_Range_Check_Failure,
+      Known_Index_Check_Failure,
+      Known_Overflow_Failure
    );
 
    type Software_Quality is
@@ -687,6 +691,46 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Correct the implementation or revise a postcondition that does " &
             "not describe the intended result."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Assertion_Failure =>
+        (Name        => To_Unbounded_String ("Known_Assertion_Failure"),
+         Description => To_Unbounded_String
+           ("Find Assert, Assert_And_Cut, Check, and Loop_Invariant pragmas " &
+            "whose condition is statically false."),
+         Guidance    => To_Unbounded_String
+           ("Correct the implementation or assertion so the asserted " &
+            "property holds at this program point."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Range_Check_Failure =>
+        (Name        => To_Unbounded_String ("Known_Range_Check_Failure"),
+         Description => To_Unbounded_String
+           ("Find assignments, initializations, and conversions whose value " &
+            "is provably outside the target integer subtype."),
+         Guidance    => To_Unbounded_String
+           ("Constrain the value before conversion or assignment, or correct " &
+            "the target subtype bounds."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Index_Check_Failure =>
+        (Name        => To_Unbounded_String ("Known_Index_Check_Failure"),
+         Description => To_Unbounded_String
+           ("Find array indexing operations whose index is provably outside " &
+            "the corresponding index subtype."),
+         Guidance    => To_Unbounded_String
+           ("Establish that each index is within the array bounds before " &
+            "indexing the array."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Overflow_Failure =>
+        (Name        => To_Unbounded_String ("Known_Overflow_Failure"),
+         Description => To_Unbounded_String
+           ("Find integer arithmetic whose result is provably outside the " &
+            "operation's base type."),
+         Guidance    => To_Unbounded_String
+           ("Reorder or widen the computation, or establish tighter operand " &
+            "bounds before performing it."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High)
    );

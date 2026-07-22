@@ -81,6 +81,10 @@ The analyzer currently provides the following checks:
 | SPARK | `Uninitialized_Output` | Reliability | High | Reports `out` parameters not demonstrably initialized on every normal return path. |
 | SPARK | `Known_Precondition_Failure` | Reliability | High | Reports calls whose actual values make a precondition false. |
 | SPARK | `Known_Postcondition_Failure` | Reliability | High | Reports bodies whose resulting state makes their postcondition false. |
+| SPARK | `Known_Assertion_Failure` | Reliability | High | Reports assertion pragmas whose condition is statically false at that program point. |
+| SPARK | `Known_Range_Check_Failure` | Reliability | High | Reports values provably outside an assignment, initialization, or conversion subtype. |
+| SPARK | `Known_Index_Check_Failure` | Reliability | High | Reports array indices provably outside the corresponding index subtype. |
+| SPARK | `Known_Overflow_Failure` | Reliability | High | Reports integer arithmetic provably outside the operation's base type. |
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
@@ -128,6 +132,25 @@ the state established by the body, and facts it establishes for simple `out`
 and `in out` parameters are transferred back to the caller. A postcondition
 that the body makes statically false is reported as a
 `Known_Postcondition_Failure`.
+
+Assertion obligations are checked in the same abstract state. This covers
+`Assert`, `Assert_And_Cut`, `Check`, and `Loop_Invariant` pragmas; a successful
+assertion narrows the following state, while `Assume` narrows it without
+creating an obligation. This mirrors useful local proof behavior from
+GNATprove while remaining limited to conditions the abstract domain can
+decide.
+
+The same state is used for two common Ada run-time proof obligations. Integer
+initializations, assignments, and type conversions are compared with resolved
+subtype bounds, and array subscripts are compared with the resolved index type
+for each dimension. Findings are emitted only when the value's entire known
+range lies outside the permitted range; unknown or partially overlapping
+ranges remain silent.
+
+Integer arithmetic is also checked against the resolved base type of the
+operation. This models Ada's overflow check separately from the subtype check
+performed by a later assignment and avoids reporting both obligations for the
+same definitely overflowing expression.
 
 Effective `SPARK_Mode` inherited through a declaration is respected by these
 contract checks. The SPARK-readiness pass separately compares semantic global

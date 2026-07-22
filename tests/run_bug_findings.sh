@@ -6,6 +6,72 @@ checks='Contradictory_Condition,Identical_Branches,Repeated_Statement,Ineffectiv
 output=$(mktemp "${TMPDIR:-/tmp}/adalang-findings.XXXXXX")
 trap 'rm -f "$output"' EXIT HUP INT TERM
 
+assertion_check='Known_Assertion_Failure'
+if "$analyzer" -checks="$assertion_check" \
+     tests/proof_assertion_findings.adb >"$output" 2>&1
+then
+   echo "expected proof_assertion_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Known_Assertion_Failure\]' "$output")" -ne 3 ]; then
+   echo "unexpected assertion-proof findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks="$assertion_check" \
+     tests/proof_assertion_clean.adb
+then
+   echo "proof_assertion_clean.adb unexpectedly produced a violation" >&2
+   exit 1
+fi
+
+runtime_checks='Known_Range_Check_Failure,Known_Index_Check_Failure'
+if "$analyzer" -checks="$runtime_checks" \
+     tests/runtime_check_findings.adb >"$output" 2>&1
+then
+   echo "expected runtime_check_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Known_Range_Check_Failure\]' "$output")" -ne 3 ] \
+  || [ "$(grep -c '\[Known_Index_Check_Failure\]' "$output")" -ne 2 ]
+then
+   echo "unexpected run-time-check findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks="$runtime_checks" \
+     tests/runtime_check_clean.adb
+then
+   echo "runtime_check_clean.adb unexpectedly produced a violation" >&2
+   exit 1
+fi
+
+overflow_checks='Known_Overflow_Failure,Known_Range_Check_Failure'
+if "$analyzer" -checks="$overflow_checks" \
+     tests/overflow_findings.adb >"$output" 2>&1
+then
+   echo "expected overflow_findings.adb to produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Known_Overflow_Failure\]' "$output")" -ne 2 ] \
+  || [ "$(grep -c '\[Known_Range_Check_Failure\]' "$output")" -ne 0 ]
+then
+   echo "unexpected overflow findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks="$overflow_checks" tests/overflow_clean.adb
+then
+   echo "overflow_clean.adb unexpectedly produced a violation" >&2
+   exit 1
+fi
+
 if "$analyzer" -checks="$checks" tests/bug_findings.adb >"$output" 2>&1; then
    echo "expected bug_findings.adb to produce violations" >&2
    exit 1

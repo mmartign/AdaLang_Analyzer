@@ -196,7 +196,9 @@ package body Adalang_Analyzer.CLI is
          Missing_Global_Contract, Global_Contract_Mismatch,
          Missing_Depends_Contract, Incomplete_Depends_Contract,
          Depends_Contract_Mismatch, Uninitialized_Output,
-         Known_Precondition_Failure, Known_Postcondition_Failure);
+         Known_Precondition_Failure, Known_Postcondition_Failure,
+         Known_Assertion_Failure, Known_Range_Check_Failure,
+         Known_Index_Check_Failure, Known_Overflow_Failure);
    begin
       for Rule in Rule_Kind loop
          Rule_States (Rule) := Disabled;

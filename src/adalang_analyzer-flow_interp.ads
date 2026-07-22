@@ -8,8 +8,9 @@ with Libadalang.Analysis;
 
 --  Flow-sensitive constant propagation (best effort): a second, stateful
 --  walk over one subprogram body, run alongside the ordinary node-local
---  checks in Adalang_Analyzer.Checks, that lets Division_By_Zero and
---  Constant_Condition see values learned from an earlier assignment, not
+--  checks in Adalang_Analyzer.Checks, that lets Division_By_Zero,
+--  Constant_Condition, and assertion checking see values learned from an
+--  earlier assignment, not
 --  just literals. Built on the Adalang_Analyzer.Flow_Domain state and the
 --  Adalang_Analyzer.Flow_Eval evaluator. Everything below
 --  Interpret_Subprogram_Flow (the statement/if/case/loop interpreter,

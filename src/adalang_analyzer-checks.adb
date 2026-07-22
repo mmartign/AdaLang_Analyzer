@@ -131,6 +131,35 @@ package body Adalang_Analyzer.Checks is
       end loop;
    end Report_Non_Short_Circuit_Operators;
 
+   --  Return the boolean expression checked by an assertion-like pragma.
+   --  Check has a leading check-kind argument; the others carry their
+   --  condition first.
+   function Assertion_Expression
+     (Pragma_Node : Libadalang.Analysis.Pragma_Node)
+      return Libadalang.Analysis.Expr
+   is
+      Name  : constant String := Canonical_Text (Pragma_Node.F_Id);
+      Index : Positive := 1;
+   begin
+      if Name = "check" then
+         Index := 2;
+      elsif Name /= "assert"
+        and then Name /= "assert_and_cut"
+        and then Name /= "loop_invariant"
+      then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+
+      if Pragma_Node.F_Args.Children_Count < Index then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+
+      return Pragma_Node.F_Args.Child (Index).As_Pragma_Argument_Assoc.P_Assoc_Expr;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Assertion_Expression;
+
    --  Dispatches Node to the check(s) keyed on its specific syntactic
    --  kind (statement lists, operators, assignments, if/case/loop
    --  constructs, exception handlers, and so on). Called once per node
@@ -254,6 +283,22 @@ package body Adalang_Analyzer.Checks is
          when Libadalang.Common.Ada_Exception_Handler =>
             Control_Flow.Analyze_Exception_Handler
               (Unit, Node.As_Exception_Handler);
+
+         when Libadalang.Common.Ada_Pragma_Node =>
+            if Rule_States (Known_Assertion_Failure) = Enabled then
+               declare
+                  Cond : constant Libadalang.Analysis.Expr :=
+                    Assertion_Expression (Node.As_Pragma_Node);
+               begin
+                  if not Libadalang.Analysis.Is_Null (Cond)
+                    and then Boolean_Value (Cond) = Bool_False
+                  then
+                     Report_Rule_Violation
+                       (Unit, Cond, Known_Assertion_Failure,
+                        "assertion condition is statically false");
+                  end if;
+               end;
+            end if;
 
          when Libadalang.Common.Ada_For_Loop_Stmt
             | Libadalang.Common.Ada_Loop_Stmt =>

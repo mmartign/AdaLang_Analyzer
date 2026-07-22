@@ -18,6 +18,7 @@ with Adalang_Analyzer.Text_Utils;
 package body Adalang_Analyzer.Flow_Interp is
 
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Rules.Rule_Kind;
 
    --  Fetches an aspect from any declaration/body part. Missing or
    --  unresolved contracts are represented by a null expression.
@@ -432,6 +433,301 @@ package body Adalang_Analyzer.Flow_Interp is
       end loop;
    end Havoc_Effects_In;
 
+   --  Best-effort integer bounds for a resolved discrete subtype. Bounds are
+   --  expressions in Libadalang, so the same abstract state used for program
+   --  expressions can also resolve named static bounds.
+   function Type_Range
+     (Typ   : Libadalang.Analysis.Base_Type_Decl;
+      State : Flow_State) return Abstract_Range
+   is
+      Result : Abstract_Range := Unknown_Range;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ)
+        or else not Typ.P_Is_Int_Type
+      then
+         return Result;
+      end if;
+
+      declare
+         Bounds : constant Libadalang.Analysis.Discrete_Range :=
+           Typ.P_Discrete_Range;
+         Low    : constant Abstract_Int :=
+           Integer_Value (Libadalang.Analysis.Low_Bound (Bounds), State);
+         High   : constant Abstract_Int :=
+           Integer_Value (Libadalang.Analysis.High_Bound (Bounds), State);
+      begin
+         if Low.Known then
+            Result.Has_Low := True;
+            Result.Low := Low.Value;
+         end if;
+         if High.Known then
+            Result.Has_High := True;
+            Result.High := High.Value;
+         end if;
+      end;
+      return Result;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Type_Range;
+
+   function Array_Index_Range
+     (Array_Type : Libadalang.Analysis.Base_Type_Decl;
+      Dimension  : Positive;
+      State      : Flow_State) return Abstract_Range
+   is
+   begin
+      if not Libadalang.Analysis.Is_Null (Array_Type)
+        and then Array_Type.Kind in Libadalang.Common.Ada_Type_Decl
+      then
+         declare
+            Definition : constant Libadalang.Analysis.Type_Def :=
+              Array_Type.As_Type_Decl.F_Type_Def;
+         begin
+            if Definition.Kind = Libadalang.Common.Ada_Array_Type_Def then
+               declare
+                  Indices : constant Libadalang.Analysis.Array_Indices :=
+                    Definition.As_Array_Type_Def.F_Indices;
+               begin
+                  if Indices.Kind in
+                    Libadalang.Common.Ada_Constrained_Array_Indices_Range
+                    and then Indices.As_Constrained_Array_Indices.F_List
+                      .Children_Count >= Dimension
+                  then
+                     declare
+                        Constraint : constant Libadalang.Analysis.Ada_Node :=
+                          Indices.As_Constrained_Array_Indices.F_List
+                            .Child (Dimension);
+                        Interval : constant Static_Interval :=
+                          Choice_Interval (Constraint, State);
+                     begin
+                        if Interval.Known then
+                           return
+                             (Has_Low => True, Low => Interval.Low,
+                              Has_High => True, High => Interval.High);
+                        elsif Constraint.Kind in
+                          Libadalang.Common.Ada_Subtype_Indication_Range
+                        then
+                           return Type_Range
+                             (Constraint.As_Subtype_Indication
+                                .P_Designated_Type_Decl,
+                              State);
+                        end if;
+                     end;
+                  end if;
+               end;
+            end if;
+         end;
+      end if;
+
+      return Type_Range (Array_Type.P_Index_Type (Dimension - 1), State);
+   exception
+      when others =>
+         return Unknown_Range;
+   end Array_Index_Range;
+
+   function Definitely_Outside_Range
+     (Value        : Libadalang.Analysis.Expr'Class;
+      Target_Range : Abstract_Range;
+      State        : Flow_State) return Boolean
+   is
+      Value_Bounds : constant Abstract_Range := Range_Value (Value, State);
+   begin
+      return
+        (Value_Bounds.Has_High
+         and then Target_Range.Has_Low
+         and then Value_Bounds.High < Target_Range.Low)
+        or else
+        (Value_Bounds.Has_Low
+         and then Target_Range.Has_High
+         and then Value_Bounds.Low > Target_Range.High);
+   end Definitely_Outside_Range;
+
+   function Definitely_Outside_Type
+     (Value : Libadalang.Analysis.Expr'Class;
+      Typ   : Libadalang.Analysis.Base_Type_Decl;
+      State : Flow_State) return Boolean
+   is
+      Type_Bounds  : constant Abstract_Range := Type_Range (Typ, State);
+   begin
+      return Definitely_Outside_Range (Value, Type_Bounds, State);
+   exception
+      when others =>
+         return False;
+   end Definitely_Outside_Type;
+
+   function Known_Arithmetic_Overflow
+     (Node  : Libadalang.Analysis.Expr'Class;
+      State : Flow_State) return Boolean
+   is
+   begin
+      if Node.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+        or else Node.As_Bin_Op.F_Op not in
+          Libadalang.Common.Ada_Op_Plus
+            | Libadalang.Common.Ada_Op_Minus
+            | Libadalang.Common.Ada_Op_Mult
+            | Libadalang.Common.Ada_Op_Div
+            | Libadalang.Common.Ada_Op_Pow
+      then
+         return False;
+      end if;
+
+      declare
+         Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Node.P_Expression_Type;
+      begin
+         if Libadalang.Analysis.Is_Null (Expr_Type)
+           or else not Expr_Type.P_Is_Int_Type
+         then
+            return False;
+         end if;
+
+         declare
+            Bounds : Abstract_Range :=
+              Type_Range (Expr_Type.P_Base_Type (Node), State);
+            Name   : constant String := Langkit_Support.Text.To_UTF8
+              (Expr_Type.P_Canonical_Fully_Qualified_Name);
+         begin
+            --  Standard.Integer's base subtype is synthetic and its bound
+            --  expressions are not always reducible by the evaluator. Its
+            --  visible declaration has the same bounds, so it is a sound
+            --  fallback. Do not apply this fallback to derived first
+            --  subtypes: their visible constraint can be narrower than the
+            --  operation's base range.
+            if not Bounds.Has_Low
+              and then not Bounds.Has_High
+              and then Name = "standard.integer"
+            then
+               Bounds := Type_Range (Expr_Type, State);
+            end if;
+            return Definitely_Outside_Range (Node, Bounds, State);
+         end;
+      end;
+   exception
+      when others =>
+         return False;
+   end Known_Arithmetic_Overflow;
+
+   procedure Check_Value_Range
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Value   : Libadalang.Analysis.Expr'Class;
+      Typ     : Libadalang.Analysis.Base_Type_Decl;
+      State   : Flow_State;
+      Rule    : Rules.Rule_Kind;
+      Message : String) is
+   begin
+      if Config.Rule_States (Rule) = Config.Enabled
+        and then Definitely_Outside_Type (Value, Typ, State)
+        and then not
+          (Rule = Rules.Known_Range_Check_Failure
+           and then Config.Rule_States (Rules.Known_Overflow_Failure) =
+             Config.Enabled
+           and then Known_Arithmetic_Overflow (Value, State))
+      then
+         Report.Report_Rule_Violation (Unit, Value, Rule, Message);
+      end if;
+   end Check_Value_Range;
+
+   function Assoc_Expression
+     (List : Libadalang.Analysis.Ada_Node'Class;
+      Index : Positive) return Libadalang.Analysis.Expr is
+   begin
+      if Libadalang.Analysis.Is_Null (List) then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+
+      --  Libadalang represents a single positional suffix directly as an
+      --  expression, and uses an association list for multiple or named
+      --  actuals/indices.
+      if List.Kind in Libadalang.Common.Ada_Expr then
+         return
+           (if Index = 1 then List.As_Expr
+            else Libadalang.Analysis.No_Expr);
+      elsif List.Children_Count < Index then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+      if List.Child (Index).Kind = Libadalang.Common.Ada_Param_Assoc then
+         return List.Child (Index).As_Param_Assoc.F_R_Expr;
+      elsif List.Child (Index).Kind in Libadalang.Common.Ada_Base_Assoc then
+         return List.Child (Index).As_Base_Assoc.P_Assoc_Expr;
+      else
+         return Libadalang.Analysis.No_Expr;
+      end if;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Assoc_Expression;
+
+   procedure Check_Conversion_Or_Index
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Call  : Libadalang.Analysis.Call_Expr;
+      State : Flow_State)
+   is
+   begin
+      case Call.P_Kind is
+         when Libadalang.Common.Type_Conversion =>
+            declare
+               Decl  : constant Libadalang.Analysis.Basic_Decl :=
+                 Call.F_Name.P_Referenced_Decl;
+               Value : constant Libadalang.Analysis.Expr :=
+                 Assoc_Expression (Call.F_Suffix, 1);
+            begin
+               if not Libadalang.Analysis.Is_Null (Decl)
+                 and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+                 and then not Libadalang.Analysis.Is_Null (Value)
+               then
+                  Check_Value_Range
+                    (Unit, Value, Decl.As_Base_Type_Decl, State,
+                     Rules.Known_Range_Check_Failure,
+                     "value is outside the target subtype range");
+               end if;
+            end;
+
+         when Libadalang.Common.Array_Index =>
+            declare
+               Array_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+                 Call.F_Name.P_Expression_Type;
+            begin
+               if not Libadalang.Analysis.Is_Null (Array_Type)
+                 and then Array_Type.P_Is_Array_Type
+               then
+                  declare
+                     Dimensions : constant Positive :=
+                       (if Call.F_Suffix.Kind in Libadalang.Common.Ada_Expr
+                        then 1 else Call.F_Suffix.Children_Count);
+                  begin
+                  for Dim in 1 .. Dimensions loop
+                     declare
+                        Index_Value : constant Libadalang.Analysis.Expr :=
+                          Assoc_Expression (Call.F_Suffix, Dim);
+                        Bounds : constant Abstract_Range :=
+                          Array_Index_Range (Array_Type, Dim, State);
+                     begin
+                        if Config.Rule_States
+                             (Rules.Known_Index_Check_Failure) = Config.Enabled
+                          and then not Libadalang.Analysis.Is_Null (Index_Value)
+                          and then Definitely_Outside_Range
+                            (Index_Value, Bounds, State)
+                        then
+                           Report.Report_Rule_Violation
+                             (Unit, Index_Value,
+                              Rules.Known_Index_Check_Failure,
+                              "index is outside the array index subtype");
+                        end if;
+                     end;
+                  end loop;
+                  end;
+               end if;
+            end;
+
+         when others =>
+            null;
+      end case;
+   exception
+      when others =>
+         null;
+   end Check_Conversion_Or_Index;
+
    --  Reports Division_By_Zero for every "/", "mod", or "rem" under Node
    --  whose right operand is only known to be zero once State's earlier
    --  assignments are taken into account (a plain literal zero is already
@@ -470,7 +766,17 @@ package body Adalang_Analyzer.Flow_Interp is
          end;
       end if;
 
+      if Config.Rule_States (Rules.Known_Overflow_Failure) = Config.Enabled
+        and then Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
+        and then Known_Arithmetic_Overflow (Node.As_Expr, State)
+      then
+         Report.Report_Rule_Violation
+           (Unit, Node, Rules.Known_Overflow_Failure,
+            "arithmetic result is outside its base type range");
+      end if;
+
       if Node.Kind = Libadalang.Common.Ada_Call_Expr then
+         Check_Conversion_Or_Index (Unit, Node.As_Call_Expr, State);
          Check_Call_Precondition
            (Unit, Node.As_Call_Expr.F_Name, State);
       end if;
@@ -509,6 +815,76 @@ package body Adalang_Analyzer.Flow_Interp is
       end;
    end Check_Flow_Condition;
 
+   --  The condition carried by a proof-related pragma. Check uses its
+   --  second argument (the first is the check kind); assertion pragmas and
+   --  Assume use their first argument.
+   function Pragma_Condition
+     (Pragma_Node : Libadalang.Analysis.Pragma_Node)
+      return Libadalang.Analysis.Expr
+   is
+      Name  : constant String := Normalized_Text (Pragma_Node.F_Id);
+      Index : Positive := 1;
+   begin
+      if Name = "check" then
+         Index := 2;
+      elsif Name /= "assert"
+        and then Name /= "assert-and-cut"
+        and then Name /= "loop-invariant"
+        and then Name /= "assume"
+      then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+
+      if Pragma_Node.F_Args.Children_Count < Index then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+
+      return Pragma_Node.F_Args.Child (Index).As_Pragma_Argument_Assoc.P_Assoc_Expr;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Pragma_Condition;
+
+   function Interpret_Proof_Pragma
+     (Unit        : Libadalang.Analysis.Analysis_Unit;
+      Pragma_Node : Libadalang.Analysis.Pragma_Node;
+      State       : Flow_State) return Flow_State
+   is
+      Name   : constant String := Normalized_Text (Pragma_Node.F_Id);
+      Cond   : constant Libadalang.Analysis.Expr :=
+        Pragma_Condition (Pragma_Node);
+      Result : Flow_State := State;
+   begin
+      if Libadalang.Analysis.Is_Null (Cond) then
+         return Result;
+      end if;
+
+      Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
+
+      --  Literal-only failures are reported by the ordinary AST walk. This
+      --  pass adds failures that become known from preceding assignments.
+      if Name /= "assume"
+        and then Config.Rule_States (Rules.Known_Assertion_Failure) =
+          Config.Enabled
+        and then Boolean_Value (Cond) = Bool_Unknown
+        and then Boolean_Value (Cond, State) = Bool_False
+      then
+         Report.Report_Rule_Violation
+           (Unit, Cond, Rules.Known_Assertion_Failure,
+            "assertion condition is false here based on earlier state");
+      end if;
+
+      --  Execution continues only when an assertion succeeds. Assume has
+      --  the same state-narrowing effect without generating an obligation.
+      declare
+         True_State, False_State : Flow_State;
+      begin
+         Narrow_By_Condition (Cond, State, True_State, False_State);
+         Result := True_State;
+      end;
+      return Result;
+   end Interpret_Proof_Pragma;
+
    --  Seeds State from every "Name : T := Default;" in Decls, when Default
    --  statically evaluates (possibly using State itself, so an earlier
    --  constant can feed a later one's initializer).
@@ -538,6 +914,11 @@ package body Adalang_Analyzer.Flow_Interp is
                begin
                   if not Libadalang.Analysis.Is_Null (Default) then
                      Scan_Expression_For_Flow_Bugs (Unit, Default, State);
+                     Check_Value_Range
+                       (Unit, Default,
+                        Decl.F_Type_Expr.P_Designated_Type_Decl,
+                        State, Rules.Known_Range_Check_Failure,
+                        "initial value is outside the object's subtype range");
 
                      declare
                         Value      : constant Abstract_Int :=
@@ -930,6 +1311,11 @@ package body Adalang_Analyzer.Flow_Interp is
                Next   : Flow_State := State;
             begin
                Scan_Expression_For_Flow_Bugs (Unit, Assign.F_Expr, State);
+               Check_Value_Range
+                 (Unit, Assign.F_Expr,
+                  Assign.F_Dest.P_Expression_Type,
+                  State, Rules.Known_Range_Check_Failure,
+                  "assigned value is outside the target subtype range");
                Havoc_Effects_In (Assign.F_Dest, Next);
                Havoc_Effects_In (Assign.F_Expr, Next);
 
@@ -975,9 +1361,14 @@ package body Adalang_Analyzer.Flow_Interp is
             | Libadalang.Common.Ada_Loop_Stmt =>
             return Interpret_Loop (Unit, Stmt, State);
 
+         when Libadalang.Common.Ada_Pragma_Node =>
+            return
+              (State => Interpret_Proof_Pragma
+                 (Unit, Stmt.As_Pragma_Node, State),
+               Terminated => False);
+
          when Libadalang.Common.Ada_Null_Stmt
-            | Libadalang.Common.Ada_Label
-            | Libadalang.Common.Ada_Pragma_Node =>
+            | Libadalang.Common.Ada_Label =>
             return (State => State, Terminated => False);
 
          when Libadalang.Common.Ada_Exit_Stmt =>
@@ -1048,6 +1439,14 @@ package body Adalang_Analyzer.Flow_Interp is
           and then Config.Rule_States (Rules.Known_Precondition_Failure) /=
             Config.Enabled
           and then Config.Rule_States (Rules.Known_Postcondition_Failure) /=
+            Config.Enabled
+          and then Config.Rule_States (Rules.Known_Assertion_Failure) /=
+            Config.Enabled
+          and then Config.Rule_States (Rules.Known_Range_Check_Failure) /=
+            Config.Enabled
+          and then Config.Rule_States (Rules.Known_Index_Check_Failure) /=
+            Config.Enabled
+          and then Config.Rule_States (Rules.Known_Overflow_Failure) /=
             Config.Enabled)
         or else Libadalang.Analysis.Is_Null (Handled)
         or else Handled.F_Exceptions.Children_Count > 0
