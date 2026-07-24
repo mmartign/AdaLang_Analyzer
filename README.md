@@ -91,7 +91,28 @@ The analyzer currently provides the following checks:
 | Data flow | `Aliasing_Between_Parameters` | Reliability | High | Reports calls that pass the same object or component as two actual parameters when at least one corresponding formal is written. |
 | SPARK | `Missing_Loop_Variant` | Maintainability | Medium | Reports loops with a `Loop_Invariant` pragma but no `Loop_Variant` pragma. |
 | SPARK | `Known_Discriminant_Check_Failure` | Reliability | High | Reports accesses to a variant-part component that a statically known discriminant constraint provably excludes. |
-| SPARK | `Potentially_Blocking_Operation` | Reliability | High | Reports entry calls and delay statements written directly in a protected procedure or function body. |
+| SPARK | `Potentially_Blocking_Operation` | Reliability | High | Reports entry calls, delay statements, and calls transitively reaching them from a protected operation. |
+| Automotive | `No_Dynamic_Allocation` | Reliability | High | Reports allocators. |
+| Automotive | `Restricted_Access_Type` | Reliability | High | Reports access-to-object type definitions. |
+| Automotive | `No_Explicit_Dereference` | Reliability | High | Reports explicit `.all` dereferences. |
+| Automotive | `No_Unchecked_Deallocation` | Reliability | High | Reports semantic instantiations of `Ada.Unchecked_Deallocation`. |
+| Automotive | `No_Tasking` | Reliability | High | Reports task declarations. |
+| Automotive | `No_Rendezvous` | Reliability | High | Reports entry declarations and accept statements. |
+| Automotive | `No_Select` | Reliability | High | Reports selective, timed, conditional, and asynchronous select forms. |
+| Automotive | `No_Requeue` | Reliability | High | Reports requeue statements. |
+| Automotive | `No_Asynchronous_Transfer` | Reliability | High | Reports asynchronous select/abortable-part constructs. |
+| Automotive | `Exception_Propagation` | Reliability | High | Reports calls that may propagate a direct or transitive explicit exception when the enclosing subprogram has no handler boundary. |
+| Automotive | `No_Dispatching_Call` | Reliability | High | Reports semantically resolved dispatching calls. |
+| Automotive | `No_Classwide_Type` | Reliability | High | Reports class-wide subtype marks. |
+| Automotive | `No_Controlled_Type` | Reliability | High | Reports derivation from controlled or limited-controlled types. |
+| Automotive | `Complete_Initialization` | Reliability | High | Reports objects and record components without explicit initialization. |
+| Automotive | `Volatile_Atomic_Consistency` | Reliability | High | Reports volatile declarations lacking an atomic or full-access policy. |
+| Automotive | `Representation_Clause_Policy` | Reliability | Medium | Requires every explicit representation clause to receive target-specific review. |
+| Automotive | `Library_Level_Initialization` | Reliability | High | Reports library-level initializers containing calls. |
+| Automotive | `Generic_Instantiation_Limit` | Maintainability | Medium | Reports units exceeding the configured generic-instantiation limit. |
+| Automotive | `Dependency_Limit` | Maintainability | Medium | Reports units exceeding the configured with-clause limit. |
+| Automotive | `Naming_Convention` | Maintainability | Low | Reports one-character identifiers except loop indices and enumeration literals. |
+| Automotive | `No_Compiler_Extensions` | Maintainability | High | Reports implementation-defined pragmas, including extension-enabling pragmas. |
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
@@ -237,11 +258,31 @@ resolves a selected component's variant part and the accessing object's own
 discriminant constraint (when it is a literal or enumeration-literal
 constant) and reports an access to a component that constraint provably
 excludes, the same way a `case` statement with a statically known selector is
-resolved to its one live alternative. `Potentially_Blocking_Operation` walks
-a protected procedure or function body — not descending into a nested
-subprogram — and reports a `delay` statement or a call resolving to an entry
-declaration, both of which the Ravenscar and SPARK profiles forbid inside a
-protected operation because they can block while the protected lock is held.
+resolved to its one live alternative. `Potentially_Blocking_Operation` reports
+a `delay` statement or entry call in a protected procedure or function. Before
+the checking pass, a compact call-summary registry propagates blocking and
+raising effects to a fixed point, so calls that transitively reach a blocking
+operation are also reported. Nested subprogram bodies remain independently
+summarized rather than being mistaken for direct execution by their parent.
+This is the first shared interprocedural-summary service; it stores monotone
+effects rather than paths or complete states to keep the default pass bounded.
+
+The `--automotive` preset combines these checks into a deliberately strict Ada
+profile. It covers allocation and access use; unchecked deallocation; tasking,
+rendezvous, select, requeue, and asynchronous transfer; exception escape;
+dispatching, class-wide, access-to-subprogram, controlled, and finalization
+features; initialization; volatile/atomic use; representation clauses;
+library elaboration; numeric operations and conversions; shadowing and naming;
+generic/dependency limits; and implementation-defined pragmas.
+
+The preset is an engineering aid, not a claim of official MISRA or AUTOSAR
+conformance. MISRA and AUTOSAR rule applicability, documented deviations,
+compiler configuration, target representation evidence, traceability, and
+tool-qualification evidence remain project responsibilities. In particular,
+`Representation_Clause_Policy` creates a mandatory review finding rather than
+pretending that a source-only analyzer can validate every target ABI, and
+exception/dispatch summaries are conservative rather than full CodePeer-style
+path proofs.
 
 ## Requirements
 
@@ -265,6 +306,7 @@ Run the bug-finding regression suite after building:
 
 ```sh
 sh tests/run_bug_findings.sh
+sh tests/run_automotive.sh
 ```
 
 ## Usage
@@ -314,7 +356,14 @@ Useful options include:
 -P<project>.gpr  Analyze the sources of a GNAT project file
 -list-checks     List all available checks
 --spark          Enable a proof-focused preset (later check switches refine it)
+--automotive     Enable the strict automotive Ada preset
 -checks=<list>   Enable or disable a comma-separated set of checks
+--format=<name>  Select text, JSON, or SARIF output (default: text)
+--output=<file>  Write a JSON or SARIF report to a file
+--baseline=<file>
+                 Treat matching stable finding fingerprints as existing
+--write-baseline=<file>
+                 Write this run's finding fingerprints for later comparison
 -complexity-threshold=<n>
                  Set the Cyclomatic_Complexity limit (default: 10)
 -nesting-threshold=<n>
@@ -323,13 +372,49 @@ Useful options include:
                  Set the Too_Many_Parameters limit (default: 6)
 -line-length-threshold=<n>
                  Set the Long_Line limit (default: 120)
+-generic-threshold=<n>
+                 Set the Generic_Instantiation_Limit (default: 10)
+-dependency-threshold=<n>
+                 Set the Dependency_Limit (default: 20)
 -v, -verbose     Print files as they are parsed
 -q, -quiet       Suppress the final summary
 --               Treat all remaining arguments as file names
 ```
 
 The command exits unsuccessfully when it finds a violation or cannot process
-the requested input, which makes it suitable for scripts and CI checks.
+the requested input, which makes it suitable for scripts and CI checks. A
+finding that matches `--baseline` remains visible in JSON or SARIF output as an
+existing result, but it does not contribute to the exit status. Fingerprints
+exclude line and column numbers, so inserting unrelated lines does not turn an
+existing finding into a new one.
+
+For CI systems that consume SARIF:
+
+```sh
+./bin/adalang_analyzer -checks='*' --format=sarif \
+  --output=adalang.sarif --baseline=adalang.baseline src/*.adb
+```
+
+Create or deliberately refresh the baseline after reviewing the complete
+finding set:
+
+```sh
+./bin/adalang_analyzer -checks='*' \
+  --write-baseline=adalang.baseline src/*.adb
+```
+
+Run the structured-output regression alongside the bug-finding suite:
+
+```sh
+sh tests/run_reporting.sh
+sh tests/run_automotive.sh
+sh tests/run_performance_smoke.sh
+```
+
+The performance smoke test scans the analyzer's own sources with every check
+and uses a deliberately generous 15-second default ceiling to catch accidental
+algorithmic regressions rather than normal machine-to-machine variation.
+Override it with `ADALANG_MAX_SMOKE_SECONDS` on controlled benchmark workers.
 
 ## Commercial Value & Professional Services
 

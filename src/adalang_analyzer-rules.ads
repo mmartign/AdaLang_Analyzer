@@ -85,7 +85,28 @@ package Adalang_Analyzer.Rules is
       Aliasing_Between_Parameters,
       Missing_Loop_Variant,
       Known_Discriminant_Check_Failure,
-      Potentially_Blocking_Operation
+      Potentially_Blocking_Operation,
+      No_Dynamic_Allocation,
+      Restricted_Access_Type,
+      No_Explicit_Dereference,
+      No_Unchecked_Deallocation,
+      No_Tasking,
+      No_Rendezvous,
+      No_Select,
+      No_Requeue,
+      No_Asynchronous_Transfer,
+      Exception_Propagation,
+      No_Dispatching_Call,
+      No_Classwide_Type,
+      No_Controlled_Type,
+      Complete_Initialization,
+      Volatile_Atomic_Consistency,
+      Representation_Clause_Policy,
+      Library_Level_Initialization,
+      Generic_Instantiation_Limit,
+      Dependency_Limit,
+      Naming_Convention,
+      No_Compiler_Extensions
    );
 
    type Software_Quality is
@@ -808,16 +829,220 @@ package Adalang_Analyzer.Rules is
         (Name        => To_Unbounded_String
            ("Potentially_Blocking_Operation"),
          Description => To_Unbounded_String
-           ("Find entry calls and delay statements written directly in a " &
-            "protected procedure or function body, which the Ravenscar " &
-            "and SPARK profiles forbid because they can block while " &
+           ("Find entry calls, delay statements, and calls transitively " &
+            "reaching them from a protected procedure or function body; " &
+            "the Ravenscar and SPARK profiles forbid blocking while " &
             "holding the protected lock."),
          Guidance    => To_Unbounded_String
            ("Move the blocking operation outside the protected operation, " &
             "or restructure the protocol so the protected body only " &
             "performs non-blocking actions."),
          Quality     => Quality_Reliability,
-         Severity    => Severity_High)
+         Severity    => Severity_High),
+      No_Dynamic_Allocation =>
+        (Name        => To_Unbounded_String ("No_Dynamic_Allocation"),
+         Description => To_Unbounded_String
+           ("Find allocators whose storage use and failure behavior make " &
+            "execution-time and memory bounds harder to establish."),
+         Guidance    => To_Unbounded_String
+           ("Use statically allocated objects or a bounded pool initialized " &
+            "before safety-related operation begins."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Restricted_Access_Type =>
+        (Name        => To_Unbounded_String ("Restricted_Access_Type"),
+         Description => To_Unbounded_String
+           ("Find named and anonymous access-to-object type definitions " &
+            "that introduce aliasing and lifetime obligations."),
+         Guidance    => To_Unbounded_String
+           ("Prefer direct ownership and bounded containers; isolate any " &
+            "required access type behind a reviewed interface."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Explicit_Dereference =>
+        (Name        => To_Unbounded_String ("No_Explicit_Dereference"),
+         Description => To_Unbounded_String
+           ("Find explicit .all dereferences that can fail an access check " &
+            "and obscure the identity and lifetime of the target."),
+         Guidance    => To_Unbounded_String
+           ("Replace access-based navigation with direct objects, or prove " &
+            "the access value non-null at a tightly controlled boundary."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Unchecked_Deallocation =>
+        (Name        => To_Unbounded_String ("No_Unchecked_Deallocation"),
+         Description => To_Unbounded_String
+           ("Find instantiations of Ada.Unchecked_Deallocation, which can " &
+            "create dangling access values and use-after-free defects."),
+         Guidance    => To_Unbounded_String
+           ("Use static or region-based storage, or confine deallocation to " &
+            "a separately justified ownership component."),
+         Quality     => Quality_Security,
+         Severity    => Severity_High),
+      No_Tasking =>
+        (Name        => To_Unbounded_String ("No_Tasking"),
+         Description => To_Unbounded_String
+           ("Find task declarations, whose scheduling and synchronization " &
+            "must be justified in deterministic automotive software."),
+         Guidance    => To_Unbounded_String
+           ("Use a project-approved cyclic executive or a separately " &
+            "analyzed restricted tasking profile."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Rendezvous =>
+        (Name        => To_Unbounded_String ("No_Rendezvous"),
+         Description => To_Unbounded_String
+           ("Find task entries and accept statements that introduce " &
+            "potentially blocking rendezvous."),
+         Guidance    => To_Unbounded_String
+           ("Use protected non-blocking communication or a statically " &
+            "scheduled message-transfer mechanism."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Select =>
+        (Name        => To_Unbounded_String ("No_Select"),
+         Description => To_Unbounded_String
+           ("Find selective, timed, conditional, or asynchronous select " &
+            "statements with timing-dependent control flow."),
+         Guidance    => To_Unbounded_String
+           ("Replace select statements with deterministic state-machine " &
+            "logic and explicitly scheduled communication."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Requeue =>
+        (Name        => To_Unbounded_String ("No_Requeue"),
+         Description => To_Unbounded_String
+           ("Find requeue statements that transfer entry calls and make " &
+            "blocking and queue behavior harder to analyze."),
+         Guidance    => To_Unbounded_String
+           ("Complete the operation locally or use an explicit bounded " &
+            "state transition instead of requeue."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Asynchronous_Transfer =>
+        (Name        => To_Unbounded_String ("No_Asynchronous_Transfer"),
+         Description => To_Unbounded_String
+           ("Find asynchronous select then-abort parts that can interrupt " &
+            "normal execution at difficult-to-review points."),
+         Guidance    => To_Unbounded_String
+           ("Use cooperative cancellation checked at explicit safe points."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Exception_Propagation =>
+        (Name        => To_Unbounded_String ("Exception_Propagation"),
+         Description => To_Unbounded_String
+           ("Find calls that can explicitly raise an exception when the " &
+            "enclosing subprogram provides no exception boundary."),
+         Guidance    => To_Unbounded_String
+           ("Convert the failure into an explicit status at the interface, " &
+            "or add a narrowly scoped handler with a documented policy."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Dispatching_Call =>
+        (Name        => To_Unbounded_String ("No_Dispatching_Call"),
+         Description => To_Unbounded_String
+           ("Find dynamically dispatching and access-to-subprogram calls " &
+            "whose target cannot be determined from local syntax."),
+         Guidance    => To_Unbounded_String
+           ("Use a statically bound operation or isolate dynamic dispatch " &
+            "behind a reviewed, bounded interface."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Classwide_Type =>
+        (Name        => To_Unbounded_String ("No_Classwide_Type"),
+         Description => To_Unbounded_String
+           ("Find uses of T'Class that admit values from an open-ended " &
+            "extension hierarchy."),
+         Guidance    => To_Unbounded_String
+           ("Use a specific tagged type or a closed discriminated union."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      No_Controlled_Type =>
+        (Name        => To_Unbounded_String ("No_Controlled_Type"),
+         Description => To_Unbounded_String
+           ("Find types derived from Ada.Finalization.Controlled or " &
+            "Limited_Controlled, whose implicit finalization adds hidden " &
+            "control flow."),
+         Guidance    => To_Unbounded_String
+           ("Use explicit initialization and cleanup operations with " &
+            "statically reviewable call sites."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Complete_Initialization =>
+        (Name        => To_Unbounded_String ("Complete_Initialization"),
+         Description => To_Unbounded_String
+           ("Find objects and record components without an explicit default " &
+            "value."),
+         Guidance    => To_Unbounded_String
+           ("Initialize every object and component explicitly at its " &
+            "declaration, using a complete aggregate where appropriate."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Volatile_Atomic_Consistency =>
+        (Name        => To_Unbounded_String ("Volatile_Atomic_Consistency"),
+         Description => To_Unbounded_String
+           ("Find volatile declarations that do not also state an atomic " &
+            "or full-access synchronization policy."),
+         Guidance    => To_Unbounded_String
+           ("Add Atomic or Volatile_Full_Access where supported, or document " &
+            "and isolate the hardware-specific access protocol."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Representation_Clause_Policy =>
+        (Name        => To_Unbounded_String ("Representation_Clause_Policy"),
+         Description => To_Unbounded_String
+           ("Find explicit representation clauses that require target ABI " &
+            "review and consistency evidence."),
+         Guidance    => To_Unbounded_String
+           ("Centralize the clause in a hardware-boundary package and verify " &
+            "size, alignment, position, range, and target assumptions."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Library_Level_Initialization =>
+        (Name        => To_Unbounded_String ("Library_Level_Initialization"),
+         Description => To_Unbounded_String
+           ("Find library-level object initializers containing calls, which " &
+            "introduce elaboration-order dependencies."),
+         Guidance    => To_Unbounded_String
+           ("Use a static initializer and perform fallible setup from an " &
+            "explicit, ordered initialization procedure."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Generic_Instantiation_Limit =>
+        (Name => To_Unbounded_String ("Generic_Instantiation_Limit"),
+         Description => To_Unbounded_String
+           ("Find compilation units exceeding the configured number of " &
+            "generic instantiations."),
+         Guidance => To_Unbounded_String
+           ("Reduce generic coupling or split the unit along cohesive " &
+            "boundaries."),
+         Quality => Quality_Maintainability, Severity => Severity_Medium),
+      Dependency_Limit =>
+        (Name => To_Unbounded_String ("Dependency_Limit"),
+         Description => To_Unbounded_String
+           ("Find compilation units exceeding the configured number of " &
+            "with-clause dependencies."),
+         Guidance => To_Unbounded_String
+           ("Introduce narrower interfaces and split highly coupled units."),
+         Quality => Quality_Maintainability, Severity => Severity_Medium),
+      Naming_Convention =>
+        (Name => To_Unbounded_String ("Naming_Convention"),
+         Description => To_Unbounded_String
+           ("Find one-character defining identifiers outside conventional " &
+            "loop-index declarations."),
+         Guidance => To_Unbounded_String
+           ("Use descriptive identifiers; single-letter loop indices remain " &
+            "permitted."),
+         Quality => Quality_Maintainability, Severity => Severity_Low),
+      No_Compiler_Extensions =>
+        (Name => To_Unbounded_String ("No_Compiler_Extensions"),
+         Description => To_Unbounded_String
+           ("Find implementation-defined pragmas and pragmas that enable " &
+            "compiler language extensions."),
+         Guidance => To_Unbounded_String
+           ("Use language-defined pragmas, compile with extensions disabled, " &
+            "and isolate any approved vendor dependency."),
+         Quality => Quality_Maintainability, Severity => Severity_High)
    );
 
    function Lookup_Rule_Kind

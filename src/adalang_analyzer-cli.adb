@@ -5,6 +5,7 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Characters.Latin_1;
+with Ada.Characters.Handling;
 with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Exceptions;
@@ -24,6 +25,7 @@ with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Project_Files; use Adalang_Analyzer.Project_Files;
 with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;         use Adalang_Analyzer.Rules;
+with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Text_Utils;    use Adalang_Analyzer.Text_Utils;
 with Adalang_Analyzer.Unit_Provider;
 
@@ -33,6 +35,10 @@ package body Adalang_Analyzer.CLI is
    Show_Version     : Boolean := False;
    List_Checks_Only : Boolean := False;
    Invalid_Options  : Boolean := False;
+   Baseline_File    : Unbounded_String;
+   Baseline_Output  : Unbounded_String;
+   Report_Filename  : Unbounded_String;
+   Report_Format    : Output_Format := Text_Output;
 
    --  Prints command-line usage for -h/--help and after an option error.
    procedure Show_Help is
@@ -50,6 +56,16 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line
         ("  --spark               Enable proof-focused SPARK checks");
       Ada.Text_IO.Put_Line
+        ("  --automotive          Enable automotive Ada restrictions");
+      Ada.Text_IO.Put_Line
+        ("  --format=<text|json|sarif> Select report format (default: text)");
+      Ada.Text_IO.Put_Line
+        ("  --output=<file>       Write the report to a file");
+      Ada.Text_IO.Put_Line
+        ("  --baseline=<file>     Exclude matching fingerprinted findings");
+      Ada.Text_IO.Put_Line
+        ("  --write-baseline=<file> Write this run's finding fingerprints");
+      Ada.Text_IO.Put_Line
         ("  -complexity-threshold=<n>  Set complexity limit (default: 10)");
       Ada.Text_IO.Put_Line
         ("  -nesting-threshold=<n>     Set nesting depth limit (default: 4)");
@@ -57,6 +73,10 @@ package body Adalang_Analyzer.CLI is
         ("  -parameter-threshold=<n>   Set parameter count limit (default: 6)");
       Ada.Text_IO.Put_Line
         ("  -line-length-threshold=<n> Set line length limit (default: 120)");
+      Ada.Text_IO.Put_Line
+        ("  -generic-threshold=<n> Set generic-instantiation limit (default: 10)");
+      Ada.Text_IO.Put_Line
+        ("  -dependency-threshold=<n> Set with-clause limit (default: 20)");
       Ada.Text_IO.Put_Line ("  -v, -verbose          Enable verbose output");
       Ada.Text_IO.Put_Line ("  -q, -quiet            Suppress summary output");
       Ada.Text_IO.Put_Line ("  --                    Treat items as files");
@@ -82,6 +102,24 @@ package body Adalang_Analyzer.CLI is
                                To_String (Rule_Infos (Rule).Guidance));
       end loop;
    end Print_Check_List;
+
+   procedure Set_Report_Format (Name : String) is
+      Value : constant String :=
+        Ada.Characters.Handling.To_Lower
+          (Ada.Strings.Fixed.Trim (Name, Ada.Strings.Both));
+   begin
+      if Value = "text" then
+         Report_Format := Text_Output;
+      elsif Value = "json" then
+         Report_Format := JSON_Output;
+      elsif Value = "sarif" then
+         Report_Format := SARIF_Output;
+      else
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid report format '" & Name & "'");
+         Invalid_Options := True;
+      end if;
+   end Set_Report_Format;
 
    --  Applies a GCC-style "+R<check>" / "-R<check>" switch, enabling or
    --  disabling exactly the named check.
@@ -211,6 +249,40 @@ package body Adalang_Analyzer.CLI is
       end loop;
    end Enable_SPARK_Preset;
 
+   procedure Enable_Automotive_Preset is
+      Automotive_Rules : constant array (Positive range <>) of Rule_Kind :=
+        (No_Goto, No_Abort, No_Raise, No_Access_To_Subp_Def,
+         No_Unchecked_Conversion, Floating_Equality, Magic_Number,
+         Dead_Store, Overwritten_Assignment, Shadowed_Declaration,
+         Infinite_Loop, Constant_Condition, Unreachable_Code,
+         Division_By_Zero, Reversed_Range, Self_Assignment,
+         Contradictory_Condition, No_Recursion,
+         Non_Short_Circuit_Condition, Address_Clause,
+         Function_Side_Effect, Global_Contract_Mismatch,
+         Incomplete_Depends_Contract, Depends_Contract_Mismatch,
+         Uninitialized_Output, Known_Precondition_Failure,
+         Known_Postcondition_Failure, Known_Assertion_Failure,
+         Known_Range_Check_Failure, Known_Index_Check_Failure,
+         Known_Overflow_Failure, Aliasing_Between_Parameters,
+         Potentially_Blocking_Operation, No_Dynamic_Allocation,
+         Restricted_Access_Type, No_Explicit_Dereference,
+         No_Unchecked_Deallocation, No_Tasking, No_Rendezvous,
+         No_Select, No_Requeue, No_Asynchronous_Transfer,
+         Exception_Propagation, No_Dispatching_Call, No_Classwide_Type,
+         No_Controlled_Type, Complete_Initialization,
+         Volatile_Atomic_Consistency, Representation_Clause_Policy,
+         Library_Level_Initialization, Redundant_Type_Conversion,
+         Generic_Instantiation_Limit, Dependency_Limit,
+         Naming_Convention, No_Compiler_Extensions);
+   begin
+      for Rule in Rule_Kind loop
+         Rule_States (Rule) := Disabled;
+      end loop;
+      for Rule of Automotive_Rules loop
+         Rule_States (Rule) := Enabled;
+      end loop;
+   end Enable_Automotive_Preset;
+
    --  Parses the -complexity-threshold value; records an invalid-option
    --  error instead of raising when Text isn't a positive integer.
    procedure Set_Complexity_Threshold (Text : String) is
@@ -262,6 +334,28 @@ package body Adalang_Analyzer.CLI is
            ("adalang-analyzer: invalid line length threshold '" & Text & "'");
          Invalid_Options := True;
    end Set_Line_Length_Threshold;
+
+   procedure Set_Generic_Threshold (Text : String) is
+   begin
+      Generic_Threshold := Positive'Value
+        (Ada.Strings.Fixed.Trim (Text, Ada.Strings.Both));
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid generic threshold '" & Text & "'");
+         Invalid_Options := True;
+   end Set_Generic_Threshold;
+
+   procedure Set_Dependency_Threshold (Text : String) is
+   begin
+      Dependency_Threshold := Positive'Value
+        (Ada.Strings.Fixed.Trim (Text, Ada.Strings.Both));
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid dependency threshold '" & Text & "'");
+         Invalid_Options := True;
+   end Set_Dependency_Threshold;
 
    --  Runs the checks that scan Filename's raw source text one line at a
    --  time rather than the parsed AST (Long_Line, Trailing_Whitespace).
@@ -397,6 +491,72 @@ package body Adalang_Analyzer.CLI is
                   List_Checks_Only := True;
                elsif Arg = "--spark" or else Arg = "-spark" then
                   Enable_SPARK_Preset;
+               elsif Arg = "--automotive" or else Arg = "-automotive" then
+                  Enable_Automotive_Preset;
+               elsif Arg = "--format" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for --format");
+                     Invalid_Options := True;
+                  else
+                     Set_Report_Format
+                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 9
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, "--format=") = Arg'First
+               then
+                  Set_Report_Format
+                    (Arg (Arg'First + 9 .. Arg'Last));
+               elsif Arg = "--output" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for --output");
+                     Invalid_Options := True;
+                  else
+                     Report_Filename := To_Unbounded_String
+                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 9
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, "--output=") = Arg'First
+               then
+                  Report_Filename :=
+                    To_Unbounded_String (Arg (Arg'First + 9 .. Arg'Last));
+               elsif Arg = "--baseline" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for --baseline");
+                     Invalid_Options := True;
+                  else
+                     Baseline_File := To_Unbounded_String
+                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 11
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, "--baseline=") = Arg'First
+               then
+                  Baseline_File :=
+                    To_Unbounded_String (Arg (Arg'First + 11 .. Arg'Last));
+               elsif Arg = "--write-baseline" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for --write-baseline");
+                     Invalid_Options := True;
+                  else
+                     Baseline_Output := To_Unbounded_String
+                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 17
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, "--write-baseline=") = Arg'First
+               then
+                  Baseline_Output :=
+                    To_Unbounded_String (Arg (Arg'First + 17 .. Arg'Last));
                elsif Arg = "-q" or else Arg = "-quiet" then
                   Quiet_Mode := True;
                elsif Arg = "-v" or else Arg = "-verbose" then
@@ -477,6 +637,38 @@ package body Adalang_Analyzer.CLI is
                then
                   Set_Line_Length_Threshold
                     (Arg (Arg'First + 23 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+               elsif Arg = "-generic-threshold" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected positive threshold value");
+                     Invalid_Options := True;
+                  else
+                     Set_Generic_Threshold
+                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 19
+                 and then Arg (Arg'First .. Arg'First + 18) =
+                   "-generic-threshold="
+               then
+                  Set_Generic_Threshold
+                    (Arg (Arg'First + 19 .. Arg'Last));
+               elsif Arg = "-dependency-threshold" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected positive threshold value");
+                     Invalid_Options := True;
+                  else
+                     Set_Dependency_Threshold
+                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 22
+                 and then Arg (Arg'First .. Arg'First + 21) =
+                   "-dependency-threshold="
+               then
+                  Set_Dependency_Threshold
+                    (Arg (Arg'First + 22 .. Arg'Last));
                elsif Arg = "-P" then
                   if Current_Arg = Argument_Count then
                      Ada.Text_IO.Put_Line ("adalang-analyzer: expected argument for -P");
@@ -520,6 +712,33 @@ package body Adalang_Analyzer.CLI is
       elsif List_Checks_Only then
          Print_Check_List;
          return;
+      end if;
+
+      if Report_Format = Text_Output
+        and then Report_Filename /= Null_Unbounded_String
+      then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: --output requires --format=json or sarif");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+
+      Set_Output (Report_Format, To_String (Report_Filename));
+
+      if Baseline_File /= Null_Unbounded_String then
+         begin
+            Load_Baseline (To_String (Baseline_File));
+         exception
+            when E : others =>
+               Ada.Text_IO.Put_Line
+                 (Ada.Text_IO.Standard_Error,
+                  "adalang-analyzer: could not load baseline '" &
+                  To_String (Baseline_File) & "': " &
+                  Ada.Exceptions.Exception_Message (E));
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+               return;
+         end;
       end if;
 
       --  Project files contribute their own Ada sources on top of any file
@@ -568,14 +787,40 @@ package body Adalang_Analyzer.CLI is
                  Fallback => Libadalang.Unit_Files.Default_Provider));
       end;
 
+      if Rule_States (Potentially_Blocking_Operation) = Enabled
+        or else Rule_States (Exception_Propagation) = Enabled
+      then
+         Adalang_Analyzer.Subprogram_Summaries.Reset;
+         for F of Files_To_Process loop
+            Adalang_Analyzer.Subprogram_Summaries.Scan_Unit
+              (Ctx.Get_From_File (F));
+         end loop;
+         Adalang_Analyzer.Subprogram_Summaries.Complete;
+         Log_Verbose
+           ("Built " &
+            To_Decimal (Adalang_Analyzer.Subprogram_Summaries.Count) &
+            " subprogram summaries");
+      end if;
+
       for F of Files_To_Process loop
          Process_File (F, Ctx);
       end loop;
 
-      if not Quiet_Mode then
+      Finalize_Output;
+
+      if Baseline_Output /= Null_Unbounded_String then
+         Write_Baseline (To_String (Baseline_Output));
+      end if;
+
+      if Selected_Output_Format = Text_Output and then not Quiet_Mode then
          Ada.Text_IO.New_Line;
          Ada.Text_IO.Put_Line ("Files scanned : " & To_Decimal (Source_File_Count));
          Ada.Text_IO.Put_Line ("Violations    : " & To_Decimal (Violations));
+
+         if Baseline_Matches > 0 then
+            Ada.Text_IO.Put_Line
+              ("Baseline matches: " & To_Decimal (Baseline_Matches));
+         end if;
 
          if Skipped_Nodes > 0 then
             --  Surfaced even without -verbose: a nonzero count here means

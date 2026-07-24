@@ -22,6 +22,7 @@ with Adalang_Analyzer.Flow_Eval;            use Adalang_Analyzer.Flow_Eval;
 with Adalang_Analyzer.Report;               use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;                use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.SPARK_Readiness;
+with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Text_Utils;           use Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Checks is
@@ -161,6 +162,86 @@ package body Adalang_Analyzer.Checks is
          return Libadalang.Analysis.No_Expr;
    end Assertion_Expression;
 
+   function Has_Exception_Boundary
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+
+   function Has_Classwide_Operand
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Node.Kind in Libadalang.Common.Ada_Expr then
+         declare
+            Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+              Node.As_Expr.P_Expression_Type;
+         begin
+            if not Libadalang.Analysis.Is_Null (Expr_Type)
+              and then Expr_Type.Kind =
+                Libadalang.Common.Ada_Classwide_Type_Decl
+            then
+               return True;
+            end if;
+         exception
+            when others =>
+               null;
+         end;
+      end if;
+      for Index in 1 .. Node.Children_Count loop
+         if Has_Classwide_Operand (Node.Child (Index)) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Has_Classwide_Operand;
+
+   procedure Analyze_Automotive_Call
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Node : Libadalang.Analysis.Ada_Node'Class)
+   is
+      Dispatching : Boolean := False;
+   begin
+      if Rule_States (No_Dispatching_Call) = Enabled then
+         begin
+            if Node.Kind = Libadalang.Common.Ada_Call_Expr then
+               Dispatching :=
+                 Node.As_Call_Expr.F_Name.P_Is_Dispatching_Call
+                   (Imprecise_Fallback => True);
+            elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt then
+               declare
+                  Call : constant Libadalang.Analysis.Name :=
+                    Node.As_Call_Stmt.F_Call;
+               begin
+                  if Call.Kind = Libadalang.Common.Ada_Call_Expr then
+                     Dispatching :=
+                       Call.As_Call_Expr.F_Name.P_Is_Dispatching_Call
+                         (Imprecise_Fallback => True);
+                  else
+                     Dispatching := Call.P_Is_Dispatching_Call
+                       (Imprecise_Fallback => True);
+                  end if;
+               end;
+            end if;
+         exception
+            when others =>
+               Dispatching := False;
+         end;
+
+         if Dispatching or else Has_Classwide_Operand (Node) then
+            Report_Rule_Violation
+              (Unit, Node, No_Dispatching_Call,
+               "dynamically dispatching call used");
+         end if;
+      end if;
+
+      if Rule_States (Exception_Propagation) = Enabled
+        and then not Has_Exception_Boundary (Node)
+        and then Adalang_Analyzer.Subprogram_Summaries.Callee_May_Raise (Node)
+      then
+         Report_Rule_Violation
+           (Unit, Node, Exception_Propagation,
+            "call may propagate an explicitly raised exception");
+      end if;
+   end Analyze_Automotive_Call;
+
    --  Dispatches Node to the check(s) keyed on its specific syntactic
    --  kind (statement lists, operators, assignments, if/case/loop
    --  constructs, exception handlers, and so on). Called once per node
@@ -186,6 +267,11 @@ package body Adalang_Analyzer.Checks is
 
          when Libadalang.Common.Ada_Call_Stmt =>
             Control_Flow.Analyze_Call_Statement (Unit, Node.As_Call_Stmt);
+            if Node.As_Call_Stmt.F_Call.Kind /=
+              Libadalang.Common.Ada_Call_Expr
+            then
+               Analyze_Automotive_Call (Unit, Node);
+            end if;
 
          when Libadalang.Common.Ada_Object_Decl =>
             Declarations.Analyze_Object_Declaration
@@ -204,6 +290,7 @@ package body Adalang_Analyzer.Checks is
             end if;
 
          when Libadalang.Common.Ada_Call_Expr =>
+            Analyze_Automotive_Call (Unit, Node);
             if Rule_States (No_Recursion) = Enabled then
                declare
                   Subprogram : constant Libadalang.Analysis.Subp_Body :=
@@ -359,6 +446,226 @@ package body Adalang_Analyzer.Checks is
          return Written_Name = "ada.unchecked_conversion";
    end Is_Ada_Unchecked_Conversion;
 
+   function Is_Ada_Unchecked_Deallocation
+     (Name : Libadalang.Analysis.Name'Class) return Boolean
+   is
+      Written_Name : constant String := Canonical_Text (Name);
+   begin
+      if Written_Name = "ada.unchecked_deallocation" then
+         return True;
+      elsif Written_Name /= "unchecked_deallocation" then
+         return False;
+      end if;
+
+      declare
+         Declaration : constant Libadalang.Analysis.Basic_Decl :=
+           Name.P_Referenced_Decl;
+         Full_Name   : constant String := Langkit_Support.Text.To_UTF8
+           (Declaration.P_Canonical_Fully_Qualified_Name);
+      begin
+         return Full_Name = "ada.unchecked_deallocation";
+      end;
+   exception
+      when others =>
+         return Written_Name = "ada.unchecked_deallocation";
+   end Is_Ada_Unchecked_Deallocation;
+
+   function Is_Controlled_Type
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Text : constant String := Ada.Characters.Handling.To_Lower
+        (Node_Text (Node));
+   begin
+      if Node.Kind not in Libadalang.Common.Ada_Base_Type_Decl then
+         return False;
+      end if;
+      for Base of Node.As_Base_Type_Decl.P_Base_Types loop
+         declare
+            Name : constant String := Ada.Characters.Handling.To_Lower
+              (Langkit_Support.Text.To_UTF8
+                 (Base.P_Canonical_Fully_Qualified_Name));
+         begin
+            if Name = "ada.finalization.controlled"
+              or else Name = "ada.finalization.limited_controlled"
+            then
+               return True;
+            end if;
+         end;
+      end loop;
+      return Ada.Strings.Fixed.Index
+        (Text, "ada.finalization.controlled") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Text, "ada.finalization.limited_controlled") /= 0;
+   exception
+      when others =>
+         return False;
+   end Is_Controlled_Type;
+
+   function Has_Exception_Boundary
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Node);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_Handled_Stmts
+           and then Current.As_Handled_Stmts.F_Exceptions.Children_Count > 0
+         then
+            return True;
+         elsif Current.Kind = Libadalang.Common.Ada_Subp_Body then
+            return False;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Has_Exception_Boundary;
+
+   function Contains_Call
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
+         return True;
+      elsif Node.Kind in Libadalang.Common.Ada_Name then
+         begin
+            declare
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Node.As_Name.P_Referenced_Decl
+                   (Imprecise_Fallback => True);
+            begin
+               if not Libadalang.Analysis.Is_Null (Decl)
+                 and then Decl.Kind in
+                   Libadalang.Common.Ada_Basic_Subp_Decl
+                     | Libadalang.Common.Ada_Base_Subp_Body
+               then
+                  return True;
+               end if;
+            end;
+         exception
+            when others =>
+               null;
+         end;
+      end if;
+      for Index in 1 .. Node.Children_Count loop
+         if Contains_Call (Node.Child (Index)) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Contains_Call;
+
+   function Is_Library_Level
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node := Node.Parent;
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_Subp_Body
+           or else Current.Kind = Libadalang.Common.Ada_Task_Body
+           or else Current.Kind = Libadalang.Common.Ada_Entry_Body
+         then
+            return False;
+         elsif Current.Kind = Libadalang.Common.Ada_Package_Decl
+           or else Current.Kind = Libadalang.Common.Ada_Package_Body
+         then
+            return True;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return False;
+   end Is_Library_Level;
+
+   function Count_Kind
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      First, Last : Libadalang.Common.Ada_Node_Kind_Type) return Natural
+   is
+      Result : Natural := 0;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return 0;
+      end if;
+      if Node.Kind in First .. Last then
+         Result := 1;
+      end if;
+      for Index in 1 .. Node.Children_Count loop
+         Result := Result + Count_Kind (Node.Child (Index), First, Last);
+      end loop;
+      return Result;
+   end Count_Kind;
+
+   function Has_Ancestor
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Kind : Libadalang.Common.Ada_Node_Kind_Type) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node := Node.Parent;
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Kind then
+            return True;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return False;
+   end Has_Ancestor;
+
+   function Is_Language_Defined_Pragma (Name : String) return Boolean is
+   begin
+      return Name = "all_calls_remote"
+        or else Name = "assert"
+        or else Name = "assertion_policy"
+        or else Name = "asynchronous"
+        or else Name = "atomic"
+        or else Name = "atomic_components"
+        or else Name = "attach_handler"
+        or else Name = "convention"
+        or else Name = "cpu"
+        or else Name = "detect_blocking"
+        or else Name = "discard_names"
+        or else Name = "elaborate"
+        or else Name = "elaborate_all"
+        or else Name = "elaborate_body"
+        or else Name = "export"
+        or else Name = "import"
+        or else Name = "independent"
+        or else Name = "independent_components"
+        or else Name = "inline"
+        or else Name = "inspection_point"
+        or else Name = "interrupt_handler"
+        or else Name = "interrupt_priority"
+        or else Name = "list"
+        or else Name = "locking_policy"
+        or else Name = "no_return"
+        or else Name = "normalize_scalars"
+        or else Name = "optimize"
+        or else Name = "pack"
+        or else Name = "page"
+        or else Name = "partition_elaboration_policy"
+        or else Name = "preelaborable_initialization"
+        or else Name = "preelaborate"
+        or else Name = "priority"
+        or else Name = "profile"
+        or else Name = "pure"
+        or else Name = "queuing_policy"
+        or else Name = "relative_deadline"
+        or else Name = "remote_call_interface"
+        or else Name = "remote_types"
+        or else Name = "restrictions"
+        or else Name = "reviewable"
+        or else Name = "shared_passive"
+        or else Name = "storage_size"
+        or else Name = "suppress"
+        or else Name = "task_dispatching_policy"
+        or else Name = "unchecked_union"
+        or else Name = "unsuppress"
+        or else Name = "volatile"
+        or else Name = "volatile_components";
+   end Is_Language_Defined_Pragma;
+
    procedure Evaluate_Node  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class) is
@@ -369,6 +676,36 @@ package body Adalang_Analyzer.Checks is
 
       if Libadalang.Analysis.Is_Null (Node.Parent) then
          Declarations.Begin_Traversal;
+         if Rule_States (Generic_Instantiation_Limit) = Enabled then
+            declare
+               Total : constant Natural := Count_Kind
+                 (Node, Libadalang.Common.Ada_Generic_Package_Instantiation,
+                  Libadalang.Common.Ada_Generic_Subp_Instantiation);
+            begin
+               if Total > Generic_Threshold then
+                  Report_Rule_Violation
+                    (Unit, Node, Generic_Instantiation_Limit,
+                     "unit has " & To_Decimal (Total) &
+                       " generic instantiations; threshold is " &
+                       To_Decimal (Generic_Threshold));
+               end if;
+            end;
+         end if;
+         if Rule_States (Dependency_Limit) = Enabled then
+            declare
+               Total : constant Natural := Count_Kind
+                 (Node, Libadalang.Common.Ada_With_Clause,
+                  Libadalang.Common.Ada_With_Clause);
+            begin
+               if Total > Dependency_Threshold then
+                  Report_Rule_Violation
+                    (Unit, Node, Dependency_Limit,
+                     "unit has " & To_Decimal (Total) &
+                       " with-clause dependencies; threshold is " &
+                       To_Decimal (Dependency_Threshold));
+               end if;
+            end;
+         end if;
       end if;
       Declarations.Enter_Node (Node);
 
@@ -431,9 +768,166 @@ package body Adalang_Analyzer.Checks is
       then
          Report_Rule_Violation (Unit, Node, No_Pragma, "pragma used");
       end if;
+      if Rule_States (No_Compiler_Extensions) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
+      then
+         declare
+            Name : constant String := Normalize_Rule_Name
+              (Node_Text (Node.As_Pragma_Node.F_Id));
+         begin
+            if not Is_Language_Defined_Pragma (Name)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Compiler_Extensions,
+                  "implementation-defined pragma " & Name & " used");
+            end if;
+         end;
+      end if;
+      if Rule_States (Naming_Convention) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Defining_Name
+        and then Node_Text (Node)'Length = 1
+        and then not Has_Ancestor
+          (Node, Libadalang.Common.Ada_For_Loop_Var_Decl)
+        and then not Has_Ancestor
+          (Node, Libadalang.Common.Ada_Enum_Literal_Decl)
+      then
+         Report_Rule_Violation
+           (Unit, Node, Naming_Convention,
+            "one-character identifier '" & Node_Text (Node) & "' used");
+      end if;
       if Rule_States (No_Access_To_Subp_Def) = Enabled and then Node.Kind = Libadalang.Common.Ada_Access_To_Subp_Def then
          Report_Rule_Violation (Unit, Node, No_Access_To_Subp_Def,
                                 "access-to-subprogram type definition used");
+      end if;
+      if Rule_States (No_Dynamic_Allocation) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Allocator
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Dynamic_Allocation, "dynamic allocator used");
+      end if;
+      if Rule_States (Restricted_Access_Type) = Enabled
+        and then Node.Kind in
+          Libadalang.Common.Ada_Anonymous_Type_Access_Def
+            | Libadalang.Common.Ada_Type_Access_Def
+      then
+         Report_Rule_Violation
+           (Unit, Node, Restricted_Access_Type,
+            "access-to-object type definition used");
+      end if;
+      if Rule_States (No_Explicit_Dereference) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Explicit_Deref
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Explicit_Dereference,
+            "explicit access-value dereference used");
+      end if;
+      if Rule_States (No_Tasking) = Enabled
+        and then Node.Kind in Libadalang.Common.Ada_Task_Type_Decl
+          | Libadalang.Common.Ada_Single_Task_Decl
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Tasking, "task declaration used");
+      end if;
+      if Rule_States (No_Rendezvous) = Enabled
+        and then Node.Kind in Libadalang.Common.Ada_Entry_Decl
+          | Libadalang.Common.Ada_Accept_Stmt_Range
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Rendezvous,
+            (if Node.Kind = Libadalang.Common.Ada_Entry_Decl
+             then "task entry declared"
+             else "accept statement used"));
+      end if;
+      if Rule_States (No_Select) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Select_Stmt
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Select, "select statement used");
+      end if;
+      if Rule_States (No_Requeue) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Requeue_Stmt
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Requeue, "requeue statement used");
+      end if;
+      if Rule_States (No_Asynchronous_Transfer) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Then_Abort_Part
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Asynchronous_Transfer,
+            "asynchronous transfer of control used");
+      end if;
+      if Rule_States (No_Classwide_Type) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Normalize_Rule_Name
+          (Node_Text (Node.As_Attribute_Ref.F_Attribute)) = "class"
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Classwide_Type, "class-wide type used");
+      end if;
+      if Rule_States (No_Controlled_Type) = Enabled
+        and then Node.Kind in Libadalang.Common.Ada_Base_Type_Decl
+        and then Is_Controlled_Type (Node)
+      then
+         Report_Rule_Violation
+           (Unit, Node, No_Controlled_Type,
+            "type derives from a controlled finalization type");
+      end if;
+      if Rule_States (Complete_Initialization) = Enabled then
+         if Node.Kind = Libadalang.Common.Ada_Object_Decl
+           and then Libadalang.Analysis.Is_Null
+             (Node.As_Object_Decl.F_Default_Expr)
+         then
+            Report_Rule_Violation
+              (Unit, Node, Complete_Initialization,
+               "object has no explicit initializer");
+         elsif Node.Kind = Libadalang.Common.Ada_Component_Decl
+           and then Libadalang.Analysis.Is_Null
+             (Node.As_Component_Decl.F_Default_Expr)
+         then
+            Report_Rule_Violation
+              (Unit, Node, Complete_Initialization,
+               "record component has no explicit default");
+         end if;
+      end if;
+      if Rule_States (Volatile_Atomic_Consistency) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Aspect_Assoc
+        and then Normalize_Rule_Name
+          (Node_Text (Node.As_Aspect_Assoc.F_Id)) = "volatile"
+      then
+         declare
+            Aspects : constant String := Ada.Characters.Handling.To_Lower
+              (Node_Text (Node.Parent));
+         begin
+            if Ada.Strings.Fixed.Index (Aspects, "atomic") = 0
+              and then Ada.Strings.Fixed.Index
+                (Aspects, "volatile_full_access") = 0
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Volatile_Atomic_Consistency,
+                  "volatile declaration has no atomic/full-access policy");
+            end if;
+         end;
+      end if;
+      if Rule_States (Representation_Clause_Policy) = Enabled
+        and then Node.Kind in
+          Libadalang.Common.Ada_Attribute_Def_Clause
+            | Libadalang.Common.Ada_Record_Rep_Clause
+      then
+         Report_Rule_Violation
+           (Unit, Node, Representation_Clause_Policy,
+            "explicit representation clause requires consistency review");
+      end if;
+      if Rule_States (Library_Level_Initialization) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Object_Decl
+        and then Is_Library_Level (Node)
+        and then not Libadalang.Analysis.Is_Null
+          (Node.As_Object_Decl.F_Default_Expr)
+        and then Contains_Call (Node.As_Object_Decl.F_Default_Expr)
+      then
+         Report_Rule_Violation
+           (Unit, Node, Library_Level_Initialization,
+            "library-level initializer contains a call");
       end if;
       if Rule_States (Address_Clause) = Enabled
         and then Node.Kind = Libadalang.Common.Ada_Attribute_Def_Clause
@@ -467,6 +961,21 @@ package body Adalang_Analyzer.Checks is
                Report_Rule_Violation
                  (Unit, Node, No_Unchecked_Conversion,
                   "Ada.Unchecked_Conversion instantiated");
+            end if;
+         end;
+      end if;
+      if Rule_States (No_Unchecked_Deallocation) = Enabled
+        and then Node.Kind =
+          Libadalang.Common.Ada_Generic_Subp_Instantiation
+      then
+         declare
+            Generic_Name : constant Libadalang.Analysis.Name :=
+              Node.As_Generic_Subp_Instantiation.F_Generic_Subp_Name;
+         begin
+            if Is_Ada_Unchecked_Deallocation (Generic_Name) then
+               Report_Rule_Violation
+                 (Unit, Node, No_Unchecked_Deallocation,
+                  "Ada.Unchecked_Deallocation instantiated");
             end if;
          end;
       end if;

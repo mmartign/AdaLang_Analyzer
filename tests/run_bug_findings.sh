@@ -610,4 +610,26 @@ if ! grep -F '[Known_Discriminant_Check_Failure]' "$output" >/dev/null; then
    exit 1
 fi
 
+if "$analyzer" -checks='Potentially_Blocking_Operation' \
+     tests/interprocedural_blocking_findings.adb >"$output" 2>&1
+then
+   echo "expected transitive blocking call to produce a violation" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Potentially_Blocking_Operation\]' "$output")" -ne 1 ] \
+  || ! grep -F "call may reach a blocking operation" "$output" >/dev/null
+then
+   echo "unexpected interprocedural blocking findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks='Potentially_Blocking_Operation' \
+     tests/interprocedural_blocking_clean.adb
+then
+   echo "non-blocking call chain unexpectedly produced a violation" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

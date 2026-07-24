@@ -23,11 +23,15 @@ package Adalang_Analyzer.Config is
    Default_Nesting_Threshold     : constant Positive := 4;
    Default_Parameter_Threshold   : constant Positive := 6;
    Default_Line_Length_Threshold : constant Positive := 120;
+   Default_Generic_Threshold     : constant Positive := 10;
+   Default_Dependency_Threshold  : constant Positive := 20;
 
    Complexity_Threshold  : Positive := Default_Complexity_Threshold;
    Nesting_Threshold     : Positive := Default_Nesting_Threshold;
    Parameter_Threshold   : Positive := Default_Parameter_Threshold;
    Line_Length_Threshold : Positive := Default_Line_Length_Threshold;
+   Generic_Threshold     : Positive := Default_Generic_Threshold;
+   Dependency_Threshold  : Positive := Default_Dependency_Threshold;
 
    procedure Log_Verbose (Message : String);
    --  Prints a diagnostic line when Verbose_Mode is set and Quiet_Mode

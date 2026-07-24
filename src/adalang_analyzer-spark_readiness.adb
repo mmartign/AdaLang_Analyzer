@@ -14,6 +14,7 @@ with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
 with Adalang_Analyzer.Report;      use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;       use Adalang_Analyzer.Rules;
+with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Text_Utils;  use Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.SPARK_Readiness is
@@ -744,6 +745,13 @@ package body Adalang_Analyzer.SPARK_Readiness is
                Report_Rule_Violation
                  (Unit, Node, Potentially_Blocking_Operation,
                   "entry call used inside a protected operation");
+            elsif Adalang_Analyzer.Subprogram_Summaries.Callee_May_Block
+              (Node)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Potentially_Blocking_Operation,
+                  "call may reach a blocking operation from inside a " &
+                    "protected operation");
             end if;
 
          when Libadalang.Common.Ada_Call_Stmt =>
@@ -751,6 +759,13 @@ package body Adalang_Analyzer.SPARK_Readiness is
                Report_Rule_Violation
                  (Unit, Node, Potentially_Blocking_Operation,
                   "entry call used inside a protected operation");
+            elsif Adalang_Analyzer.Subprogram_Summaries.Callee_May_Block
+              (Node)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Potentially_Blocking_Operation,
+                  "call may reach a blocking operation from inside a " &
+                    "protected operation");
             end if;
 
          when others =>

@@ -17,10 +17,36 @@ package Adalang_Analyzer.Report is
 
    Maximum_Highlight_Width : constant Positive := 120;
 
+   type Output_Format is (Text_Output, JSON_Output, SARIF_Output);
+
    Source_File_Count : Natural := 0;
    Violations        : Natural := 0;
+   Baseline_Matches  : Natural := 0;
    Rule_Violations   : array (Rules.Rule_Kind) of Natural := (others => 0);
    Skipped_Nodes     : Natural := 0;
+
+   procedure Set_Output
+     (Format   : Output_Format;
+      Filename : String := "");
+   --  Selects the report representation and optional destination. An empty
+   --  filename means standard output. Text output remains the default.
+
+   procedure Load_Baseline (Filename : String);
+   --  Loads stable finding fingerprints, one per line. Matching findings are
+   --  retained in the structured report as "baseline" findings but do not
+   --  increment Violations or make the process fail.
+
+   procedure Write_Baseline (Filename : String);
+   --  Writes the fingerprints of every finding observed in this run. This is
+   --  deliberately a small, diffable text format rather than a serialized
+   --  implementation detail.
+
+   procedure Finalize_Output;
+   --  Emits JSON or SARIF output after all source files have been analyzed.
+   --  Text diagnostics are emitted as findings arrive, so this is a no-op for
+   --  the default format.
+
+   function Selected_Output_Format return Output_Format;
 
    function Source_Line
      (Filename : String; Line_Number : Natural) return String;
