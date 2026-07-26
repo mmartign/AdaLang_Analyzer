@@ -484,6 +484,7 @@ Run the structured-output regression alongside the bug-finding suite:
 sh tests/run_reporting.sh
 sh tests/run_automotive.sh
 sh tests/run_do178c.sh
+sh tests/run_cli_robustness.sh
 sh tests/run_performance_smoke.sh
 ```
 

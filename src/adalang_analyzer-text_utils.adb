@@ -11,7 +11,7 @@ with Ada.Strings.Fixed;
 package body Adalang_Analyzer.Text_Utils is
 
    function To_Decimal (N : Natural) return String is
-      Result : String := Natural'Image (N);
+      Result : constant String := Natural'Image (N);
    begin
       return Ada.Strings.Fixed.Trim (Result, Ada.Strings.Both);
    end To_Decimal;

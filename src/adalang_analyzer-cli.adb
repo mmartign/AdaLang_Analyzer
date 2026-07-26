@@ -31,6 +31,8 @@ with Adalang_Analyzer.Unit_Provider;
 
 package body Adalang_Analyzer.CLI is
 
+   use type Ada.Directories.File_Kind;
+
    Show_Help_Flag   : Boolean := False;
    Show_Version     : Boolean := False;
    List_Checks_Only : Boolean := False;
@@ -562,6 +564,14 @@ package body Adalang_Analyzer.CLI is
                                "adalang-analyzer: File not found: " & Filename);
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
+      elsif Ada.Directories.Kind (Filename) /=
+        Ada.Directories.Ordinary_File
+      then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: not a regular source file: " & Filename);
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
       end if;
 
       Source_File_Count := Source_File_Count + 1;
@@ -578,6 +588,10 @@ package body Adalang_Analyzer.CLI is
                Libadalang.Analysis.Format_GNU_Diagnostic
                  (Unit, Diagnostic));
          end loop;
+         --  A file that did not parse was not analyzed. Treating that as a
+         --  successful, violation-free run would let malformed input pass a
+         --  CI quality gate even though none of the AST checks ran.
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       else
          Checks.Evaluate_Node (Unit, Unit.Root);
       end if;
@@ -713,7 +727,9 @@ package body Adalang_Analyzer.CLI is
                         & Ada.Command_Line.Argument (Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
-               elsif Arg'Length > 8 and then Arg (Arg'First .. Arg'First + 7) = "-checks=" then  --  adalang-analyzer: ignore Magic_Number
+               elsif Arg'Length > 8
+                 and then Arg (Arg'First .. Arg'First + 7) = "-checks="
+               then
                   Parse_Checks_Option (Arg);
                elsif Arg = "-complexity-threshold" then
                   if Current_Arg = Argument_Count then
@@ -821,9 +837,11 @@ package body Adalang_Analyzer.CLI is
                         Ada.Command_Line.Argument (Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
-               elsif Arg'Length > 2 and then Arg (Arg'First .. Arg'First + 1) = "-P" then  --  adalang-analyzer: ignore Magic_Number
+               elsif Arg'Length > 2
+                 and then Arg (Arg'First .. Arg'First + 1) = "-P"
+               then
                   File_Name_Vectors.Append
-                    (Project_Gpr_Files, Arg (Arg'First + 2 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+                    (Project_Gpr_Files, Arg (Arg'First + 2 .. Arg'Last));
                elsif Arg = "-X" then
                   if Current_Arg = Argument_Count then
                      Ada.Text_IO.Put_Line ("adalang-analyzer: expected argument for -X");
@@ -834,9 +852,11 @@ package body Adalang_Analyzer.CLI is
                         Ada.Command_Line.Argument (Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
-               elsif Arg'Length > 2 and then Arg (Arg'First .. Arg'First + 1) = "-X" then  --  adalang-analyzer: ignore Magic_Number
+               elsif Arg'Length > 2
+                 and then Arg (Arg'First .. Arg'First + 1) = "-X"
+               then
                   File_Name_Vectors.Append
-                    (Scenario_Vars, Arg (Arg'First + 2 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+                    (Scenario_Vars, Arg (Arg'First + 2 .. Arg'Last));
                elsif Arg (Arg'First) = '+' or else Arg (Arg'First) = '-' then
                   if Arg'Length > 2 and then Arg (Arg'First + 1) = 'R' then  --  adalang-analyzer: ignore Magic_Number
                      Process_Command_Switch (Arg);
@@ -930,15 +950,11 @@ package body Adalang_Analyzer.CLI is
       end loop;
 
       if File_Name_Vectors.Is_Empty (Files_To_Process) then
-         if Argument_Count > 0 then
-            -- Options were provided, but no files
-            null;  --  adalang-analyzer: ignore Null_Statement
-         else
-            Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error,
-                                  "adalang-analyzer: error: no source files provided.");
-            Show_Help;
-            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-         end if;
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: error: no source files provided.");
+         Show_Help;
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
       end if;
 

@@ -31,6 +31,9 @@ project-files = ["adalang_analyzer.gpr"]
 executables = ["adalang_analyzer"]
 
 [environment]
+[environment.MACOSX_DEPLOYMENT_TARGET]
+set = "26.0"
+
 [environment.C_INCLUDE_PATH]
 append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
 

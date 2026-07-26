@@ -1,0 +1,6 @@
+{
+    "sonarlint.connectedMode.project": {
+        "connectionId": "Spazio IT - SonarQube Demo",
+        "projectKey": "my:adalang_analyzer"
+    }
+}

@@ -738,26 +738,26 @@ package body Adalang_Analyzer.Flow_Interp is
                        (if Call.F_Suffix.Kind in Libadalang.Common.Ada_Expr
                         then 1 else Call.F_Suffix.Children_Count);
                   begin
-                  for Dim in 1 .. Dimensions loop
-                     declare
-                        Index_Value : constant Libadalang.Analysis.Expr :=
-                          Assoc_Expression (Call.F_Suffix, Dim);
-                        Bounds : constant Abstract_Range :=
-                          Array_Index_Range (Array_Type, Dim, State);
-                     begin
-                        if Config.Rule_States
-                             (Rules.Known_Index_Check_Failure) = Config.Enabled
-                          and then not Libadalang.Analysis.Is_Null (Index_Value)
-                          and then Definitely_Outside_Range
-                            (Index_Value, Bounds, State)
-                        then
-                           Report.Report_Rule_Violation
-                             (Unit, Index_Value,
-                              Rules.Known_Index_Check_Failure,
-                              "index is outside the array index subtype");
-                        end if;
-                     end;
-                  end loop;
+                     for Dim in 1 .. Dimensions loop
+                        declare
+                           Index_Value : constant Libadalang.Analysis.Expr :=
+                             Assoc_Expression (Call.F_Suffix, Dim);
+                           Bounds : constant Abstract_Range :=
+                             Array_Index_Range (Array_Type, Dim, State);
+                        begin
+                           if Config.Rule_States
+                                (Rules.Known_Index_Check_Failure) = Config.Enabled
+                             and then not Libadalang.Analysis.Is_Null (Index_Value)
+                             and then Definitely_Outside_Range
+                               (Index_Value, Bounds, State)
+                           then
+                              Report.Report_Rule_Violation
+                                (Unit, Index_Value,
+                                 Rules.Known_Index_Check_Failure,
+                                 "index is outside the array index subtype");
+                           end if;
+                        end;
+                     end loop;
                   end;
                end if;
             end;

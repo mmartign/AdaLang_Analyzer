@@ -49,14 +49,14 @@ package body Adalang_Analyzer.Unit_Provider is
    overriding procedure Release (Provider : in out Chained_Provider);
 
    function Primary_Location
-     (Provider       : Chained_Provider;
+     (Provider       : Chained_Provider'Class;
       Name           : Text_Type;
       Kind           : Analysis_Unit_Kind;
       Filename       : out Unbounded_String;
       PLE_Root_Index : out Natural) return Boolean;
 
    function Primary_Location
-     (Provider       : Chained_Provider;
+     (Provider       : Chained_Provider'Class;
       Name           : Text_Type;
       Kind           : Analysis_Unit_Kind;
       Filename       : out Unbounded_String;
