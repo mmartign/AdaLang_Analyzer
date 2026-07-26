@@ -27,4 +27,19 @@ then
 fi
 grep -F 'error: no source files provided' "$output" >/dev/null
 
+#  Identical adjacent verbose lines are emitted only once, but become visible
+#  again after a different line.
+"$analyzer" -v -checks=No_Goto \
+  tests/automotive_state_clean.ads tests/automotive_state_clean.ads \
+  tests/parameter_mode_clean.adb tests/automotive_state_clean.ads \
+  >"$output" 2>&1
+count=$(grep -Fc \
+  'adalang-analyzer [INFO]: Parsing: tests/automotive_state_clean.ads' \
+  "$output")
+if [ "$count" -ne 2 ]; then
+   echo "consecutive duplicate output was not suppressed" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 echo "CLI robustness tests passed"
