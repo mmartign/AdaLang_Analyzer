@@ -3,6 +3,7 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Containers.Vectors;
+with Ada.Exceptions;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 with Langkit_Support.Text;
@@ -409,14 +410,18 @@ package body Adalang_Analyzer.SPARK_Readiness is
             end;
          end if;
       exception
-         when others =>
-            null;
+         when Exc : others =>
+            Log_Verbose
+              ("skipping Global contract collection: " &
+               Ada.Exceptions.Exception_Message (Exc));
       end;
    exception
-      when others =>
+      when Exc : others =>
          --  Resolution failure loses precision but must never turn into a
          --  guessed contract violation.
-         null;
+         Log_Verbose
+           ("skipping call-access collection: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Collect_Call;
 
    procedure Collect_Accesses
@@ -530,7 +535,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
       Param       : Libadalang.Analysis.Param_Spec;
       Name        : String;
       Initial     : Boolean;
-      Bad_Return  : in out Boolean) return Init_Result
+      Bad_Return  --  adalang-analyzer: ignore Wrong_Parameter_Mode
+        : in out Boolean)
+      return Init_Result
    is
       Result : Init_Result :=
         (Can_Fall_Through => True, Initialized => Initial);
@@ -664,8 +671,10 @@ package body Adalang_Analyzer.SPARK_Readiness is
                            Is_Read => False, Is_Written => True);
                      end if;
                   exception
-                     when others =>
-                        null;
+                     when Exc : others =>
+                        Log_Verbose
+                          ("skipping output designator resolution: " &
+                           Ada.Exceptions.Exception_Message (Exc));
                   end;
                end if;
             end loop;
@@ -786,8 +795,10 @@ package body Adalang_Analyzer.SPARK_Readiness is
          Scan_For_Blocking_Operations (Unit, Subprogram.F_Stmts);
       end if;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping blocking-operation check: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Check_Potentially_Blocking;
 
    --  True when Field is declared as a component directly in List (the
@@ -1015,8 +1026,10 @@ package body Adalang_Analyzer.SPARK_Readiness is
          end;
       end;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping discriminant check: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Check_Discriminant_Access;
 
    procedure Analyze_Subprogram
@@ -1181,10 +1194,12 @@ package body Adalang_Analyzer.SPARK_Readiness is
          end loop;
       end if;
    exception
-      when others =>
+      when Exc : others =>
          --  Readiness checks are deliberately best effort: incomplete name
          --  resolution must not prevent the ordinary analyzer from running.
-         null;
+         Log_Verbose
+           ("skipping readiness analysis for subprogram: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Analyze_Subprogram;
 
 end Adalang_Analyzer.SPARK_Readiness;

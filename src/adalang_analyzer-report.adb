@@ -234,6 +234,15 @@ package body Adalang_Analyzer.Report is
       Ada.Text_IO.Put_Line
         (File, "  ""version"": ""1.0"",");
       Ada.Text_IO.Put_Line
+        (File, "  ""assuranceProfile"": """ &
+         JSON_Escape (Config.Assurance_Profile_Name) & """,");
+      Ada.Text_IO.Put_Line
+        (File, "  ""structuralCoverageObjective"": """ &
+         JSON_Escape (Config.Structural_Coverage_Objective) & """,");
+      Ada.Text_IO.Put_Line
+        (File, "  ""certificationClaim"": " &
+         """verification support only; not a compliance determination"",");
+      Ada.Text_IO.Put_Line
         (File, "  ""filesScanned"": " &
          Text_Utils.To_Decimal (Source_File_Count) & ",");
       Ada.Text_IO.Put_Line
@@ -304,6 +313,13 @@ package body Adalang_Analyzer.Report is
       end loop;
       Ada.Text_IO.New_Line (File);
       Ada.Text_IO.Put_Line (File, "  ]}},");
+      Ada.Text_IO.Put_Line
+        (File, "  ""properties"": {""assuranceProfile"": """ &
+         JSON_Escape (Config.Assurance_Profile_Name) &
+         """, ""structuralCoverageObjective"": """ &
+         JSON_Escape (Config.Structural_Coverage_Objective) &
+         """, ""certificationClaim"": " &
+         """verification support only; not a compliance determination""},");
       Ada.Text_IO.Put_Line (File, "  ""results"": [");
       First := True;
       for Item of Findings loop

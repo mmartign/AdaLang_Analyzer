@@ -4,10 +4,13 @@
 
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Containers.Vectors;
+with Ada.Exceptions;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 with Langkit_Support.Text;
 with Libadalang.Common;
+
+with Adalang_Analyzer.Config; use Adalang_Analyzer.Config;
 
 package body Adalang_Analyzer.Subprogram_Summaries is
 
@@ -158,8 +161,10 @@ package body Adalang_Analyzer.Subprogram_Summaries is
             Key_Decl := Decl_Part;
          end if;
       exception
-         when others =>
-            null;
+         when Exc : others =>
+            Log_Verbose
+              ("skipping subprogram declaration-part resolution: " &
+               Ada.Exceptions.Exception_Message (Exc));
       end;
 
       Item.Name := To_Unbounded_String
@@ -175,8 +180,10 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       Item.May_Raise := Item.Direct_May_Raise;
       Summaries.Append (Item);
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping subprogram summary registration: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Register_Body;
 
    procedure Scan_Node (Node : Libadalang.Analysis.Ada_Node'Class) is
@@ -198,8 +205,10 @@ package body Adalang_Analyzer.Subprogram_Summaries is
          Scan_Node (Unit.Root);
       end if;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping unit summary scan: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Scan_Unit;
 
    procedure Complete is

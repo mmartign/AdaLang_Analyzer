@@ -300,7 +300,12 @@ package body Adalang_Analyzer.Checks.Declarations is
            Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
       begin
          return Libadalang.Analysis.Is_Null (Referenced)
-           or else Referenced = Libadalang.Analysis.Basic_Decl (Param);
+           or else Referenced = Libadalang.Analysis.Basic_Decl (Param)
+           or else Referenced.P_Canonical_Part
+             (Imprecise_Fallback => True) =
+               Libadalang.Analysis.Basic_Decl (Param).P_Canonical_Part
+                 (Imprecise_Fallback => True)
+           or else Referenced.Kind in Libadalang.Common.Ada_Param_Spec_Range;
       end;
    exception
       when others =>
@@ -380,6 +385,30 @@ package body Adalang_Analyzer.Checks.Declarations is
          return True;
    end Association_Uses_Parameter_Mode;
 
+   function Call_Uses_Parameter_Mode
+     (Node     : Libadalang.Analysis.Ada_Node'Class;
+      Param    : Libadalang.Analysis.Param_Spec;
+      Name     : String;
+      For_Read : Boolean) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Param_Assoc then
+         return Association_Uses_Parameter_Mode
+           (Node.As_Param_Assoc, Param, Name, For_Read);
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if Call_Uses_Parameter_Mode
+           (Node.Child (I), Param, Name, For_Read)
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Call_Uses_Parameter_Mode;
+
    function Parameter_Is_Read
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Param : Libadalang.Analysis.Param_Spec;
@@ -404,20 +433,12 @@ package body Adalang_Analyzer.Checks.Declarations is
             return False;
          end;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
-         for I in 1 .. Node.As_Call_Expr.F_Suffix.Children_Count loop
-            declare
-               Child : constant Libadalang.Analysis.Ada_Node :=
-                 Node.As_Call_Expr.F_Suffix.Child (I);
-            begin
-               if Child.Kind = Libadalang.Common.Ada_Param_Assoc
-                 and then Association_Uses_Parameter_Mode
-                   (Child.As_Param_Assoc, Param, Name, For_Read => True)
-               then
-                  return True;
-               end if;
-            end;
-         end loop;
-         return False;
+         return Call_Uses_Parameter_Mode
+             (Node.As_Call_Expr.F_Suffix, Param, Name, For_Read => True)
+           or else
+             (Node.Parent.Kind = Libadalang.Common.Ada_Call_Stmt
+              and then Contains_Parameter_Reference
+                (Node.As_Call_Expr.F_Name, Param, Name));
       elsif Parameter_Name_Matches (Node, Param, Name) then
          return True;
       end if;
@@ -443,27 +464,19 @@ package body Adalang_Analyzer.Checks.Declarations is
             Dest : constant Libadalang.Analysis.Name :=
               Node.As_Assign_Stmt.F_Dest;
          begin
-            return Parameter_Name_Matches (Dest, Param, Name)
-              or else
-                (Dest.Kind = Libadalang.Common.Ada_Call_Expr
-                 and then Parameter_Name_Matches
-                   (Dest.As_Call_Expr.F_Name, Param, Name));
+            --  Writing State.Field or State (Index) writes State even though
+            --  the destination as a whole is not the parameter identifier.
+            --  The read-side walker separately accounts for any prefix or
+            --  index value consumed while selecting that component.
+            return Contains_Parameter_Reference (Dest, Param, Name);
          end;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
-         for I in 1 .. Node.As_Call_Expr.F_Suffix.Children_Count loop
-            declare
-               Child : constant Libadalang.Analysis.Ada_Node :=
-                 Node.As_Call_Expr.F_Suffix.Child (I);
-            begin
-               if Child.Kind = Libadalang.Common.Ada_Param_Assoc
-                 and then Association_Uses_Parameter_Mode
-                   (Child.As_Param_Assoc, Param, Name, For_Read => False)
-               then
-                  return True;
-               end if;
-            end;
-         end loop;
-         return False;
+         return Call_Uses_Parameter_Mode
+             (Node.As_Call_Expr.F_Suffix, Param, Name, For_Read => False)
+           or else
+             (Node.Parent.Kind = Libadalang.Common.Ada_Call_Stmt
+              and then Contains_Parameter_Reference
+                (Node.As_Call_Expr.F_Name, Param, Name));
       end if;
 
       for I in 1 .. Node.Children_Count loop
@@ -513,10 +526,14 @@ package body Adalang_Analyzer.Checks.Declarations is
                then
                   declare
                      Name : constant String := Canonical_Text (Id);
-                     Is_Read : constant Boolean := Parameter_Is_Read
-                       (Subprogram.F_Stmts, Param, Name);
-                     Is_Written : constant Boolean := Parameter_Is_Written
-                       (Subprogram.F_Stmts, Param, Name);
+                     Is_Read : constant Boolean :=
+                       Parameter_Is_Read (Subprogram.F_Decls, Param, Name)
+                       or else Parameter_Is_Read
+                         (Subprogram.F_Stmts, Param, Name);
+                     Is_Written : constant Boolean :=
+                       Parameter_Is_Written (Subprogram.F_Decls, Param, Name)
+                       or else Parameter_Is_Written
+                         (Subprogram.F_Stmts, Param, Name);
                   begin
                      if Is_Read and then not Is_Written then
                         Report_Rule_Violation

@@ -39,6 +39,8 @@ package body Adalang_Analyzer.Numeric_Literals is
    is
       Result : Long_Long_Integer := 0;
    begin
+      Value := 0;
+
       if Text = "" then
          return False;
       end if;
@@ -73,8 +75,9 @@ package body Adalang_Analyzer.Numeric_Literals is
       Start  : Positive := Text'First;
       Parsed : Long_Long_Integer;
    begin
+      Value := 0;
+
       if Text = "" then
-         Value := 0;
          return True;
       end if;
 
@@ -104,6 +107,8 @@ package body Adalang_Analyzer.Numeric_Literals is
    is
       Current : Long_Long_Integer := Value;
    begin
+      Result := Value;
+
       if Exponent > Maximum_Integer_Exponent then
          return False;
       end if;
@@ -133,6 +138,8 @@ package body Adalang_Analyzer.Numeric_Literals is
       Number     : Long_Long_Integer;
       Exponent   : Natural := 0;
    begin
+      Value := 0;
+
       if Text = "" then
          return False;
       end if;

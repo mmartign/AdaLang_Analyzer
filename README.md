@@ -113,6 +113,9 @@ The analyzer currently provides the following checks:
 | Automotive | `Dependency_Limit` | Maintainability | Medium | Reports units exceeding the configured with-clause limit. |
 | Automotive | `Naming_Convention` | Maintainability | Low | Reports one-character identifiers except loop indices and enumeration literals. |
 | Automotive | `No_Compiler_Extensions` | Maintainability | High | Reports implementation-defined pragmas, including extension-enabling pragmas. |
+| DO-178C support | `Missing_Requirement_Trace` | Reliability | High | Reports subprogram bodies without a nearby low-level requirement identifier. |
+| DO-178C support | `Malformed_Requirement_Trace` | Maintainability | Medium | Reports requirement annotations with no identifier. |
+| DO-178C support | `Suppression_Without_Rationale` | Maintainability | High | Reports analyzer suppressions that do not record a reviewable rationale. |
 
 Run `adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
@@ -284,6 +287,64 @@ pretending that a source-only analyzer can validate every target ABI, and
 exception/dispatch summaries are conservative rather than full CodePeer-style
 path proofs.
 
+### DO-178C verification-support profiles
+
+Select a software level with:
+
+```sh
+./bin/adalang_analyzer --do178c=A -P adalang_analyzer.gpr
+```
+
+Levels A and B enable the strictest source, flow, exception, initialization,
+coupling, traceability, and suppression-rationale checks. Level C retains the
+high-confidence runtime, flow, and traceability checks without the additional
+A/B coding restrictions. Level D enables only the core high-confidence defect
+checks and does not imply source-code traceability objectives. Later
+`-checks`, `+R`, and `-R` switches can refine any profile.
+
+The selected profile and its external structural-coverage objective are
+recorded in JSON and SARIF:
+
+| Level | Recorded coverage objective |
+|-------|-----------------------------|
+| A | MC/DC |
+| B | Decision coverage |
+| C | Statement coverage |
+| D | None |
+
+AdaLang Analyzer does not measure structural coverage. Coverage data must come
+from an appropriate target-aware coverage workflow such as GNATcoverage.
+
+Associate a subprogram body with a low-level requirement by placing this
+annotation on its declaration line or within the three immediately preceding
+lines:
+
+```ada
+--  do-178c: req LLR-FLIGHT-CONTROL-042
+procedure Update_Control_Surface is
+begin
+   ...
+end Update_Control_Surface;
+```
+
+Rule suppressions used with the A/B profiles require an explicit rationale:
+
+```ada
+null;  --  adalang-analyzer: ignore Null_Statement -- rationale: empty state
+```
+
+Place `rationale:` on the suppression line. The analyzer currently associates
+requirement annotations with bodies in the same source file; project-wide
+requirements databases and test/coverage import remain separate lifecycle
+evidence.
+
+These profiles support verification activities; they do not determine or
+claim DO-178C compliance. DO-178C also covers planning, requirements, design,
+testing, configuration management, quality assurance, certification liaison,
+and lifecycle evidence. Projects taking certification credit from analyzer
+results must separately assess tool qualification under DO-330. See
+[FAA AC 20-115D](https://www.faa.gov/regulations_policies/advisory_circulars/index.cfm/go/document.information/documentID/1032046).
+
 ## Requirements
 
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
@@ -307,6 +368,7 @@ Run the bug-finding regression suite after building:
 ```sh
 sh tests/run_bug_findings.sh
 sh tests/run_automotive.sh
+sh tests/run_do178c.sh
 ```
 
 ## Usage
@@ -357,6 +419,7 @@ Useful options include:
 -list-checks     List all available checks
 --spark          Enable a proof-focused preset (later check switches refine it)
 --automotive     Enable the strict automotive Ada preset
+--do178c=<level> Enable DO-178C verification support for level A, B, C, or D
 -checks=<list>   Enable or disable a comma-separated set of checks
 --format=<name>  Select text, JSON, or SARIF output (default: text)
 --output=<file>  Write a JSON or SARIF report to a file
@@ -408,6 +471,7 @@ Run the structured-output regression alongside the bug-finding suite:
 ```sh
 sh tests/run_reporting.sh
 sh tests/run_automotive.sh
+sh tests/run_do178c.sh
 sh tests/run_performance_smoke.sh
 ```
 

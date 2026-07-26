@@ -4,6 +4,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Exceptions;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 with Libadalang.Common;
@@ -346,6 +347,43 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       end loop;
    end Analyze_Statement_List;
 
+   function Is_Inside_Loop
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Ancestor : Libadalang.Analysis.Ada_Node := Node.Parent;
+   begin
+      while not Libadalang.Analysis.Is_Null (Ancestor) loop
+         if Ancestor.Kind in Libadalang.Common.Ada_Base_Loop_Stmt then
+            return True;
+         elsif Ancestor.Kind in Libadalang.Common.Ada_Subp_Body then
+            return False;
+         end if;
+         Ancestor := Ancestor.Parent;
+      end loop;
+      return False;
+   end Is_Inside_Loop;
+
+   function Is_Object_Renaming_Name
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Decl : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return False;
+      end if;
+
+      Decl := Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      return not Libadalang.Analysis.Is_Null (Decl)
+        and then Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
+        and then not Libadalang.Analysis.Is_Null
+          (Decl.As_Object_Decl.F_Renaming_Clause);
+   exception
+      when others =>
+         return False;
+   end Is_Object_Renaming_Name;
+
    procedure Analyze_Assignment  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Assign_Stmt)
@@ -363,7 +401,10 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               and then not Libadalang.Analysis.Is_Null
                 (Data_Flow.Assigned_Declaration (Stmt))
               and then Data_Flow.Assigned_Declaration (Stmt) =
-                Data_Flow.Referenced_Declaration (Stmt.F_Expr)))
+                Data_Flow.Referenced_Declaration (Stmt.F_Expr)
+              and then
+                (Is_Object_Renaming_Name (Stmt.F_Dest)
+                 or else Is_Object_Renaming_Name (Stmt.F_Expr))))
       then
          Report_Rule_Violation
            (Unit, Stmt, Self_Assignment,
@@ -372,6 +413,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
 
       if Rule_States (Dead_Store) = Enabled
         and then Data_Flow.Is_Trackable_Assignment (Stmt)
+        and then not Is_Inside_Loop (Stmt)
       then
          declare
             Decl : constant Libadalang.Analysis.Basic_Decl :=
@@ -511,10 +553,12 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                         end;
                      end if;
                   exception
-                     when others =>
+                     when Exc : others =>
                         --  An unresolved call profile is conservatively
                         --  skipped.
-                        null;  --  adalang-analyzer: ignore Null_Statement
+                        Log_Verbose
+                          ("skipping unresolved call profile: " &
+                           Ada.Exceptions.Exception_Message (Exc));
                   end;
                end if;
             end;

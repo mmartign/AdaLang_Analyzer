@@ -181,8 +181,10 @@ package body Adalang_Analyzer.Checks is
                return True;
             end if;
          exception
-            when others =>
-               null;
+            when Exc : others =>
+               Log_Verbose
+                 ("skipping class-wide operand resolution: " &
+                  Ada.Exceptions.Exception_Message (Exc));
          end;
       end if;
       for Index in 1 .. Node.Children_Count loop
@@ -547,8 +549,10 @@ package body Adalang_Analyzer.Checks is
                end if;
             end;
          exception
-            when others =>
-               null;
+            when Exc : others =>
+               Log_Verbose
+                 ("skipping call resolution: " &
+                  Ada.Exceptions.Exception_Message (Exc));
          end;
       end if;
       for Index in 1 .. Node.Children_Count loop
@@ -666,6 +670,37 @@ package body Adalang_Analyzer.Checks is
         or else Name = "volatile_components";
    end Is_Language_Defined_Pragma;
 
+   function Has_Requirement_Trace
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Marker     : constant String := "do-178c: req";
+      Start_Line : constant Natural :=
+        Natural (Node.Sloc_Range.Start_Line);
+   begin
+      for Offset in Natural range 0 .. 3 loop
+         exit when Offset >= Start_Line;
+         declare
+            Line : constant String :=
+              Ada.Characters.Handling.To_Lower
+                (Source_Line (Unit.Get_Filename, Start_Line - Offset));
+            Position : constant Natural :=
+              Ada.Strings.Fixed.Index (Line, Marker);
+         begin
+            if Position > 0 then
+               declare
+                  First : constant Natural := Position + Marker'Length;
+               begin
+                  return First <= Line'Last
+                    and then Ada.Strings.Fixed.Trim
+                      (Line (First .. Line'Last), Ada.Strings.Both) /= "";
+               end;
+            end if;
+         end;
+      end loop;
+      return False;
+   end Has_Requirement_Trace;
+
    procedure Evaluate_Node  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class) is
@@ -715,6 +750,14 @@ package body Adalang_Analyzer.Checks is
       --  this node's own checks, rather than letting it unwind out of
       --  Process_File and abandon analysis of the rest of the file.
       begin
+      if Rule_States (Missing_Requirement_Trace) = Enabled
+        and then Node.Kind = Libadalang.Common.Ada_Subp_Body
+        and then not Has_Requirement_Trace (Unit, Node)
+      then
+         Report_Rule_Violation
+           (Unit, Node, Missing_Requirement_Trace,
+            "subprogram has no DO-178C low-level requirement trace");
+      end if;
       if Rule_States (SPARK_Mode) = Enabled then
          if Node.Kind = Libadalang.Common.Ada_Aspect_Assoc then
             declare

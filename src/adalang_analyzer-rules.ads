@@ -106,7 +106,10 @@ package Adalang_Analyzer.Rules is
       Generic_Instantiation_Limit,
       Dependency_Limit,
       Naming_Convention,
-      No_Compiler_Extensions
+      No_Compiler_Extensions,
+      Missing_Requirement_Trace,
+      Malformed_Requirement_Trace,
+      Suppression_Without_Rationale
    );
 
    type Software_Quality is
@@ -1042,6 +1045,33 @@ package Adalang_Analyzer.Rules is
          Guidance => To_Unbounded_String
            ("Use language-defined pragmas, compile with extensions disabled, " &
             "and isolate any approved vendor dependency."),
+         Quality => Quality_Maintainability, Severity => Severity_High),
+      Missing_Requirement_Trace =>
+        (Name => To_Unbounded_String ("Missing_Requirement_Trace"),
+         Description => To_Unbounded_String
+           ("Find subprogram bodies without a nearby DO-178C low-level " &
+            "requirement identifier."),
+         Guidance => To_Unbounded_String
+           ("Add '--  do-178c: req <identifier>' on the subprogram line or " &
+            "within the three immediately preceding lines."),
+         Quality => Quality_Reliability, Severity => Severity_High),
+      Malformed_Requirement_Trace =>
+        (Name => To_Unbounded_String ("Malformed_Requirement_Trace"),
+         Description => To_Unbounded_String
+           ("Find DO-178C requirement annotations that contain no usable " &
+            "requirement identifier."),
+         Guidance => To_Unbounded_String
+           ("Use '--  do-178c: req <identifier>' with a stable, non-empty " &
+            "project requirement identifier."),
+         Quality => Quality_Maintainability, Severity => Severity_Medium),
+      Suppression_Without_Rationale =>
+        (Name => To_Unbounded_String ("Suppression_Without_Rationale"),
+         Description => To_Unbounded_String
+           ("Find analyzer suppressions that do not record a reviewable " &
+            "rationale."),
+         Guidance => To_Unbounded_String
+           ("Append ' -- rationale: <reason>' to every " &
+            "'adalang-analyzer: ignore <rule>' suppression."),
          Quality => Quality_Maintainability, Severity => Severity_High)
    );
 

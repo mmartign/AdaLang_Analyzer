@@ -4,9 +4,12 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Exceptions;
+
 with Langkit_Support.Text;
 
 with Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Config; use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Numeric_Literals;
 with Adalang_Analyzer.Text_Utils;
 
@@ -796,8 +799,10 @@ package body Adalang_Analyzer.Flow_Eval is
       Flow_Range_Set (True_State, Key, True_Range);
       Flow_Range_Set (False_State, Key, False_Range);
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping comparison narrowing: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Narrow_Identifier_By_Comparison;
 
    procedure Narrow_By_Condition  --  adalang-analyzer: ignore Cyclomatic_Complexity

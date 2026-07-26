@@ -58,6 +58,8 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line
         ("  --automotive          Enable automotive Ada restrictions");
       Ada.Text_IO.Put_Line
+        ("  --do178c=<A|B|C|D>    Enable a DO-178C verification-support profile");
+      Ada.Text_IO.Put_Line
         ("  --format=<text|json|sarif> Select report format (default: text)");
       Ada.Text_IO.Put_Line
         ("  --output=<file>       Write the report to a file");
@@ -240,6 +242,7 @@ package body Adalang_Analyzer.CLI is
          Aliasing_Between_Parameters, Missing_Loop_Variant,
          Known_Discriminant_Check_Failure, Potentially_Blocking_Operation);
    begin
+      Active_Assurance_Profile := No_Assurance_Profile;
       for Rule in Rule_Kind loop
          Rule_States (Rule) := Disabled;
       end loop;
@@ -275,6 +278,7 @@ package body Adalang_Analyzer.CLI is
          Generic_Instantiation_Limit, Dependency_Limit,
          Naming_Convention, No_Compiler_Extensions);
    begin
+      Active_Assurance_Profile := No_Assurance_Profile;
       for Rule in Rule_Kind loop
          Rule_States (Rule) := Disabled;
       end loop;
@@ -282,6 +286,74 @@ package body Adalang_Analyzer.CLI is
          Rule_States (Rule) := Enabled;
       end loop;
    end Enable_Automotive_Preset;
+
+   procedure Enable_DO_178C_Preset (Level_Text : String) is
+      type Rule_List is array (Positive range <>) of Rule_Kind;
+
+      Core_Rules : constant Rule_List :=
+        (Exception_Swallowed, Empty_Exception_Handler, Handler_Order,
+         Unreachable_Code, Unreachable_Branch,
+         Unreachable_Case_Alternative, Division_By_Zero, Reversed_Range,
+         Self_Assignment, Contradictory_Condition, Constant_Condition,
+         Known_Precondition_Failure, Known_Postcondition_Failure,
+         Known_Assertion_Failure, Known_Range_Check_Failure,
+         Known_Index_Check_Failure, Known_Overflow_Failure,
+         Aliasing_Between_Parameters, Exception_Propagation);
+      Level_C_Rules : constant Rule_List :=
+        (Missing_Requirement_Trace, Malformed_Requirement_Trace,
+         Dead_Store, Overwritten_Assignment, Uninitialized_Output,
+         Global_Contract_Mismatch, Incomplete_Depends_Contract,
+         Depends_Contract_Mismatch, Function_Side_Effect,
+         No_Recursion, Non_Short_Circuit_Condition);
+      Level_AB_Rules : constant Rule_List :=
+        (Suppression_Without_Rationale, No_Dynamic_Allocation,
+         No_Unchecked_Conversion, No_Unchecked_Deallocation,
+         Complete_Initialization, No_Dispatching_Call,
+         Missing_Global_Contract, Missing_Depends_Contract,
+         Missing_Loop_Variant, Potentially_Blocking_Operation,
+         No_Compiler_Extensions, Library_Level_Initialization,
+         Cyclomatic_Complexity, Deep_Nesting);
+      Level : constant String :=
+        Ada.Characters.Handling.To_Upper
+          (Ada.Strings.Fixed.Trim (Level_Text, Ada.Strings.Both));
+
+      procedure Enable (Rules : Rule_List) is
+      begin
+         for Rule of Rules loop
+            Rule_States (Rule) := Enabled;
+         end loop;
+      end Enable;
+   begin
+      for Rule in Rule_Kind loop
+         Rule_States (Rule) := Disabled;
+      end loop;
+
+      if Level = "A" then
+         Active_Assurance_Profile := DO_178C_Level_A;
+      elsif Level = "B" then
+         Active_Assurance_Profile := DO_178C_Level_B;
+      elsif Level = "C" then
+         Active_Assurance_Profile := DO_178C_Level_C;
+      elsif Level = "D" then
+         Active_Assurance_Profile := DO_178C_Level_D;
+      else
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid DO-178C level '" & Level_Text &
+            "' (expected A, B, C, or D)");
+         Invalid_Options := True;
+         return;
+      end if;
+
+      Enable (Core_Rules);
+      if Active_Assurance_Profile in
+        DO_178C_Level_A | DO_178C_Level_B | DO_178C_Level_C
+      then
+         Enable (Level_C_Rules);
+      end if;
+      if Active_Assurance_Profile in DO_178C_Level_A | DO_178C_Level_B then
+         Enable (Level_AB_Rules);
+      end if;
+   end Enable_DO_178C_Preset;
 
    --  Parses the -complexity-threshold value; records an invalid-option
    --  error instead of raising when Text isn't a positive integer.
@@ -358,7 +430,7 @@ package body Adalang_Analyzer.CLI is
    end Set_Dependency_Threshold;
 
    --  Runs the checks that scan Filename's raw source text one line at a
-   --  time rather than the parsed AST (Long_Line, Trailing_Whitespace).
+   --  time rather than the parsed AST.
    --  Running independently of Evaluate_Node lets these still report on a
    --  file that fails to parse. Any I/O failure is swallowed, same as
    --  Source_Line, since these checks are best-effort and must not abort
@@ -369,6 +441,8 @@ package body Adalang_Analyzer.CLI is
    begin
       if Rule_States (Long_Line) /= Enabled
         and then Rule_States (Trailing_Whitespace) /= Enabled
+        and then Rule_States (Malformed_Requirement_Trace) /= Enabled
+        and then Rule_States (Suppression_Without_Rationale) /= Enabled
       then
          return;
       end if;
@@ -377,7 +451,16 @@ package body Adalang_Analyzer.CLI is
 
       while not Ada.Text_IO.End_Of_File (File) loop
          declare
-            Line : constant String := Ada.Text_IO.Get_Line (File);
+            Line       : constant String := Ada.Text_IO.Get_Line (File);
+            Lower_Line : constant String :=
+              Ada.Characters.Handling.To_Lower (Line);
+            Comment_Position : constant Natural :=
+              Ada.Strings.Fixed.Index (Lower_Line, "--");
+            Requirement_Position : constant Natural :=
+              Ada.Strings.Fixed.Index (Lower_Line, "do-178c: req");
+            Suppression_Position : constant Natural :=
+              Ada.Strings.Fixed.Index
+                (Lower_Line, "adalang-analyzer: ignore");
          begin
             Line_Number := Line_Number + 1;
 
@@ -411,6 +494,47 @@ package body Adalang_Analyzer.CLI is
                      Rule        => Trailing_Whitespace,
                      Message     => "line has trailing whitespace");
                end;
+            end if;
+
+            if Rule_States (Malformed_Requirement_Trace) = Enabled
+              and then Comment_Position > 0
+              and then Requirement_Position > Comment_Position
+            then
+               declare
+                  First : constant Natural :=
+                    Requirement_Position + String'("do-178c: req")'Length;
+               begin
+                  if First > Lower_Line'Last
+                    or else Ada.Strings.Fixed.Trim
+                      (Lower_Line (First .. Lower_Line'Last),
+                       Ada.Strings.Both) = ""
+                  then
+                     Report_Line_Violation
+                       (Filename    => Filename,
+                        Line_Number => Line_Number,
+                        Column      => Requirement_Position,
+                        Caret_Width => String'("do-178c: req")'Length,
+                        Rule        => Malformed_Requirement_Trace,
+                        Message     =>
+                          "DO-178C requirement trace has no identifier");
+                  end if;
+               end;
+            end if;
+
+            if Rule_States (Suppression_Without_Rationale) = Enabled
+              and then Comment_Position > 0
+              and then Suppression_Position > Comment_Position
+              and then Ada.Strings.Fixed.Index
+                (Lower_Line, "rationale:") = 0
+            then
+               Report_Line_Violation
+                 (Filename    => Filename,
+                  Line_Number => Line_Number,
+                  Column      => Suppression_Position,
+                  Caret_Width =>
+                    String'("adalang-analyzer: ignore")'Length,
+                  Rule        => Suppression_Without_Rationale,
+                  Message     => "rule suppression has no rationale");
             end if;
          end;
       end loop;
@@ -493,6 +617,22 @@ package body Adalang_Analyzer.CLI is
                   Enable_SPARK_Preset;
                elsif Arg = "--automotive" or else Arg = "-automotive" then
                   Enable_Automotive_Preset;
+               elsif Arg = "--do178c" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected level for --do178c");
+                     Invalid_Options := True;
+                  else
+                     Enable_DO_178C_Preset
+                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 9
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, "--do178c=") = Arg'First
+               then
+                  Enable_DO_178C_Preset
+                    (Arg (Arg'First + 9 .. Arg'Last));
                elsif Arg = "--format" then
                   if Current_Arg = Argument_Count then
                      Ada.Text_IO.Put_Line
@@ -814,6 +954,15 @@ package body Adalang_Analyzer.CLI is
 
       if Selected_Output_Format = Text_Output and then not Quiet_Mode then
          Ada.Text_IO.New_Line;
+         if Active_Assurance_Profile /= No_Assurance_Profile then
+            Ada.Text_IO.Put_Line
+              ("Assurance profile: " & Assurance_Profile_Name);
+            Ada.Text_IO.Put_Line
+              ("Coverage objective: " & Structural_Coverage_Objective &
+               " (external evidence required)");
+            Ada.Text_IO.Put_Line
+              ("Certification claim: verification support only");
+         end if;
          Ada.Text_IO.Put_Line ("Files scanned : " & To_Decimal (Source_File_Count));
          Ada.Text_IO.Put_Line ("Violations    : " & To_Decimal (Violations));
 

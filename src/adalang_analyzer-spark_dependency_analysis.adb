@@ -4,6 +4,7 @@
 
 with Ada.Containers;
 with Ada.Containers.Vectors;
+with Ada.Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
@@ -301,8 +302,8 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
 
    procedure Mark_Imprecise (State : in out Dependency_State) is
    begin
-      for Item of State loop
-         Item.Value.Precise := False;
+      for Index in State.First_Index .. State.Last_Index loop
+         State (Index).Value.Precise := False;
       end loop;
    end Mark_Imprecise;
 
@@ -692,8 +693,10 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
          end if;
       end loop;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping dependency effects for call: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Apply_Call;
 
    type Flow_Result is record
@@ -917,7 +920,9 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
      (List    : Libadalang.Analysis.Ada_Node'Class;
       Initial : Dependency_State;
       Control : Dependency_Value;
-      Exits   : in out Exit_Accumulator) return Flow_Result
+      Exits  --  adalang-analyzer: ignore Wrong_Parameter_Mode
+        : in out Exit_Accumulator)
+      return Flow_Result
    is
       Result : Flow_Result :=
         (State => Initial, Falls_Through => True);
@@ -1181,8 +1186,10 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
          end loop;
       end loop;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping dependency analysis for subprogram: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Analyze_Subprogram;
 
 end Adalang_Analyzer.SPARK_Dependency_Analysis;

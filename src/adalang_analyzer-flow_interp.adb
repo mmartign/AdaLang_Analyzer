@@ -4,6 +4,8 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Exceptions;
+
 with Libadalang.Common;
 with Langkit_Support.Text;
 
@@ -196,8 +198,10 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end loop;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping formal-value seeding: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Seed_Formal_Values;
 
    procedure Check_Call_Precondition
@@ -307,8 +311,10 @@ package body Adalang_Analyzer.Flow_Interp is
          end loop;
       end;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping Global-effect interpretation: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Havoc_Global_Effects;
 
    procedure Havoc_Call_Actuals
@@ -395,8 +401,10 @@ package body Adalang_Analyzer.Flow_Interp is
          end loop;
       end;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping postcondition interpretation: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Apply_Call_Postcondition;
 
    --  Invalidates whatever Node's own evaluation could change: writable
@@ -746,8 +754,10 @@ package body Adalang_Analyzer.Flow_Interp is
             null;
       end case;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose
+           ("skipping conversion/index check: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Check_Conversion_Or_Index;
 
    --  Reports Division_By_Zero for every "/", "mod", or "rem" under Node

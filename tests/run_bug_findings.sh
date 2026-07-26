@@ -190,6 +190,15 @@ then
    exit 1
 fi
 
+if ! "$analyzer" -q -checks='Self_Assignment,Dead_Store' \
+     tests/data_flow_loop_clean.adb
+then
+   echo "loop-carried assignments unexpectedly produced a violation" >&2
+   "$analyzer" -checks='Self_Assignment,Dead_Store' \
+     tests/data_flow_loop_clean.adb >&2 || true
+   exit 1
+fi
+
 call_checks='Self_Assignment,Dead_Store,Unused_Variable'
 if "$analyzer" -checks="$call_checks" \
      tests/call_and_rename_findings.adb >"$output" 2>&1
