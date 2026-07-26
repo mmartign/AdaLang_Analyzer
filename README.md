@@ -410,12 +410,24 @@ toolchain must be discoverable through the GPR environment. For an Alire
 workspace, run the analyzer through `alr exec --` as above; otherwise configure
 `GPR_PROJECT_PATH` and the GPR2 knowledge base for the target toolchain.
 
+Set a scenario variable with `-X<name>=<value>` or `-X <name>=<value>`,
+repeatable for more than one variable, the same as `gprbuild`. Without an
+explicit `-X`, a scenario variable still falls back to its project-file
+default or an OS environment variable of the same name; `-X` is how to
+override either of those for one invocation, e.g. in a CI matrix that
+analyzes the same project under more than one scenario:
+
+```sh
+./bin/adalang_analyzer -checks='*' -X BUILD_MODE=release -P adalang_analyzer.gpr
+```
+
 Useful options include:
 
 ```text
 -h, --help       Show command help
 -version         Show the version
 -P<project>.gpr  Analyze the sources of a GNAT project file
+-X<name>=<value> Set a project scenario variable (repeatable)
 -list-checks     List all available checks
 --spark          Enable a proof-focused preset (later check switches refine it)
 --automotive     Enable the strict automotive Ada preset

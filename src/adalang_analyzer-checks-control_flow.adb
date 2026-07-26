@@ -44,12 +44,22 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       return False;
    end Has_Substantive_Statement;
 
-   --  True when Node's subtree contains a statement that can end this
-   --  loop: exit, return, or raise. A nested loop is not descended into,
-   --  since its own exit/return/raise terminates that inner loop, not the
-   --  outer one being checked by Analyze_Infinite_Loop.
+   --  True when Node's subtree contains a statement that can end the loop
+   --  under analysis: exit, return, or raise. A bare "exit" only counts
+   --  while Exit_Terminates is True; once the scan has stepped inside a
+   --  nested loop, an "exit" found there only terminates that inner loop
+   --  (not the outer one Analyze_Infinite_Loop is checking), so the
+   --  recursive descent into a nested loop's own subtree continues with
+   --  Exit_Terminates set to False. "return"/"raise" unwind past every
+   --  enclosing loop regardless of nesting depth, so they always count.
+   --  A labeled "exit <Outer_Name>;" naming the loop under analysis from
+   --  inside a nested loop is not specially recognized and is treated the
+   --  same as a bare exit, a narrow, documented conservative gap rather
+   --  than a soundness issue: it can only under-report a termination path,
+   --  never claim one that isn't there.
    function Has_Loop_Termination
-     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+     (Node            : Libadalang.Analysis.Ada_Node'Class;
+      Exit_Terminates : Boolean := True) return Boolean
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
@@ -57,27 +67,32 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       end if;
 
       case Node.Kind is
-         when Libadalang.Common.Ada_Exit_Stmt
-            | Libadalang.Common.Ada_Return_Stmt
+         when Libadalang.Common.Ada_Exit_Stmt =>
+            return Exit_Terminates;
+
+         when Libadalang.Common.Ada_Return_Stmt
             | Libadalang.Common.Ada_Extended_Return_Stmt
             | Libadalang.Common.Ada_Raise_Stmt =>
             return True;
-
-         when Libadalang.Common.Ada_For_Loop_Stmt
-            | Libadalang.Common.Ada_Loop_Stmt
-            | Libadalang.Common.Ada_While_Loop_Stmt =>
-            --  A transfer inside a nested loop does not terminate this loop.
-            return False;
 
          when others =>
             null;  --  adalang-analyzer: ignore Null_Statement
       end case;
 
-      for I in 1 .. Node.Children_Count loop
-         if Has_Loop_Termination (Node.Child (I)) then
-            return True;
-         end if;
-      end loop;
+      declare
+         Next_Exit_Terminates : constant Boolean :=
+           Exit_Terminates
+           and then Node.Kind not in
+             Libadalang.Common.Ada_For_Loop_Stmt
+             | Libadalang.Common.Ada_Loop_Stmt
+             | Libadalang.Common.Ada_While_Loop_Stmt;
+      begin
+         for I in 1 .. Node.Children_Count loop
+            if Has_Loop_Termination (Node.Child (I), Next_Exit_Terminates) then
+               return True;
+            end if;
+         end loop;
+      end;
 
       return False;
    end Has_Loop_Termination;

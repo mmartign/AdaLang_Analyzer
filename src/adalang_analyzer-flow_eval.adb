@@ -686,6 +686,9 @@ package body Adalang_Analyzer.Flow_Eval is
          when others =>
             return Bool_Unknown;
       end case;
+   exception
+      when others =>
+         return Bool_Unknown;
    end Boolean_Value;
 
    function Mirror_Comparison

@@ -131,6 +131,13 @@ package body Adalang_Analyzer.Checks.Declarations is
       end loop;
 
       return False;
+   exception
+      when others =>
+         --  Mirrors the conservative fallback above: an identifier whose
+         --  resolution outright raises, rather than returning null, is
+         --  still treated as a use rather than silently propagating and
+         --  discarding every other check for the enclosing subprogram.
+         return True;
    end References_Named_Declaration;
 
    --  The current scope is deliberately skipped: this rule only diagnoses
@@ -451,6 +458,50 @@ package body Adalang_Analyzer.Checks.Declarations is
       return False;
    end Parameter_Is_Read;
 
+   --  Whether Param is the object an assignment destination ultimately
+   --  writes: only the base object a selector/index/dereference chain
+   --  reaches is written, not any index, slice bound, or selector suffix
+   --  used along the way to reach it (those are reads, and the read-side
+   --  walker separately accounts for them). Writing State.Field or
+   --  State (Index) writes State even though the destination as a whole is
+   --  not the parameter identifier; conversely, writing Arr (Idx) does not
+   --  write Idx, even though Idx's own text appears inside Dest. A
+   --  destination shape this doesn't specifically recognize (e.g. a slice)
+   --  falls back to the older, broader "appears anywhere in Dest" test.
+   function Write_Target_Contains_Parameter
+     (Dest  : Libadalang.Analysis.Ada_Node'Class;
+      Param : Libadalang.Analysis.Param_Spec;
+      Name  : String) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Dest) then
+         return False;
+      end if;
+
+      case Dest.Kind is
+         when Libadalang.Common.Ada_Identifier =>
+            return Parameter_Name_Matches (Dest, Param, Name);
+
+         when Libadalang.Common.Ada_Dotted_Name =>
+            return Write_Target_Contains_Parameter
+              (Dest.As_Dotted_Name.F_Prefix, Param, Name);
+
+         when Libadalang.Common.Ada_Call_Expr =>
+            --  Array indexing or slicing: only the prefix identifies the
+            --  object being written. The suffix holds index or slice-bound
+            --  expressions, which merely read whatever they reference.
+            return Write_Target_Contains_Parameter
+              (Dest.As_Call_Expr.F_Name, Param, Name);
+
+         when Libadalang.Common.Ada_Explicit_Deref =>
+            return Write_Target_Contains_Parameter
+              (Dest.As_Explicit_Deref.F_Prefix, Param, Name);
+
+         when others =>
+            return Contains_Parameter_Reference (Dest, Param, Name);
+      end case;
+   end Write_Target_Contains_Parameter;
+
    function Parameter_Is_Written
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Param : Libadalang.Analysis.Param_Spec;
@@ -464,11 +515,7 @@ package body Adalang_Analyzer.Checks.Declarations is
             Dest : constant Libadalang.Analysis.Name :=
               Node.As_Assign_Stmt.F_Dest;
          begin
-            --  Writing State.Field or State (Index) writes State even though
-            --  the destination as a whole is not the parameter identifier.
-            --  The read-side walker separately accounts for any prefix or
-            --  index value consumed while selecting that component.
-            return Contains_Parameter_Reference (Dest, Param, Name);
+            return Write_Target_Contains_Parameter (Dest, Param, Name);
          end;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
          return Call_Uses_Parameter_Mode
@@ -486,6 +533,93 @@ package body Adalang_Analyzer.Checks.Declarations is
       end loop;
       return False;
    end Parameter_Is_Written;
+
+   --  Reports Unused_Variable for every local object declared directly in
+   --  Decls that is referenced nowhere among its sibling declarations or
+   --  within Stmts, then recurses into every nested declare block
+   --  reachable through Stmts so a local declared inside one is checked
+   --  too, not just a subprogram's own top-level declarations. Does not
+   --  descend into a nested subprogram body: its own locals are checked
+   --  independently when Analyze_Subprogram runs for it.
+   procedure Check_Unused_Variables_In_Scope
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Decls : Libadalang.Analysis.Ada_Node'Class;
+      Stmts : Libadalang.Analysis.Ada_Node'Class)
+   is
+      procedure Find_Nested_Decl_Blocks
+        (Node : Libadalang.Analysis.Ada_Node'Class)
+      is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Decl_Block then
+            declare
+               Block : constant Libadalang.Analysis.Decl_Block :=
+                 Node.As_Decl_Block;
+            begin
+               Check_Unused_Variables_In_Scope
+                 (Unit, Block.F_Decls.F_Decls, Block.F_Stmts);
+            end;
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Subp_Body then
+            return;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            Find_Nested_Decl_Blocks (Node.Child (I));
+         end loop;
+      end Find_Nested_Decl_Blocks;
+   begin
+      for I in 1 .. Decls.Children_Count loop
+         declare
+            Item : constant Libadalang.Analysis.Ada_Node := Decls.Child (I);
+         begin
+            if not Libadalang.Analysis.Is_Null (Item)
+              and then Item.Kind = Libadalang.Common.Ada_Object_Decl
+            then
+               declare
+                  Decl : constant Libadalang.Analysis.Object_Decl :=
+                    Item.As_Object_Decl;
+               begin
+                  for Id of Decl.F_Ids loop
+                     declare
+                        Name : constant String := Canonical_Text (Id);
+                        Basic : constant Libadalang.Analysis.Basic_Decl :=
+                          Libadalang.Analysis.Basic_Decl (Decl);
+                        Used_Elsewhere : Boolean := False;
+                     begin
+                        --  Scan sibling declarations only, skipping this
+                        --  declaration's own node: it always contains Id's
+                        --  defining occurrence, which would otherwise be
+                        --  misread as a use of itself.
+                        for J in 1 .. Decls.Children_Count loop
+                           if J /= I
+                             and then References_Named_Declaration
+                               (Decls.Child (J), Basic, Name)
+                           then
+                              Used_Elsewhere := True;
+                              exit;  --  adalang-analyzer: ignore No_Exit
+                           end if;
+                        end loop;
+
+                        if not Used_Elsewhere
+                          and then not References_Named_Declaration
+                            (Stmts, Basic, Name)
+                        then
+                           Report_Rule_Violation
+                             (Unit, Id, Unused_Variable,
+                              "variable '" & Node_Text (Id) &
+                                "' is never referenced");
+                        end if;
+                     end;
+                  end loop;
+               end;
+            end if;
+         end;
+      end loop;
+
+      Find_Nested_Decl_Blocks (Stmts);
+   end Check_Unused_Variables_In_Scope;
 
    procedure Analyze_Subprogram  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
@@ -562,55 +696,8 @@ package body Adalang_Analyzer.Checks.Declarations is
       end if;
 
       if Rule_States (Unused_Variable) = Enabled then
-         for I in 1 .. Subprogram.F_Decls.F_Decls.Children_Count loop
-            declare
-               Item : constant Libadalang.Analysis.Ada_Node :=
-                 Subprogram.F_Decls.F_Decls.Child (I);
-            begin
-               if not Libadalang.Analysis.Is_Null (Item)
-                 and then Item.Kind = Libadalang.Common.Ada_Object_Decl
-               then
-                  declare
-                     Decl : constant Libadalang.Analysis.Object_Decl :=
-                       Item.As_Object_Decl;
-                  begin
-                     for Id of Decl.F_Ids loop
-                        declare
-                           Name : constant String := Canonical_Text (Id);
-                           Basic : constant Libadalang.Analysis.Basic_Decl :=
-                             Libadalang.Analysis.Basic_Decl (Decl);
-                           Used_Elsewhere : Boolean := False;
-                        begin
-                           --  Scan sibling declarations only, skipping this
-                           --  declaration's own node: it always contains
-                           --  Id's defining occurrence, which would
-                           --  otherwise be misread as a use of itself.
-                           for J in 1 .. Subprogram.F_Decls.F_Decls.Children_Count loop
-                              if J /= I
-                                and then References_Named_Declaration
-                                  (Subprogram.F_Decls.F_Decls.Child (J),
-                                   Basic, Name)
-                              then
-                                 Used_Elsewhere := True;
-                                 exit;  --  adalang-analyzer: ignore No_Exit
-                              end if;
-                           end loop;
-
-                           if not Used_Elsewhere
-                             and then not References_Named_Declaration
-                               (Subprogram.F_Stmts, Basic, Name)
-                           then
-                              Report_Rule_Violation
-                                (Unit, Id, Unused_Variable,
-                                 "variable '" & Node_Text (Id) &
-                                   "' is never referenced");
-                           end if;
-                        end;
-                     end loop;
-                  end;
-               end if;
-            end;
-         end loop;
+         Check_Unused_Variables_In_Scope
+           (Unit, Subprogram.F_Decls.F_Decls, Subprogram.F_Stmts);
       end if;
 
       if Rule_States (Cyclomatic_Complexity) = Enabled then

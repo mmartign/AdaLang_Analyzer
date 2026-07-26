@@ -6,7 +6,7 @@
 
 with Ada.Characters.Latin_1;
 with Ada.Containers;
-with Ada.Containers.Indefinite_Hashed_Sets;
+with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Vectors;
 with Ada.Directories;
 with Ada.Strings;
@@ -38,13 +38,21 @@ package body Adalang_Analyzer.Report is
    package Finding_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Finding);
 
-   package Fingerprint_Sets is new Ada.Containers.Indefinite_Hashed_Sets
-     (Element_Type        => String,
-      Hash                => Ada.Strings.Hash,
-      Equivalent_Elements => "=");
+   --  A count per fingerprint, not a plain set: two distinct findings can
+   --  legitimately share one fingerprint (it deliberately excludes line and
+   --  column so line churn doesn't manufacture a new finding), e.g. two
+   --  identical "null;" placeholders in the same file. Tracking how many
+   --  occurrences were actually baselined, and consuming one per match,
+   --  keeps a genuinely new occurrence of an already-baselined shape from
+   --  being silently treated as pre-existing.
+   package Fingerprint_Count_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Natural,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
 
    Findings          : Finding_Vectors.Vector;
-   Baseline          : Fingerprint_Sets.Set;
+   Baseline          : Fingerprint_Count_Maps.Map;
    Current_Format    : Output_Format := Text_Output;
    Output_Filename   : Unbounded_String;
 
@@ -165,6 +173,70 @@ package body Adalang_Analyzer.Report is
       return To_String (Result);
    end JSON_Escape;
 
+   --  Percent-encodes Value so it is a syntactically valid URI reference,
+   --  as SARIF's artifactLocation.uri requires. A space, '#', '?', '%', or
+   --  any other byte outside the unreserved set (and '/', kept literal so
+   --  the path structure survives) would otherwise produce a URI a strict
+   --  SARIF consumer can reject outright.
+   function URI_Escape (Value : String) return String is
+      Result : Unbounded_String;
+      Hex    : constant String := "0123456789ABCDEF";
+   begin
+      for C of Value loop
+         case C is
+            when 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9'
+               | '-' | '.' | '_' | '~' | '/' =>
+               Append (Result, C);
+            when others =>
+               Append (Result, '%');
+               Append (Result, Hex (Character'Pos (C) / 16 + 1));
+               Append (Result, Hex (Character'Pos (C) mod 16 + 1));
+         end case;
+      end loop;
+      return To_String (Result);
+   end URI_Escape;
+
+   --  Records one more baselined occurrence of Fingerprint.
+   procedure Add_Baseline_Occurrence (Fingerprint : String) is
+      Cursor : constant Fingerprint_Count_Maps.Cursor :=
+        Fingerprint_Count_Maps.Find (Baseline, Fingerprint);
+   begin
+      if Fingerprint_Count_Maps.Has_Element (Cursor) then
+         Fingerprint_Count_Maps.Replace_Element
+           (Baseline, Cursor,
+            Fingerprint_Count_Maps.Element (Cursor) + 1);
+      else
+         Fingerprint_Count_Maps.Insert (Baseline, Fingerprint, 1);
+      end if;
+   end Add_Baseline_Occurrence;
+
+   --  Claims one baselined occurrence of Fingerprint if any remain, so a
+   --  shape baselined N times excuses only its first N occurrences in this
+   --  run; any further occurrence of the same shape is reported as new.
+   function Consume_Baseline_Occurrence (Fingerprint : String) return Boolean
+   is
+      Cursor : constant Fingerprint_Count_Maps.Cursor :=
+        Fingerprint_Count_Maps.Find (Baseline, Fingerprint);
+   begin
+      if not Fingerprint_Count_Maps.Has_Element (Cursor) then
+         return False;
+      end if;
+
+      declare
+         Remaining : constant Natural := Fingerprint_Count_Maps.Element (Cursor);
+      begin
+         if Remaining = 0 then
+            return False;
+         elsif Remaining = 1 then
+            Fingerprint_Count_Maps.Delete (Baseline, Fingerprint);
+         else
+            Fingerprint_Count_Maps.Replace_Element
+              (Baseline, Cursor, Remaining - 1);
+         end if;
+         return True;
+      end;
+   end Consume_Baseline_Occurrence;
+
    procedure Load_Baseline (Filename : String) is
       File : Ada.Text_IO.File_Type;
    begin
@@ -176,7 +248,7 @@ package body Adalang_Analyzer.Report is
                 (Ada.Text_IO.Get_Line (File), Ada.Strings.Both);
          begin
             if Line /= "" and then Line (Line'First) /= '#' then
-               Fingerprint_Sets.Include (Baseline, Line);
+               Add_Baseline_Occurrence (Line);
             end if;
          end;
       end loop;
@@ -191,20 +263,16 @@ package body Adalang_Analyzer.Report is
 
    procedure Write_Baseline (Filename : String) is
       File : Ada.Text_IO.File_Type;
-      Seen : Fingerprint_Sets.Set;
    begin
       Ada.Text_IO.Create (File, Ada.Text_IO.Out_File, Filename);
       Ada.Text_IO.Put_Line
-        (File, "# AdaLang Analyzer finding fingerprints, version 1");
+        (File, "# AdaLang Analyzer finding fingerprints, version 2");
+      --  One line per finding, not deduplicated: a fingerprint that
+      --  legitimately occurs N times in this run must be written N times,
+      --  so Load_Baseline restores the same per-shape occurrence count
+      --  rather than only ever excusing a single occurrence.
       for Item of Findings loop
-         declare
-            Value : constant String := To_String (Item.Fingerprint);
-         begin
-            if not Fingerprint_Sets.Contains (Seen, Value) then
-               Ada.Text_IO.Put_Line (File, Value);
-               Fingerprint_Sets.Insert (Seen, Value);
-            end if;
-         end;
+         Ada.Text_IO.Put_Line (File, To_String (Item.Fingerprint));
       end loop;
       Ada.Text_IO.Close (File);
    exception
@@ -343,7 +411,8 @@ package body Adalang_Analyzer.Report is
                To_String (Item.Fingerprint) &
                """}, ""locations"": [{""physicalLocation"": {" &
                """artifactLocation"": {""uri"": """ &
-               JSON_Escape (Normalized_Path (To_String (Item.Filename))) &
+               JSON_Escape
+                 (URI_Escape (Normalized_Path (To_String (Item.Filename)))) &
                """}, ""region"": {""startLine"": " &
                Text_Utils.To_Decimal (Item.Line_Number) &
                ", ""startColumn"": " &
@@ -471,7 +540,7 @@ package body Adalang_Analyzer.Report is
       Fingerprint  : constant String :=
         Stable_Fingerprint (Filename, Rule_Name, Message, Source_Text);
       Matches_Base : constant Boolean :=
-        Fingerprint_Sets.Contains (Baseline, Fingerprint);
+        Consume_Baseline_Occurrence (Fingerprint);
    begin
       if Is_Suppressed (Source_Text, Rule_Name) then
          return;

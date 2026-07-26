@@ -44,16 +44,7 @@ package body Adalang_Analyzer.Checks is
                return True;
 
             when Libadalang.Common.Ada_Object_Decl =>
-               declare
-                  Declaration : constant Libadalang.Analysis.Object_Decl :=
-                    Ancestor.As_Object_Decl;
-               begin
-                  return Declaration.F_Has_Constant
-                    or else Ada.Strings.Fixed.Index
-                      (Ada.Characters.Handling.To_Lower
-                         (Node_Text (Declaration)),
-                       "constant") /= 0;
-               end;
+               return Ancestor.As_Object_Decl.F_Has_Constant;
 
             when others =>
                if Ancestor.Kind in Libadalang.Common.Ada_Stmt
@@ -101,7 +92,12 @@ package body Adalang_Analyzer.Checks is
 
    --  Reports Non_Short_Circuit_Condition for every plain "and"/"or"
    --  operator anywhere within Cond's subtree. Shared by if/elsif/while/
-   --  exit-when condition sites, alongside Report_Constant_Condition.
+   --  exit-when condition sites, alongside Report_Constant_Condition. Does
+   --  not descend into a nested Ada_If_Expr/Ada_Elsif_Expr_Part: the
+   --  generic node walker visits those independently and calls this same
+   --  procedure on their own F_Cond_Expr, so descending here too would
+   --  report an "and"/"or" inside a nested if-expression's condition
+   --  twice.
    procedure Report_Non_Short_Circuit_Operators
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Cond : Libadalang.Analysis.Ada_Node'Class)
@@ -129,7 +125,12 @@ package body Adalang_Analyzer.Checks is
       end if;
 
       for I in 1 .. Cond.Children_Count loop
-         Report_Non_Short_Circuit_Operators (Unit, Cond.Child (I));
+         if Cond.Child (I).Kind not in
+           Libadalang.Common.Ada_If_Expr
+           | Libadalang.Common.Ada_Elsif_Expr_Part
+         then
+            Report_Non_Short_Circuit_Operators (Unit, Cond.Child (I));
+         end if;
       end loop;
    end Report_Non_Short_Circuit_Operators;
 

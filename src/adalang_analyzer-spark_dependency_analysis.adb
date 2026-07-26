@@ -880,8 +880,29 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
                      Interpret_List
                        (Node.As_Base_Loop_Stmt.F_Stmts, Current,
                         Loop_Control, Exits).State);
-                  exit when Same_State (Current, Next)
-                    or else Iterations > Natural (Current.Length) + 2;
+                  exit when Same_State (Current, Next);
+
+                  if Iterations > Natural (Current.Length) + 2 then
+                     --  The bound is sized for a loop-carried dependency
+                     --  chain no longer than the number of variables this
+                     --  loop tracks, which is enough for every chain this
+                     --  analysis has been tested against; log the rare
+                     --  case where it isn't so a false negative here has a
+                     --  diagnosable trail instead of failing silently. The
+                     --  state at this point is still a valid, merely
+                     --  possibly incomplete, subset of the true fixed
+                     --  point: only "may depend" facts can be missing, so
+                     --  this can under-report Depends_Contract_Mismatch,
+                     --  never fabricate a mismatch that isn't there.
+                     Log_Verbose
+                       ("dependency fixed point did not converge within " &
+                        To_Decimal (Iterations) &
+                        " iterations for a loop tracking " &
+                        To_Decimal (Natural (Current.Length)) &
+                        " variables; using the partial result");
+                     exit;
+                  end if;
+
                   Current := Next;
                   Iterations := Iterations + 1;
                end loop;

@@ -32,20 +32,50 @@ package body Adalang_Analyzer.Checks.Expressions is
          return False;
    end Is_Floating_Expression;
 
+   --  Strips one layer of enclosing parentheses, if present, so operands
+   --  that are otherwise structurally identical still compare equal by
+   --  text even when one of them is written with a redundant "(...)".
+   function Unwrap_Paren
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      if not Libadalang.Analysis.Is_Null (Node)
+        and then Node.Kind = Libadalang.Common.Ada_Paren_Expr
+      then
+         return Libadalang.Analysis.Ada_Node (Node.As_Paren_Expr.F_Expr);
+      end if;
+      return Libadalang.Analysis.Ada_Node (Node);
+   end Unwrap_Paren;
+
    --  True when Possible_Not is "not X" and Other's canonical text is
    --  exactly X, i.e. the two operands are syntactic negations of each
    --  other. Backs Contradictory_Condition ("X and not X", "X or not X").
+   --  A single redundant pair of parentheses around either operand (e.g.
+   --  "not (X)") does not defeat the match.
    function Is_Negation_Of
      (Possible_Not : Libadalang.Analysis.Ada_Node'Class;
       Other        : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
    begin
-      return not Libadalang.Analysis.Is_Null (Possible_Not)
-        and then Possible_Not.Kind = Libadalang.Common.Ada_Un_Op
-        and then Possible_Not.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Not
-        and then Canonical_Text (Possible_Not.As_Un_Op.F_Expr) /= ""
-        and then Canonical_Text (Possible_Not.As_Un_Op.F_Expr) =
-          Canonical_Text (Other);
+      if Libadalang.Analysis.Is_Null (Possible_Not)
+        or else Possible_Not.Kind /= Libadalang.Common.Ada_Un_Op
+        or else Possible_Not.As_Un_Op.F_Op /= Libadalang.Common.Ada_Op_Not
+      then
+         return False;
+      end if;
+
+      declare
+         Negated_Operand : constant Libadalang.Analysis.Ada_Node :=
+           Unwrap_Paren
+             (Libadalang.Analysis.Ada_Node (Possible_Not.As_Un_Op.F_Expr));
+         Other_Operand   : constant Libadalang.Analysis.Ada_Node :=
+           Unwrap_Paren (Other);
+      begin
+         return Canonical_Text (Negated_Operand) /= ""
+           and then Canonical_Text (Negated_Operand) =
+             Canonical_Text (Other_Operand);
+      end;
    end Is_Negation_Of;
 
    --  True for operators where "X op X" is suspicious rather than a

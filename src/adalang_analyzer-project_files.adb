@@ -57,9 +57,10 @@ package body Adalang_Analyzer.Project_Files is
    end Append_Or_Replace_By_Simple_Name;
 
    procedure Load_Project_File
-     (Project_File : String;
-      Files        : in out File_Name_Vectors.Vector;
-      Seen         : in out File_Name_Vectors.Vector)
+     (Project_File  : String;
+      Files         : in out File_Name_Vectors.Vector;
+      Seen          : in out File_Name_Vectors.Vector;
+      Scenario_Vars : File_Name_Vectors.Vector := File_Name_Vectors.Empty_Vector)
    is
       Actual : constant String :=
         (if Text_Utils.Has_Suffix (Project_File, ".gpr") then Project_File
@@ -82,6 +83,11 @@ package body Adalang_Analyzer.Project_Files is
 
       Config.Log_Verbose ("Reading project with GPR2: " & Actual);
       Options.Add_Switch (GPR2.Options.P, Actual);
+
+      for Var of Scenario_Vars loop
+         Config.Log_Verbose ("Applying scenario variable: " & Var);
+         Options.Add_Switch (GPR2.Options.X, Var);
+      end loop;
 
       if not Tree.Load
                (Options, Artifacts_Info_Level => GPR2.Sources_Only)

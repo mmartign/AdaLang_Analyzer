@@ -846,31 +846,57 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Variant;
    end Owning_Variant;
 
-   --  True when Choice provably matches a known discriminant value: an
-   --  integer choice/range containing Value_Int, or an identifier choice
-   --  (enumeration literal) spelled exactly like Value_Text.
-   function Choice_Matches_Known_Value
+   --  Whether Choice provably matches a known discriminant value (Match),
+   --  provably doesn't (No_Match), or can't be resolved by this pass
+   --  (Unknown_Match, e.g. a named constant choice, or a discriminant value
+   --  that is neither a resolved integer nor a plain identifier).
+   type Discriminant_Match_Result is (Match, No_Match, Unknown_Match);
+
+   function Choice_Match_Result
      (Choice     : Libadalang.Analysis.Ada_Node'Class;
       Value_Text : String;
-      Value_Int  : Abstract_Int) return Boolean
+      Value_Int  : Abstract_Int) return Discriminant_Match_Result
    is
    begin
       if Value_Int.Known then
          declare
             Interval : constant Static_Interval := Choice_Interval (Choice);
          begin
-            return Interval.Known
-              and then Value_Int.Value >= Interval.Low
-              and then Value_Int.Value <= Interval.High;
+            if not Interval.Known then
+               return Unknown_Match;
+            elsif Value_Int.Value >= Interval.Low
+              and then Value_Int.Value <= Interval.High
+            then
+               return Match;
+            else
+               return No_Match;
+            end if;
          end;
       end if;
-      return Value_Text /= "" and then Canonical_Text (Choice) = Value_Text;
-   end Choice_Matches_Known_Value;
+
+      --  The discriminant's own value didn't resolve to an integer, so only
+      --  an identifier-shaped (enumeration literal) choice can be compared
+      --  by text; a choice of any other shape (e.g. a numeric literal)
+      --  can't be related to an unresolved value by spelling alone.
+      if Value_Text = "" or else Choice.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return Unknown_Match;
+      elsif Canonical_Text (Choice) = Value_Text then
+         return Match;
+      else
+         return No_Match;
+      end if;
+   end Choice_Match_Result;
 
    --  The variant Part selects for a known discriminant value, or No_Variant
    --  when no alternative can be proven to match. A non-"others" match
    --  always wins; "others" is only used as a fallback when no sibling
    --  alternative matches, mirroring how a case statement resolves choices.
+   --  A choice this pass can't resolve might itself be the true match, so
+   --  hitting one before a proven Match abandons the search and returns
+   --  No_Variant immediately instead of risking a wrong guess (e.g. falling
+   --  through to "others" when the unresolved choice would really have
+   --  matched).
    function Selected_Variant
      (Part       : Libadalang.Analysis.Variant_Part;
       Value_Text : String;
@@ -882,9 +908,15 @@ package body Adalang_Analyzer.SPARK_Readiness is
          for Choice of V.F_Choices loop
             if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
                Fallback := Libadalang.Analysis.Variant (V);
-            elsif Choice_Matches_Known_Value (Choice, Value_Text, Value_Int)
-            then
-               return Libadalang.Analysis.Variant (V);
+            else
+               case Choice_Match_Result (Choice, Value_Text, Value_Int) is
+                  when Match =>
+                     return Libadalang.Analysis.Variant (V);
+                  when No_Match =>
+                     null;  --  adalang-analyzer: ignore Null_Statement
+                  when Unknown_Match =>
+                     return Libadalang.Analysis.No_Variant;
+               end case;
             end if;
          end loop;
       end loop;

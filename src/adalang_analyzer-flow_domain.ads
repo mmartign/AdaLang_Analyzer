@@ -134,6 +134,13 @@ package Adalang_Analyzer.Flow_Domain is
    --  Marks Key as no longer statically known in any domain, e.g. because
    --  it was passed to a call this analysis can't see through.
 
+   procedure Flow_Havoc_All (State : in out Flow_State);
+   --  Discards every tracked binding. The conservative fallback when a
+   --  call's effects on state outside its own actual parameters can't be
+   --  determined at all (unresolved callee, or no Global contract to name
+   --  what it may write), so nothing previously known can be trusted to
+   --  have survived the call.
+
    function Flow_Join (Left, Right : Flow_State) return Flow_State;
    --  The state true after either of two branches: an exact-value binding
    --  survives only where both sides agree on the same known value; a

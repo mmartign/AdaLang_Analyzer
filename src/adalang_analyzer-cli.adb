@@ -51,6 +51,7 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line ("  -h, --help            Show this help and exit");
       Ada.Text_IO.Put_Line ("  -version              Show version and exit");
       Ada.Text_IO.Put_Line ("  -P<project>.gpr       Analyze the sources of a GNAT project file");
+      Ada.Text_IO.Put_Line ("  -X<name>=<value>      Set a project scenario variable (repeatable)");
       Ada.Text_IO.Put_Line ("  -checks=<list>        Enable/disable checks");
       Ada.Text_IO.Put_Line ("  -list-checks          List available checks");
       Ada.Text_IO.Put_Line
@@ -592,6 +593,7 @@ package body Adalang_Analyzer.CLI is
       Files_To_Process : File_Name_Vectors.Vector;
       Project_Gpr_Files : File_Name_Vectors.Vector;
       Seen_Projects     : File_Name_Vectors.Vector;
+      Scenario_Vars     : File_Name_Vectors.Vector;
       Argument_Count    : constant Natural := Ada.Command_Line.Argument_Count;
       Current_Arg       : Natural := 1;
       Options_Ended     : Boolean := False;
@@ -822,6 +824,19 @@ package body Adalang_Analyzer.CLI is
                elsif Arg'Length > 2 and then Arg (Arg'First .. Arg'First + 1) = "-P" then  --  adalang-analyzer: ignore Magic_Number
                   File_Name_Vectors.Append
                     (Project_Gpr_Files, Arg (Arg'First + 2 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+               elsif Arg = "-X" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line ("adalang-analyzer: expected argument for -X");
+                     Invalid_Options := True;
+                  else
+                     File_Name_Vectors.Append
+                       (Scenario_Vars,
+                        Ada.Command_Line.Argument (Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 2 and then Arg (Arg'First .. Arg'First + 1) = "-X" then  --  adalang-analyzer: ignore Magic_Number
+                  File_Name_Vectors.Append
+                    (Scenario_Vars, Arg (Arg'First + 2 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
                elsif Arg (Arg'First) = '+' or else Arg (Arg'First) = '-' then
                   if Arg'Length > 2 and then Arg (Arg'First + 1) = 'R' then  --  adalang-analyzer: ignore Magic_Number
                      Process_Command_Switch (Arg);
@@ -854,6 +869,33 @@ package body Adalang_Analyzer.CLI is
          return;
       end if;
 
+      declare
+         Any_Check_Enabled : Boolean := False;
+      begin
+         for Rule in Rule_Kind loop
+            if Rule_States (Rule) = Enabled then
+               Any_Check_Enabled := True;
+               exit;  --  adalang-analyzer: ignore No_Exit
+            end if;
+         end loop;
+
+         --  A run with no active check always finds zero violations and
+         --  exits successfully, which reads as "all clear" rather than
+         --  "nothing was actually checked". Warning here (rather than
+         --  failing outright: --do178c=<level> combined with -checks='-*'
+         --  is a legitimate way to record assurance-profile metadata
+         --  without running any check) turns a misconfigured invocation
+         --  (e.g. a missing -checks= or preset flag in a CI script) from
+         --  silent into visible, without breaking that metadata-only use.
+         if not Any_Check_Enabled then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "adalang-analyzer: warning: no checks are enabled; pass " &
+               "-checks=<list>, --spark, --automotive, or --do178c=<level>" &
+               " to actually analyze the source");
+         end if;
+      end;
+
       if Report_Format = Text_Output
         and then Report_Filename /= Null_Unbounded_String
       then
@@ -884,7 +926,7 @@ package body Adalang_Analyzer.CLI is
       --  Project files contribute their own Ada sources on top of any file
       --  names given directly on the command line.
       for P of Project_Gpr_Files loop
-         Load_Project_File (P, Files_To_Process, Seen_Projects);
+         Load_Project_File (P, Files_To_Process, Seen_Projects, Scenario_Vars);
       end loop;
 
       if File_Name_Vectors.Is_Empty (Files_To_Process) then

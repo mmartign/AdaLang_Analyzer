@@ -265,6 +265,15 @@ package body Adalang_Analyzer.Flow_Interp is
    --  contract. Input and Proof_In associations are read-only and therefore
    --  preserve their abstract values. A malformed or unrecognized aggregate
    --  falls back to invalidating every identifier it contains.
+   --
+   --  An unresolved callee, or a resolved one with no Global contract at
+   --  all, gives no basis for naming which outside state it may write:
+   --  ordinary (non-SPARK-annotated) Ada falls in this case for almost
+   --  every call. Trusting prior knowledge to survive such a call is
+   --  unsound (a value known before the call could have been changed by
+   --  it, including through an up-level reference the caller never passes
+   --  as a parameter), so this discards every tracked binding instead of
+   --  leaving them untouched.
    procedure Havoc_Global_Effects
      (Call  : Libadalang.Analysis.Name'Class;
       State : in out Flow_State)
@@ -273,6 +282,7 @@ package body Adalang_Analyzer.Flow_Interp is
         Call_Declaration (Call);
    begin
       if Libadalang.Analysis.Is_Null (Decl) then
+         Flow_Havoc_All (State);
          return;
       end if;
 
@@ -281,6 +291,7 @@ package body Adalang_Analyzer.Flow_Interp is
            Contract_Expression (Decl, "Global");
       begin
          if Libadalang.Analysis.Is_Null (Global) then
+            Flow_Havoc_All (State);
             return;
          elsif Global.Kind not in Libadalang.Common.Ada_Base_Aggregate
          then
@@ -315,6 +326,7 @@ package body Adalang_Analyzer.Flow_Interp is
          Log_Verbose
            ("skipping Global-effect interpretation: " &
             Ada.Exceptions.Exception_Message (Exc));
+         Flow_Havoc_All (State);
    end Havoc_Global_Effects;
 
    procedure Havoc_Call_Actuals
@@ -1209,45 +1221,61 @@ package body Adalang_Analyzer.Flow_Interp is
       end;
    end Interpret_Loop;
 
-   --  True when Selector (already confirmed Known) is covered by one of
-   --  Alt's choices, or Alt is the "when others" alternative. Ada requires
-   --  "when others" to be the final alternative, so by the time it's
-   --  reached here every earlier, numerically-resolvable alternative has
-   --  already been checked and none matched.
-   function Case_Alternative_Matches
+   --  Whether Selector (already confirmed Known) is covered by one of Alt's
+   --  choices: Match when it provably is, No_Match when every choice
+   --  resolved and none covers it, and Unknown when some choice couldn't be
+   --  resolved (e.g. a named constant outside this pass's tracked state)
+   --  and therefore might cover it. "when others" always matches, since
+   --  Ada requires it to be the final, exclusive alternative.
+   type Case_Match_Result is (Match, No_Match, Unknown_Match);
+
+   function Case_Alternative_Match_Result
      (Alt      : Libadalang.Analysis.Case_Stmt_Alternative;
       Selector : Abstract_Int;
-      State    : Flow_State) return Boolean
+      State    : Flow_State) return Case_Match_Result
    is
+      Saw_Unresolved_Choice : Boolean := False;
    begin
       for Choice of Alt.F_Choices loop
          if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
-            return True;
+            return Match;
          end if;
 
          declare
             Range_Value : constant Static_Interval :=
               Choice_Interval (Choice, State);
          begin
-            if Range_Value.Known
-              and then Selector.Value >= Range_Value.Low
-              and then Selector.Value <= Range_Value.High
-            then
-               return True;
+            if Range_Value.Known then
+               if Selector.Value >= Range_Value.Low
+                 and then Selector.Value <= Range_Value.High
+               then
+                  return Match;
+               end if;
+            else
+               Saw_Unresolved_Choice := True;
             end if;
          end;
       end loop;
 
-      return False;
-   end Case_Alternative_Matches;
+      if Saw_Unresolved_Choice then
+         return Unknown_Match;
+      else
+         return No_Match;
+      end if;
+   end Case_Alternative_Match_Result;
 
    --  Interprets a case statement. When the selector's value is known from
-   --  State, only the one alternative it statically matches is interpreted
-   --  (mirroring how Interpret_If picks a single branch); a choice this
-   --  pass can't resolve simply never matches, so an unresolvable choice
-   --  only costs precision, never soundness, falling back to interpreting
-   --  every alternative from a copy of the entering State and joining the
-   --  results, the same way an if statement's branches are joined.
+   --  State, and every alternative up to and including the one that
+   --  provably matches has fully resolvable choices, only that one
+   --  alternative is interpreted (mirroring how Interpret_If picks a single
+   --  branch). An alternative whose choices this pass can't fully resolve
+   --  might itself be the true match, so encountering one before a proven
+   --  match abandons the single-branch fast path entirely rather than risk
+   --  skipping past the alternative that actually applies; the unresolved
+   --  case then falls back, the same as an unknown selector, to
+   --  interpreting every alternative from a copy of the entering State and
+   --  joining the results, the same way an if statement's branches are
+   --  joined.
    function Interpret_Case
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Stmt  : Libadalang.Analysis.Case_Stmt;
@@ -1266,9 +1294,14 @@ package body Adalang_Analyzer.Flow_Interp is
                Alt : constant Libadalang.Analysis.Case_Stmt_Alternative :=
                  Alternatives.Child (I).As_Case_Stmt_Alternative;
             begin
-               if Case_Alternative_Matches (Alt, Selector, State) then
-                  return Interpret_Statements (Unit, Alt.F_Stmts, State);
-               end if;
+               case Case_Alternative_Match_Result (Alt, Selector, State) is
+                  when Match =>
+                     return Interpret_Statements (Unit, Alt.F_Stmts, State);
+                  when No_Match =>
+                     null;  --  adalang-analyzer: ignore Null_Statement
+                  when Unknown_Match =>
+                     exit;
+               end case;
             end;
          end loop;
       end if;

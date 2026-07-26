@@ -263,6 +263,11 @@ package body Adalang_Analyzer.Flow_Domain is
       end loop;
    end Flow_Havoc;
 
+   procedure Flow_Havoc_All (State : in out Flow_State) is
+   begin
+      State := Empty_Flow_State;
+   end Flow_Havoc_All;
+
    function Flow_Join (Left, Right : Flow_State) return Flow_State is
       Result : Flow_State := Empty_Flow_State;
    begin
