@@ -532,23 +532,35 @@ package body Adalang_Analyzer.Checks is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return False;
-      elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
-         return True;
-      elsif Node.Kind in Libadalang.Common.Ada_Name then
+      elsif Node.Kind in
+        Libadalang.Common.Ada_Call_Expr
+          | Libadalang.Common.Ada_Dotted_Name
+          | Libadalang.Common.Ada_Identifier
+      then
          begin
-            declare
-               Decl : constant Libadalang.Analysis.Basic_Decl :=
-                 Node.As_Name.P_Referenced_Decl
-                   (Imprecise_Fallback => True);
-            begin
-               if not Libadalang.Analysis.Is_Null (Decl)
-                 and then Decl.Kind in
-                   Libadalang.Common.Ada_Basic_Subp_Decl
-                     | Libadalang.Common.Ada_Base_Subp_Body
+            if Node.As_Name.P_Is_Call then
+               --  Libadalang models enumeration literals as parameterless
+               --  calls. They are static values, however, and do not create
+               --  elaboration-order dependencies.
+               if Node.Kind in
+                 Libadalang.Common.Ada_Dotted_Name
+                   | Libadalang.Common.Ada_Identifier
                then
-                  return True;
+                  declare
+                     Decl : constant Libadalang.Analysis.Basic_Decl :=
+                       Node.As_Name.P_Referenced_Decl
+                         (Imprecise_Fallback => True);
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Decl)
+                       and then Decl.Kind in
+                         Libadalang.Common.Ada_Enum_Literal_Decl_Range
+                     then
+                        return False;
+                     end if;
+                  end;
                end if;
-            end;
+               return True;
+            end if;
          exception
             when Exc : others =>
                Log_Verbose
