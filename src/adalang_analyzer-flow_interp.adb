@@ -199,7 +199,7 @@ package body Adalang_Analyzer.Flow_Interp is
       end loop;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping formal-value seeding: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Seed_Formal_Values;
@@ -323,7 +323,7 @@ package body Adalang_Analyzer.Flow_Interp is
       end;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping Global-effect interpretation: " &
             Ada.Exceptions.Exception_Message (Exc));
          Flow_Havoc_All (State);
@@ -414,7 +414,7 @@ package body Adalang_Analyzer.Flow_Interp is
       end;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping postcondition interpretation: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Apply_Call_Postcondition;
@@ -767,7 +767,7 @@ package body Adalang_Analyzer.Flow_Interp is
       end case;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping conversion/index check: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Check_Conversion_Or_Index;

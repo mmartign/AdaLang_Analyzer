@@ -183,7 +183,7 @@ package body Adalang_Analyzer.Checks is
             end if;
          exception
             when Exc : others =>
-               Log_Verbose
+               Log_Verbose_Once
                  ("skipping class-wide operand resolution: " &
                   Ada.Exceptions.Exception_Message (Exc));
          end;
@@ -563,7 +563,7 @@ package body Adalang_Analyzer.Checks is
             end if;
          exception
             when Exc : others =>
-               Log_Verbose
+               Log_Verbose_Once
                  ("skipping call resolution: " &
                   Ada.Exceptions.Exception_Message (Exc));
          end;
@@ -1054,7 +1054,7 @@ package body Adalang_Analyzer.Checks is
       exception
          when Exc : others =>
             Skipped_Nodes := Skipped_Nodes + 1;
-            Log_Verbose
+            Log_Verbose_Once
               ("skipping checks at " & Node.Image & ": " &
                Ada.Exceptions.Exception_Message (Exc));
       end;

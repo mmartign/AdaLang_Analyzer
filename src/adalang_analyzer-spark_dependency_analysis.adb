@@ -694,7 +694,7 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
       end loop;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping dependency effects for call: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Apply_Call;
@@ -1208,7 +1208,7 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
       end loop;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping dependency analysis for subprogram: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Analyze_Subprogram;

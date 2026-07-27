@@ -24,6 +24,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Analysis.Basic_Decl;
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Libadalang.Common.Call_Expr_Kind;
 
    type Access_Info is record
       Key        : Libadalang.Analysis.Ada_Node :=
@@ -360,47 +361,51 @@ package body Adalang_Analyzer.SPARK_Readiness is
       Root  : Libadalang.Analysis.Subp_Body;
       Items : in out Access_Vectors.Vector)
    is
-      Decl  : Libadalang.Analysis.Basic_Decl;
-      Seen  : Actual_Alias_Vectors.Vector;
+      Target : constant Libadalang.Analysis.Name :=
+        (if Call.Kind = Libadalang.Common.Ada_Call_Expr
+         then Call.As_Call_Expr.F_Name
+         else Libadalang.Analysis.Name (Call));
+      Decl   : Libadalang.Analysis.Basic_Decl;
+      Seen   : Actual_Alias_Vectors.Vector;
       Check_Aliasing : constant Boolean :=
         Rule_States (Aliasing_Between_Parameters) = Enabled;
    begin
-      for Pair of Call.P_Call_Params loop
-         declare
-            Mode : constant Libadalang.Common.Ada_Node_Kind_Type :=
-              Formal_Mode (Libadalang.Analysis.Param (Pair));
-         begin
-            if Check_Aliasing then
-               Check_Actual_Aliasing
-                 (Unit, Libadalang.Analysis.Actual (Pair),
-                  Mode in Libadalang.Common.Ada_Mode_Out
-                    | Libadalang.Common.Ada_Mode_In_Out,
-                  Seen);
-            end if;
+      --  P_Call_Params applies to a Call_Expr. A call statement may instead
+      --  contain a bare name for a parameterless call.
+      if Call.Kind = Libadalang.Common.Ada_Call_Expr then
+         for Pair of Call.P_Call_Params loop
+            declare
+               Mode : constant Libadalang.Common.Ada_Node_Kind_Type :=
+                 Formal_Mode (Libadalang.Analysis.Param (Pair));
+            begin
+               if Check_Aliasing then
+                  Check_Actual_Aliasing
+                    (Unit, Libadalang.Analysis.Actual (Pair),
+                     Mode in Libadalang.Common.Ada_Mode_Out
+                       | Libadalang.Common.Ada_Mode_In_Out,
+                     Seen);
+               end if;
 
-            if Mode = Libadalang.Common.Ada_Mode_Out then
-               Collect_Accesses
-                 (Unit, Libadalang.Analysis.Actual (Pair), Root, Items,
-                  As_Write => True);
-            elsif Mode = Libadalang.Common.Ada_Mode_In_Out then
-               Collect_Accesses
-                 (Unit, Libadalang.Analysis.Actual (Pair), Root, Items);
-               Collect_Accesses
-                 (Unit, Libadalang.Analysis.Actual (Pair), Root, Items,
-                  As_Write => True);
-            else
-               Collect_Accesses
-                 (Unit, Libadalang.Analysis.Actual (Pair), Root, Items);
-            end if;
-         end;
-      end loop;
+               if Mode = Libadalang.Common.Ada_Mode_Out then
+                  Collect_Accesses
+                    (Unit, Libadalang.Analysis.Actual (Pair), Root, Items,
+                     As_Write => True);
+               elsif Mode = Libadalang.Common.Ada_Mode_In_Out then
+                  Collect_Accesses
+                    (Unit, Libadalang.Analysis.Actual (Pair), Root, Items);
+                  Collect_Accesses
+                    (Unit, Libadalang.Analysis.Actual (Pair), Root, Items,
+                     As_Write => True);
+               else
+                  Collect_Accesses
+                    (Unit, Libadalang.Analysis.Actual (Pair), Root, Items);
+               end if;
+            end;
+         end loop;
+      end if;
 
       begin
-         if Call.Kind = Libadalang.Common.Ada_Call_Expr then
-            Decl := Call.As_Call_Expr.F_Name.P_Referenced_Decl;
-         else
-            Decl := Call.P_Referenced_Decl;
-         end if;
+         Decl := Target.P_Referenced_Decl;
          if not Libadalang.Analysis.Is_Null (Decl) then
             declare
                Global : constant Libadalang.Analysis.Expr :=
@@ -411,7 +416,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
          end if;
       exception
          when Exc : others =>
-            Log_Verbose
+            Log_Verbose_Once
               ("skipping Global contract collection: " &
                Ada.Exceptions.Exception_Message (Exc));
       end;
@@ -419,7 +424,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
       when Exc : others =>
          --  Resolution failure loses precision but must never turn into a
          --  guessed contract violation.
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping call-access collection: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Collect_Call;
@@ -442,8 +447,20 @@ package body Adalang_Analyzer.SPARK_Readiness is
          Collect_Accesses (Unit, Node.As_Assign_Stmt.F_Expr, Root, Items);
          return;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
-         Collect_Call (Unit, Node.As_Call_Expr.F_Name, Root, Items);
-         return;
+         declare
+            Call : constant Libadalang.Analysis.Call_Expr :=
+              Node.As_Call_Expr;
+         begin
+            if Call.P_Kind = Libadalang.Common.Call then
+               Collect_Call (Unit, Call, Root, Items);
+               return;
+            end if;
+         exception
+            when Exc : others =>
+               Log_Verbose_Once
+                 ("skipping call classification at " & Node.Image & ": " &
+                  Ada.Exceptions.Exception_Message (Exc));
+         end;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt then
          Collect_Call (Unit, Node.As_Call_Stmt.F_Call, Root, Items);
          return;
@@ -489,15 +506,22 @@ package body Adalang_Analyzer.SPARK_Readiness is
       if Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
          return Same_Parameter (Node.As_Assign_Stmt.F_Dest, Param, Name);
       elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt then
-         for Pair of Node.As_Call_Stmt.F_Call.P_Call_Params loop
-            if Formal_Mode (Libadalang.Analysis.Param (Pair)) =
-                 Libadalang.Common.Ada_Mode_Out
-              and then Same_Parameter
-                (Libadalang.Analysis.Actual (Pair), Param, Name)
-            then
-               return True;
+         declare
+            Call : constant Libadalang.Analysis.Name :=
+              Node.As_Call_Stmt.F_Call;
+         begin
+            if Call.Kind = Libadalang.Common.Ada_Call_Expr then
+               for Pair of Call.P_Call_Params loop
+                  if Formal_Mode (Libadalang.Analysis.Param (Pair)) =
+                       Libadalang.Common.Ada_Mode_Out
+                    and then Same_Parameter
+                      (Libadalang.Analysis.Actual (Pair), Param, Name)
+                  then
+                     return True;
+                  end if;
+               end loop;
             end if;
-         end loop;
+         end;
       end if;
       return False;
    exception
@@ -672,7 +696,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
                      end if;
                   exception
                      when Exc : others =>
-                        Log_Verbose
+                        Log_Verbose_Once
                           ("skipping output designator resolution: " &
                            Ada.Exceptions.Exception_Message (Exc));
                   end;
@@ -796,7 +820,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
       end if;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping blocking-operation check: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Check_Potentially_Blocking;
@@ -1059,7 +1083,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
       end;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping discriminant check: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Check_Discriminant_Access;
@@ -1229,7 +1253,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
       when Exc : others =>
          --  Readiness checks are deliberately best effort: incomplete name
          --  resolution must not prevent the ordinary analyzer from running.
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping readiness analysis for subprogram: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Analyze_Subprogram;

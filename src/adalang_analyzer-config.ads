@@ -40,6 +40,11 @@ package Adalang_Analyzer.Config is
    procedure Log_Verbose (Message : String);
    --  Prints a diagnostic line when Verbose_Mode is set and Quiet_Mode isn't.
 
+   procedure Log_Verbose_Once (Message : String);
+   --  Prints one occurrence of a recoverable semantic diagnostic. Libadalang
+   --  can propagate the same memoized resolution failure through many
+   --  dependent property queries; those repetitions add no new information.
+
    function Assurance_Profile_Name return String;
    --  Stable human-readable name included in structured evidence.
 

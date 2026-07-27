@@ -803,7 +803,7 @@ package body Adalang_Analyzer.Flow_Eval is
       Flow_Range_Set (False_State, Key, False_Range);
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping comparison narrowing: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Narrow_Identifier_By_Comparison;

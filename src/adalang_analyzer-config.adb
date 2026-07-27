@@ -4,9 +4,37 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Containers.Indefinite_Hashed_Sets;
+with Ada.Strings.Hash;
 with Ada.Text_IO;
 
 package body Adalang_Analyzer.Config is
+
+   package Diagnostic_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
+
+   Reported_Diagnostics : Diagnostic_Sets.Set;
+
+   function Canonical_Diagnostic (Message : String) return String is
+      Memoized_Suffix : constant String := " (memoized)";
+   begin
+      if Message'Length >= Memoized_Suffix'Length
+        and then Message
+          (Message'Last - Memoized_Suffix'Length + 1 .. Message'Last) =
+            Memoized_Suffix
+      then
+         return
+           (if Message'Length = Memoized_Suffix'Length
+            then ""
+            else Canonical_Diagnostic
+              (Message
+                 (Message'First ..
+                    Message'Last - Memoized_Suffix'Length)));
+      end if;
+      return Message;
+   end Canonical_Diagnostic;
 
    function Assurance_Profile_Name return String is
    begin
@@ -39,5 +67,14 @@ package body Adalang_Analyzer.Config is
          Ada.Text_IO.Put_Line ("adalang-analyzer [INFO]: " & Message);
       end if;
    end Log_Verbose;
+
+   procedure Log_Verbose_Once (Message : String) is
+      Canonical : constant String := Canonical_Diagnostic (Message);
+   begin
+      if not Reported_Diagnostics.Contains (Canonical) then
+         Reported_Diagnostics.Include (Canonical);
+         Log_Verbose (Canonical);
+      end if;
+   end Log_Verbose_Once;
 
 end Adalang_Analyzer.Config;

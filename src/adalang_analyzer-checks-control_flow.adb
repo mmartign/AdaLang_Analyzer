@@ -571,7 +571,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                      when Exc : others =>
                         --  An unresolved call profile is conservatively
                         --  skipped.
-                        Log_Verbose
+                        Log_Verbose_Once
                           ("skipping unresolved call profile: " &
                            Ada.Exceptions.Exception_Message (Exc));
                   end;

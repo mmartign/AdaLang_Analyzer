@@ -162,7 +162,7 @@ package body Adalang_Analyzer.Subprogram_Summaries is
          end if;
       exception
          when Exc : others =>
-            Log_Verbose
+            Log_Verbose_Once
               ("skipping subprogram declaration-part resolution: " &
                Ada.Exceptions.Exception_Message (Exc));
       end;
@@ -181,7 +181,7 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       Summaries.Append (Item);
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping subprogram summary registration: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Register_Body;
@@ -206,7 +206,7 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       end if;
    exception
       when Exc : others =>
-         Log_Verbose
+         Log_Verbose_Once
            ("skipping unit summary scan: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Scan_Unit;
