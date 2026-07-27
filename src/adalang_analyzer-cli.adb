@@ -22,6 +22,7 @@ with Libadalang.Unit_Files;
 
 with Adalang_Analyzer.Checks;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
+with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Project_Files; use Adalang_Analyzer.Project_Files;
 with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;         use Adalang_Analyzer.Rules;
@@ -649,6 +650,11 @@ package body Adalang_Analyzer.CLI is
       Options_Ended     : Boolean := False;
       Ctx               : Libadalang.Analysis.Analysis_Context;
    begin
+      --  Proof obligations have a run lifecycle independent from ordinary
+      --  rule findings. No producer or reporter is connected yet, but reset
+      --  the registry here so its ownership is explicit from the outset.
+      Adalang_Analyzer.Proof_Obligations.Reset;
+
       --  Left-to-right scan of the command line: switches update the mode
       --  flags/rule states above, everything else (or anything after "--")
       --  is collected as either a project file (-P) or a source file name.
@@ -1063,6 +1069,32 @@ package body Adalang_Analyzer.CLI is
          end if;
          Ada.Text_IO.Put_Line ("Files scanned : " & To_Decimal (Source_File_Count));
          Ada.Text_IO.Put_Line ("Violations    : " & To_Decimal (Violations));
+
+         if Adalang_Analyzer.Proof_Obligations.Count > 0 then
+            Ada.Text_IO.Put_Line ("");
+            Ada.Text_IO.Put_Line
+              ("Proof obligations (" &
+               Adalang_Analyzer.Proof_Obligations.Scope_Description & "):");
+            Ada.Text_IO.Put_Line
+              ("  Total : " &
+               To_Decimal (Adalang_Analyzer.Proof_Obligations.Count));
+            for Status in
+              Adalang_Analyzer.Proof_Obligations.Obligation_Status
+            loop
+               declare
+                  Status_Count : constant Natural :=
+                    Adalang_Analyzer.Proof_Obligations.Count (Status);
+               begin
+                  if Status_Count > 0 then
+                     Ada.Text_IO.Put_Line
+                       ("  " &
+                        Adalang_Analyzer.Proof_Obligations.Status_Name
+                          (Status) &
+                        " : " & To_Decimal (Status_Count));
+                  end if;
+               end;
+            end loop;
+         end if;
 
          if Baseline_Matches > 0 then
             Ada.Text_IO.Put_Line

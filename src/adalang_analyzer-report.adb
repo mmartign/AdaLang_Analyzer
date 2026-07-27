@@ -17,6 +17,7 @@ with Ada.Text_IO;
 with Interfaces;
 
 with Adalang_Analyzer.Config;
+with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Report is
@@ -319,6 +320,34 @@ package body Adalang_Analyzer.Report is
       Ada.Text_IO.Put_Line
         (File, "  ""baselineMatches"": " &
          Text_Utils.To_Decimal (Baseline_Matches) & ",");
+      Ada.Text_IO.Put_Line
+        (File, "  ""proofSummary"": {""scope"": " &
+         """" &
+         JSON_Escape
+           (Adalang_Analyzer.Proof_Obligations.Scope_Description) &
+         """, ""total"": " &
+         Text_Utils.To_Decimal
+           (Adalang_Analyzer.Proof_Obligations.Count) &
+         ", ""provedSafe"": " &
+         Text_Utils.To_Decimal
+           (Adalang_Analyzer.Proof_Obligations.Count
+              (Adalang_Analyzer.Proof_Obligations.Proved_Safe)) &
+         ", ""definiteError"": " &
+         Text_Utils.To_Decimal
+           (Adalang_Analyzer.Proof_Obligations.Count
+              (Adalang_Analyzer.Proof_Obligations.Definite_Error)) &
+         ", ""unproved"": " &
+         Text_Utils.To_Decimal
+           (Adalang_Analyzer.Proof_Obligations.Count
+              (Adalang_Analyzer.Proof_Obligations.Unproved)) &
+         ", ""unreachable"": " &
+         Text_Utils.To_Decimal
+           (Adalang_Analyzer.Proof_Obligations.Count
+              (Adalang_Analyzer.Proof_Obligations.Unreachable)) &
+         ", ""unsupported"": " &
+         Text_Utils.To_Decimal
+           (Adalang_Analyzer.Proof_Obligations.Count
+              (Adalang_Analyzer.Proof_Obligations.Unsupported)) & "},");
       Ada.Text_IO.Put_Line (File, "  ""findings"": [");
       for Item of Findings loop
          if not First then
@@ -347,6 +376,47 @@ package body Adalang_Analyzer.Report is
                To_String (Item.Fingerprint) &
                """, ""baseline"": " &
                (if Item.Matches_Base then "true" else "false") & "}");
+         end;
+      end loop;
+      Ada.Text_IO.New_Line (File);
+      Ada.Text_IO.Put_Line (File, "  ],");
+      Ada.Text_IO.Put_Line (File, "  ""proofObligations"": [");
+      First := True;
+      for Index in 1 .. Adalang_Analyzer.Proof_Obligations.Count loop
+         if not First then
+            Ada.Text_IO.Put_Line (File, ",");
+         end if;
+         First := False;
+         declare
+            package Proof renames Adalang_Analyzer.Proof_Obligations;
+            Item : constant Proof.Obligation := Proof.Element (Index);
+         begin
+            Ada.Text_IO.Put
+              (File,
+               "    {""id"": """ &
+               JSON_Escape (To_String (Item.Stable_Id)) &
+               """, ""kind"": """ & Proof.Kind_Name (Item.Kind) &
+               """, ""status"": """ & Proof.Status_Name (Item.Status) &
+               """, ""method"": """ & Proof.Method_Name (Item.Method) &
+               """, ""file"": """ &
+               JSON_Escape
+                 (Normalized_Path (To_String (Item.Location.Filename))) &
+               """, ""line"": " &
+               Text_Utils.To_Decimal (Item.Location.Line) &
+               ", ""column"": " &
+               Text_Utils.To_Decimal (Item.Location.Column) &
+               ", ""operation"": """ &
+               JSON_Escape (To_String (Item.Operation)) &
+               """, ""assumptions"": """ &
+               JSON_Escape (To_String (Item.Assumptions)) &
+               """, ""abstractState"": """ &
+               JSON_Escape (To_String (Item.Abstract_State)) &
+               """, ""explanation"": """ &
+               JSON_Escape (To_String (Item.Explanation)) &
+               """, ""imprecisionSource"": """ &
+               JSON_Escape (To_String (Item.Imprecision_Source)) &
+               """, ""configurationId"": """ &
+               JSON_Escape (To_String (Item.Configuration_Id)) & """}");
          end;
       end loop;
       Ada.Text_IO.New_Line (File);

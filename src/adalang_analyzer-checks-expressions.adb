@@ -10,6 +10,7 @@ with Adalang_Analyzer.Ada_Text;    use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Config;      use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
+with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;      use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;       use Adalang_Analyzer.Rules;
 
@@ -121,11 +122,40 @@ package body Adalang_Analyzer.Checks.Expressions is
         and then Op in Libadalang.Common.Ada_Op_Div
           | Libadalang.Common.Ada_Op_Mod
           | Libadalang.Common.Ada_Op_Rem
-        and then Is_Static_Zero (Expr.F_Right)
       then
-         Report_Rule_Violation
-           (Unit, Expr.F_Right, Division_By_Zero,
-            "right operand is statically zero");
+         if Is_Static_Zero (Expr.F_Right) then
+            Adalang_Analyzer.Proof_Obligations.Register_At
+              (Unit             => Unit,
+               Node             => Expr.F_Right,
+               Kind             =>
+                 Adalang_Analyzer.Proof_Obligations.Division_By_Zero_Check,
+               Status           =>
+                 Adalang_Analyzer.Proof_Obligations.Definite_Error,
+               Method           =>
+                 Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+               Abstract_State   => "right operand => 0",
+               Explanation      => "right operand is statically zero",
+               Configuration_Id => Assurance_Profile_Name);
+            Report_Rule_Violation
+              (Unit, Expr.F_Right, Division_By_Zero,
+               "right operand is statically zero");
+         else
+            Adalang_Analyzer.Proof_Obligations.Register_At
+              (Unit               => Unit,
+               Node               => Expr.F_Right,
+               Kind               =>
+                 Adalang_Analyzer.Proof_Obligations.Division_By_Zero_Check,
+               Status             =>
+                 Adalang_Analyzer.Proof_Obligations.Unproved,
+               Method             =>
+                 Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+               Explanation        =>
+                 "division-by-zero failure is not established, but absence " &
+                 "is not proved",
+               Imprecision_Source =>
+                 "static evaluation does not determine a nonzero operand",
+               Configuration_Id   => Assurance_Profile_Name);
+         end if;
       end if;
 
       if Rule_States (Floating_Equality) = Enabled

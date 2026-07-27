@@ -19,6 +19,7 @@ with Adalang_Analyzer.Checks.Expressions;
 with Adalang_Analyzer.Config;               use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Domain;          use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;            use Adalang_Analyzer.Flow_Eval;
+with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;               use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;                use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.SPARK_Readiness;
@@ -389,12 +390,41 @@ package body Adalang_Analyzer.Checks is
                   Cond : constant Libadalang.Analysis.Expr :=
                     Assertion_Expression (Node.As_Pragma_Node);
                begin
-                  if not Libadalang.Analysis.Is_Null (Cond)
-                    and then Boolean_Value (Cond) = Bool_False
-                  then
-                     Report_Rule_Violation
-                       (Unit, Cond, Known_Assertion_Failure,
-                        "assertion condition is statically false");
+                  if not Libadalang.Analysis.Is_Null (Cond) then
+                     if Boolean_Value (Cond) = Bool_False then
+                        Adalang_Analyzer.Proof_Obligations.Register_At
+                          (Unit           => Unit,
+                           Node           => Cond,
+                           Kind           =>
+                             Adalang_Analyzer.Proof_Obligations.Assertion_Check,
+                           Status         =>
+                             Adalang_Analyzer.Proof_Obligations.Definite_Error,
+                           Method         =>
+                             Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+                           Abstract_State => "assertion condition => false",
+                           Explanation    =>
+                             "assertion condition is statically false",
+                           Configuration_Id => Assurance_Profile_Name);
+                        Report_Rule_Violation
+                          (Unit, Cond, Known_Assertion_Failure,
+                           "assertion condition is statically false");
+                     else
+                        Adalang_Analyzer.Proof_Obligations.Register_At
+                          (Unit         => Unit,
+                           Node         => Cond,
+                           Kind         =>
+                             Adalang_Analyzer.Proof_Obligations.Assertion_Check,
+                           Status       =>
+                             Adalang_Analyzer.Proof_Obligations.Unproved,
+                           Method       =>
+                             Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+                           Explanation  =>
+                             "assertion failure is not established, but the " &
+                             "assertion is not proved",
+                           Imprecision_Source =>
+                             "static evaluation is inconclusive",
+                           Configuration_Id => Assurance_Profile_Name);
+                     end if;
                   end if;
                end;
             end if;

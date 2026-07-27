@@ -13,6 +13,7 @@ with Adalang_Analyzer.Ada_Text;    use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Config;      use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
+with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;      use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;       use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Subprogram_Summaries;
@@ -1069,15 +1070,61 @@ package body Adalang_Analyzer.SPARK_Readiness is
             Selected   : constant Libadalang.Analysis.Variant :=
               Selected_Variant (Part, Value_Text, Value_Int);
          begin
-            if not Libadalang.Analysis.Is_Null (Selected)
-              and then Libadalang.Analysis.Ada_Node (Selected) /=
-                Libadalang.Analysis.Ada_Node (Actual_Variant)
+            if Libadalang.Analysis.Is_Null (Selected) then
+               Adalang_Analyzer.Proof_Obligations.Register_At
+                 (Unit               => Unit,
+                  Node               => Node,
+                  Kind               =>
+                    Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
+                  Status             =>
+                    Adalang_Analyzer.Proof_Obligations.Unproved,
+                  Method             =>
+                    Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+                  Explanation        =>
+                    "discriminant failure is not established, but the " &
+                    "component access is not proved safe",
+                  Imprecision_Source =>
+                    "the selected variant could not be resolved",
+                  Configuration_Id   => Assurance_Profile_Name);
+            elsif Libadalang.Analysis.Ada_Node (Selected) /=
+              Libadalang.Analysis.Ada_Node (Actual_Variant)
             then
+               Adalang_Analyzer.Proof_Obligations.Register_At
+                 (Unit             => Unit,
+                  Node             => Node,
+                  Kind             =>
+                    Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
+                  Status           =>
+                    Adalang_Analyzer.Proof_Obligations.Definite_Error,
+                  Method           =>
+                    Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+                  Abstract_State   =>
+                    "selected variant excludes the referenced component",
+                  Explanation      =>
+                    "component belongs to a variant excluded by the " &
+                    "object's discriminant constraint",
+                  Configuration_Id => Assurance_Profile_Name);
                Report_Rule_Violation
                  (Unit, Node, Known_Discriminant_Check_Failure,
                   "component '" & Node_Text (Suffix) &
                     "' belongs to a variant excluded by the object's " &
                     "discriminant constraint");
+            else
+               Adalang_Analyzer.Proof_Obligations.Register_At
+                 (Unit               => Unit,
+                  Node               => Node,
+                  Kind               =>
+                    Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
+                  Status             =>
+                    Adalang_Analyzer.Proof_Obligations.Unproved,
+                  Method             =>
+                    Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+                  Explanation        =>
+                    "discriminant failure is not established, but the " &
+                    "component access is not yet a proved-safe result",
+                  Imprecision_Source =>
+                    "proved-safe discriminant outcomes are not enabled",
+                  Configuration_Id   => Assurance_Profile_Name);
             end if;
          end;
       end;

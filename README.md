@@ -5,6 +5,12 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
+The project's current competitive scope and permitted product claims are
+defined in [POSITIONING.md](POSITIONING.md). The meaning and limitations of
+analysis results, including the boundary between present findings and any
+future proof status, are defined in
+[ASSURANCE_MODEL.md](ASSURANCE_MODEL.md).
+
 ## Relationship to Libadalang and AdaCore
 
 - **Engine:** This tool is built on top of
@@ -182,6 +188,18 @@ Integer arithmetic is also checked against the resolved base type of the
 operation. This models Ada's overflow check separately from the subtype check
 performed by a later assignment and avoids reporting both obligations for the
 same definitely overflowing expression.
+
+Division, integer arithmetic, range checks, index checks, selected discriminant
+checks, assertions, preconditions, and postconditions reached by the
+corresponding enabled checks are also recorded in a proof-obligation registry.
+Text output summarizes their statuses, and JSON output includes both
+`proofSummary` and `proofObligations`. An operation whose failure is
+established is `Definite_Error`; other enumerated operations are `Unproved`.
+The latter does not assert that an error is possible—it records that this
+analysis has made no absence-of-error proof. The registry does not yet emit
+`Proved_Safe` results and remains limited by the current interpreter's
+unsupported and skipped boundaries, so output labels its scope as
+`enumerated outcomes in current analysis scope; not exhaustive`.
 
 Effective `SPARK_Mode` inherited through a declaration is respected by these
 contract checks. The SPARK-readiness pass separately compares semantic global
@@ -492,6 +510,10 @@ The performance smoke test scans the analyzer's own sources with every check
 and uses a deliberately generous 15-second default ceiling to catch accidental
 algorithmic regressions rather than normal machine-to-machine variation.
 Override it with `ADALANG_MAX_SMOKE_SECONDS` on controlled benchmark workers.
+
+JSON reports include proof-obligation details alongside ordinary findings.
+These are separate evidence channels: finding baselines affect violations but
+do not suppress or alter proof obligations.
 
 ## Commercial Value & Professional Services
 

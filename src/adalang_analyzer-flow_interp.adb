@@ -13,6 +13,7 @@ with Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Config;      use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
+with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Text_Utils;
@@ -22,6 +23,57 @@ package body Adalang_Analyzer.Flow_Interp is
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Common.Ada_Node_Kind_Type;
    use type Rules.Rule_Kind;
+
+   package Proof renames Adalang_Analyzer.Proof_Obligations;
+
+   procedure Record_Outcome
+     (Unit           : Libadalang.Analysis.Analysis_Unit;
+      Node           : Libadalang.Analysis.Ada_Node'Class;
+      Kind           : Proof.Obligation_Kind;
+      Status         : Proof.Obligation_Status;
+      Method         : Proof.Analysis_Method;
+      Explanation    : String;
+      Abstract_State : String := "";
+      Imprecision    : String := "") is
+   begin
+      Proof.Register_At
+        (Unit             => Unit,
+         Node             => Node,
+         Kind             => Kind,
+         Status           => Status,
+         Method           => Method,
+         Abstract_State   => Abstract_State,
+         Explanation      => Explanation,
+         Imprecision_Source => Imprecision,
+         Configuration_Id => Config.Assurance_Profile_Name);
+   end Record_Outcome;
+
+   procedure Record_Definite_Error
+     (Unit           : Libadalang.Analysis.Analysis_Unit;
+      Node           : Libadalang.Analysis.Ada_Node'Class;
+      Kind           : Proof.Obligation_Kind;
+      Method         : Proof.Analysis_Method;
+      Explanation    : String;
+      Abstract_State : String := "") is
+   begin
+      Record_Outcome
+        (Unit, Node, Kind, Proof.Definite_Error, Method, Explanation,
+         Abstract_State);
+   end Record_Definite_Error;
+
+   procedure Record_Unproved
+     (Unit           : Libadalang.Analysis.Analysis_Unit;
+      Node           : Libadalang.Analysis.Ada_Node'Class;
+      Kind           : Proof.Obligation_Kind;
+      Method         : Proof.Analysis_Method;
+      Explanation    : String;
+      Abstract_State : String := "";
+      Imprecision    : String := "") is
+   begin
+      Record_Outcome
+        (Unit, Node, Kind, Proof.Unproved, Method, Explanation,
+         Abstract_State, Imprecision);
+   end Record_Unproved;
 
    --  Fetches an aspect from any declaration/body part. Missing or
    --  unresolved contracts are represented by a null expression.
@@ -234,9 +286,22 @@ package body Adalang_Analyzer.Flow_Interp is
             Contract_State => Contract_State);
 
          if Boolean_Value (Pre, Contract_State) = Bool_False then
+            Record_Definite_Error
+              (Unit, Call, Proof.Precondition_Check,
+               Proof.Contract_Transfer,
+               "actual arguments make the precondition false",
+               "precondition => false");
             Report.Report_Rule_Violation
               (Unit, Call, Rules.Known_Precondition_Failure,
                "actual arguments make the precondition false");
+         else
+            Record_Unproved
+              (Unit, Call, Proof.Precondition_Check,
+               Proof.Contract_Transfer,
+               "precondition failure is not established, but absence is " &
+                 "not proved",
+               Imprecision =>
+                 "current contract transfer does not certify safety");
          end if;
       end;
    end Check_Call_Precondition;
@@ -637,15 +702,36 @@ package body Adalang_Analyzer.Flow_Interp is
       Rule    : Rules.Rule_Kind;
       Message : String) is
    begin
-      if Config.Rule_States (Rule) = Config.Enabled
-        and then Definitely_Outside_Type (Value, Typ, State)
-        and then not
-          (Rule = Rules.Known_Range_Check_Failure
-           and then Config.Rule_States (Rules.Known_Overflow_Failure) =
-             Config.Enabled
-           and then Known_Arithmetic_Overflow (Value, State))
+      if Config.Rule_States (Rule) /= Config.Enabled then
+         return;
+      end if;
+
+      --  A definitely overflowing expression raises before the subsequent
+      --  subtype check. Do not create a second obligation for an operation
+      --  that is not reached on the represented execution.
+      if Rule = Rules.Known_Range_Check_Failure
+        and then Config.Rule_States (Rules.Known_Overflow_Failure) =
+          Config.Enabled
+        and then Known_Arithmetic_Overflow (Value, State)
       then
+         return;
+      elsif Libadalang.Analysis.Is_Null (Typ) then
+         Record_Unproved
+           (Unit, Value, Proof.Range_Check, Proof.No_Analysis,
+            "target subtype could not be resolved",
+            Imprecision => "semantic type resolution failed");
+      elsif Definitely_Outside_Type (Value, Typ, State) then
+         Record_Definite_Error
+           (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
+            Message, "value range is outside the target subtype range");
          Report.Report_Rule_Violation (Unit, Value, Rule, Message);
+      else
+         Record_Unproved
+           (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
+            "range-check failure is not established, but absence is not " &
+              "proved",
+            Imprecision =>
+              "the current non-relational range domain is inconclusive");
       end if;
    end Check_Value_Range;
 
@@ -746,15 +832,33 @@ package body Adalang_Analyzer.Flow_Interp is
                              Array_Index_Range (Array_Type, Dim, State);
                         begin
                            if Config.Rule_States
-                                (Rules.Known_Index_Check_Failure) = Config.Enabled
-                             and then not Libadalang.Analysis.Is_Null (Index_Value)
-                             and then Definitely_Outside_Range
-                               (Index_Value, Bounds, State)
+                                (Rules.Known_Index_Check_Failure) =
+                                  Config.Enabled
+                             and then not Libadalang.Analysis.Is_Null
+                               (Index_Value)
                            then
-                              Report.Report_Rule_Violation
-                                (Unit, Index_Value,
-                                 Rules.Known_Index_Check_Failure,
-                                 "index is outside the array index subtype");
+                              if Definitely_Outside_Range
+                                   (Index_Value, Bounds, State)
+                              then
+                                 Record_Definite_Error
+                                   (Unit, Index_Value, Proof.Index_Check,
+                                    Proof.Abstract_Interpretation,
+                                    "index is outside the array index subtype",
+                                    "index range is outside the array bounds");
+                                 Report.Report_Rule_Violation
+                                   (Unit, Index_Value,
+                                    Rules.Known_Index_Check_Failure,
+                                    "index is outside the array index subtype");
+                              else
+                                 Record_Unproved
+                                   (Unit, Index_Value, Proof.Index_Check,
+                                    Proof.Abstract_Interpretation,
+                                    "index-check failure is not established, " &
+                                      "but absence is not proved",
+                                    Imprecision =>
+                                      "index and bound ranges remain " &
+                                      "inconclusive");
+                              end if;
                            end if;
                         end;
                      end loop;
@@ -802,6 +906,11 @@ package body Adalang_Analyzer.Flow_Interp is
               and then Right.Known
               and then Right.Value = 0
             then
+               Record_Definite_Error
+                 (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+                  Proof.Abstract_Interpretation,
+                  "right operand is zero based on earlier state",
+                  "right operand => 0");
                Report.Report_Rule_Violation
                  (Unit, Expr.F_Right, Rules.Division_By_Zero,
                   "right operand is zero here based on an earlier " &
@@ -812,11 +921,42 @@ package body Adalang_Analyzer.Flow_Interp is
 
       if Config.Rule_States (Rules.Known_Overflow_Failure) = Config.Enabled
         and then Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
-        and then Known_Arithmetic_Overflow (Node.As_Expr, State)
+        and then Node.As_Bin_Op.F_Op in
+          Libadalang.Common.Ada_Op_Plus
+            | Libadalang.Common.Ada_Op_Minus
+            | Libadalang.Common.Ada_Op_Mult
+            | Libadalang.Common.Ada_Op_Div
+            | Libadalang.Common.Ada_Op_Pow
       then
-         Report.Report_Rule_Violation
-           (Unit, Node, Rules.Known_Overflow_Failure,
-            "arithmetic result is outside its base type range");
+         declare
+            Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+              Node.As_Expr.P_Expression_Type;
+         begin
+            if not Libadalang.Analysis.Is_Null (Expr_Type)
+              and then Expr_Type.P_Is_Int_Type
+            then
+               if Known_Arithmetic_Overflow (Node.As_Expr, State) then
+                  Record_Definite_Error
+                    (Unit, Node, Proof.Integer_Overflow_Check,
+                     Proof.Abstract_Interpretation,
+                     "arithmetic result is outside its base type range",
+                     "result range is outside the operation's base type");
+                  Report.Report_Rule_Violation
+                    (Unit, Node, Rules.Known_Overflow_Failure,
+                     "arithmetic result is outside its base type range");
+               else
+                  Record_Unproved
+                    (Unit, Node, Proof.Integer_Overflow_Check,
+                     Proof.Abstract_Interpretation,
+                     "overflow is not established, but absence is not proved",
+                     Imprecision =>
+                       "the current range domain does not certify the result");
+               end if;
+            end if;
+         exception
+            when others =>
+               null;
+         end;
       end if;
 
       if Node.Kind = Libadalang.Common.Ada_Call_Expr then
@@ -913,9 +1053,28 @@ package body Adalang_Analyzer.Flow_Interp is
         and then Boolean_Value (Cond) = Bool_Unknown
         and then Boolean_Value (Cond, State) = Bool_False
       then
+         Record_Definite_Error
+           (Unit, Cond, Proof.Assertion_Check,
+            Proof.Abstract_Interpretation,
+            "assertion condition is false based on earlier state",
+            "assertion condition => false");
          Report.Report_Rule_Violation
            (Unit, Cond, Rules.Known_Assertion_Failure,
             "assertion condition is false here based on earlier state");
+      end if;
+
+      if Name /= "assume"
+        and then Config.Rule_States (Rules.Known_Assertion_Failure) =
+          Config.Enabled
+        and then Boolean_Value (Cond, State) /= Bool_False
+      then
+         Record_Unproved
+           (Unit, Cond, Proof.Assertion_Check,
+            Proof.Abstract_Interpretation,
+            "assertion failure is not established, but the assertion is " &
+              "not proved",
+            Imprecision =>
+              "the current Boolean and range domains do not certify it");
       end if;
 
       --  Execution continues only when an assertion succeeds. Assume has
@@ -1549,11 +1708,25 @@ package body Adalang_Analyzer.Flow_Interp is
             if Config.Rule_States (Rules.Known_Postcondition_Failure) =
                  Config.Enabled
               and then Effective_SPARK_Enabled (Subprogram)
-              and then Boolean_Value (Post, Result.State) = Bool_False
             then
-               Report.Report_Rule_Violation
-                 (Unit, Post, Rules.Known_Postcondition_Failure,
-                  "subprogram body makes the postcondition false");
+               if Boolean_Value (Post, Result.State) = Bool_False then
+                  Record_Definite_Error
+                    (Unit, Post, Proof.Postcondition_Check,
+                     Proof.Contract_Transfer,
+                     "subprogram body makes the postcondition false",
+                     "postcondition => false");
+                  Report.Report_Rule_Violation
+                    (Unit, Post, Rules.Known_Postcondition_Failure,
+                     "subprogram body makes the postcondition false");
+               else
+                  Record_Unproved
+                    (Unit, Post, Proof.Postcondition_Check,
+                     Proof.Contract_Transfer,
+                     "postcondition failure is not established, but the " &
+                       "postcondition is not proved",
+                     Imprecision =>
+                       "joined exit state does not certify the contract");
+               end if;
             end if;
          end if;
       end;
