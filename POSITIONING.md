@@ -20,6 +20,18 @@ errors.
 This document describes the position of the current `0.1.0-dev` codebase. It
 does not promise features that are only proposed in the roadmap.
 
+## Motivation
+
+Independent research underscores why this bridge matters. VDC Strategy's
+survey of 500+ embedded engineering decision-makers found that programming
+language choice measurably affects safety, security, and lifecycle cost, and
+rated Ada and SPARK among the top languages for safety and security alongside
+Rust ([AdaCore, "Memory-Safe Languages Offer Protection for Devices and
+TCO"](https://www.adacore.com/papers/memory-safe-languages-offer-protection-for-devices-and-tco)).
+AdaLang Analyzer does not inherit these results; it targets the more common
+case of ordinary Ada code that has not yet moved into the SPARK subset, with
+the goal of making that move tractable.
+
 ## Intended users
 
 AdaLang Analyzer is intended for teams that:
