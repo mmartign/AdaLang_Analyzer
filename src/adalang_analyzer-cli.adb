@@ -42,6 +42,42 @@ package body Adalang_Analyzer.CLI is
    Report_Filename  : Unbounded_String;
    Report_Format    : Output_Format := Text_Output;
 
+   function Normalized_File_Name (Name : String) return String is
+   begin
+      return Ada.Directories.Full_Name (Name);
+   exception
+      when Ada.Directories.Name_Error | Ada.Directories.Use_Error =>
+         --  Preserve invalid or inaccessible inputs so Process_File can emit
+         --  its normal diagnostic. Exact repetitions are still collapsed.
+         return Name;
+   end Normalized_File_Name;
+
+   procedure Deduplicate_Files (Files : in out File_Name_Vectors.Vector) is
+      Unique_Files : File_Name_Vectors.Vector;
+      Identities   : File_Name_Vectors.Vector;
+   begin
+      for Filename of Files loop
+         declare
+            Identity : constant String := Normalized_File_Name (Filename);
+            Seen     : Boolean := False;
+         begin
+            for Existing of Identities loop
+               if Existing = Identity then
+                  Seen := True;
+                  exit;  --  adalang-analyzer: ignore No_Exit
+               end if;
+            end loop;
+
+            if not Seen then
+               File_Name_Vectors.Append (Unique_Files, Filename);
+               File_Name_Vectors.Append (Identities, Identity);
+            end if;
+         end;
+      end loop;
+
+      Files := Unique_Files;
+   end Deduplicate_Files;
+
    --  Prints command-line usage for -h/--help and after an option error.
    procedure Show_Help is
    begin
@@ -948,6 +984,10 @@ package body Adalang_Analyzer.CLI is
       for P of Project_Gpr_Files loop
          Load_Project_File (P, Files_To_Process, Seen_Projects, Scenario_Vars);
       end loop;
+
+      --  A source may be named repeatedly, through path aliases, or both
+      --  explicitly and by a project. Analyze each normalized input once.
+      Deduplicate_Files (Files_To_Process);
 
       if File_Name_Vectors.Is_Empty (Files_To_Process) then
          Ada.Text_IO.Put_Line

@@ -38,8 +38,7 @@ package Adalang_Analyzer.Config is
    Dependency_Threshold  : Positive := Default_Dependency_Threshold;
 
    procedure Log_Verbose (Message : String);
-   --  Prints a diagnostic line when Verbose_Mode is set and Quiet_Mode
-   --  isn't. Consecutive duplicate lines are printed only once.
+   --  Prints a diagnostic line when Verbose_Mode is set and Quiet_Mode isn't.
 
    function Assurance_Profile_Name return String;
    --  Stable human-readable name included in structured evidence.

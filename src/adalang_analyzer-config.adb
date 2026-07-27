@@ -4,13 +4,9 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
-with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 
 package body Adalang_Analyzer.Config is
-
-   Previous_Verbose_Line : Ada.Strings.Unbounded.Unbounded_String;
-   Have_Previous_Line    : Boolean := False;
 
    function Assurance_Profile_Name return String is
    begin
@@ -38,19 +34,9 @@ package body Adalang_Analyzer.Config is
    end Structural_Coverage_Objective;
 
    procedure Log_Verbose (Message : String) is
-      Line : constant String := "adalang-analyzer [INFO]: " & Message;
    begin
-      if Verbose_Mode
-        and then not Quiet_Mode
-        and then
-          (not Have_Previous_Line
-           or else Line /=
-             Ada.Strings.Unbounded.To_String (Previous_Verbose_Line))
-      then
-         Ada.Text_IO.Put_Line (Line);
-         Previous_Verbose_Line :=
-           Ada.Strings.Unbounded.To_Unbounded_String (Line);
-         Have_Previous_Line := True;
+      if Verbose_Mode and then not Quiet_Mode then
+         Ada.Text_IO.Put_Line ("adalang-analyzer [INFO]: " & Message);
       end if;
    end Log_Verbose;
 

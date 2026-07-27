@@ -27,17 +27,23 @@ then
 fi
 grep -F 'error: no source files provided' "$output" >/dev/null
 
-#  Identical adjacent verbose lines are emitted only once, but become visible
-#  again after a different line.
-"$analyzer" -v -checks=No_Goto \
-  tests/automotive_state_clean.ads tests/automotive_state_clean.ads \
-  tests/parameter_mode_clean.adb tests/automotive_state_clean.ads \
-  >"$output" 2>&1
-count=$(grep -Fc \
-  'adalang-analyzer [INFO]: Parsing: tests/automotive_state_clean.ads' \
-  "$output")
-if [ "$count" -ne 2 ]; then
-   echo "consecutive duplicate output was not suppressed" >&2
+#  Repeated sources, including path aliases separated by another input, are
+#  analyzed once. This prevents duplicate verbose lines and duplicate findings.
+if "$analyzer" -v -checks=No_Goto \
+     tests/bug_findings.adb tests/parameter_mode_clean.adb \
+     ./tests/bug_findings.adb >"$output" 2>&1
+then
+   echo "No_Goto finding unexpectedly succeeded" >&2
+   exit 1
+fi
+parse_count=$(grep -Fc \
+  'adalang-analyzer [INFO]: Parsing: tests/bug_findings.adb' "$output")
+finding_count=$(grep -Fc 'warning: goto statement used [No_Goto]' "$output")
+if [ "$parse_count" -ne 1 ] || [ "$finding_count" -ne 1 ] ||
+   ! grep -F 'Files scanned : 2' "$output" >/dev/null ||
+   ! grep -F 'Violations    : 1' "$output" >/dev/null
+then
+   echo "duplicate source input was analyzed more than once" >&2
    cat "$output" >&2
    exit 1
 fi
