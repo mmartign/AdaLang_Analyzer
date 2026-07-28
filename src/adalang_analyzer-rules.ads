@@ -73,6 +73,10 @@ package Adalang_Analyzer.Rules is
       Incomplete_Depends_Contract,
       Depends_Contract_Mismatch,
       Uninitialized_Output,
+      Uninitialized_Read,
+      Missing_Overriding_Indicator,
+      Inefficient_String_Concatenation,
+      Circular_Package_Dependency,
       Known_Precondition_Failure,
       Known_Postcondition_Failure,
       Known_Assertion_Failure,
@@ -704,6 +708,50 @@ package Adalang_Analyzer.Rules is
             "subprogram returns."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
+      Uninitialized_Read =>
+        (Name        => To_Unbounded_String ("Uninitialized_Read"),
+         Description => To_Unbounded_String
+           ("Find scalar local variables with no initial value whose " &
+            "first use is a read rather than an assignment. Writes " &
+            "performed through an out or in out actual parameter are not " &
+            "recognized as initializing the variable."),
+         Guidance    => To_Unbounded_String
+           ("Give the declaration an initial value, or assign it before " &
+            "the first read."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Missing_Overriding_Indicator =>
+        (Name        => To_Unbounded_String ("Missing_Overriding_Indicator"),
+         Description => To_Unbounded_String
+           ("Find primitive subprograms that override an inherited " &
+            "operation without the 'overriding' keyword."),
+         Guidance    => To_Unbounded_String
+           ("Mark the subprogram 'overriding' so the override is explicit " &
+            "and checked by the compiler."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Inefficient_String_Concatenation =>
+        (Name        => To_Unbounded_String
+           ("Inefficient_String_Concatenation"),
+         Description => To_Unbounded_String
+           ("Find string variables rebuilt with '&' inside a loop, an " &
+            "accumulation pattern with quadratic cost."),
+         Guidance    => To_Unbounded_String
+           ("Accumulate into an Ada.Strings.Unbounded.Unbounded_String or " &
+            "a bounded buffer instead of repeatedly concatenating into a " &
+            "String."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Circular_Package_Dependency =>
+        (Name        => To_Unbounded_String ("Circular_Package_Dependency"),
+         Description => To_Unbounded_String
+           ("Find groups of analyzed compilation units whose with clauses " &
+            "form a dependency cycle."),
+         Guidance    => To_Unbounded_String
+           ("Break the cycle by extracting a shared abstraction, moving " &
+            "the dependency to a child unit, or using a limited with."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
       Known_Precondition_Failure =>
         (Name        => To_Unbounded_String ("Known_Precondition_Failure"),
          Description => To_Unbounded_String

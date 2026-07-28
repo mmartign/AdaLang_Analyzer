@@ -5,6 +5,7 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Exceptions;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 with Libadalang.Common;
@@ -399,6 +400,60 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          return False;
    end Is_Object_Renaming_Name;
 
+   --  True when Expr is a '&' concatenation (Libadalang flattens a whole
+   --  chain of '&'s into one Concat_Op, regardless of how many operands)
+   --  and one of its operands has the same canonical text as Target_Text --
+   --  the "S := S & ..." accumulator shape.
+   function Is_Self_Referential_Concatenation
+     (Expr : Libadalang.Analysis.Expr'Class; Target_Text : String)
+      return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Expr)
+        or else Expr.Kind /= Libadalang.Common.Ada_Concat_Op
+      then
+         return False;
+      end if;
+
+      for Operand of Expr.As_Concat_Op.P_Operands loop
+         if Canonical_Text (Operand) = Target_Text then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Self_Referential_Concatenation;
+
+   --  Whether Stmt's target is declared with a fixed-bounds String-family
+   --  type. Reads the assigned declaration's type expression rather than
+   --  requiring an exact type match, so String and project-defined string
+   --  subtypes (e.g. "Name_String") are recognized. Ada.Strings.Unbounded's
+   --  own '&' also reallocates on every call, but its fix is "call Append
+   --  instead of '&'", not "switch to Unbounded_String", so an
+   --  already-Unbounded_String target is deliberately excluded rather than
+   --  given this rule's misleading guidance. Resolution failure is treated
+   --  as "not a string" rather than risking a false positive.
+   function Target_Is_String_Typed
+     (Stmt : Libadalang.Analysis.Assign_Stmt) return Boolean
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Data_Flow.Referenced_Declaration (Stmt.F_Dest);
+   begin
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return False;
+      end if;
+
+      declare
+         Type_Text : constant String :=
+           Canonical_Text (Decl.P_Type_Expression);
+      begin
+         return Ada.Strings.Fixed.Index (Type_Text, "string") > 0
+           and then Ada.Strings.Fixed.Index (Type_Text, "unbounded") = 0;
+      end;
+   exception
+      when others =>
+         return False;
+   end Target_Is_String_Typed;
+
    procedure Analyze_Assignment  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Assign_Stmt)
@@ -448,6 +503,19 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                   "assigned value is never read later in this subprogram");
             end if;
          end;
+      end if;
+
+      if Rule_States (Inefficient_String_Concatenation) = Enabled
+        and then Is_Inside_Loop (Stmt)
+        and then Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+        and then Target_Text /= ""
+        and then Is_Self_Referential_Concatenation (Stmt.F_Expr, Target_Text)
+        and then Target_Is_String_Typed (Stmt)
+      then
+         Report_Rule_Violation
+           (Unit, Stmt, Inefficient_String_Concatenation,
+            "string rebuilt with '&' inside a loop; accumulate into an " &
+            "Unbounded_String instead");
       end if;
 
       if Rule_States (Function_Side_Effect) = Enabled

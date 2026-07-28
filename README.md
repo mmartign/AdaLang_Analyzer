@@ -42,6 +42,8 @@ The analyzer currently provides the following checks:
 | Data flow | `Wrong_Parameter_Mode` | Maintainability | Medium | Reports `in out` parameters that are only read or only written. |
 | Data flow | `Dead_Store` | Maintainability | Medium | Reports assignments whose value is never read later in the subprogram. |
 | Data flow | `Overwritten_Assignment` | Reliability | Medium | Reports assignments overwritten before an intervening read. |
+| Data flow | `Uninitialized_Read` | Reliability | High | Reports scalar local variables with no initial value whose first use is a read. |
+| Data flow | `Inefficient_String_Concatenation` | Reliability | Medium | Reports a string variable rebuilt with `&` inside a loop. |
 | Scope | `Shadowed_Declaration` | Reliability | Medium | Reports local objects hiding declarations in enclosing subprograms. |
 | Case analysis | `Unreachable_Case_Alternative` | Reliability | Medium | Reports choices wholly covered by an earlier case alternative. |
 | Case analysis | `Overlapping_Case_Ranges` | Reliability | High | Reports intersecting statically evaluable integer choices. |
@@ -93,6 +95,7 @@ The analyzer currently provides the following checks:
 | SPARK | `Known_Overflow_Failure` | Reliability | High | Reports integer arithmetic provably outside the operation's base type. |
 | Case analysis | `Identical_Case_Alternative` | Reliability | Medium | Reports adjacent case alternatives with identical bodies. |
 | Expression | `Redundant_Type_Conversion` | Maintainability | Low | Reports explicit type conversions whose operand already has the target subtype. |
+| Style | `Missing_Overriding_Indicator` | Maintainability | Medium | Reports primitive subprograms that override an inherited operation without the `overriding` keyword. |
 | Exception handling | `Handler_Order` | Reliability | High | Reports a `when others` handler that precedes, and thereby shadows, a more specific handler in the same list. |
 | Data flow | `Aliasing_Between_Parameters` | Reliability | High | Reports calls that pass the same object or component as two actual parameters when at least one corresponding formal is written. |
 | SPARK | `Missing_Loop_Variant` | Maintainability | Medium | Reports loops with a `Loop_Invariant` pragma but no `Loop_Variant` pragma. |
@@ -117,6 +120,7 @@ The analyzer currently provides the following checks:
 | Automotive | `Library_Level_Initialization` | Reliability | High | Reports library-level initializers containing calls. |
 | Automotive | `Generic_Instantiation_Limit` | Maintainability | Medium | Reports units exceeding the configured generic-instantiation limit. |
 | Automotive | `Dependency_Limit` | Maintainability | Medium | Reports units exceeding the configured with-clause limit. |
+| Automotive | `Circular_Package_Dependency` | Maintainability | Medium | Reports groups of analyzed units whose with clauses form a dependency cycle. |
 | Automotive | `Naming_Convention` | Maintainability | Low | Reports one-character identifiers except loop indices and enumeration literals. |
 | Automotive | `No_Compiler_Extensions` | Maintainability | High | Reports implementation-defined pragmas, including extension-enabling pragmas. |
 | DO-178C support | `Missing_Requirement_Trace` | Reliability | High | Reports subprogram bodies without a nearby low-level requirement identifier. |
@@ -611,6 +615,7 @@ sh tests/run_automotive.sh
 sh tests/run_do178c.sh
 sh tests/run_cli_robustness.sh
 sh tests/run_config_file.sh
+sh tests/run_circular_dependencies.sh
 sh tests/run_performance_smoke.sh
 ```
 

@@ -11,6 +11,7 @@ with Ada.Unchecked_Deallocation;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;      use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Checks.Data_Flow;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Interp;
 with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
@@ -24,6 +25,7 @@ package body Adalang_Analyzer.Checks.Declarations is
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Analysis.Basic_Decl;
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Adalang_Analyzer.Checks.Data_Flow.Access_Kind;
 
    package Identifier_Sets is new Ada.Containers.Indefinite_Hashed_Sets
      (Element_Type        => String,
@@ -621,12 +623,51 @@ package body Adalang_Analyzer.Checks.Declarations is
       Find_Nested_Decl_Blocks (Stmts);
    end Check_Unused_Variables_In_Scope;
 
+   --  Reports Missing_Overriding_Indicator when Node genuinely overrides an
+   --  inherited primitive (Overriding_Field_Value is anything other than
+   --  the 'overriding' keyword itself). Resolving whether Node overrides
+   --  anything requires semantic analysis that can fail on unresolved or
+   --  non-primitive code, so any failure is treated the same as "does not
+   --  override" rather than risking a false positive.
+   procedure Check_Overriding_Indicator
+     (Unit                    : Libadalang.Analysis.Analysis_Unit;
+      Node                    : Libadalang.Analysis.Basic_Decl'Class;
+      Overriding_Field_Value  : Libadalang.Analysis.Overriding_Node)
+   is
+   begin
+      if Overriding_Field_Value.Kind =
+        Libadalang.Common.Ada_Overriding_Overriding
+      then
+         return;
+      end if;
+
+      declare
+         Base : constant Libadalang.Analysis.Basic_Decl_Array :=
+           Node.P_Base_Subp_Declarations;
+      begin
+         if Base'Length > 1 then
+            Report_Rule_Violation
+              (Unit, Node, Missing_Overriding_Indicator,
+               "subprogram overrides an inherited operation without the " &
+               "'overriding' keyword");
+         end if;
+      end;
+   exception
+      when others =>
+         null;
+   end Check_Overriding_Indicator;
+
    procedure Analyze_Subprogram  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body)
    is
       Param_Count : Natural := 0;
    begin
+      if Rule_States (Missing_Overriding_Indicator) = Enabled then
+         Check_Overriding_Indicator
+           (Unit, Subprogram, Subprogram.F_Overriding);
+      end if;
+
       if Rule_States (Unused_Parameter) = Enabled
         or else Rule_States (Wrong_Parameter_Mode) = Enabled
         or else Rule_States (Too_Many_Parameters) = Enabled
@@ -751,6 +792,35 @@ package body Adalang_Analyzer.Checks.Declarations is
       Flow_Interp.Interpret_Subprogram_Flow (Unit, Subprogram);
    end Analyze_Subprogram;
 
+   --  Whether Decl's type is scalar (an integer, floating-point,
+   --  fixed-point, or enumeration type). Only scalar types have no defined
+   --  default value in Ada -- a just-declared access value is null, and a
+   --  composite/private/tagged type such as a container is default
+   --  initialized to its own well-defined initial state -- so reading any
+   --  of those before an explicit assignment is not a bug the way reading
+   --  an uninitialized scalar is. Resolution failure is treated as "not
+   --  scalar" rather than risking a false positive.
+   function Is_Scalar_Declaration
+     (Decl : Libadalang.Analysis.Object_Decl) return Boolean
+   is
+      Type_Expr : constant Libadalang.Analysis.Type_Expr := Decl.F_Type_Expr;
+   begin
+      if Libadalang.Analysis.Is_Null (Type_Expr) then
+         return False;
+      end if;
+
+      declare
+         Base : constant Libadalang.Analysis.Base_Type_Decl :=
+           Type_Expr.P_Designated_Type_Decl;
+      begin
+         return not Libadalang.Analysis.Is_Null (Base)
+           and then Base.P_Is_Scalar_Type;
+      end;
+   exception
+      when others =>
+         return False;
+   end Is_Scalar_Declaration;
+
    procedure Analyze_Object_Declaration
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Decl : Libadalang.Analysis.Object_Decl) is
@@ -765,6 +835,41 @@ package body Adalang_Analyzer.Checks.Declarations is
             end if;
          end loop;
       end if;
+
+      if Rule_States (Uninitialized_Read) = Enabled
+        and then Libadalang.Analysis.Is_Null (Decl.F_Default_Expr)
+        and then Libadalang.Analysis.Is_Null (Decl.F_Renaming_Clause)
+        and then Is_Scalar_Declaration (Decl)
+      then
+         declare
+            Subprogram : constant Libadalang.Analysis.Subp_Body :=
+              Data_Flow.Enclosing_Subprogram (Decl);
+         begin
+            if not Libadalang.Analysis.Is_Null (Subprogram) then
+               declare
+                  Result : constant Data_Flow.Access_Result :=
+                    Data_Flow.First_Access
+                      (Subprogram.As_Ada_Node, Decl.As_Basic_Decl, Decl);
+               begin
+                  if Result.Kind = Data_Flow.Read_Access then
+                     Report_Rule_Violation
+                       (Unit, Result.Node, Uninitialized_Read,
+                        "variable is read before it is ever assigned a " &
+                        "value");
+                  end if;
+               end;
+            end if;
+         end;
+      end if;
    end Analyze_Object_Declaration;
+
+   procedure Analyze_Subprogram_Declaration
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Decl : Libadalang.Analysis.Classic_Subp_Decl'Class) is
+   begin
+      if Rule_States (Missing_Overriding_Indicator) = Enabled then
+         Check_Overriding_Indicator (Unit, Decl, Decl.F_Overriding);
+      end if;
+   end Analyze_Subprogram_Declaration;
 
 end Adalang_Analyzer.Checks.Declarations;

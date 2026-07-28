@@ -67,6 +67,27 @@ private package Adalang_Analyzer.Checks.Data_Flow is
    --  General form used for writes performed by calls through out/in-out
    --  actual parameters.
 
+   type Access_Kind is (No_Access, Read_Access, Write_Access);
+
+   type Access_Result is record
+      Kind : Access_Kind := No_Access;
+      Node : Libadalang.Analysis.Ada_Node := Libadalang.Analysis.No_Ada_Node;
+   end record;
+
+   function First_Access
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Decl  : Libadalang.Analysis.Basic_Decl;
+      After : Libadalang.Analysis.Ada_Node'Class) return Access_Result;
+   --  The first read or write of Decl within Node's subtree that starts at
+   --  or after After's end position, in source order, or a No_Access
+   --  result if neither occurs. A write is only recognized as a plain
+   --  identifier-target assignment (see Is_Trackable_Assignment); a write
+   --  performed through an out or in out actual parameter is neither a
+   --  recognized read nor a recognized write, so it is skipped rather than
+   --  treated as either. Backs Uninitialized_Read: a declaration with no
+   --  default expression whose first subsequent access is a read has been
+   --  read before any value was ever stored into it.
+
    function Enclosing_Subprogram
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Subp_Body;

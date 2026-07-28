@@ -545,6 +545,85 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       return False;
    end Has_Read_After_Node;
 
+   function First_Access
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Decl  : Libadalang.Analysis.Basic_Decl;
+      After : Libadalang.Analysis.Ada_Node'Class) return Access_Result
+   is
+      function Starts_At_Or_After
+        (Candidate : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         return Natural (Candidate.Sloc_Range.Start_Line) >
+             Natural (After.Sloc_Range.End_Line)
+           or else
+             (Natural (Candidate.Sloc_Range.Start_Line) =
+                Natural (After.Sloc_Range.End_Line)
+              and then Natural (Candidate.Sloc_Range.Start_Column) >=
+                Natural (After.Sloc_Range.End_Column));
+      end Starts_At_Or_After;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+      end if;
+
+      if Starts_At_Or_After (Node) then
+         if Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+            declare
+               Stmt    : constant Libadalang.Analysis.Assign_Stmt :=
+                 Node.As_Assign_Stmt;
+               --  Checked directly against the RHS/complex destination
+               --  (not via Reads_Declaration's own Ada_Assign_Stmt case,
+               --  which treats every mention in F_Expr as a read for
+               --  Dead_Store's coarser purposes) so that passing Decl as a
+               --  pure out actual -- itself a write, not a read of its
+               --  prior value -- is correctly excluded via
+               --  Association_Reads_Actual.
+               Is_Read : constant Boolean :=
+                 Reads_Declaration (Stmt.F_Expr, Decl)
+                 or else
+                   (Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier
+                    and then Reads_Declaration (Stmt.F_Dest, Decl));
+            begin
+               if Is_Read then
+                  return (Kind => Read_Access,
+                           Node => Libadalang.Analysis.Ada_Node (Node));
+               elsif Assigned_Declaration (Node) = Decl
+                 and then Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+               then
+                  return (Kind => Write_Access,
+                           Node => Libadalang.Analysis.Ada_Node (Node));
+               end if;
+               return
+                 (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+            end;
+         elsif Node.Kind = Libadalang.Common.Ada_Identifier
+           and then Matches_Declaration (Node, Decl)
+         then
+            return (Kind => Read_Access,
+                     Node => Libadalang.Analysis.Ada_Node (Node));
+         elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
+            if Reads_Declaration (Node, Decl) then
+               return (Kind => Read_Access,
+                        Node => Libadalang.Analysis.Ada_Node (Node));
+            end if;
+            return (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+         end if;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         declare
+            Result : constant Access_Result :=
+              First_Access (Node.Child (I), Decl, After);
+         begin
+            if Result.Kind /= No_Access then
+               return Result;
+            end if;
+         end;
+      end loop;
+
+      return (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+   end First_Access;
+
    function Enclosing_Subprogram
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Subp_Body

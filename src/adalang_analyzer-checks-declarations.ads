@@ -40,4 +40,11 @@ private package Adalang_Analyzer.Checks.Declarations is
       Decl : Libadalang.Analysis.Object_Decl);
    --  Runs Shadowed_Declaration for each name introduced by Decl.
 
+   procedure Analyze_Subprogram_Declaration
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Decl : Libadalang.Analysis.Classic_Subp_Decl'Class);
+   --  Runs Missing_Overriding_Indicator for a standalone subprogram
+   --  declaration (as opposed to a body acting as its own declaration,
+   --  which Analyze_Subprogram covers instead).
+
 end Adalang_Analyzer.Checks.Declarations;

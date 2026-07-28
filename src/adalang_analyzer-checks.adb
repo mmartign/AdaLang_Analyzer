@@ -284,6 +284,10 @@ package body Adalang_Analyzer.Checks is
          when Libadalang.Common.Ada_Subp_Body =>
             Declarations.Analyze_Subprogram (Unit, Node.As_Subp_Body);
 
+         when Libadalang.Common.Ada_Classic_Subp_Decl =>
+            Declarations.Analyze_Subprogram_Declaration
+              (Unit, Node.As_Classic_Subp_Decl);
+
          when Libadalang.Common.Ada_Case_Stmt =>
             Control_Flow.Analyze_Case_Statement (Unit, Node.As_Case_Stmt);
 

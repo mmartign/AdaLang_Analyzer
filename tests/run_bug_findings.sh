@@ -641,4 +641,70 @@ then
    exit 1
 fi
 
+if "$analyzer" -checks='Uninitialized_Read' \
+     tests/uninitialized_read_findings.adb >"$output" 2>&1
+then
+   echo "expected uninitialized_read_findings.adb to produce a violation" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[Uninitialized_Read\]' "$output")" -ne 1 ] \
+  || ! grep -F \
+       "uninitialized_read_findings.adb:7:7: warning:" "$output" >/dev/null
+then
+   echo "unexpected uninitialized-read findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks='Uninitialized_Read' \
+     tests/uninitialized_read_clean.adb
+then
+   echo "assign-before-read fixture unexpectedly produced a violation" >&2
+   exit 1
+fi
+
+if "$analyzer" -checks='Missing_Overriding_Indicator' \
+     tests/overriding_indicator_findings.ads >"$output" 2>&1
+then
+   echo "expected overriding_indicator_findings.ads to produce a violation" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[Missing_Overriding_Indicator\]' "$output")" -ne 1 ] \
+  || ! grep -F \
+       "overriding_indicator_findings.ads:6:4: warning:" "$output" >/dev/null
+then
+   echo "unexpected missing-overriding-indicator findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks='Missing_Overriding_Indicator' \
+     tests/overriding_indicator_clean.ads
+then
+   echo "explicit overriding fixture unexpectedly produced a violation" >&2
+   exit 1
+fi
+
+if "$analyzer" -checks='Inefficient_String_Concatenation' \
+     tests/string_concatenation_findings.adb >"$output" 2>&1
+then
+   echo "expected string_concatenation_findings.adb to produce a violation" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[Inefficient_String_Concatenation\]' "$output")" -ne 1 ] \
+  || ! grep -F \
+       "string_concatenation_findings.adb:5:7: warning:" "$output" >/dev/null
+then
+   echo "unexpected string-concatenation findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if ! "$analyzer" -q -checks='Inefficient_String_Concatenation' \
+     tests/string_concatenation_clean.adb
+then
+   echo "string_concatenation_clean.adb unexpectedly produced a violation" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

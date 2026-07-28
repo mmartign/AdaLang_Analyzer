@@ -21,6 +21,7 @@ with Libadalang.Auto_Provider;
 with Libadalang.Unit_Files;
 
 with Adalang_Analyzer.Checks;
+with Adalang_Analyzer.Circular_Dependencies;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Config_File;   use Adalang_Analyzer.Config_File;
 with Adalang_Analyzer.Flow_Interp;
@@ -329,10 +330,12 @@ package body Adalang_Analyzer.CLI is
          No_Unchecked_Deallocation, No_Tasking, No_Rendezvous,
          No_Select, No_Requeue, No_Asynchronous_Transfer,
          Exception_Propagation, No_Dispatching_Call, No_Classwide_Type,
-         No_Controlled_Type, Complete_Initialization,
+         No_Controlled_Type, Complete_Initialization, Uninitialized_Read,
          Volatile_Atomic_Consistency, Representation_Clause_Policy,
          Library_Level_Initialization, Redundant_Type_Conversion,
+         Missing_Overriding_Indicator,
          Generic_Instantiation_Limit, Dependency_Limit,
+         Circular_Package_Dependency,
          Naming_Convention, No_Compiler_Extensions);
    begin
       Active_Assurance_Profile := No_Assurance_Profile;
@@ -366,7 +369,7 @@ package body Adalang_Analyzer.CLI is
       Level_AB_Rules : constant Rule_List :=
         (Suppression_Without_Rationale, No_Dynamic_Allocation,
          No_Unchecked_Conversion, No_Unchecked_Deallocation,
-         Complete_Initialization, No_Dispatching_Call,
+         Complete_Initialization, Uninitialized_Read, No_Dispatching_Call,
          Missing_Global_Contract, Missing_Depends_Contract,
          Missing_Loop_Variant, Potentially_Blocking_Operation,
          No_Compiler_Extensions, Library_Level_Initialization,
@@ -1185,6 +1188,11 @@ package body Adalang_Analyzer.CLI is
       for F of Files_To_Process loop
          Process_File (F, Ctx);
       end loop;
+
+      if Rule_States (Circular_Package_Dependency) = Enabled then
+         Adalang_Analyzer.Circular_Dependencies.Analyze
+           (Ctx, Files_To_Process);
+      end if;
 
       Finalize_Output;
 
