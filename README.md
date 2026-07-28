@@ -539,6 +539,8 @@ Useful options include:
                  Set the Dependency_Limit (default: 20)
 -v, -verbose     Print files as they are parsed
 -q, -quiet       Suppress the final summary
+--config=<file>  Use this config file instead of auto-discovery
+--no-config      Disable auto-discovery of adalang_analyzer.cfg
 --               Treat all remaining arguments as file names
 ```
 
@@ -548,6 +550,42 @@ finding that matches `--baseline` remains visible in JSON or SARIF output as an
 existing result, but it does not contribute to the exit status. Fingerprints
 exclude line and column numbers, so inserting unrelated lines does not turn an
 existing finding into a new one.
+
+### Project configuration file
+
+Rather than reconstructing the same multi-flag invocation by hand on every
+run, a team can check a config file into version control and let it be
+picked up automatically. If a file named `adalang_analyzer.cfg` exists in
+the current working directory, it is read before the real command line is
+parsed. Its content is exactly the long-form flags described above, one or
+more per line:
+
+```text
+# adalang_analyzer.cfg
+--do178c=B
+-checks=+Magic_Number,-No_Goto
+-complexity-threshold=15
+-P my_project.gpr
+```
+
+Blank lines and lines whose first non-blank character is `#` are comments,
+the same convention used by `--baseline` files. There is no separate
+key/value grammar: any flag the command line accepts also works here, so a
+newly added flag needs no config-file-specific support.
+
+The config file's flags are treated as if they were typed first on the
+command line, and the real command-line flags are processed afterward. A
+real flag therefore overrides whatever the config file set, exactly as two
+occurrences of the same flag override each other in sequence today; it does
+not merge with a preset. For example, a config file selecting individual
+checks combined with `--spark` on the real command line does not run both
+sets together, the same way giving `-checks=...` followed by `--spark` on
+the command line alone would not.
+
+Use `--config=<file>` to load a specific file instead of relying on
+auto-discovery (an explicit path that does not exist is a hard error), or
+`--no-config` to skip auto-discovery entirely and fall back to whatever the
+real command line alone specifies.
 
 For CI systems that consume SARIF:
 
@@ -572,6 +610,7 @@ sh tests/run_control_flow_graph_model.sh
 sh tests/run_automotive.sh
 sh tests/run_do178c.sh
 sh tests/run_cli_robustness.sh
+sh tests/run_config_file.sh
 sh tests/run_performance_smoke.sh
 ```
 

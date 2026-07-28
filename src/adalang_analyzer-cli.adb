@@ -22,6 +22,7 @@ with Libadalang.Unit_Files;
 
 with Adalang_Analyzer.Checks;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
+with Adalang_Analyzer.Config_File;   use Adalang_Analyzer.Config_File;
 with Adalang_Analyzer.Flow_Interp;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Project_Files; use Adalang_Analyzer.Project_Files;
@@ -124,6 +125,12 @@ package body Adalang_Analyzer.CLI is
         ("  -dependency-threshold=<n> Set with-clause limit (default: 20)");
       Ada.Text_IO.Put_Line ("  -v, -verbose          Enable verbose output");
       Ada.Text_IO.Put_Line ("  -q, -quiet            Suppress summary output");
+      Ada.Text_IO.Put_Line
+        ("  --config=<file>       Use this config file instead of " &
+         Default_Config_File_Name);
+      Ada.Text_IO.Put_Line
+        ("  --no-config           Disable auto-discovery of " &
+         Default_Config_File_Name);
       Ada.Text_IO.Put_Line ("  --                    Treat items as files");
    end Show_Help;
 
@@ -656,26 +663,129 @@ package body Adalang_Analyzer.CLI is
    end Process_File;
 
    procedure Run is
-      Files_To_Process : File_Name_Vectors.Vector;
-      Project_Gpr_Files : File_Name_Vectors.Vector;
-      Seen_Projects     : File_Name_Vectors.Vector;
-      Scenario_Vars     : File_Name_Vectors.Vector;
-      Argument_Count    : constant Natural := Ada.Command_Line.Argument_Count;
-      Current_Arg       : Natural := 1;
-      Options_Ended     : Boolean := False;
-      Ctx               : Libadalang.Analysis.Analysis_Context;
+      Files_To_Process   : File_Name_Vectors.Vector;
+      Project_Gpr_Files  : File_Name_Vectors.Vector;
+      Seen_Projects      : File_Name_Vectors.Vector;
+      Scenario_Vars      : File_Name_Vectors.Vector;
+      Merged_Args        : File_Name_Vectors.Vector;
+      Config_Token_Count : Natural := 0;
+      Config_File_Path   : Unbounded_String := Null_Unbounded_String;
+      Argument_Count     : Natural;
+      Current_Arg        : Natural := 1;
+      Options_Ended      : Boolean := False;
+      Ctx                : Libadalang.Analysis.Analysis_Context;
    begin
       --  Proof obligations have a run lifecycle independent from ordinary
       --  rule findings. No producer or reporter is connected yet, but reset
       --  the registry here so its ownership is explicit from the outset.
       Adalang_Analyzer.Proof_Obligations.Reset;
 
+      --  Resolve an optional project configuration file before anything
+      --  else. --config/--config=<file>/--no-config are pulled out of the
+      --  real command line here (they are not recognized by the main
+      --  switch loop below), and the config file's tokens -- if any -- are
+      --  placed ahead of the remaining real arguments in Merged_Args. The
+      --  main loop then simply scans Merged_Args left to right exactly as
+      --  it always scanned Ada.Command_Line.Argument, so a real
+      --  command-line flag naturally overrides whatever the config file
+      --  set, by virtue of being processed second through the same mutable
+      --  Config state -- no separate precedence logic is needed.
+      declare
+         Raw_Count   : constant Natural := Ada.Command_Line.Argument_Count;
+         Raw_Index   : Natural := 1;
+         Skip_Next   : Boolean := False;
+         Config_Path : Unbounded_String := Null_Unbounded_String;
+         No_Config   : Boolean := False;
+         Real_Args   : File_Name_Vectors.Vector;
+      begin
+         while Raw_Index <= Raw_Count loop
+            declare
+               Raw_Arg : constant String :=
+                 Ada.Command_Line.Argument (Raw_Index);
+            begin
+               if Skip_Next then
+                  Skip_Next := False;
+               elsif Raw_Arg = "--config" then
+                  if Raw_Index = Raw_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for --config");
+                     Invalid_Options := True;
+                  else
+                     Config_Path := To_Unbounded_String
+                       (Ada.Command_Line.Argument (Raw_Index + 1));
+                     Skip_Next := True;
+                  end if;
+               elsif Raw_Arg'Length > 9
+                 and then Ada.Strings.Fixed.Index
+                   (Raw_Arg, "--config=") = Raw_Arg'First
+               then
+                  Config_Path :=
+                    To_Unbounded_String (Raw_Arg (Raw_Arg'First + 9 .. Raw_Arg'Last));
+               elsif Raw_Arg = "--no-config" then
+                  No_Config := True;
+               else
+                  File_Name_Vectors.Append (Real_Args, Raw_Arg);
+               end if;
+            end;
+            Raw_Index := Raw_Index + 1;
+         end loop;
+
+         if Config_Path /= Null_Unbounded_String and then No_Config then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "adalang-analyzer: --config and --no-config cannot be " &
+               "combined");
+            Invalid_Options := True;
+         end if;
+
+         if not Invalid_Options then
+            declare
+               Result : constant Config_File.Resolution :=
+                 Config_File.Resolve (To_String (Config_Path), No_Config);
+            begin
+               if Result.Found then
+                  Config_File_Path := Result.Path;
+                  begin
+                     Merged_Args :=
+                       Config_File.Load_Tokens (To_String (Result.Path));
+                  exception
+                     when E : others =>
+                        Ada.Text_IO.Put_Line
+                          (Ada.Text_IO.Standard_Error,
+                           "adalang-analyzer: could not load config file '" &
+                           To_String (Result.Path) & "': " &
+                           Ada.Exceptions.Exception_Message (E));
+                        Ada.Command_Line.Set_Exit_Status
+                          (Ada.Command_Line.Failure);
+                        return;
+                  end;
+               elsif Config_Path /= Null_Unbounded_String then
+                  Ada.Text_IO.Put_Line
+                    (Ada.Text_IO.Standard_Error,
+                     "adalang-analyzer: config file not found: " &
+                     To_String (Config_Path));
+                  Ada.Command_Line.Set_Exit_Status
+                    (Ada.Command_Line.Failure);
+                  return;
+               end if;
+            end;
+         end if;
+
+         Config_Token_Count := Natural (File_Name_Vectors.Length (Merged_Args));
+         for A of Real_Args loop
+            File_Name_Vectors.Append (Merged_Args, A);
+         end loop;
+      end;
+
+      Argument_Count := Natural (File_Name_Vectors.Length (Merged_Args));
+
       --  Left-to-right scan of the command line: switches update the mode
       --  flags/rule states above, everything else (or anything after "--")
       --  is collected as either a project file (-P) or a source file name.
       while Current_Arg <= Argument_Count loop
          declare
-            Arg : constant String := Ada.Command_Line.Argument (Current_Arg);
+            Arg : constant String :=
+              File_Name_Vectors.Element (Merged_Args, Current_Arg);
          begin
             if not Options_Ended then
                if Arg = "--" then
@@ -699,7 +809,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Enable_DO_178C_Preset
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 9
@@ -715,7 +825,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Set_Report_Format
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 9
@@ -731,7 +841,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Report_Filename := To_Unbounded_String
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 9
@@ -747,7 +857,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Baseline_File := To_Unbounded_String
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 11
@@ -763,7 +873,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Baseline_Output := To_Unbounded_String
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 17
@@ -783,7 +893,7 @@ package body Adalang_Analyzer.CLI is
                   else
                      Parse_Checks_Option
                        ("-checks="
-                        & Ada.Command_Line.Argument (Current_Arg + 1));
+                        & File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 8
@@ -797,7 +907,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Set_Complexity_Threshold
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 22  --  adalang-analyzer: ignore Magic_Number
@@ -813,7 +923,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Set_Nesting_Threshold
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 19  --  adalang-analyzer: ignore Magic_Number
@@ -829,7 +939,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Set_Parameter_Threshold
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 21  --  adalang-analyzer: ignore Magic_Number
@@ -845,7 +955,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Set_Line_Length_Threshold
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 23  --  adalang-analyzer: ignore Magic_Number
@@ -861,7 +971,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Set_Generic_Threshold
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 19
@@ -877,7 +987,7 @@ package body Adalang_Analyzer.CLI is
                      Invalid_Options := True;
                   else
                      Set_Dependency_Threshold
-                       (Ada.Command_Line.Argument (Current_Arg + 1));
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 22
@@ -893,7 +1003,7 @@ package body Adalang_Analyzer.CLI is
                   else
                      File_Name_Vectors.Append
                        (Project_Gpr_Files,
-                        Ada.Command_Line.Argument (Current_Arg + 1));
+                        File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 2
@@ -908,7 +1018,7 @@ package body Adalang_Analyzer.CLI is
                   else
                      File_Name_Vectors.Append
                        (Scenario_Vars,
-                        Ada.Command_Line.Argument (Current_Arg + 1));
+                        File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
                   end if;
                elsif Arg'Length > 2
@@ -940,6 +1050,15 @@ package body Adalang_Analyzer.CLI is
          Print_Version;
          return;
       elsif Invalid_Options then
+         if Config_Token_Count > 0 then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "adalang-analyzer: note: " &
+               Ada.Strings.Fixed.Trim
+                 (Config_Token_Count'Image, Ada.Strings.Left) &
+               " of the above arguments were expanded from config file '" &
+               To_String (Config_File_Path) & "'");
+         end if;
          Show_Help;
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
