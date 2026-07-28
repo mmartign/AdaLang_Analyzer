@@ -4,6 +4,8 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Containers.Vectors;
+
 with Libadalang.Analysis;
 
 --  Small abstract domains that support safe constant folding without
@@ -62,8 +64,6 @@ package Adalang_Analyzer.Flow_Domain is
    function Range_Union (Left, Right : Abstract_Range) return Abstract_Range;
    --  The tightest range covering both Left and Right.
 
-   Max_Flow_Vars : constant := 64;
-
    --  A binding tracks the Abstract_Int, Abstract_Bool, and Abstract_Range
    --  a variable may be statically known to hold. Only one of Value /
    --  Bool_Value is ever meaningful for a given Decl (a variable's declared
@@ -76,17 +76,21 @@ package Adalang_Analyzer.Flow_Domain is
       Value       : Abstract_Int := Unknown_Int;
       Bool_Value  : Abstract_Bool := Bool_Unknown;
       Range_Value : Abstract_Range := Unknown_Range;
+      Initialized : Abstract_Bool := Bool_Unknown;
    end record;
 
-   type Flow_Binding_Array is array (1 .. Max_Flow_Vars) of Flow_Binding;
+   type Flow_State is private;
 
-   type Flow_State is record
-      Count    : Natural := 0;
-      Bindings : Flow_Binding_Array;
-   end record;
+   Empty_Flow_State : constant Flow_State;
 
-   Empty_Flow_State : constant Flow_State :=
-     (Count => 0, Bindings => (others => <>));
+   function Binding_Count (State : Flow_State) return Natural;
+
+   function Binding_At
+     (State : Flow_State;
+      Index : Positive) return Flow_Binding;
+   --  Read-only enumeration for assurance backends that must encode every
+   --  abstract-state constraint. Raises Constraint_Error for an invalid
+   --  index.
 
    function Flow_Lookup
      (State : Flow_State;
@@ -105,14 +109,23 @@ package Adalang_Analyzer.Flow_Domain is
    --  The Abstract_Range known for Key, or Unknown_Range if Key isn't
    --  tracked.
 
+   function Flow_Initialization
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool;
+
+   procedure Flow_Set_Initialized
+     (State       : in out Flow_State;
+      Key         : Libadalang.Analysis.Ada_Node;
+      Initialized : Abstract_Bool);
+
    procedure Flow_Set
      (State : in out Flow_State;
       Key   : Libadalang.Analysis.Ada_Node;
       Value : Abstract_Int);
    --  Records that Key now holds Value, replacing any prior binding, and
    --  widens its tracked range to at least the degenerate range implied by
-   --  a known exact Value. Silently drops the update once Max_Flow_Vars
-   --  bindings are in use.
+   --  a known exact Value. The state grows dynamically; facts are never
+   --  silently dropped because an implementation capacity was reached.
 
    procedure Flow_Bool_Set
      (State      : in out Flow_State;
@@ -145,5 +158,25 @@ package Adalang_Analyzer.Flow_Domain is
    --  The state true after either of two branches: an exact-value binding
    --  survives only where both sides agree on the same known value; a
    --  range binding survives as the union of both sides' ranges.
+
+   function Flow_Equal (Left, Right : Flow_State) return Boolean;
+   --  Semantic equality used to detect fixed-point convergence.
+
+   function Flow_Widen
+     (Previous, Next : Flow_State) return Flow_State;
+   --  Standard interval widening: a bound that moves outwards becomes
+   --  unbounded. Exact integers and Boolean facts survive only when stable.
+
+private
+
+   package Flow_Binding_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Flow_Binding);
+
+   type Flow_State is record
+      Bindings : Flow_Binding_Vectors.Vector;
+   end record;
+
+   Empty_Flow_State : constant Flow_State :=
+     (Bindings => Flow_Binding_Vectors.Empty_Vector);
 
 end Adalang_Analyzer.Flow_Domain;

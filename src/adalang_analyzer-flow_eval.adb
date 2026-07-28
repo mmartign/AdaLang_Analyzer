@@ -365,6 +365,30 @@ package body Adalang_Analyzer.Flow_Eval is
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State) return Abstract_Range
    is
+      function From_Endpoints
+        (Low, High : Abstract_Int) return Abstract_Range
+      is
+      begin
+         if Low.Known and then High.Known and then Low.Value <= High.Value then
+            return
+              (Has_Low => True, Low => Low.Value,
+               Has_High => True, High => High.Value);
+         end if;
+         return Unknown_Range;
+      end From_Endpoints;
+
+      function Safe_Divide
+        (Left, Right : Long_Long_Integer) return Abstract_Int
+      is
+      begin
+         if Right = 0
+           or else
+             (Left = Long_Long_Integer'First and then Right = -1)
+         then
+            return Unknown_Int;
+         end if;
+         return Known_Int (Left / Right);
+      end Safe_Divide;
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return Unknown_Range;
@@ -377,6 +401,120 @@ package body Adalang_Analyzer.Flow_Eval is
               (Node.As_Name.P_Referenced_Defining_Name));
       elsif Node.Kind = Libadalang.Common.Ada_Paren_Expr then
          return Range_Value (Node.As_Paren_Expr.F_Expr, State);
+      elsif Node.Kind = Libadalang.Common.Ada_Qual_Expr then
+         return Range_Value (Node.As_Qual_Expr.F_Suffix, State);
+      elsif Node.Kind = Libadalang.Common.Ada_Un_Op then
+         declare
+            Expr  : constant Libadalang.Analysis.Un_Op := Node.As_Un_Op;
+            Value : constant Abstract_Range :=
+              Range_Value (Expr.F_Expr, State);
+         begin
+            if Expr.F_Op = Libadalang.Common.Ada_Op_Plus then
+               return Value;
+            elsif Expr.F_Op = Libadalang.Common.Ada_Op_Minus
+              and then Value.Has_Low
+              and then Value.Has_High
+              and then Value.Low /= Long_Long_Integer'First
+              and then Value.High /= Long_Long_Integer'First
+            then
+               return
+                 (Has_Low => True, Low => -Value.High,
+                  Has_High => True, High => -Value.Low);
+            end if;
+            return Unknown_Range;
+         end;
+      elsif Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+         declare
+            Expr  : constant Libadalang.Analysis.Bin_Op := Node.As_Bin_Op;
+            Left  : constant Abstract_Range :=
+              Range_Value (Expr.F_Left, State);
+            Right : constant Abstract_Range :=
+              Range_Value (Expr.F_Right, State);
+         begin
+            if not Left.Has_Low
+              or else not Left.Has_High
+              or else not Right.Has_Low
+              or else not Right.Has_High
+            then
+               return Range_From_Int (Integer_Value (Node, State));
+            end if;
+
+            case Expr.F_Op is
+               when Libadalang.Common.Ada_Op_Plus =>
+                  return From_Endpoints
+                    (Safe_Add (Left.Low, Right.Low),
+                     Safe_Add (Left.High, Right.High));
+
+               when Libadalang.Common.Ada_Op_Minus =>
+                  return From_Endpoints
+                    (Safe_Sub (Left.Low, Right.High),
+                     Safe_Sub (Left.High, Right.Low));
+
+               when Libadalang.Common.Ada_Op_Mult =>
+                  declare
+                     P1 : constant Abstract_Int :=
+                       Safe_Mul (Left.Low, Right.Low);
+                     P2 : constant Abstract_Int :=
+                       Safe_Mul (Left.Low, Right.High);
+                     P3 : constant Abstract_Int :=
+                       Safe_Mul (Left.High, Right.Low);
+                     P4 : constant Abstract_Int :=
+                       Safe_Mul (Left.High, Right.High);
+                  begin
+                     if not P1.Known
+                       or else not P2.Known
+                       or else not P3.Known
+                       or else not P4.Known
+                     then
+                        return Unknown_Range;
+                     end if;
+                     return
+                       (Has_Low => True,
+                        Low => Long_Long_Integer'Min
+                          (Long_Long_Integer'Min (P1.Value, P2.Value),
+                           Long_Long_Integer'Min (P3.Value, P4.Value)),
+                        Has_High => True,
+                        High => Long_Long_Integer'Max
+                          (Long_Long_Integer'Max (P1.Value, P2.Value),
+                           Long_Long_Integer'Max (P3.Value, P4.Value)));
+                  end;
+
+               when Libadalang.Common.Ada_Op_Div =>
+                  if Right.Low <= 0 and then Right.High >= 0 then
+                     return Unknown_Range;
+                  end if;
+                  declare
+                     Q1 : constant Abstract_Int :=
+                       Safe_Divide (Left.Low, Right.Low);
+                     Q2 : constant Abstract_Int :=
+                       Safe_Divide (Left.Low, Right.High);
+                     Q3 : constant Abstract_Int :=
+                       Safe_Divide (Left.High, Right.Low);
+                     Q4 : constant Abstract_Int :=
+                       Safe_Divide (Left.High, Right.High);
+                  begin
+                     if not Q1.Known
+                       or else not Q2.Known
+                       or else not Q3.Known
+                       or else not Q4.Known
+                     then
+                        return Unknown_Range;
+                     end if;
+                     return
+                       (Has_Low => True,
+                        Low => Long_Long_Integer'Min
+                          (Long_Long_Integer'Min (Q1.Value, Q2.Value),
+                           Long_Long_Integer'Min (Q3.Value, Q4.Value)),
+                        Has_High => True,
+                        High => Long_Long_Integer'Max
+                          (Long_Long_Integer'Max (Q1.Value, Q2.Value),
+                           Long_Long_Integer'Max (Q3.Value, Q4.Value)));
+                  end;
+
+               when others =>
+                  return Range_From_Int (Integer_Value (Node, State));
+            end case;
+         end;
       else
          return Range_From_Int (Integer_Value (Node, State));
       end if;

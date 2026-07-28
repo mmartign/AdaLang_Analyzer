@@ -3,9 +3,9 @@
 ## Purpose
 
 This document defines what conclusions may be drawn from AdaLang Analyzer
-results. It separates current finding semantics from the proposed
-verification-obligation model so that future features cannot silently
-strengthen product claims without supplying the necessary evidence.
+results. It separates ordinary finding semantics from the bounded
+verification-obligation model so features cannot silently strengthen product
+claims without supplying the necessary evidence.
 
 The core rule is:
 
@@ -112,17 +112,21 @@ It does not establish:
 
 ## Current analysis foundations
 
-The current implementation combines several analyses with different
-precision boundaries:
+The implementation combines several analyses with different precision
+boundaries:
 
 - Libadalang parsing and semantic resolution.
 - Local AST pattern and property checks.
 - Intraprocedural data-flow analyses.
-- A bounded flow state containing exact integer values, Boolean values, and
-  non-relational integer ranges.
+- A dynamically sized flow state containing exact integer values, Boolean
+  values, initialization state, and non-relational integer ranges.
 - Branch-sensitive interpretation of selected structured statements.
-- One-pass conservative loop interpretation after invalidating modified
-  state.
+- A separate verification interpreter with work-list fixed-point propagation
+  and interval widening at loop headers.
+- A scalar SMT-LIB verification-condition backend requiring matching CVC5 and
+  Z3 UNSAT results before accepting an external proof or refutation.
+- A conservative symbolic CFG state carrying substitutions and path
+  assumptions through straight-line code and branch edges.
 - Contract lookup and limited transfer of simple precondition and
   postcondition facts.
 - Fixed-point propagation of a small number of monotone interprocedural
@@ -134,8 +138,8 @@ path exploration or verification-condition generation.
 
 ## Conservative fallback and skipped analysis
 
-The implementation uses several fallback strategies when it lacks sufficient
-semantic information:
+Ordinary finding mode uses several best-effort fallback strategies when it
+lacks sufficient semantic information:
 
 - Values become unknown.
 - Individual bindings or the complete flow state are invalidated.
@@ -143,16 +147,15 @@ semantic information:
 - Unsupported statement forms clear tracked state.
 - Some bodies or blocks with exception handlers are skipped by the
   flow-sensitive interpreter.
-- Fixed-size internal structures may stop recording additional facts.
 
 These strategies are intended to avoid deriving findings from stale facts.
 They also create false negatives. Consequently, a clean current analysis
 cannot be treated as a safety proof.
 
-Skipped or degraded analysis should be visible in verbose diagnostics and,
-where it affects an assurance claim, in structured output. Silent degradation
-is acceptable only for ordinary best-effort finding modes, never for a future
-verification mode.
+Verification mode uses a stricter rule: an incomplete control-flow graph or
+unsupported semantic boundary classifies affected obligations as
+`Unsupported`. Loss of abstract precision within the supported boundary
+produces `Unproved`. Neither case may silently produce `Proved_Safe`.
 
 ## Finding outcomes versus verification outcomes
 
@@ -169,28 +172,28 @@ Those questions require different result models. Findings and proof
 obligations must therefore remain separate, even when they refer to the same
 source operation.
 
-For example, the current analyzer can report division by zero when the
-denominator is known to be zero. A future obligation for the same division
-would classify whether zero is impossible, inevitable, possible, or unknown.
+For example, the analyzer can report division by zero when the denominator is
+known to be zero. `--verify` additionally classifies the corresponding
+obligation as safe, erroneous, inconclusive, unreachable, or unsupported.
 
 ## Verification-obligation model
 
-The data types, stable-ID generation, and per-run registry described in this
-section are implemented in `Adalang_Analyzer.Proof_Obligations`. Enabled
-checks enumerate their applicable division, integer-overflow, range, index,
-selected discriminant, assertion, precondition, and postcondition operations.
-Existing known-failure evidence produces `Definite_Error`; other enumerated
-outcomes produce `Unproved`. A later flow-sensitive observation can refine an
-earlier `Unproved` result to `Definite_Error`, but cannot downgrade it.
+`Adalang_Analyzer.Proof_Obligations` implements the data types, stable-ID
+generation, and per-run registry. Enabled checks enumerate applicable
+division, integer-overflow, range, index, selected discriminant,
+initialization, assertion, precondition, postcondition, loop-invariant, and
+loop-variant operations.
 
-This is deliberately not an exhaustive verification mode. `Unproved` includes
-both genuinely indeterminate operations and operations that may look safe but
-for which the current assurance model does not permit a `Proved_Safe` claim.
-Unsupported constructs, skipped exception-bearing bodies, unresolved semantic
-boundaries, and operations outside enabled checks still limit coverage.
-Reports label this boundary as
-`enumerated outcomes in current analysis scope; not exhaustive`. SARIF
-proof-obligation reporting is also not yet connected.
+Without `--verify`, known-failure evidence produces `Definite_Error` and other
+enumerated outcomes produce `Unproved`. With `--verify`, the CFG fixed-point
+interpreter may additionally produce `Proved_Safe`, `Unreachable`, and
+`Unsupported`. Overlapping passes are combined conservatively so a later
+unsupported or reachable result cannot leave an earlier false-safe result in
+the registry.
+
+This remains deliberately bounded verification, not exhaustive Ada
+verification. Structured text and JSON reports expose the boundary; SARIF
+proof-obligation reporting is not yet connected.
 
 Each obligation should contain at least:
 
@@ -205,7 +208,7 @@ Each obligation should contain at least:
 - Explanation, including the source of imprecision.
 - Analyzer version and configuration fingerprint.
 
-### Proposed statuses
+### Statuses
 
 #### `Proved_Safe`
 
@@ -263,19 +266,60 @@ tasking, dispatching, exceptional control flow, or target-specific behavior.
 An unsupported obligation must never be silently converted to
 `Proved_Safe`.
 
-## Initial verification boundary
+## Implemented verification boundary
 
-A credible first verification mode should be deliberately narrow:
+The `--verify` boundary is deliberately narrow:
 
 - Scalar integer and Boolean objects.
 - Structured sequential control flow.
 - Integer division, overflow, subtype range, and array index obligations.
+- Scalar initialization obligations.
 - Assertions and simple preconditions and postconditions.
 - Statically modeled arrays and subtype bounds.
-- Loops whose behavior can be covered by fixed-point analysis or explicit
-  supported invariants.
+- Loops analyzed by work-list fixed-point iteration with interval widening,
+  plus inductive initialization/preservation VCs and invariant summaries for
+  leading invariants over straight-line scalar loop bodies.
+- Resolved SPARK calls with explicit global effects and structurally
+  non-aliased simple writable actuals.
+- Side-effect-free scalar assertion formulas over initialized integer and
+  Boolean objects, with `+`, `-`, `*`, comparisons, equality, and Boolean
+  connectives.
+- Relational entry preconditions, branch-local predicates, straight-line
+  scalar assignments, simple actual-to-formal precondition substitution, and
+  identical symbolic values that reach a join from every predecessor.
+- Relational facts carried across a loop and into its exit when every leading
+  invariant is proved initially and after one generic iteration.
 
-The initial excluded or explicitly unsupported set should include:
+### Control-flow and abstract interpretation
+
+`Adalang_Analyzer.Control_Flow_Graph` now builds a reusable control-flow graph
+for the sequential statement subset. It represents entry, normal exit, and
+exceptional exit separately, and includes:
+
+- Sequential statement and declaration elaboration order.
+- `if`/`elsif`/`else` and `case` alternatives.
+- `while`, `for`, and unconditional loops, including back and exit edges.
+- Unnamed `exit` and `exit when`, return, explicit raise, and re-raise.
+- Nested begin/declare blocks and conservative exception-handler dispatch.
+- Conservative implicit exceptional edges for executable expressions and
+  declaration elaboration that may perform an Ada run-time check.
+
+The exceptional graph is intentionally an over-approximation. A handler
+dispatcher connects to every handler that could conservatively apply; a
+catch-all handler prevents direct propagation from that dispatcher, while
+exceptions raised inside a handler propagate to the enclosing scope.
+
+Unsupported transfers such as `goto`, extended return, tasking statements,
+and named exits are represented by `Unsupported_Node` and make the graph
+incomplete. No `Proved_Safe` status may be derived from an incomplete graph.
+The verifier consumes a complete graph with a terminating work list. After
+repeated growth at a loop header, moving interval bounds widen to infinity;
+a final iteration guard conservatively havocs the state rather than assuming
+convergence. For a supported leading invariant, preservation is checked in a
+separate generic one-iteration VC. A second pass uses the invariant as a loop
+summary only after initialization and preservation both discharge.
+
+The excluded or explicitly unsupported set includes:
 
 - General access types and points-to reasoning.
 - Tasking, protected objects, and concurrent interference.
@@ -283,26 +327,44 @@ The initial excluded or explicitly unsupported set should include:
 - Floating-point proof.
 - Unchecked conversion and target-dependent representation.
 - Unmodeled exception paths.
-- Calls without sound effect summaries.
+- Calls without sound effect summaries or with unsupported writable aliasing.
+- VC translations for division/remainder, exponentiation, calls, aggregates,
+  and expressions whose Ada semantics are not yet encoded exactly.
+- Conflicting symbolic values at joins, exceptional edges, and calls without
+  relational postconditions.
+- Loop invariants placed after executable statements, preservation paths with
+  branches, nested loops, calls, or unsupported transfers, and loop
+  termination/variant VCs.
 
 The supported subset must be defined semantically and tested by construct. A
 source-level profile name alone is not enough.
 
-## Evidence required before a proof claim
+## Verification evidence and remaining work
 
-Before enabling `Proved_Safe` in a release, the project should have:
+The regression corpus includes positive, definite-error, inconclusive,
+unreachable, unsupported, loop, modular-call, initialization, more-than-64
+binding, solver-unavailable, solver-proved, solver-refuted, and
+VC-unsupported cases, plus assignment-chain, branch-predicate, merge,
+call-havoc, relational pre/postcondition, and loop-cutoff symbolic cases.
+The loop corpus also includes a relational invariant that proves a
+subprogram postcondition and a deliberately unpreserved invariant that must
+leave the postcondition unproved.
+`tests/run_gnatprove_differential.sh` also runs a compatible corpus through
+GNATprove when GNATprove is installed and explicitly reports a skip when it is
+not. The differential gate requires GNATprove to analyze every corpus unit and
+prove every generated check, and rejects an AdaLang `Definite_Error` or
+`Unsupported` result on that clean corpus. It deliberately allows AdaLang to
+remain `Unproved` where GNATprove's stronger VC generation and automated
+provers succeed.
 
-1. A written supported-language and property specification.
-2. A control-flow model covering every supported transfer of control.
-3. Sound abstract transfer definitions for the claimed properties.
-4. Explicit models for calls, globals, initialization, and exceptional exits.
-5. Termination and widening arguments for fixed-point computation.
-6. Positive, negative, inconclusive, unreachable, and unsupported tests.
-7. Mutation and seeded-defect tests designed to detect false-safe results.
-8. Differential evaluation against GNATprove or another independent verifier
-   on a compatible corpus.
-9. Stable obligation identifiers and complete structured reporting.
-10. A documented review process for any discovered false-safe result.
+Before broadening the supported subset or making a stronger product claim,
+the project still needs:
+
+1. A more formal supported-language and property specification.
+2. Mutation and seeded-defect campaigns designed to detect false-safe results.
+3. A larger routinely executed differential corpus.
+4. Complete structured reporting, including SARIF proof obligations.
+5. A documented review and release process for discovered false-safe results.
 
 Testing cannot prove the analyzer sound, but it is necessary evidence that the
 implementation conforms to its specified analysis.

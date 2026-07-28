@@ -22,6 +22,7 @@ with Libadalang.Unit_Files;
 
 with Adalang_Analyzer.Checks;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
+with Adalang_Analyzer.Flow_Interp;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Project_Files; use Adalang_Analyzer.Project_Files;
 with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
@@ -95,6 +96,8 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line ("  -list-checks          List available checks");
       Ada.Text_IO.Put_Line
         ("  --spark               Enable proof-focused SPARK checks");
+      Ada.Text_IO.Put_Line
+        ("  --verify              Run bounded scalar verification");
       Ada.Text_IO.Put_Line
         ("  --automotive          Enable automotive Ada restrictions");
       Ada.Text_IO.Put_Line
@@ -283,6 +286,7 @@ package body Adalang_Analyzer.CLI is
          Known_Discriminant_Check_Failure, Potentially_Blocking_Operation);
    begin
       Active_Assurance_Profile := No_Assurance_Profile;
+      Verification_Mode := False;
       for Rule in Rule_Kind loop
          Rule_States (Rule) := Disabled;
       end loop;
@@ -291,6 +295,12 @@ package body Adalang_Analyzer.CLI is
          Rule_States (Rule) := Enabled;
       end loop;
    end Enable_SPARK_Preset;
+
+   procedure Enable_Verification_Preset is
+   begin
+      Enable_SPARK_Preset;
+      Verification_Mode := True;
+   end Enable_Verification_Preset;
 
    procedure Enable_Automotive_Preset is
       Automotive_Rules : constant array (Positive range <>) of Rule_Kind :=
@@ -319,6 +329,7 @@ package body Adalang_Analyzer.CLI is
          Naming_Convention, No_Compiler_Extensions);
    begin
       Active_Assurance_Profile := No_Assurance_Profile;
+      Verification_Mode := False;
       for Rule in Rule_Kind loop
          Rule_States (Rule) := Disabled;
       end loop;
@@ -364,6 +375,7 @@ package body Adalang_Analyzer.CLI is
          end loop;
       end Enable;
    begin
+      Verification_Mode := False;
       for Rule in Rule_Kind loop
          Rule_States (Rule) := Disabled;
       end loop;
@@ -631,6 +643,9 @@ package body Adalang_Analyzer.CLI is
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       else
          Checks.Evaluate_Node (Unit, Unit.Root);
+         if Verification_Mode then
+            Adalang_Analyzer.Flow_Interp.Verify_Unit (Unit);
+         end if;
       end if;
 
    exception
@@ -673,6 +688,8 @@ package body Adalang_Analyzer.CLI is
                   List_Checks_Only := True;
                elsif Arg = "--spark" or else Arg = "-spark" then
                   Enable_SPARK_Preset;
+               elsif Arg = "--verify" or else Arg = "-verify" then
+                  Enable_Verification_Preset;
                elsif Arg = "--automotive" or else Arg = "-automotive" then
                   Enable_Automotive_Preset;
                elsif Arg = "--do178c" then
@@ -953,8 +970,8 @@ package body Adalang_Analyzer.CLI is
             Ada.Text_IO.Put_Line
               (Ada.Text_IO.Standard_Error,
                "adalang-analyzer: warning: no checks are enabled; pass " &
-               "-checks=<list>, --spark, --automotive, or --do178c=<level>" &
-               " to actually analyze the source");
+               "-checks=<list>, --spark, --verify, --automotive, or " &
+               "--do178c=<level> to actually analyze the source");
          end if;
       end;
 

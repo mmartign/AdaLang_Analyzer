@@ -34,4 +34,11 @@ package Adalang_Analyzer.Flow_Interp is
    --  actual values to formals for known precondition failures and transfer
    --  simple postcondition facts back to writable actuals.
 
+   procedure Verify_Unit
+     (Unit : Libadalang.Analysis.Analysis_Unit);
+   --  Runs the bounded CFG worklist verifier for every subprogram body in
+   --  Unit. A no-op unless Config.Verification_Mode is enabled. This pass is
+   --  intentionally run after ordinary AST checks so it can refine their
+   --  Unproved obligation records to guarded final outcomes.
+
 end Adalang_Analyzer.Flow_Interp;

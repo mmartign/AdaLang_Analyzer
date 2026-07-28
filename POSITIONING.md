@@ -12,10 +12,11 @@ The concise product position is:
 > Ada that helps teams find defects, enforce project policies, and prepare
 > selected code for stronger verification.
 
-AdaLang Analyzer is currently a static analyzer, not a formal prover. A clean
-run means that none of the enabled checks emitted a finding for the analyzed
-inputs. It does not mean that the program is free of defects or run-time
-errors.
+AdaLang Analyzer is a static analyzer with an optional bounded scalar
+verification mode, not a general formal prover. A clean ordinary run means
+only that enabled checks emitted no finding. `--verify` can prove individual
+supported obligations, but does not prove a subprogram or program free of
+defects.
 
 This document describes the position of the current `0.1.0-dev` codebase. It
 does not promise features that are only proposed in the roadmap.
@@ -54,13 +55,18 @@ The analyzer currently provides:
 - Syntactic and semantic coding-policy checks.
 - Maintainability, reliability, and security classifications.
 - Intraprocedural data-flow and control-flow findings.
-- A bounded abstract state for exact integer values, Boolean values, and
-  integer ranges.
+- A dynamically sized abstract state for exact integer values, Boolean
+  values, initialization, and integer ranges.
 - Known-failure checks for selected assertions, contracts, and Ada run-time
   checks.
-- Separate text and JSON proof-obligation evidence for definite and unproved
-  outcomes in the current analysis scope, explicitly labeled as
-  non-exhaustive.
+- A bounded `--verify` mode that classifies enumerated scalar obligations as
+  proved safe, definite error, unproved, unreachable, or unsupported.
+- A small dual-solver scalar VC backend for assertion formulas that interval
+  analysis cannot decide.
+- Conservative symbolic propagation for scalar assignments, relational
+  preconditions, and branch-local path predicates.
+- Bounded loop VCs for initialization and one-iteration preservation of
+  leading scalar invariants, with proved invariants summarized at loop exits.
 - SPARK-readiness analysis for `SPARK_Mode`, `Global`, `Depends`, output
   initialization, aliasing, loop variants, and selected blocking operations.
 - Automotive and DO-178C verification-support profiles with explicit
@@ -71,8 +77,10 @@ The analyzer currently provides:
 The analyzer does not currently provide:
 
 - Exhaustive analysis of every execution path.
-- Verification-condition generation or SMT/theorem-prover integration.
-- A proof that enabled run-time checks cannot fail.
+- General verification-condition generation or interactive theorem proving
+  beyond the bounded scalar and loop-invariant subsets.
+- Whole-program or general SPARK proof that enabled run-time checks cannot
+  fail.
 - Complete points-to, alias, exception, dispatching, or concurrency analysis.
 - Dynamic test generation or test execution.
 - Structural coverage measurement.
@@ -88,7 +96,7 @@ position, not equivalence of check names or raw check counts.
 | --- | --- | --- |
 | GNATcheck | Enforce syntactic and semantic Ada coding rules, including custom LKQL rules | Closest direct overlap. AdaLang has curated built-in policies and some deeper flow-sensitive checks, but does not match GNATcheck's maturity or rule extensibility. |
 | GNATtest | Generate AUnit test skeletons, harnesses, and drivers | Complementary. AdaLang neither generates nor executes tests. |
-| GNATprove | Check SPARK legality, analyze information flow, and prove selected run-time and contract properties | Downstream verification tool. AdaLang can identify readiness issues and known failures but is not a substitute for GNATprove. |
+| GNATprove | Check SPARK legality, analyze information flow, and prove selected run-time and contract properties | Downstream verification tool. AdaLang can discharge some bounded scalar obligations and identify readiness issues, but is not a substitute for GNATprove. |
 | Polyspace Bug Finder | Find probable C/C++ defects and coding-rule violations without exhaustive proof | Closest conceptual product category, but it serves a different language and is substantially more mature and broad. |
 | Polyspace Code Prover | Classify supported C/C++ operations by exhaustive run-time-error analysis | An aspirational model for obligation reporting, not a current competitor. |
 | Polyspace Client/Server for Ada | Use abstract interpretation to verify selected Ada run-time properties | The relevant Polyspace comparison for Ada. AdaLang does not currently offer an equivalent absence-of-error guarantee. |
@@ -121,10 +129,10 @@ current purpose.
 
 ### GNATprove
 
-GNATprove performs analyses that carry formal verification meaning for their
-documented SPARK scope. AdaLang's similarly named checks report mismatches or
-failures that its bounded analyses can establish. They do not reproduce
-GNATprove's proof engine.
+GNATprove performs analyses that carry formal verification meaning for its
+documented SPARK scope. AdaLang's bounded mode uses CFG fixed-point abstract
+interpretation to classify a much narrower scalar subset. It does not
+reproduce GNATprove's verification-condition or prover engine.
 
 The intended workflow is:
 
@@ -135,6 +143,7 @@ ordinary Ada
 AdaLang Analyzer
   - coding policy
   - likely and definite defects
+  - bounded scalar obligations
   - safety-profile findings
   - SPARK-readiness findings
     |
@@ -153,11 +162,10 @@ GNATprove
 Polyspace Bug Finder and Code Prover primarily target C/C++. The direct Ada
 verification comparison is Polyspace Client/Server for Ada.
 
-AdaLang resembles a bug finder in its current reporting objective: produce
-actionable findings without claiming exhaustive verification. Polyspace's
-red, orange, green, and gray Code Prover classification is useful inspiration
-for a future AdaLang verification mode, but AdaLang does not currently emit
-equivalent proof statuses.
+AdaLang primarily resembles a bug finder, and its optional verifier uses a
+similar five-way obligation classification. That similarity is about result
+shape, not equivalent language coverage, proof strength, maturity, or
+qualification.
 
 ## Differentiation
 
@@ -188,13 +196,16 @@ The following descriptions accurately characterize the current product:
 - "Coding-policy and semantic defect checker."
 - "Flow-sensitive checks for selected properties."
 - "Reports known assertion, contract, and run-time-check failures."
+- "Classifies bounded scalar obligations as proved safe, definite error,
+  unproved, unreachable, or unsupported."
 - "Supports SPARK-readiness assessment."
 - "Provides automotive and DO-178C verification-support profiles."
 - "Suitable for integration into CI."
 
 The following claims must not be made for the current product:
 
-- "Proves the code safe."
+- "Proves the code safe" without limiting the claim to one reported
+  obligation and the documented `--verify` subset.
 - "Proves absence of run-time errors."
 - "Exhaustively checks all execution paths."
 - "Zero false negatives."
@@ -208,12 +219,12 @@ and validation argument under the assurance model.
 
 ## Strategic direction
 
-The recommended direction is to retain the existing analyzer and add a
-bounded verification mode for selected scalar run-time properties. That mode
-should report every supported operation as proved safe, definite error,
-unproved, unreachable, or unsupported. It must remain separate from ordinary
-rule findings.
+The analyzer now includes the first bounded verification mode for selected
+scalar run-time properties. It reports enumerated operations as proved safe,
+definite error, unproved, unreachable, or unsupported, separately from
+ordinary rule findings.
 
-This direction positions AdaLang between rule checking and full formal proof:
-useful on normal Ada, explicit about uncertainty, and able to escalate
-critical code to GNATprove or Polyspace for Ada.
+The next direction is validation and careful expansion of that boundary while
+keeping AdaLang between rule checking and full formal proof: useful on normal
+Ada, explicit about uncertainty, and able to escalate critical code to
+GNATprove or Polyspace for Ada.

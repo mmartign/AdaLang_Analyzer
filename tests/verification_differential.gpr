@@ -1,0 +1,14 @@
+project Verification_Differential is
+   for Source_Dirs use (".");
+   for Source_Files use
+     ("verification_clean.adb",
+      "verification_loop_clean.adb",
+      "verification_call_clean.adb",
+      "verification_vc_clean.adb",
+      "verification_vc_contracts.adb",
+      "verification_symbolic_assignment.adb",
+      "verification_symbolic_branch.adb",
+      "verification_symbolic_prepost.adb",
+      "verification_loop_vc_relational.adb");
+   for Object_Dir use "../obj/verification_differential";
+end Verification_Differential;

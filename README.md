@@ -7,8 +7,8 @@ guidance.
 
 The project's current competitive scope and permitted product claims are
 defined in [POSITIONING.md](POSITIONING.md). The meaning and limitations of
-analysis results, including the boundary between present findings and any
-future proof status, are defined in
+analysis results, including the boundary between ordinary findings and bounded
+proof statuses, are defined in
 [ASSURANCE_MODEL.md](ASSURANCE_MODEL.md).
 
 ## Relationship to Libadalang and AdaCore
@@ -161,6 +161,17 @@ them requires points-to/alias analysis.
 `Function_Side_Effect` only flags assignments through a simple identifier
 destination, to avoid false positives from unresolved or complex constructs.
 
+A separate reusable control-flow graph models the structured sequential
+subset used by `--verify`. It distinguishes normal and
+exceptional exits, represents conditional and case branches, loop back and
+exit edges, returns, raises, nested begin/declare blocks, and exception
+handlers.
+Implicit exceptions are conservatively over-approximated so later proof
+analysis can remove infeasible exceptional edges without having to recover
+missing paths. Unsupported transfers remain explicit and make the graph
+incomplete. The verification interpreter propagates an abstract state to a
+fixed point over this graph and applies interval widening at loop headers.
+
 SPARK contracts participate in the flow-sensitive pass. A `Pre` aspect
 narrows the abstract state at subprogram entry, and resolved formal-to-actual
 parameter mappings allow a call with statically incompatible arguments to be
@@ -193,13 +204,62 @@ Division, integer arithmetic, range checks, index checks, selected discriminant
 checks, assertions, preconditions, and postconditions reached by the
 corresponding enabled checks are also recorded in a proof-obligation registry.
 Text output summarizes their statuses, and JSON output includes both
-`proofSummary` and `proofObligations`. An operation whose failure is
-established is `Definite_Error`; other enumerated operations are `Unproved`.
-The latter does not assert that an error is possible—it records that this
-analysis has made no absence-of-error proof. The registry does not yet emit
-`Proved_Safe` results and remains limited by the current interpreter's
-unsupported and skipped boundaries, so output labels its scope as
-`enumerated outcomes in current analysis scope; not exhaustive`.
+`proofSummary` and `proofObligations`. Normal analysis records known failures
+as `Definite_Error` and unresolved obligations as `Unproved`.
+
+`--verify` enables a deliberately bounded scalar verification pass. Within a
+complete supported control-flow and semantic boundary it classifies every
+enumerated obligation as `Proved_Safe`, `Definite_Error`, `Unproved`, or
+`Unreachable`. If that boundary is incomplete, affected obligations are
+`Unsupported`; they are never silently treated as safe. `Proved_Safe` applies
+only to that individual operation under the reported assumptions. It is not a
+claim that a subprogram or program is correct, and this mode is not a
+replacement for GNATprove.
+
+The supported verification core is structured sequential integer and Boolean
+code, statically bounded array indexing, initialization tracking, and simple
+assertion, precondition, and postcondition facts. Resolved modular calls
+require SPARK mode, an explicit `Global` aspect, and non-aliased simple
+writable actuals. Unknown call effects invalidate affected state. Access
+types and explicit dereference, dispatching/class-wide behavior, tasking and
+protected operations, floating-point proof, generic subprogram
+instantiations, and unsupported transfers such as `goto` are outside the
+proof boundary.
+
+For assertions that remain unknown after abstract interpretation, `--verify`
+also has a small scalar verification-condition backend. It translates
+side-effect-free integer/Boolean formulas using literals, initialized
+variables, `+`, `-`, `*`, comparisons, equality, and Boolean connectives to
+SMT-LIB. Current exact values and interval bounds become assumptions. A
+`Proved_Safe` or `Definite_Error` external-prover result is accepted only when
+both CVC5 and Z3 independently return the same UNSAT conclusion. Missing
+solvers, timeouts, disagreement, uninitialized operands, division/remainder,
+calls, or unsupported syntax remain `Unproved`.
+
+The backend locates `cvc5` and `z3` on `PATH` or in Alire's standard
+GNATprove installation. `ADALANG_CVC5` and `ADALANG_Z3` can select explicit
+executables. Solver calls have a two-second limit each and never pass source
+text through a shell.
+
+The CFG verifier also carries a symbolic state beside the interval state.
+Straight-line assignments are retained as symbolic substitutions, relational
+subprogram preconditions and branch conditions become path assumptions, and
+simple actual-to-formal substitutions feed call-precondition VCs. At a CFG
+join, an identical symbolic assignment from every predecessor survives;
+conflicting assignments receive a fresh unconstrained merge symbol. Calls
+without a relational postcondition, exceptional edges, and unsupported writes
+clear symbolic facts.
+
+Leading `Loop_Invariant` pragmas now form inductive cut points for straight-line
+scalar loop bodies. The verifier separately proves initialization from the
+non-back-edge input and preservation for one generic iteration. Only when both
+VCs succeed does a second CFG pass replace the loop fixed point with an
+invariant summary, cut the back edge, and use the invariant plus the negated
+loop condition for post-loop and subprogram-postcondition proofs. Failed
+preservation never feeds downstream proofs. Invariants after executable loop
+statements, branched loop bodies, nested-loop preservation, variants, and
+termination VCs remain `Unproved`. These fallbacks trade precision for
+soundness and never create a speculative proof.
 
 Effective `SPARK_Mode` inherited through a declaration is respected by these
 contract checks. The SPARK-readiness pass separately compares semantic global
@@ -366,6 +426,8 @@ results must separately assess tool qualification under DO-330. See
 ## Requirements
 
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
+- optionally, the Alire `gnatprove` package for scalar VC discharge and
+  GNATprove differential tests;
 - macOS with the Apple Command Line Tools for the current development
   configuration;
 - the dependencies declared in `alire.toml`, which Alire resolves during the
@@ -387,7 +449,12 @@ Run the bug-finding regression suite after building:
 sh tests/run_bug_findings.sh
 sh tests/run_automotive.sh
 sh tests/run_do178c.sh
+sh tests/run_verification.sh
+sh tests/run_gnatprove_differential.sh
 ```
+
+The differential script runs a compatible corpus through GNATprove when that
+tool is installed and reports an explicit skip otherwise.
 
 ## Usage
 
@@ -448,6 +515,7 @@ Useful options include:
 -X<name>=<value> Set a project scenario variable (repeatable)
 -list-checks     List all available checks
 --spark          Enable a proof-focused preset (later check switches refine it)
+--verify         Classify bounded scalar proof obligations
 --automotive     Enable the strict automotive Ada preset
 --do178c=<level> Enable DO-178C verification support for level A, B, C, or D
 -checks=<list>   Enable or disable a comma-separated set of checks
@@ -500,6 +568,7 @@ Run the structured-output regression alongside the bug-finding suite:
 
 ```sh
 sh tests/run_reporting.sh
+sh tests/run_control_flow_graph_model.sh
 sh tests/run_automotive.sh
 sh tests/run_do178c.sh
 sh tests/run_cli_robustness.sh

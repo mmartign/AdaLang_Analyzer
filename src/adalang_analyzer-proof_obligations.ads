@@ -11,9 +11,9 @@ with Libadalang.Analysis;
 --  condition, while an obligation records the outcome of asking whether one
 --  specific run-time or contract failure is absent.
 --
---  This package does not perform analysis and is not yet part of report
---  output. Producers must supply an explicit result status and the evidence
---  supporting it. In particular, no default can silently mean "proved."
+--  This package does not itself perform analysis. Producers must supply an
+--  explicit result status and the evidence supporting it; no default can
+--  silently mean "proved." Text and JSON reporters expose the registry.
 package Adalang_Analyzer.Proof_Obligations is
 
    use Ada.Strings.Unbounded;
@@ -122,9 +122,10 @@ package Adalang_Analyzer.Proof_Obligations is
       Imprecision_Source : String := "";
       Configuration_Id   : String := "");
    --  Creates and registers an obligation anchored at Node. Repeated
-   --  repeated registration of the same status is idempotent. An Unproved
-   --  result can be refined to Definite_Error, and a later Unproved result
-   --  cannot weaken an existing Definite_Error. Other conflicts are rejected.
+   --  registration of the same status is idempotent. When analysis passes
+   --  overlap, the registry preserves the strongest sound outcome:
+   --  reachable results supersede Unreachable, Definite_Error supersedes
+   --  Unsupported, and Unsupported or Unreachable supersede Proved_Safe.
 
    procedure Reset;
    --  Removes all obligations from the per-run registry.

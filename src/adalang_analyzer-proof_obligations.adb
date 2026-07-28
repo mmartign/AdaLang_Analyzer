@@ -6,6 +6,7 @@ with Ada.Containers.Vectors;
 with Interfaces;
 
 with Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Config;
 
 package body Adalang_Analyzer.Proof_Obligations is
 
@@ -116,7 +117,14 @@ package body Adalang_Analyzer.Proof_Obligations is
    end Method_Name;
 
    function Scope_Description return String is
-     ("enumerated outcomes in current analysis scope; not exhaustive");
+   begin
+      if Adalang_Analyzer.Config.Verification_Mode then
+         return
+           "bounded scalar verification; unsupported boundaries are explicit";
+      else
+         return "enumerated outcomes in current analysis scope; not exhaustive";
+      end if;
+   end Scope_Description;
 
    function Normalized_Path (Filename : String) return String is
       First : Integer := Filename'First;
@@ -206,6 +214,24 @@ package body Adalang_Analyzer.Proof_Obligations is
       Id             : constant String :=
         Stable_Id_For (Unit, Node, Kind, Operation_Text);
       Existing       : constant Natural := Find (Id);
+
+      function Replaces
+        (Old_Status, New_Status : Obligation_Status) return Boolean
+      is
+      begin
+         case Old_Status is
+            when Unproved =>
+               return New_Status /= Unproved;
+            when Unreachable =>
+               return New_Status not in Unproved | Unreachable;
+            when Unsupported =>
+               return New_Status = Definite_Error;
+            when Proved_Safe =>
+               return New_Status in Unreachable | Unsupported;
+            when Definite_Error =>
+               return New_Status = Unreachable;
+         end case;
+      end Replaces;
    begin
       if Existing /= 0 then
          declare
@@ -214,12 +240,15 @@ package body Adalang_Analyzer.Proof_Obligations is
             if Item.Kind /= Kind then
                raise Constraint_Error with
                  "conflicting kind for proof obligation ID: " & Id;
-            elsif Item.Status = Status
-              or else
-                (Item.Status = Definite_Error and then Status = Unproved)
-            then
+            elsif Item.Status = Status then
                return;
-            elsif Item.Status = Unproved and then Status = Definite_Error then
+            elsif (Item.Status = Proved_Safe and then Status = Definite_Error)
+              or else
+                (Item.Status = Definite_Error and then Status = Proved_Safe)
+            then
+               raise Constraint_Error with
+                 "contradictory proof results for obligation ID: " & Id;
+            elsif Replaces (Item.Status, Status) then
                Update_Result
                  (Stable_Id          => Id,
                   Status             => Status,
@@ -228,10 +257,10 @@ package body Adalang_Analyzer.Proof_Obligations is
                   Explanation        => Explanation,
                   Imprecision_Source => Imprecision_Source);
                return;
+            else
+               return;
             end if;
          end;
-         raise Constraint_Error with
-           "conflicting result for proof obligation ID: " & Id;
       end if;
 
       Register

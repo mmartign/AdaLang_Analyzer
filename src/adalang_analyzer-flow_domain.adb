@@ -8,6 +8,20 @@ package body Adalang_Analyzer.Flow_Domain is
 
    use type Libadalang.Analysis.Ada_Node;
 
+   function Binding_Count (State : Flow_State) return Natural is
+     (Natural (State.Bindings.Length));
+
+   function Binding_At
+     (State : Flow_State;
+      Index : Positive) return Flow_Binding
+   is
+   begin
+      if Index > Binding_Count (State) then
+         raise Constraint_Error with "invalid flow binding index";
+      end if;
+      return State.Bindings.Element (Index);
+   end Binding_At;
+
    function Bool_Name (Value : Abstract_Bool) return String is
    begin
       case Value is
@@ -121,7 +135,7 @@ package body Adalang_Analyzer.Flow_Domain is
          return Unknown_Int;
       end if;
 
-      for I in 1 .. State.Count loop
+      for I in 1 .. Binding_Count (State) loop
          if State.Bindings (I).Decl = Key then
             return State.Bindings (I).Value;
          end if;
@@ -139,7 +153,7 @@ package body Adalang_Analyzer.Flow_Domain is
          return Bool_Unknown;
       end if;
 
-      for I in 1 .. State.Count loop
+      for I in 1 .. Binding_Count (State) loop
          if State.Bindings (I).Decl = Key then
             return State.Bindings (I).Bool_Value;
          end if;
@@ -157,7 +171,7 @@ package body Adalang_Analyzer.Flow_Domain is
          return Unknown_Range;
       end if;
 
-      for I in 1 .. State.Count loop
+      for I in 1 .. Binding_Count (State) loop
          if State.Bindings (I).Decl = Key then
             return State.Bindings (I).Range_Value;
          end if;
@@ -165,6 +179,53 @@ package body Adalang_Analyzer.Flow_Domain is
 
       return Unknown_Range;
    end Flow_Range_Lookup;
+
+   function Flow_Initialization
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return Bool_Unknown;
+      end if;
+
+      for I in 1 .. Binding_Count (State) loop
+         if State.Bindings (I).Decl = Key then
+            return State.Bindings (I).Initialized;
+         end if;
+      end loop;
+      return Bool_Unknown;
+   end Flow_Initialization;
+
+   procedure Flow_Set_Initialized
+     (State       : in out Flow_State;
+      Key         : Libadalang.Analysis.Ada_Node;
+      Initialized : Abstract_Bool)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return;
+      end if;
+
+      for I in 1 .. Binding_Count (State) loop
+         if State.Bindings (I).Decl = Key then
+            declare
+               Item : Flow_Binding := State.Bindings (I);
+            begin
+               Item.Initialized := Initialized;
+               State.Bindings.Replace_Element (I, Item);
+            end;
+            return;
+         end if;
+      end loop;
+
+      State.Bindings.Append
+        ((Decl        => Key,
+          Value       => Unknown_Int,
+          Bool_Value  => Bool_Unknown,
+          Range_Value => Unknown_Range,
+          Initialized => Initialized));
+   end Flow_Set_Initialized;
 
    procedure Flow_Set
      (State : in out Flow_State;
@@ -176,22 +237,25 @@ package body Adalang_Analyzer.Flow_Domain is
          return;
       end if;
 
-      for I in 1 .. State.Count loop
+      for I in 1 .. Binding_Count (State) loop
          if State.Bindings (I).Decl = Key then
-            State.Bindings (I).Value := Value;
-            if Value.Known then
-               State.Bindings (I).Range_Value := Range_From_Int (Value);
-            end if;
+            declare
+               Item : Flow_Binding := State.Bindings (I);
+            begin
+               Item.Value := Value;
+               Item.Initialized := Bool_True;
+               if Value.Known then
+                  Item.Range_Value := Range_From_Int (Value);
+               end if;
+               State.Bindings.Replace_Element (I, Item);
+            end;
             return;
          end if;
       end loop;
 
-      if State.Count < Max_Flow_Vars then
-         State.Count := State.Count + 1;
-         State.Bindings (State.Count) :=
-           (Decl => Key, Value => Value, Bool_Value => Bool_Unknown,
-            Range_Value => Range_From_Int (Value));
-      end if;
+      State.Bindings.Append
+        ((Decl => Key, Value => Value, Bool_Value => Bool_Unknown,
+          Range_Value => Range_From_Int (Value), Initialized => Bool_True));
    end Flow_Set;
 
    procedure Flow_Bool_Set
@@ -204,19 +268,26 @@ package body Adalang_Analyzer.Flow_Domain is
          return;
       end if;
 
-      for I in 1 .. State.Count loop
+      for I in 1 .. Binding_Count (State) loop
          if State.Bindings (I).Decl = Key then
-            State.Bindings (I).Bool_Value := Bool_Value;
+            declare
+               Item : Flow_Binding := State.Bindings (I);
+            begin
+               Item.Bool_Value := Bool_Value;
+               if Bool_Value /= Bool_Unknown then
+                  Item.Initialized := Bool_True;
+               end if;
+               State.Bindings.Replace_Element (I, Item);
+            end;
             return;
          end if;
       end loop;
 
-      if State.Count < Max_Flow_Vars then
-         State.Count := State.Count + 1;
-         State.Bindings (State.Count) :=
-           (Decl => Key, Value => Unknown_Int, Bool_Value => Bool_Value,
-            Range_Value => Unknown_Range);
-      end if;
+      State.Bindings.Append
+        ((Decl => Key, Value => Unknown_Int, Bool_Value => Bool_Value,
+          Range_Value => Unknown_Range,
+          Initialized =>
+            (if Bool_Value = Bool_Unknown then Bool_Unknown else Bool_True)));
    end Flow_Bool_Set;
 
    procedure Flow_Range_Set
@@ -229,19 +300,21 @@ package body Adalang_Analyzer.Flow_Domain is
          return;
       end if;
 
-      for I in 1 .. State.Count loop
+      for I in 1 .. Binding_Count (State) loop
          if State.Bindings (I).Decl = Key then
-            State.Bindings (I).Range_Value := Range_Value;
+            declare
+               Item : Flow_Binding := State.Bindings (I);
+            begin
+               Item.Range_Value := Range_Value;
+               State.Bindings.Replace_Element (I, Item);
+            end;
             return;
          end if;
       end loop;
 
-      if State.Count < Max_Flow_Vars then
-         State.Count := State.Count + 1;
-         State.Bindings (State.Count) :=
-           (Decl => Key, Value => Unknown_Int, Bool_Value => Bool_Unknown,
-            Range_Value => Range_Value);
-      end if;
+      State.Bindings.Append
+        ((Decl => Key, Value => Unknown_Int, Bool_Value => Bool_Unknown,
+          Range_Value => Range_Value, Initialized => Bool_Unknown));
    end Flow_Range_Set;
 
    procedure Flow_Havoc
@@ -253,11 +326,15 @@ package body Adalang_Analyzer.Flow_Domain is
          return;
       end if;
 
-      for I in 1 .. State.Count loop
+      for I in 1 .. Binding_Count (State) loop
          if State.Bindings (I).Decl = Key then
-            State.Bindings (I).Value := Unknown_Int;
-            State.Bindings (I).Bool_Value := Bool_Unknown;
-            State.Bindings (I).Range_Value := Unknown_Range;
+            State.Bindings.Replace_Element
+              (I,
+               (Decl        => Key,
+                Value       => Unknown_Int,
+                Bool_Value  => Bool_Unknown,
+                Range_Value => Unknown_Range,
+                Initialized => Bool_Unknown));
             return;
          end if;
       end loop;
@@ -265,13 +342,13 @@ package body Adalang_Analyzer.Flow_Domain is
 
    procedure Flow_Havoc_All (State : in out Flow_State) is
    begin
-      State := Empty_Flow_State;
+      State.Bindings.Clear;
    end Flow_Havoc_All;
 
    function Flow_Join (Left, Right : Flow_State) return Flow_State is
       Result : Flow_State := Empty_Flow_State;
    begin
-      for I in 1 .. Left.Count loop
+      for I in 1 .. Binding_Count (Left) loop
          declare
             Decl        : constant Libadalang.Analysis.Ada_Node :=
               Left.Bindings (I).Decl;
@@ -286,6 +363,10 @@ package body Adalang_Analyzer.Flow_Domain is
               Left.Bindings (I).Range_Value;
             Right_Range : constant Abstract_Range :=
               Flow_Range_Lookup (Right, Decl);
+            Left_Init   : constant Abstract_Bool :=
+              Left.Bindings (I).Initialized;
+            Right_Init  : constant Abstract_Bool :=
+              Flow_Initialization (Right, Decl);
          begin
             if Left_Value.Known and then Right_Value.Known
               and then Left_Value.Value = Right_Value.Value
@@ -301,10 +382,105 @@ package body Adalang_Analyzer.Flow_Domain is
                Flow_Range_Set
                  (Result, Decl, Range_Union (Left_Range, Right_Range));
             end if;
+
+            if Left_Init = Right_Init then
+               Flow_Set_Initialized (Result, Decl, Left_Init);
+            else
+               Flow_Set_Initialized (Result, Decl, Bool_Unknown);
+            end if;
          end;
       end loop;
 
       return Result;
    end Flow_Join;
+
+   function Flow_Equal (Left, Right : Flow_State) return Boolean is
+   begin
+      if Binding_Count (Left) /= Binding_Count (Right) then
+         return False;
+      end if;
+
+      for Item of Left.Bindings loop
+         declare
+            Other_Value : constant Abstract_Int :=
+              Flow_Lookup (Right, Item.Decl);
+            Other_Bool  : constant Abstract_Bool :=
+              Flow_Bool_Lookup (Right, Item.Decl);
+            Other_Range : constant Abstract_Range :=
+              Flow_Range_Lookup (Right, Item.Decl);
+         begin
+            if Item.Value /= Other_Value
+              or else Item.Bool_Value /= Other_Bool
+              or else Item.Range_Value /= Other_Range
+              or else Item.Initialized /=
+                Flow_Initialization (Right, Item.Decl)
+            then
+               return False;
+            end if;
+         end;
+      end loop;
+      return True;
+   end Flow_Equal;
+
+   function Flow_Widen
+     (Previous, Next : Flow_State) return Flow_State
+   is
+      Result : Flow_State := Empty_Flow_State;
+   begin
+      for Item of Previous.Bindings loop
+         declare
+            Next_Value : constant Abstract_Int :=
+              Flow_Lookup (Next, Item.Decl);
+            Next_Bool  : constant Abstract_Bool :=
+              Flow_Bool_Lookup (Next, Item.Decl);
+            Next_Range : constant Abstract_Range :=
+              Flow_Range_Lookup (Next, Item.Decl);
+            Next_Init  : constant Abstract_Bool :=
+              Flow_Initialization (Next, Item.Decl);
+            Wide       : Abstract_Range;
+         begin
+            if Item.Value.Known
+              and then Next_Value.Known
+              and then Item.Value.Value = Next_Value.Value
+            then
+               Flow_Set (Result, Item.Decl, Item.Value);
+            end if;
+
+            if Item.Bool_Value /= Bool_Unknown
+              and then Item.Bool_Value = Next_Bool
+            then
+               Flow_Bool_Set (Result, Item.Decl, Item.Bool_Value);
+            end if;
+
+            Wide.Has_Low :=
+              Item.Range_Value.Has_Low
+              and then Next_Range.Has_Low
+              and then Next_Range.Low >= Item.Range_Value.Low;
+            if Wide.Has_Low then
+               Wide.Low := Item.Range_Value.Low;
+            end if;
+
+            Wide.Has_High :=
+              Item.Range_Value.Has_High
+              and then Next_Range.Has_High
+              and then Next_Range.High <= Item.Range_Value.High;
+            if Wide.Has_High then
+               Wide.High := Item.Range_Value.High;
+            end if;
+
+            if Wide.Has_Low or else Wide.Has_High then
+               Flow_Range_Set (Result, Item.Decl, Wide);
+            end if;
+
+            if Item.Initialized = Next_Init then
+               Flow_Set_Initialized
+                 (Result, Item.Decl, Item.Initialized);
+            else
+               Flow_Set_Initialized (Result, Item.Decl, Bool_Unknown);
+            end if;
+         end;
+      end loop;
+      return Result;
+   end Flow_Widen;
 
 end Adalang_Analyzer.Flow_Domain;

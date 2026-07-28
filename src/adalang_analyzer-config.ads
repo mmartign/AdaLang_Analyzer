@@ -21,6 +21,10 @@ package Adalang_Analyzer.Config is
      (others => Disabled);
 
    Active_Assurance_Profile : Assurance_Profile := No_Assurance_Profile;
+   Verification_Mode : Boolean := False;
+   --  Enables the bounded CFG/fixed-point verifier. This is intentionally
+   --  separate from --spark, which remains a readiness/finding preset.
+
    Verbose_Mode : Boolean := False;
    Quiet_Mode   : Boolean := False;
    Default_Complexity_Threshold  : constant Positive := 10;
