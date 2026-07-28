@@ -1,4 +1,6 @@
-procedure Verification_Many_Variables is
+procedure Verification_Many_Variables
+  with SPARK_Mode
+is
    V01 : Integer := 1;
    V02 : Integer := 2;
    V03 : Integer := 3;

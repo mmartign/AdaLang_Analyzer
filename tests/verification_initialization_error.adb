@@ -1,4 +1,6 @@
-procedure Verification_Initialization_Error is
+procedure Verification_Initialization_Error
+  with SPARK_Mode
+is
    Source : Integer;
    Target : Integer;
 begin
