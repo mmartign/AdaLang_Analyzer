@@ -1,4 +1,8 @@
+--  AdaLang Analyzer
+--
 --  Copyright (C) 2026, Spazio IT
+--
+--  Developed, validated, and maintained by Spazio IT.
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 

@@ -1,0 +1,19 @@
+AdaLang Analyzer
+================
+
+AdaLang Analyzer is an independent static-analysis product developed,
+extended, validated, maintained, and supported by Spazio IT.
+
+The project contains code derived from AdaCore's open-source
+libadalang-tools project. Copyright notices and licensing terms applicable
+to inherited material are preserved in the relevant source files.
+
+AdaLang Analyzer is not endorsed, sponsored, or officially supported by
+AdaCore.
+
+The AdaLang Analyzer name, logo, and associated Spazio IT branding are not
+granted for use by the software license. The software license does not grant
+permission to represent a modified or redistributed version as an official
+Spazio IT product.
+
+Copyright (C) 2026 Spazio IT.
