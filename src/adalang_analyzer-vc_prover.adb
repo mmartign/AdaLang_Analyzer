@@ -13,6 +13,7 @@ with GNAT.OS_Lib;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Config; use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Eval;
 with Adalang_Analyzer.Text_Utils;
 
@@ -774,6 +775,9 @@ package body Adalang_Analyzer.VC_Prover is
          Deleted : Boolean := False;
       begin
          GNAT.OS_Lib.Delete_File (Output_Name.all, Deleted);
+         if not Deleted then
+            Log_Verbose ("could not remove solver output file");
+         end if;
          GNAT.OS_Lib.Free (Output_Name);
          if not Success or else Return_Code /= 0 then
             return Solver_Unknown;
@@ -792,6 +796,9 @@ package body Adalang_Analyzer.VC_Prover is
                Deleted : Boolean := False;
             begin
                GNAT.OS_Lib.Delete_File (Output_Name.all, Deleted);
+               if not Deleted then
+                  Log_Verbose ("could not remove solver output file");
+               end if;
                GNAT.OS_Lib.Free (Output_Name);
             end;
          end if;
@@ -808,7 +815,7 @@ package body Adalang_Analyzer.VC_Prover is
       CVC5_Path  : constant String := Solver_Path ("cvc5", "ADALANG_CVC5");
       Z3_Path    : constant String := Solver_Path ("z3", "ADALANG_Z3");
       CVC5, Z3   : Solver_Answer;
-      Deleted    : Boolean;
+      Deleted    : Boolean := False;
    begin
       if CVC5_Path = "" or else Z3_Path = "" then
          return Solver_Unavailable;
@@ -832,6 +839,9 @@ package body Adalang_Analyzer.VC_Prover is
       CVC5 := Run_Solver (CVC5_Path, True, Input_Name.all);
       Z3 := Run_Solver (Z3_Path, False, Input_Name.all);
       GNAT.OS_Lib.Delete_File (Input_Name.all, Deleted);
+      if not Deleted then
+         Log_Verbose ("could not remove solver input file");
+      end if;
       GNAT.OS_Lib.Free (Input_Name);
 
       if CVC5 = Z3 then
@@ -846,6 +856,9 @@ package body Adalang_Analyzer.VC_Prover is
          end if;
          if Input_Name /= null then
             GNAT.OS_Lib.Delete_File (Input_Name.all, Deleted);
+            if not Deleted then
+               Log_Verbose ("could not remove solver input file");
+            end if;
             GNAT.OS_Lib.Free (Input_Name);
          end if;
          return Solver_Unknown;

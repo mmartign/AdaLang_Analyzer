@@ -31,6 +31,15 @@ package body Adalang_Analyzer.Ada_Text is
       end if;
    end Node_Text;
 
+   function Safe_Filename
+     (Unit : Libadalang.Analysis.Analysis_Unit) return String is
+   begin
+      return Unit.Get_Filename;
+   exception
+      when others =>
+         return "<unknown>";
+   end Safe_Filename;
+
    function Canonical_Text  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node : Libadalang.Analysis.Ada_Node'Class) return String
    is

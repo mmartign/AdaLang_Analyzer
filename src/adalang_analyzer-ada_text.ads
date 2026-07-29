@@ -16,6 +16,11 @@ package Adalang_Analyzer.Ada_Text is
      (Node : Libadalang.Analysis.Ada_Node'Class) return String;
    --  Verbatim source text spanned by Node, or "" for a null node.
 
+   function Safe_Filename
+     (Unit : Libadalang.Analysis.Analysis_Unit) return String;
+   --  Unit filename for diagnostics, or "<unknown>" if Libadalang cannot
+   --  provide one while another semantic failure is already being handled.
+
    function Canonical_Text
      (Node : Libadalang.Analysis.Ada_Node'Class) return String;
    --  Whitespace-stripped, lower-cased source text of Node, used to compare

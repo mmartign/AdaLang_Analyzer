@@ -1285,8 +1285,12 @@ package body Adalang_Analyzer.Flow_Interp is
                end case;
             end if;
          exception
-            when others =>
-               null;
+            when E : others =>
+               Report_Recoverable_Failure_Once
+                 (Rule       => "Initialization_Check",
+                  Operation  => "classify identifier initialization",
+                  Source     => Ada_Text.Safe_Filename (Unit),
+                  Occurrence => E);
          end;
       end if;
 
@@ -1383,8 +1387,12 @@ package body Adalang_Analyzer.Flow_Interp is
                end if;
             end if;
          exception
-            when others =>
-               null;
+            when E : others =>
+               Report_Recoverable_Failure_Once
+                 (Rule       => "Known_Overflow_Failure",
+                  Operation  => "evaluate arithmetic result bounds",
+                  Source     => Ada_Text.Safe_Filename (Unit),
+                  Occurrence => E);
          end;
       end if;
 
@@ -2858,8 +2866,12 @@ package body Adalang_Analyzer.Flow_Interp is
             end;
          end if;
       exception
-         when others =>
-            null;
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Initialization_Check",
+               Operation  => "seed for-loop variable state",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
       end Seed_For_Loop_Variable;
 
       procedure Process_Node (Id : CFG.Node_Id) is
@@ -3485,8 +3497,12 @@ package body Adalang_Analyzer.Flow_Interp is
                      null;
                end case;
             exception
-               when others =>
-                  null;
+               when E : others =>
+                  Report_Recoverable_Failure_Once
+                    (Rule       => "Verification",
+                     Operation  => "finalize expression proof obligations",
+                     Source     => Ada_Text.Safe_Filename (Unit),
+                     Occurrence => E);
             end;
          elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node then
             declare
@@ -3543,8 +3559,12 @@ package body Adalang_Analyzer.Flow_Interp is
                      "object initialization has not been established");
                end if;
             exception
-               when others =>
-                  null;
+               when E : others =>
+                  Report_Recoverable_Failure_Once
+                    (Rule       => "Initialization_Check",
+                     Operation  => "finalize identifier proof obligation",
+                     Source     => Ada_Text.Safe_Filename (Unit),
+                     Occurrence => E);
             end;
          end if;
 
@@ -3603,11 +3623,11 @@ package body Adalang_Analyzer.Flow_Interp is
          --  Back edges into such a summary are cut: the invariant denotes
          --  an arbitrary iteration, so iterating concrete symbolic terms
          --  would only destroy the relational fact at downstream joins.
-         Summary_Mode := True;
+         Summary_Mode := True;  --  adalang-analyzer: ignore Dead_Store -- rationale: read by nested Process_Node
          States := (others => Empty_Flow_State);
          Symbolic_States := (others => VC.Empty_Symbolic_State);
          Reachable := (others => False);
-         Updates := (others => 0);
+         Updates := (others => 0);  --  adalang-analyzer: ignore Dead_Store -- rationale: read by nested Process_Node
          Work.Clear;
          Head := 1;
          Reachable (CFG.Entry_Id (Graph)) := True;

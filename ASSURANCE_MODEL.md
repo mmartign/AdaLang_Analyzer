@@ -351,11 +351,13 @@ subprogram postcondition and a deliberately unpreserved invariant that must
 leave the postcondition unproved.
 `tests/run_gnatprove_differential.sh` also runs a compatible corpus through
 GNATprove when GNATprove is installed and explicitly reports a skip when it is
-not. The differential gate requires GNATprove to analyze every corpus unit and
-prove every generated check, and rejects an AdaLang `Definite_Error` or
-`Unsupported` result on that clean corpus. It deliberately allows AdaLang to
-remain `Unproved` where GNATprove's stronger VC generation and automated
-provers succeed.
+not. The clean differential corpus currently contains 16 units, including
+dedicated arithmetic, conditional, modular-call, array, and loop cases. The
+differential gate requires GNATprove to analyze every corpus unit and prove
+every generated check, and rejects an AdaLang `Definite_Error` or `Unsupported`
+result on that clean corpus. It deliberately allows AdaLang to remain
+`Unproved` where GNATprove's stronger VC generation and automated provers
+succeed.
 
 Before broadening the supported subset or making a stronger product claim,
 the project still needs:

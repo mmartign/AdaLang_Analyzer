@@ -1,0 +1,3 @@
+# id	kind	status	description
+# kind is false-positive or false-negative; status is open or closed.
+FP-001	false-positive	open	Direct outer out-to-out forwarding can be reported definitely uninitialized.

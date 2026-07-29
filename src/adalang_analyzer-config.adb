@@ -77,4 +77,28 @@ package body Adalang_Analyzer.Config is
       end if;
    end Log_Verbose_Once;
 
+   procedure Report_Recoverable_Failure_Once
+     (Rule       : String;
+      Operation  : String;
+      Source     : String;
+      Occurrence : Ada.Exceptions.Exception_Occurrence)
+   is
+      Detail : constant String :=
+        Ada.Exceptions.Exception_Name (Occurrence)
+        & (if Ada.Exceptions.Exception_Message (Occurrence)'Length = 0
+           then ""
+           else ": " & Ada.Exceptions.Exception_Message (Occurrence));
+      Message : constant String :=
+        "adalang-analyzer: warning: recoverable analysis failure; rule="
+        & Rule & "; operation=" & Operation & "; source="
+        & (if Source'Length = 0 then "<unknown>" else Source)
+        & "; fallback=conservative; exception=" & Detail;
+      Canonical : constant String := Canonical_Diagnostic (Message);
+   begin
+      if not Reported_Diagnostics.Contains (Canonical) then
+         Reported_Diagnostics.Include (Canonical);
+         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Canonical);
+      end if;
+   end Report_Recoverable_Failure_Once;
+
 end Adalang_Analyzer.Config;

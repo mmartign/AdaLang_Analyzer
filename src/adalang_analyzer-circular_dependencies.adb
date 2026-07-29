@@ -9,6 +9,8 @@ with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 with Libadalang.Common;
 
+with Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Config;
 with Adalang_Analyzer.Report; use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;  use Adalang_Analyzer.Rules;
 
@@ -181,8 +183,13 @@ package body Adalang_Analyzer.Circular_Dependencies is
                end loop;
             end if;
          exception
-            when others =>
-               null;
+            when E : others =>
+               Adalang_Analyzer.Config.Report_Recoverable_Failure_Once
+                 (Rule       => "Circular_Package_Dependency",
+                  Operation  => "resolve compilation-unit dependencies",
+                  Source     =>
+                    Adalang_Analyzer.Ada_Text.Safe_Filename (Nodes (I).Unit),
+                  Occurrence => E);
          end;
       end loop;
 

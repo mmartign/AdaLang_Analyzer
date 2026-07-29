@@ -34,7 +34,12 @@ status=0
   tests/verification_symbolic_prepost.adb \
   tests/verification_loop_vc_relational.adb \
   tests/verification_array_index_clean.adb \
-  tests/verification_many_variables.adb || status=$?
+  tests/verification_many_variables.adb \
+  tests/verification_diff_arithmetic.adb \
+  tests/verification_diff_conditional.adb \
+  tests/verification_diff_modular_call.adb \
+  tests/verification_diff_array.adb \
+  tests/verification_diff_loop.adb || status=$?
 if [ "$status" -gt 1 ]; then
    echo "AdaLang Analyzer differential run failed with status $status" >&2
    exit "$status"
@@ -56,7 +61,7 @@ cat "$gnatprove_log"
 grep -F 'Success: all checks proved' "$gnatprove_log" >/dev/null
 
 summary=obj/verification_differential/gnatprove/gnatprove.out
-grep -F 'Analyzed 11 units' "$summary" >/dev/null
+grep -F 'Analyzed 16 units' "$summary" >/dev/null
 if grep -F ' skipped;' "$summary" >/dev/null; then
    echo "GNATprove skipped part of the differential corpus" >&2
    exit 1

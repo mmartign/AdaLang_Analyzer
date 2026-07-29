@@ -11,6 +11,11 @@ project Verification_Differential is
       "verification_symbolic_prepost.adb",
       "verification_loop_vc_relational.adb",
       "verification_array_index_clean.adb",
-      "verification_many_variables.adb");
+      "verification_many_variables.adb",
+      "verification_diff_arithmetic.adb",
+      "verification_diff_conditional.adb",
+      "verification_diff_modular_call.adb",
+      "verification_diff_array.adb",
+      "verification_diff_loop.adb");
    for Object_Dir use "../obj/verification_differential";
 end Verification_Differential;

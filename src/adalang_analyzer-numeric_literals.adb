@@ -39,7 +39,7 @@ package body Adalang_Analyzer.Numeric_Literals is
    is
       Result : Long_Long_Integer := 0;
    begin
-      Value := 0;
+      Value := 0;  --  adalang-analyzer: ignore Overwritten_Assignment -- rationale: failure-path out value
 
       if Text = "" then
          return False;
@@ -107,7 +107,7 @@ package body Adalang_Analyzer.Numeric_Literals is
    is
       Current : Long_Long_Integer := Value;
    begin
-      Result := Value;
+      Result := Value;  --  adalang-analyzer: ignore Overwritten_Assignment -- rationale: failure-path out value
 
       if Exponent > Maximum_Integer_Exponent then
          return False;

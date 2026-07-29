@@ -1,0 +1,27 @@
+--  Copyright (C) 2026, Spazio IT
+--
+--  SPDX-License-Identifier: GPL-3.0-or-later
+
+with "../adalang_analyzer.gpr";
+
+project Recoverable_Diagnostic is
+
+   for Source_Dirs use (".");
+   for Object_Dir use "../obj/recoverable-diagnostic-test";
+   for Create_Missing_Dirs use "True";
+   for Exec_Dir use "../bin";
+   for Main use ("recoverable_diagnostic_test.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-g", "-O0", "-gnat2022", "-gnatwa", "-gnatwe", "-gnatyM120");
+   end Compiler;
+
+   package Linker is
+      for Switches ("Ada") use
+        ("-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
+         "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+         "-lgnarl");
+   end Linker;
+
+end Recoverable_Diagnostic;

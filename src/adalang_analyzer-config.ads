@@ -4,6 +4,8 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Exceptions;
+
 with Adalang_Analyzer.Rules;
 
 --  Runtime configuration shared across the whole run: which checks are
@@ -48,6 +50,15 @@ package Adalang_Analyzer.Config is
    --  Prints one occurrence of a recoverable semantic diagnostic. Libadalang
    --  can propagate the same memoized resolution failure through many
    --  dependent property queries; those repetitions add no new information.
+
+   procedure Report_Recoverable_Failure_Once
+     (Rule       : String;
+      Operation  : String;
+      Source     : String;
+      Occurrence : Ada.Exceptions.Exception_Occurrence);
+   --  Emits an always-visible warning for an internal analysis failure that
+   --  was handled with a conservative fallback. Identical warnings are
+   --  collapsed so one failing semantic property cannot flood stderr.
 
    function Assurance_Profile_Name return String;
    --  Stable human-readable name included in structured evidence.

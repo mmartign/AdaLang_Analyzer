@@ -5,9 +5,11 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Containers.Indefinite_Hashed_Sets;
+with Ada.Exceptions;
 with Ada.Strings.Hash;
 with Ada.Unchecked_Deallocation;
 
+with Langkit_Support.Errors;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;      use Adalang_Analyzer.Ada_Text;
@@ -642,6 +644,7 @@ package body Adalang_Analyzer.Checks.Declarations is
    procedure Check_Overriding_Indicator
      (Unit                    : Libadalang.Analysis.Analysis_Unit;
       Node                    : Libadalang.Analysis.Basic_Decl'Class;
+      Spec                    : Libadalang.Analysis.Base_Subp_Spec'Class;
       Overriding_Field_Value  : Libadalang.Analysis.Overriding_Node)
    is
    begin
@@ -651,9 +654,19 @@ package body Adalang_Analyzer.Checks.Declarations is
          return;
       end if;
 
+      --  Only primitives of tagged types can override another operation.
+      --  Besides avoiding needless semantic work for ordinary helpers, this
+      --  guards P_Base_Subp_Declarations from known Libadalang failures on
+      --  profiles whose formal types are access-type aliases.
+      if Libadalang.Analysis.Is_Null
+        (Spec.P_Primitive_Subp_Tagged_Type (Imprecise_Fallback => True))
+      then
+         return;
+      end if;
+
       declare
          Base : constant Libadalang.Analysis.Basic_Decl_Array :=
-           Node.P_Base_Subp_Declarations;
+           Node.P_Base_Subp_Declarations (Imprecise_Fallback => True);
       begin
          if Base'Length > 1 then
             Report_Rule_Violation
@@ -663,8 +676,23 @@ package body Adalang_Analyzer.Checks.Declarations is
          end if;
       end;
    exception
-      when others =>
-         null;
+      when E : Langkit_Support.Errors.Property_Error =>
+         --  Some otherwise valid profiles cannot be classified as tagged
+         --  primitives by Libadalang (notably access-type aliases). An
+         --  unresolved profile is not evidence of a missing indicator.
+         Log_Verbose_Once
+           ("Missing_Overriding_Indicator skipped unresolved profile at "
+            & Safe_Filename (Unit) & ":"
+            & To_Decimal (Natural (Node.Sloc_Range.Start_Line)) & ": "
+            & Ada.Exceptions.Exception_Message (E));
+      when E : others =>
+         Report_Recoverable_Failure_Once
+           (Rule       => "Missing_Overriding_Indicator",
+            Operation  => "resolve overridden base declarations",
+            Source     =>
+              Safe_Filename (Unit) & ":"
+              & To_Decimal (Natural (Node.Sloc_Range.Start_Line)),
+            Occurrence => E);
    end Check_Overriding_Indicator;
 
    procedure Analyze_Subprogram  --  adalang-analyzer: ignore Cyclomatic_Complexity
@@ -675,7 +703,8 @@ package body Adalang_Analyzer.Checks.Declarations is
    begin
       if Rule_States (Missing_Overriding_Indicator) = Enabled then
          Check_Overriding_Indicator
-           (Unit, Subprogram, Subprogram.F_Overriding);
+           (Unit, Subprogram, Subprogram.F_Subp_Spec,
+            Subprogram.F_Overriding);
       end if;
 
       if Rule_States (Unused_Parameter) = Enabled
@@ -878,7 +907,8 @@ package body Adalang_Analyzer.Checks.Declarations is
       Decl : Libadalang.Analysis.Classic_Subp_Decl'Class) is
    begin
       if Rule_States (Missing_Overriding_Indicator) = Enabled then
-         Check_Overriding_Indicator (Unit, Decl, Decl.F_Overriding);
+         Check_Overriding_Indicator
+           (Unit, Decl, Decl.F_Subp_Spec, Decl.F_Overriding);
       end if;
    end Analyze_Subprogram_Declaration;
 

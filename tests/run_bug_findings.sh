@@ -685,6 +685,20 @@ then
    exit 1
 fi
 
+if ! "$analyzer" -q -checks='Missing_Overriding_Indicator' \
+     src/adalang_analyzer-spark_dependency_analysis.adb >"$output" 2>&1
+then
+   echo "dependency analysis source unexpectedly produced a violation" >&2
+   cat "$output" >&2
+   exit 1
+fi
+if grep -F 'recoverable analysis failure' "$output" >/dev/null
+then
+   echo "missing-overriding check raised a recoverable semantic failure" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 if "$analyzer" -checks='Inefficient_String_Concatenation' \
      tests/string_concatenation_findings.adb >"$output" 2>&1
 then

@@ -97,6 +97,8 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line ("  -checks=<list>        Enable/disable checks");
       Ada.Text_IO.Put_Line ("  -list-checks          List available checks");
       Ada.Text_IO.Put_Line
+        ("  --recommended         Enable low-noise defect checks");
+      Ada.Text_IO.Put_Line
         ("  --spark               Enable proof-focused SPARK checks");
       Ada.Text_IO.Put_Line
         ("  --verify              Run bounded scalar verification");
@@ -270,6 +272,40 @@ package body Adalang_Analyzer.CLI is
          Apply_Check_Item (List_Text (Start .. List_Text'Last));
       end if;
    end Parse_Checks_Option;
+
+   --  Selects defect-oriented checks suitable for routine local and CI use.
+   --  Deliberately excludes certification traceability, coding-style,
+   --  restricted-construct, and mandatory-contract policy checks: those are
+   --  valuable only when their corresponding project profile applies.
+   procedure Enable_Recommended_Preset is
+      Recommended_Rules : constant array (Positive range <>) of Rule_Kind :=
+        (Unused_Parameter, Wrong_Parameter_Mode, Dead_Store,
+         Overwritten_Assignment, Unreachable_Case_Alternative,
+         Overlapping_Case_Ranges, Infinite_Loop, Duplicate_Boolean_Operand,
+         Exception_Swallowed, Constant_Condition, Unreachable_Code,
+         Division_By_Zero, Reversed_Range, Self_Assignment, Same_Operand,
+         Duplicate_Condition, Empty_Exception_Handler, Unreachable_Branch,
+         Contradictory_Condition, Identical_Branches, Repeated_Statement,
+         Ineffective_Operation, Constant_Result_Operation, Empty_Loop,
+         Unused_Variable, Empty_If_Body, Function_Side_Effect,
+         Redundant_Boolean_Comparison, Uninitialized_Output,
+         Uninitialized_Read, Known_Precondition_Failure,
+         Known_Postcondition_Failure, Known_Assertion_Failure,
+         Known_Range_Check_Failure, Known_Index_Check_Failure,
+         Known_Overflow_Failure, Identical_Case_Alternative,
+         Redundant_Type_Conversion, Handler_Order,
+         Aliasing_Between_Parameters, Known_Discriminant_Check_Failure);
+   begin
+      Active_Assurance_Profile := No_Assurance_Profile;
+      Verification_Mode := False;
+      for Rule in Rule_Kind loop
+         Rule_States (Rule) := Disabled;
+      end loop;
+
+      for Rule of Recommended_Rules loop
+         Rule_States (Rule) := Enabled;
+      end loop;
+   end Enable_Recommended_Preset;
 
    --  Selects a compact set of checks that tend to block proof, obscure
    --  data dependencies, or leave the SPARK subset. Later command-line
@@ -798,6 +834,8 @@ package body Adalang_Analyzer.CLI is
                   Show_Version := True;
                elsif Arg = "-list-checks" or else Arg = "-list-rules" then
                   List_Checks_Only := True;
+               elsif Arg = "--recommended" or else Arg = "-recommended" then
+                  Enable_Recommended_Preset;
                elsif Arg = "--spark" or else Arg = "-spark" then
                   Enable_SPARK_Preset;
                elsif Arg = "--verify" or else Arg = "-verify" then
@@ -1091,8 +1129,9 @@ package body Adalang_Analyzer.CLI is
             Ada.Text_IO.Put_Line
               (Ada.Text_IO.Standard_Error,
                "adalang-analyzer: warning: no checks are enabled; pass " &
-               "-checks=<list>, --spark, --verify, --automotive, or " &
-               "--do178c=<level> to actually analyze the source");
+               "-checks=<list>, --recommended, --spark, --verify, " &
+               "--automotive, or --do178c=<level> to actually analyze " &
+               "the source");
          end if;
       end;
 

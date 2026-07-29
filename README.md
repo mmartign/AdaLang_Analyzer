@@ -457,8 +457,10 @@ sh tests/run_verification.sh
 sh tests/run_gnatprove_differential.sh
 ```
 
-The differential script runs a compatible corpus through GNATprove when that
-tool is installed and reports an explicit skip otherwise.
+The differential script runs 16 clean and 5 deliberately broken units through
+GNATprove when that tool is installed and reports an explicit skip otherwise.
+The clean set includes dedicated arithmetic, conditional, modular-call, array,
+and loop cases added for the current development release.
 
 ## Usage
 
@@ -518,6 +520,7 @@ Useful options include:
 -P<project>.gpr  Analyze the sources of a GNAT project file
 -X<name>=<value> Set a project scenario variable (repeatable)
 -list-checks     List all available checks
+--recommended    Enable low-noise defect checks for routine local and CI use
 --spark          Enable a proof-focused preset (later check switches refine it)
 --verify         Classify bounded scalar proof obligations
 --automotive     Enable the strict automotive Ada preset
@@ -554,6 +557,18 @@ finding that matches `--baseline` remains visible in JSON or SARIF output as an
 existing result, but it does not contribute to the exit status. Fingerprints
 exclude line and column numbers, so inserting unrelated lines does not turn an
 existing finding into a new one.
+
+For routine analysis, start with the recommended preset:
+
+```sh
+./bin/adalang_analyzer --recommended -P my_project.gpr
+```
+
+It enables defect-oriented control-flow, data-flow, handler, duplication,
+known run-time failure, and unused-data checks. It intentionally excludes
+coding-style rules, restricted-construct policies, mandatory SPARK contracts,
+and DO-178C traceability rules. Select `--spark`, `--automotive`, or
+`--do178c=<level>` when those stronger project policies actually apply.
 
 ### Project configuration file
 
@@ -609,6 +624,9 @@ finding set:
 Run the structured-output regression alongside the bug-finding suite:
 
 ```sh
+sh tests/run_recommended.sh
+sh tests/run_recommended_gate.sh
+sh tests/run_quality_metrics.sh
 sh tests/run_reporting.sh
 sh tests/run_control_flow_graph_model.sh
 sh tests/run_automotive.sh

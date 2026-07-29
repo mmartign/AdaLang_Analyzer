@@ -8,7 +8,10 @@ Before opening a pull request:
 2. Build the project with `alr build`.
 3. Exercise the affected checks against representative valid and invalid Ada
    sources.
-4. Keep commits small and explain observable behavior changes in the pull
+4. Run `sh tests/run_recommended_gate.sh` and
+   `sh tests/run_quality_metrics.sh`. Refresh the reviewed baseline or release
+   metrics only after explaining and reviewing the change.
+5. Keep commits small and explain observable behavior changes in the pull
    request.
 
 Please use GitHub issues for reproducible bug reports and feature proposals.
