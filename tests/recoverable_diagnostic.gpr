@@ -18,7 +18,10 @@ project Recoverable_Diagnostic is
    end Compiler;
 
    package Linker is
-      for Switches ("Ada") use AdaLang_Analyzer.Linker_Switches;
+      for Switches ("Ada") use
+        ("-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
+         "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+         "-lgnarl");
    end Linker;
 
 end Recoverable_Diagnostic;
