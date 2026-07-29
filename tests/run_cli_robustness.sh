@@ -5,6 +5,9 @@ analyzer=${ANALYZER:-./bin/adalang_analyzer}
 output=$(mktemp "${TMPDIR:-/tmp}/adalang-cli.XXXXXX")
 trap 'rm -f "$output"' EXIT HUP INT TERM
 
+"$analyzer" --version >"$output"
+grep -F 'adalang-analyzer version ' "$output" >/dev/null
+
 if "$analyzer" -q -checks=No_Goto tests/invalid_syntax.adb \
      >"$output" 2>&1
 then

@@ -5,8 +5,6 @@ procedure Verification_Diff_Modular_Call
        Pre  => Input < Integer'Last,
        Post => Result = Input + 1
 is
-   Temporary : Integer := 0;
-
    procedure Add_One
      (Value  : Integer;
       Output : out Integer)
@@ -22,6 +20,5 @@ is
       Output := Value + 1;
    end Add_One;
 begin
-   Add_One (Input, Temporary);
-   Result := Temporary;
+   Add_One (Input, Result);
 end Verification_Diff_Modular_Call;

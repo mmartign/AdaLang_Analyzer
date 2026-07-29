@@ -1405,9 +1405,40 @@ package body Adalang_Analyzer.Flow_Interp is
       end if;
 
       if Node.Kind = Libadalang.Common.Ada_Call_Expr then
-         Check_Conversion_Or_Index (Unit, Node.As_Call_Expr, State);
-         Check_Call_Precondition
-           (Unit, Node.As_Call_Expr.F_Name, State);
+         declare
+            Call : constant Libadalang.Analysis.Call_Expr :=
+              Node.As_Call_Expr;
+         begin
+            Check_Conversion_Or_Index (Unit, Call, State);
+            Check_Call_Precondition (Unit, Call.F_Name, State);
+
+            --  An out-only actual is a destination, not a read. Walking the
+            --  raw call subtree would classify an uninitialized outer out
+            --  parameter as read when it is forwarded directly to another
+            --  out parameter. Use the resolved formal/actual mapping for
+            --  ordinary calls; in-out and input actuals still get scanned.
+            if Call.P_Kind = Libadalang.Common.Call then
+               begin
+                  Scan_Expression_For_Flow_Bugs (Unit, Call.F_Name, State);
+                  for Pair of Call.F_Name.P_Call_Params loop
+                     if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
+                       Libadalang.Common.Ada_Mode_Out
+                       or else Libadalang.Analysis.Actual (Pair).Kind /=
+                         Libadalang.Common.Ada_Identifier
+                     then
+                        Scan_Expression_For_Flow_Bugs
+                          (Unit, Libadalang.Analysis.Actual (Pair), State);
+                     end if;
+                  end loop;
+                  return;
+               exception
+                  when others =>
+                     --  If semantic parameter resolution is unavailable,
+                     --  retain the conservative raw-tree scan below.
+                     null;
+               end;
+            end if;
+         end;
       end if;
 
       for I in 1 .. Node.Children_Count loop
@@ -3573,6 +3604,34 @@ package body Adalang_Analyzer.Flow_Interp is
                      Operation  => "finalize identifier proof obligation",
                      Source     => Ada_Text.Safe_Filename (Unit),
                      Occurrence => E);
+            end;
+         end if;
+
+         --  Final obligation enumeration follows the same read/write
+         --  distinction as the transfer scan above. In particular, an
+         --  identifier used as an out-only actual does not itself create an
+         --  initialization obligation.
+         if Node.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Node.As_Call_Expr.P_Kind = Libadalang.Common.Call
+         then
+            begin
+               Finalize_Node (Node.As_Call_Expr.F_Name, Here);
+               for Pair of Node.As_Call_Expr.F_Name.P_Call_Params loop
+                  if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
+                    Libadalang.Common.Ada_Mode_Out
+                    or else Libadalang.Analysis.Actual (Pair).Kind /=
+                      Libadalang.Common.Ada_Identifier
+                  then
+                     Finalize_Node
+                       (Libadalang.Analysis.Actual (Pair), Here);
+                  end if;
+               end loop;
+               return;
+            exception
+               when others =>
+                  --  Fall through to conservative raw-tree enumeration when
+                  --  semantic parameter resolution is unavailable.
+                  null;
             end;
          end if;
 

@@ -5,10 +5,6 @@ dependency:libadalang=26.0.0=94515b17a748885a90988fd7d72550e81cce1ae0bd0af1bc3f4
 dependency:libgpr2=26.0.0=456b57c24267a1372106ce466e9aabd6e4b7a41912ca1612bcc6ec6356c7abeb
 dependency:prettier_ada=26.0.0=85563e234b3d9f76501db11e2b8f87759796755cc87e70865bccfde98ec1529f
 dependency:templates_parser=26.0.0=a2356666136e398bd6fe34a11efe0b52ca6a474727fb1273cd1d607dfd7feca0
-environment:CPLUS_INCLUDE_PATH=/opt/homebrew/include:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include
-environment:C_INCLUDE_PATH=/opt/homebrew/include:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include
-environment:LIBRARY_PATH=gnat_native_15.1.2_60748c54/lib:/opt/homebrew/lib:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
-environment:MACOSX_DEPLOYMENT_TARGET=26.0
 external:ADALANG_ANALYZER_LIBRARY_TYPE=default
 external:LIBRARY_TYPE=default
 profile:adalang_analyzer=DEVELOPMENT

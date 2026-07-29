@@ -43,6 +43,7 @@ Each precision correction has an executable regression:
 | Failure-path `out` initialization is not an overwritten assignment | Numeric-literal self-check in `run_recommended.sh` |
 | State captured by a nested verifier pass is not a dead store | Flow-interpreter self-check in `run_recommended.sh` |
 | Required cleanup status outputs are consumed | VC-prover self-check in `run_recommended.sh` |
+| Direct outer `out`-to-`out` forwarding is a write, not a read | `verification_diff_modular_call.adb`, run by `run_verification.sh` and `run_gnatprove_differential.sh` |
 
 When another precision bug is fixed, add or extend a fixture and add its row
 here in the same change.
@@ -58,10 +59,9 @@ units. Five clean units are added for the current development release:
 - Indexed array access.
 - Relational loop invariants.
 
-Designing the modular-call case exposed `FP-001`: directly passing an outer
-`out` parameter to a nested `out` parameter can be reported as definitely
-uninitialized. The differential fixture uses the supported local-output
-transfer shape until that open issue is corrected.
+The modular-call case now exercises direct forwarding from an outer `out`
+parameter to a nested `out` parameter. It is the regression for closed issue
+`FP-001` and must remain free of a definite initialization error.
 
 Run it with `sh tests/run_gnatprove_differential.sh`. The script rejects
 `Definite_Error` or `Unsupported` AdaLang results on the clean corpus and

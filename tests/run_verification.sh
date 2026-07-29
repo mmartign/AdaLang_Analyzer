@@ -23,7 +23,8 @@ symbolic_prepost=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-prepost.XXXXXX")
 symbolic_loop=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-loop.XXXXXX")
 loop_vc_relational=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-relational.XXXXXX")
 loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken"' EXIT HUP INT TERM
+out_forwarding=$(mktemp "${TMPDIR:-/tmp}/adalang-out-forwarding.XXXXXX")
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -52,6 +53,18 @@ grep -F '"kind": "loop-variant"' "$loop" >/dev/null
 
 run_json "$call" tests/verification_call_clean.adb
 grep -F '"kind": "assertion", "status": "proved-safe"' "$call" >/dev/null
+
+run_json "$out_forwarding" tests/verification_diff_modular_call.adb
+if grep -F '"kind": "initialization-check", "status": "definite-error"' \
+  "$out_forwarding" >/dev/null; then
+   echo "out-to-out forwarding was classified as an uninitialized read" >&2
+   exit 1
+fi
+if grep -F '"line": 23, "column": 20, "operation": "Result"' \
+  "$out_forwarding" >/dev/null; then
+   echo "out-to-out forwarding emitted a read obligation for the destination" >&2
+   exit 1
+fi
 
 run_json "$many" tests/verification_many_variables.adb
 grep -F '"kind": "assertion", "status": "proved-safe"' "$many" >/dev/null

@@ -432,10 +432,12 @@ results must separately assess tool qualification under DO-330. See
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
 - optionally, the Alire `gnatprove` package for scalar VC discharge and
   GNATprove differential tests;
-- macOS with the Apple Command Line Tools for the current development
-  configuration;
+- a supported Linux or macOS host toolchain;
 - the dependencies declared in `alire.toml`, which Alire resolves during the
   build.
+
+On macOS the project defaults to the Command Line Tools SDK. Set
+`MACOSX_SDK_PATH` when the active SDK is installed elsewhere.
 
 ## Build
 
@@ -447,20 +449,18 @@ alr build
 
 The executable is produced under `bin/`.
 
-Run the bug-finding regression suite after building:
+Run the complete repository gate:
 
 ```sh
-sh tests/run_bug_findings.sh
-sh tests/run_automotive.sh
-sh tests/run_do178c.sh
-sh tests/run_verification.sh
-sh tests/run_gnatprove_differential.sh
+sh tests/run_all.sh
 ```
 
-The differential script runs 16 clean and 5 deliberately broken units through
-GNATprove when that tool is installed and reports an explicit skip otherwise.
-The clean set includes dedicated arithmetic, conditional, modular-call, array,
-and loop cases added for the current development release.
+The gate builds the current sources and runs all regression, reporting,
+quality, model, performance, and verification suites. Its differential stage
+runs 16 clean and 5 deliberately broken units through GNATprove when that tool
+is installed and reports an explicit skip otherwise. The same gate runs on
+Linux and macOS in CI; a separate required CI job installs GNATprove so the
+differential stage cannot silently skip there.
 
 ## Usage
 

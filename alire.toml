@@ -30,19 +30,6 @@ project-files = ["adalang_analyzer.gpr"]
 
 executables = ["adalang_analyzer"]
 
-[environment]
-[environment.MACOSX_DEPLOYMENT_TARGET]
-set = "26.0"
-
-[environment.C_INCLUDE_PATH]
-append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
-
-[environment.CPLUS_INCLUDE_PATH]
-append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
-
-[environment.LIBRARY_PATH]
-append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
-
 [[depends-on]]
 libadalang = "^26.0.0"
 

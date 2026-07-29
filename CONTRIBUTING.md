@@ -5,12 +5,13 @@ Thank you for helping improve `adalang_analyzer`.
 Before opening a pull request:
 
 1. Create a focused branch from the default branch.
-2. Build the project with `alr build`.
-3. Exercise the affected checks against representative valid and invalid Ada
+2. Exercise affected checks against representative valid and invalid Ada
    sources.
-4. Run `sh tests/run_recommended_gate.sh` and
-   `sh tests/run_quality_metrics.sh`. Refresh the reviewed baseline or release
-   metrics only after explaining and reviewing the change.
+3. Run the complete local gate with `sh tests/run_all.sh`. It builds the
+   current sources and runs every repository suite; the GNATprove differential
+   suite reports an explicit skip when the optional tool is unavailable.
+4. Refresh the reviewed baseline or release metrics only after explaining and
+   reviewing the change.
 5. Keep commits small and explain observable behavior changes in the pull
    request.
 

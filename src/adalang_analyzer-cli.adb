@@ -95,11 +95,13 @@ package body Adalang_Analyzer.CLI is
    begin
       Ada.Text_IO.Put_Line ("Usage: adalang-analyzer [options] <source_files>");
       Ada.Text_IO.Put_Line ("");
-      Ada.Text_IO.Put_Line ("A clang-tidy analyzer for Ada based on Libadalang.");
+      Ada.Text_IO.Put_Line
+        ("Static analysis and bounded verification for Ada, based on Libadalang.");
       Ada.Text_IO.Put_Line ("");
       Ada.Text_IO.Put_Line ("Options:");
       Ada.Text_IO.Put_Line ("  -h, --help            Show this help and exit");
-      Ada.Text_IO.Put_Line ("  -version              Show version and exit");
+      Ada.Text_IO.Put_Line
+        ("  -version, --version   Show version and exit");
       Ada.Text_IO.Put_Line ("  -P<project>.gpr       Analyze the sources of a GNAT project file");
       Ada.Text_IO.Put_Line ("  -X<name>=<value>      Set a project scenario variable (repeatable)");
       Ada.Text_IO.Put_Line ("  -checks=<list>        Enable/disable checks");
@@ -838,7 +840,7 @@ package body Adalang_Analyzer.CLI is
                   Options_Ended := True;  --  adalang-analyzer: ignore Dead_Store
                elsif Arg = "-h" or else Arg = "--help" or else Arg = "-help" then
                   Show_Help_Flag := True;
-               elsif Arg = "-version" then
+               elsif Arg = "-version" or else Arg = "--version" then
                   Show_Version := True;
                elsif Arg = "-list-checks" or else Arg = "-list-rules" then
                   List_Checks_Only := True;

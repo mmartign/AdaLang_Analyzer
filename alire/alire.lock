@@ -983,4 +983,3 @@ directory = "."
 type = "post-fetch"
 [[solution.state.release.depends-on]]
 gnat = ">=11"
-

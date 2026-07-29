@@ -4,6 +4,20 @@
 with "config/adalang_analyzer_config.gpr";
 project AdaLang_Analyzer is
 
+   Linker_Switches :=
+     External_As_List ("ADALANG_LINKER_SWITCHES", " ") & ("-lgnarl");
+   MacOS_SDK := External
+     ("MACOSX_SDK_PATH",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk");
+   case Adalang_Analyzer_Config.Alire_Host_OS is
+      when "macos" =>
+         Linker_Switches := Linker_Switches
+           & ("-L" & MacOS_SDK & "/usr/lib",
+              "-Wl,-syslibroot," & MacOS_SDK);
+      when others =>
+         null;
+   end case;
+
    for Source_Dirs use ("src/", "config/");
    for Object_Dir use "obj/" & Adalang_Analyzer_Config.Build_Profile;
    for Create_Missing_Dirs use "True";
@@ -19,11 +33,7 @@ project AdaLang_Analyzer is
    end Binder;
 
    package Linker is
-      for Switches ("Ada") use (
-         "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
-         "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
-         "-lgnarl"
-      );
+      for Switches ("Ada") use Linker_Switches;
    end Linker;
 
    package Install is

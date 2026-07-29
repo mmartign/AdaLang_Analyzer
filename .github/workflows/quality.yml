@@ -1,0 +1,45 @@
+name: Quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up Alire
+        uses: alire-project/setup-alire@v6
+
+      - name: Run repository gate
+        run: sh tests/run_all.sh
+
+  gnatprove-differential:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up Alire
+        uses: alire-project/setup-alire@v6
+
+      - name: Build
+        run: alr build
+
+      - name: Install GNATprove
+        run: |
+          alr install gnatprove
+          echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
+
+      - name: Run differential verification
+        run: sh tests/run_gnatprove_differential.sh
