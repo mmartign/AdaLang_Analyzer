@@ -726,8 +726,8 @@ package body Adalang_Analyzer.VC_Prover is
    is
       Output_FD   : GNAT.OS_Lib.File_Descriptor;
       Output_Name : GNAT.OS_Lib.String_Access;
-      Success     : Boolean;
-      Return_Code : Integer;
+      Success     : Boolean := False;
+      Return_Code : Integer := 0;
    begin
       if Path = "" then
          return Solver_Unavailable;
@@ -771,7 +771,7 @@ package body Adalang_Analyzer.VC_Prover is
 
       declare
          Line : constant String := First_Line (Output_Name.all);
-         Deleted : Boolean;
+         Deleted : Boolean := False;
       begin
          GNAT.OS_Lib.Delete_File (Output_Name.all, Deleted);
          GNAT.OS_Lib.Free (Output_Name);
@@ -789,7 +789,7 @@ package body Adalang_Analyzer.VC_Prover is
       when others =>
          if Output_Name /= null then
             declare
-               Deleted : Boolean;
+               Deleted : Boolean := False;
             begin
                GNAT.OS_Lib.Delete_File (Output_Name.all, Deleted);
                GNAT.OS_Lib.Free (Output_Name);

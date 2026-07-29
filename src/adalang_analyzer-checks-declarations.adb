@@ -526,6 +526,16 @@ package body Adalang_Analyzer.Checks.Declarations is
              (Node.Parent.Kind = Libadalang.Common.Ada_Call_Stmt
               and then Contains_Parameter_Reference
                 (Node.As_Call_Expr.F_Name, Param, Name));
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt
+        and then Node.As_Call_Stmt.F_Call.Kind =
+          Libadalang.Common.Ada_Dotted_Name
+      then
+         --  A parameterless prefixed procedure call has no Call_Expr node:
+         --  Libadalang represents "Object.Clear;" as a bare dotted name.
+         --  Treat the prefix like the controlling actual, consistently with
+         --  the Call_Expr case above.
+         return Contains_Parameter_Reference
+           (Node.As_Call_Stmt.F_Call.As_Dotted_Name.F_Prefix, Param, Name);
       end if;
 
       for I in 1 .. Node.Children_Count loop

@@ -92,6 +92,11 @@ done
 "$analyzer" -q -generic-threshold=1 -dependency-threshold=1 \
   -checks="$policy_rules" tests/automotive_policy_clean.adb
 
+#  Alire-generated configuration pragmas are build metadata, not authored
+#  compiler extensions, and cannot be removed from the generated source.
+"$analyzer" -q -checks='No_Compiler_Extensions' \
+  config/adalang_analyzer_config.ads
+
 #  The preset must include both structural and semantic policy rules.
 if "$analyzer" --automotive \
      tests/automotive_restrictions_findings.adb >"$output" 2>&1

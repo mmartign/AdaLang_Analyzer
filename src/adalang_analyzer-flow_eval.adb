@@ -83,7 +83,7 @@ package body Adalang_Analyzer.Flow_Eval is
       case Node.Kind is
          when Libadalang.Common.Ada_Int_Literal =>
             declare
-               Parsed : Long_Long_Integer;
+               Parsed : Long_Long_Integer := 0;
             begin
                if Numeric_Literals.Parse_Integer_Text
                     (Ada_Text.Node_Text (Node), Parsed)

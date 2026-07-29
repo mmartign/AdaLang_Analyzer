@@ -712,9 +712,8 @@ package Adalang_Analyzer.Rules is
         (Name        => To_Unbounded_String ("Uninitialized_Read"),
          Description => To_Unbounded_String
            ("Find scalar local variables with no initial value whose " &
-            "first use is a read rather than an assignment. Writes " &
-            "performed through an out or in out actual parameter are not " &
-            "recognized as initializing the variable."),
+            "first use is a read rather than an assignment or an out-mode " &
+            "call."),
          Guidance    => To_Unbounded_String
            ("Give the declaration an initial value, or assign it before " &
             "the first read."),

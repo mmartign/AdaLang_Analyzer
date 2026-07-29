@@ -81,12 +81,11 @@ private package Adalang_Analyzer.Checks.Data_Flow is
    --  The first read or write of Decl within Node's subtree that starts at
    --  or after After's end position, in source order, or a No_Access
    --  result if neither occurs. A write is only recognized as a plain
-   --  identifier-target assignment (see Is_Trackable_Assignment); a write
-   --  performed through an out or in out actual parameter is neither a
-   --  recognized read nor a recognized write, so it is skipped rather than
-   --  treated as either. Backs Uninitialized_Read: a declaration with no
-   --  default expression whose first subsequent access is a read has been
-   --  read before any value was ever stored into it.
+   --  identifier-target assignment (see Is_Trackable_Assignment) or a simple
+   --  identifier passed to an out or in out parameter. Backs
+   --  Uninitialized_Read: a declaration with no default expression whose
+   --  first subsequent access is a read has been read before any value was
+   --  ever stored into it.
 
    function Enclosing_Subprogram
      (Node : Libadalang.Analysis.Ada_Node'Class)

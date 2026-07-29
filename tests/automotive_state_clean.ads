@@ -4,6 +4,8 @@ package Automotive_State_Clean is
    Letter      : Character := 'A';
    Converted   : Integer := Integer (1);
    Qualified   : Integer := Integer'(1);
+   From_Attr   : Character := Character'Val (65);
+   Attr_Arg    : Integer := Integer'Max (1, 2);
 
    type Payload is record
       Ready : Integer := 0;

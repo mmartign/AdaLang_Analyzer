@@ -178,7 +178,7 @@ package body Adalang_Analyzer.CLI is
    --  disabling exactly the named check.
    procedure Process_Command_Switch (Switch : String) is
       procedure Apply (Name : String; Mode : Rule_State) is
-         Found : Boolean;
+         Found : Boolean := False;
          Kind  : Rule_Kind;
       begin
          Kind := Lookup_Rule_Kind (Name, Found);
@@ -213,9 +213,9 @@ package body Adalang_Analyzer.CLI is
          Item   : constant String :=
            Ada.Strings.Fixed.Trim (Item_Untrimmed, Ada.Strings.Both);
          Kind   : Rule_Kind;
-         Found  : Boolean;
+         Found  : Boolean := False;
          Action : Rule_State := Enabled;
-         First  : Positive;
+         First  : Positive := Item'First;
       begin
          if Item = "" then
             null;  --  adalang-analyzer: ignore Null_Statement
@@ -228,7 +228,6 @@ package body Adalang_Analyzer.CLI is
                Rule_States (R) := Disabled;
             end loop;
          else
-            First := Item'First;
             Action := Enabled;
 
             if Item (First) = '+' then
@@ -673,7 +672,7 @@ package body Adalang_Analyzer.CLI is
       Merged_Args        : File_Name_Vectors.Vector;
       Config_Token_Count : Natural := 0;
       Config_File_Path   : Unbounded_String := Null_Unbounded_String;
-      Argument_Count     : Natural;
+      Argument_Count     : Natural := 0;
       Current_Arg        : Natural := 1;
       Options_Ended      : Boolean := False;
       Ctx                : Libadalang.Analysis.Analysis_Context;

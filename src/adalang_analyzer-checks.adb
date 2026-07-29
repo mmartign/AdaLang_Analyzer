@@ -566,6 +566,20 @@ package body Adalang_Analyzer.Checks is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Node.As_Call_Expr.F_Name.Kind =
+          Libadalang.Common.Ada_Attribute_Ref
+      then
+         --  Attribute evaluation uses call-like syntax in Libadalang, but
+         --  does not call another library unit and therefore introduces no
+         --  elaboration-order dependency. Its prefix and arguments can still
+         --  contain real calls, so inspect the children.
+         for Index in 1 .. Node.Children_Count loop
+            if Contains_Call (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
       elsif Node.Kind in
         Libadalang.Common.Ada_Call_Expr
           | Libadalang.Common.Ada_Dotted_Name
@@ -860,6 +874,7 @@ package body Adalang_Analyzer.Checks is
          end if;
          if Rule_States (No_Compiler_Extensions) = Enabled
            and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
+           and then not Is_Generated_Config_File (Unit.Get_Filename)
          then
             declare
                Name : constant String := Normalize_Rule_Name

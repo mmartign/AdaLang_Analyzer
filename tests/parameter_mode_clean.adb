@@ -27,6 +27,11 @@ procedure Parameter_Mode_Clean is
       Values.Append (Value);
    end Append_Value;
 
+   procedure Clear_Values (Values : in out Int_Vectors.Vector) is
+   begin
+      Values.Clear;
+   end Clear_Values;
+
    Item   : Integer := 1;
    State  : State_Record;
    Values : Int_Vectors.Vector;
@@ -34,4 +39,5 @@ begin
    Consume_And_Update (Item);
    Update_Component (State);
    Append_Value (Values, Item);
+   Clear_Values (Values);
 end Parameter_Mode_Clean;

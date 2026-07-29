@@ -212,6 +212,136 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       return False;
    end Reads_Declaration;
 
+   function Call_Writes_Declaration
+     (Node : Libadalang.Analysis.Call_Expr;
+      Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+      function Association_Writes_Actual
+        (Assoc : Libadalang.Analysis.Param_Assoc) return Boolean
+      is
+      begin
+         for Formal_Name of
+           Assoc.P_Get_Params (Imprecise_Fallback => True)
+         loop
+            declare
+               Ancestor : Libadalang.Analysis.Ada_Node := Formal_Name.Parent;
+            begin
+               while not Libadalang.Analysis.Is_Null (Ancestor)
+                 and then Ancestor.Kind not in
+                   Libadalang.Common.Ada_Param_Spec_Range
+               loop
+                  Ancestor := Ancestor.Parent;
+               end loop;
+
+               if not Libadalang.Analysis.Is_Null (Ancestor)
+                 and then Ancestor.As_Param_Spec.F_Mode.Kind in
+                   Libadalang.Common.Ada_Mode_Out_Range
+                     | Libadalang.Common.Ada_Mode_In_Out_Range
+               then
+                  return True;
+               end if;
+            end;
+         end loop;
+
+         return False;
+      exception
+         when others =>
+            return False;
+      end Association_Writes_Actual;
+   begin
+      for I in 1 .. Node.F_Suffix.Children_Count loop
+         declare
+            Child : constant Libadalang.Analysis.Ada_Node :=
+              Node.F_Suffix.Child (I);
+         begin
+            if Child.Kind = Libadalang.Common.Ada_Param_Assoc
+              and then Child.As_Param_Assoc.F_R_Expr.Kind =
+                Libadalang.Common.Ada_Identifier
+              and then Matches_Declaration
+                (Child.As_Param_Assoc.F_R_Expr, Decl)
+              and then Association_Writes_Actual (Child.As_Param_Assoc)
+            then
+               return True;
+            end if;
+         end;
+      end loop;
+
+      return False;
+   end Call_Writes_Declaration;
+
+   function Call_Reads_Simple_Actual
+     (Node : Libadalang.Analysis.Call_Expr;
+      Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      for I in 1 .. Node.F_Suffix.Children_Count loop
+         declare
+            Child : constant Libadalang.Analysis.Ada_Node :=
+              Node.F_Suffix.Child (I);
+         begin
+            if Child.Kind = Libadalang.Common.Ada_Param_Assoc
+              and then Child.As_Param_Assoc.F_R_Expr.Kind =
+                Libadalang.Common.Ada_Identifier
+              and then Matches_Declaration
+                (Child.As_Param_Assoc.F_R_Expr, Decl)
+            then
+               for Formal_Name of
+                 Child.As_Param_Assoc.P_Get_Params
+                   (Imprecise_Fallback => True)
+               loop
+                  declare
+                     Ancestor : Libadalang.Analysis.Ada_Node :=
+                       Formal_Name.Parent;
+                  begin
+                     while not Libadalang.Analysis.Is_Null (Ancestor)
+                       and then Ancestor.Kind not in
+                         Libadalang.Common.Ada_Param_Spec_Range
+                     loop
+                        Ancestor := Ancestor.Parent;
+                     end loop;
+
+                     if not Libadalang.Analysis.Is_Null (Ancestor)
+                       and then Ancestor.As_Param_Spec.F_Mode.Kind not in
+                         Libadalang.Common.Ada_Mode_Out_Range
+                     then
+                        return True;
+                     end if;
+                  end;
+               end loop;
+            end if;
+         end;
+      end loop;
+
+      return False;
+   exception
+      when others =>
+         return False;
+   end Call_Reads_Simple_Actual;
+
+   function Has_Simple_Actual
+     (Node : Libadalang.Analysis.Call_Expr;
+      Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      for I in 1 .. Node.F_Suffix.Children_Count loop
+         declare
+            Child : constant Libadalang.Analysis.Ada_Node :=
+              Node.F_Suffix.Child (I);
+         begin
+            if Child.Kind = Libadalang.Common.Ada_Param_Assoc
+              and then Child.As_Param_Assoc.F_R_Expr.Kind =
+                Libadalang.Common.Ada_Identifier
+              and then Matches_Declaration
+                (Child.As_Param_Assoc.F_R_Expr, Decl)
+            then
+               return True;
+            end if;
+         end;
+      end loop;
+
+      return False;
+   end Has_Simple_Actual;
+
    function Assigned_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Basic_Decl is
@@ -602,7 +732,22 @@ package body Adalang_Analyzer.Checks.Data_Flow is
             return (Kind => Read_Access,
                      Node => Libadalang.Analysis.Ada_Node (Node));
          elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
-            if Reads_Declaration (Node, Decl) then
+            if Has_Simple_Actual (Node.As_Call_Expr, Decl) then
+               --  Reads_Declaration deliberately treats an unresolved formal
+               --  as a possible read to avoid false Dead_Store reports.
+               --  Uninitialized_Read needs the opposite policy: without a
+               --  resolved mode there is not enough evidence to say that
+               --  the incoming value is consumed.
+               if Call_Reads_Simple_Actual (Node.As_Call_Expr, Decl) then
+                  return (Kind => Read_Access,
+                           Node => Libadalang.Analysis.Ada_Node (Node));
+               elsif Call_Writes_Declaration (Node.As_Call_Expr, Decl) then
+                  return (Kind => Write_Access,
+                           Node => Libadalang.Analysis.Ada_Node (Node));
+               end if;
+               return
+                 (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+            elsif Reads_Declaration (Node, Decl) then
                return (Kind => Read_Access,
                         Node => Libadalang.Analysis.Ada_Node (Node));
             end if;
