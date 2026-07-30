@@ -398,7 +398,13 @@ package body Adalang_Analyzer.Flow_Interp is
                    then VC.Evidence else "precondition => false"));
                Report.Report_Rule_Violation
                  (Unit, Call, Rules.Known_Precondition_Failure,
-                  "actual arguments make the precondition false");
+                  "actual arguments make the precondition false",
+                  Explanation =>
+                    "The actual arguments were substituted for the formal " &
+                    "parameters and the precondition evaluated to False.",
+                  Evidence =>
+                    (if VC_Result = VC.VC_Refuted
+                     then VC.Evidence else "precondition => false"));
             elsif Config.Verification_Mode
               and then
                 (Value = Bool_True or else VC_Result = VC.VC_Proved)
@@ -1063,7 +1069,12 @@ package body Adalang_Analyzer.Flow_Interp is
          Record_Definite_Error
            (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
             Message, "value range is outside the target subtype range");
-         Report.Report_Rule_Violation (Unit, Value, Rule, Message);
+         Report.Report_Rule_Violation
+           (Unit, Value, Rule, Message,
+            Explanation =>
+              "Abstract interpretation found that every represented value " &
+              "is outside the target subtype range.",
+            Evidence => "value range is outside the target subtype range");
       elsif Config.Verification_Mode
         and then Definitely_Inside_Type (Value, Typ, State)
       then
@@ -1194,7 +1205,14 @@ package body Adalang_Analyzer.Flow_Interp is
                                  Report.Report_Rule_Violation
                                    (Unit, Index_Value,
                                     Rules.Known_Index_Check_Failure,
-                                    "index is outside the array index subtype");
+                                    "index is outside the array index subtype",
+                                    Explanation =>
+                                      "Abstract interpretation found that " &
+                                      "every represented index value is " &
+                                      "outside the array bounds.",
+                                    Evidence =>
+                                      "index range is outside the array " &
+                                      "bounds");
                               elsif Config.Verification_Mode
                                 and then Definitely_Inside_Range
                                   (Index_Value, Bounds, State)
@@ -1327,7 +1345,11 @@ package body Adalang_Analyzer.Flow_Interp is
                      Report.Report_Rule_Violation
                        (Unit, Expr.F_Right, Rules.Division_By_Zero,
                         "right operand is zero here based on an earlier " &
-                          "assignment");
+                          "assignment",
+                        Explanation =>
+                          "Flow analysis propagated the assigned value to " &
+                          "this operation without an intervening write.",
+                        Evidence => "right operand => 0");
                   end if;
                elsif Config.Verification_Mode
                  and then
@@ -1376,7 +1398,12 @@ package body Adalang_Analyzer.Flow_Interp is
                      "result range is outside the operation's base type");
                   Report.Report_Rule_Violation
                     (Unit, Node, Rules.Known_Overflow_Failure,
-                     "arithmetic result is outside its base type range");
+                     "arithmetic result is outside its base type range",
+                     Explanation =>
+                       "Abstract interpretation found that every represented " &
+                       "result is outside the operation's base type.",
+                     Evidence =>
+                       "result range is outside the operation's base type");
                elsif Config.Verification_Mode
                  and then Arithmetic_Proved_Safe (Node.As_Expr, State)
                then
@@ -1598,7 +1625,14 @@ package body Adalang_Analyzer.Flow_Interp is
                   Report.Report_Rule_Violation
                     (Unit, Cond, Rules.Known_Assertion_Failure,
                      "assertion condition is false here based on earlier " &
-                       "state");
+                       "state",
+                     Explanation =>
+                       "The incoming flow state makes the assertion " &
+                       "condition False.",
+                     Evidence =>
+                       (if VC_Result = VC.VC_Refuted
+                        then VC.Evidence
+                        else "assertion condition => false"));
                end if;
             elsif Config.Verification_Mode
               and then
@@ -2288,7 +2322,11 @@ package body Adalang_Analyzer.Flow_Interp is
                      "postcondition => false");
                   Report.Report_Rule_Violation
                     (Unit, Post, Rules.Known_Postcondition_Failure,
-                     "subprogram body makes the postcondition false");
+                     "subprogram body makes the postcondition false",
+                     Explanation =>
+                       "The joined state at normal subprogram exits makes " &
+                       "the postcondition False.",
+                     Evidence => "postcondition => false");
                elsif Config.Verification_Mode
                  and then Boolean_Value (Post, Result.State) = Bool_True
                then

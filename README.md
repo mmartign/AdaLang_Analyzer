@@ -146,6 +146,16 @@ runtime:
   classification) and with dedicated "Violations by software quality"
   and "Violations by severity" rollups.
 
+Diagnostics can also carry analysis-specific explanations and evidence.
+Text output prints these as `why:` and `evidence:` lines when the producing
+check supplies them. JSON findings expose `explanation` and `evidence`
+fields, and SARIF results preserve both values in their `properties` object.
+This is initially populated for contradictory conditions and selected
+assertion, contract, range, index, overflow, and division-by-zero findings;
+other checks retain their existing message and rule guidance while they are
+migrated incrementally. Running with `-v` also prints the method, explanation,
+abstract-state evidence, and source of imprecision for each proof obligation.
+
 The data-flow checks are intraprocedural and deliberately conservative.
 `Dead_Store` follows resolved simple-object and array-component assignments in
 source order, while `Overwritten_Assignment` stays within one statement list.

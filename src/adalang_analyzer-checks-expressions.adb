@@ -146,7 +146,10 @@ package body Adalang_Analyzer.Checks.Expressions is
                Configuration_Id => Assurance_Profile_Name);
             Report_Rule_Violation
               (Unit, Expr.F_Right, Division_By_Zero,
-               "right operand is statically zero");
+               "right operand is statically zero",
+               Explanation =>
+                 "Static evaluation resolved the divisor to zero.",
+               Evidence => "right operand => 0");
          else
             Adalang_Analyzer.Proof_Obligations.Register_At
               (Unit               => Unit,
@@ -222,7 +225,16 @@ package body Adalang_Analyzer.Checks.Expressions is
             (if Op in Libadalang.Common.Ada_Op_And
                | Libadalang.Common.Ada_Op_And_Then
              then "condition is always false because it combines X and not X"
-             else "condition is always true because it combines X or not X"));
+             else "condition is always true because it combines X or not X"),
+            Explanation =>
+              "The two Boolean operands are structural complements, so " &
+              (if Op in Libadalang.Common.Ada_Op_And
+                 | Libadalang.Common.Ada_Op_And_Then
+               then "they cannot both be true."
+               else "at least one of them must be true."),
+            Evidence =>
+              "left operand => " & Left_Text &
+              "; right operand => " & Right_Text);
       end if;
 
       if Rule_States (Duplicate_Boolean_Operand) = Enabled

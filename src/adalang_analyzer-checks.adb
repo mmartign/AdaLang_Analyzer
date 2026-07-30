@@ -419,7 +419,11 @@ package body Adalang_Analyzer.Checks is
                            Configuration_Id => Assurance_Profile_Name);
                         Report_Rule_Violation
                           (Unit, Cond, Known_Assertion_Failure,
-                           "assertion condition is statically false");
+                           "assertion condition is statically false",
+                           Explanation =>
+                             "Static evaluation resolved the assertion " &
+                             "condition to False.",
+                           Evidence => "assertion condition => false");
                      else
                         Adalang_Analyzer.Proof_Obligations.Register_At
                           (Unit         => Unit,

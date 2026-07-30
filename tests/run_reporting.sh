@@ -21,6 +21,9 @@ fi
 
 grep -F '"version": "1.0"' "$json" >/dev/null
 grep -F '"ruleId": "Contradictory_Condition"' "$json" >/dev/null
+grep -F '"explanation": "The two Boolean operands are structural complements' \
+  "$json" >/dev/null
+grep -F '"evidence": "left operand =>' "$json" >/dev/null
 grep -F '"baseline": false' "$json" >/dev/null
 grep -F '"proofSummary": {"scope": "enumerated outcomes in current analysis scope; not exhaustive", "total": 0' \
   "$json" >/dev/null
@@ -35,6 +38,9 @@ grep -E '^[0-9a-f]{16}$' "$baseline" >/dev/null
 grep -F '"version": "2.1.0"' "$sarif" >/dev/null
 grep -F '"ruleId": "Contradictory_Condition"' "$sarif" >/dev/null
 grep -F '"baselineState": "unchanged"' "$sarif" >/dev/null
+grep -F '"properties": {"explanation": "The two Boolean operands are structural complements' \
+  "$sarif" >/dev/null
+grep -F '"evidence": "left operand =>' "$sarif" >/dev/null
 grep -F '"adalang/v1": "' "$sarif" >/dev/null
 
 #  The text interface keeps its historical diagnostic and exit behavior.
@@ -45,6 +51,9 @@ then
    exit 1
 fi
 grep -F '[Contradictory_Condition]' "$work/text" >/dev/null
+grep -F '  why: The two Boolean operands are structural complements' \
+  "$work/text" >/dev/null
+grep -F '  evidence: left operand =>' "$work/text" >/dev/null
 
 #  Every range/index operation reached by the current check machinery is
 #  represented. Known failures refine to definite-error; all other outcomes
@@ -70,7 +79,7 @@ then
    exit 1
 fi
 
-if "$analyzer" -checks=Known_Assertion_Failure \
+if "$analyzer" -v -checks=Known_Assertion_Failure \
      tests/proof_assertion_findings.adb >"$work/proof-text" 2>&1
 then
    echo "expected proof assertion fixture to produce violations" >&2
@@ -81,6 +90,12 @@ grep -F \
   "$work/proof-text" >/dev/null
 grep -F '  Total : 3' "$work/proof-text" >/dev/null
 grep -F '  definite-error : 3' "$work/proof-text" >/dev/null
+grep -F '  Details:' "$work/proof-text" >/dev/null
+grep -F '      method: abstract-interpretation' "$work/proof-text" >/dev/null
+grep -F '      why: assertion condition is false based on the incoming state' \
+  "$work/proof-text" >/dev/null
+grep -F '      evidence: assertion condition => false' \
+  "$work/proof-text" >/dev/null
 
 #  A clean finding run is not presented as proved safe. Its applicable
 #  assertions are visible as unproved while the command remains successful.

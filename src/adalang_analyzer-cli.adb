@@ -1286,6 +1286,43 @@ package body Adalang_Analyzer.CLI is
                   end if;
                end;
             end loop;
+
+            if Verbose_Mode then
+               Ada.Text_IO.Put_Line ("  Details:");
+               for Index in
+                 1 .. Adalang_Analyzer.Proof_Obligations.Count
+               loop
+                  declare
+                     package Proof renames
+                       Adalang_Analyzer.Proof_Obligations;
+                     Item : constant Proof.Obligation :=
+                       Proof.Element (Index);
+                  begin
+                     Ada.Text_IO.Put_Line
+                       ("    " & To_String (Item.Location.Filename) & ":" &
+                        To_Decimal (Item.Location.Line) & ":" &
+                        To_Decimal (Item.Location.Column) & " [" &
+                        Proof.Kind_Name (Item.Kind) & "] " &
+                        Proof.Status_Name (Item.Status));
+                     Ada.Text_IO.Put_Line
+                       ("      method: " & Proof.Method_Name (Item.Method));
+                     if Item.Explanation /= Null_Unbounded_String then
+                        Ada.Text_IO.Put_Line
+                          ("      why: " & To_String (Item.Explanation));
+                     end if;
+                     if Item.Abstract_State /= Null_Unbounded_String then
+                        Ada.Text_IO.Put_Line
+                          ("      evidence: " &
+                           To_String (Item.Abstract_State));
+                     end if;
+                     if Item.Imprecision_Source /= Null_Unbounded_String then
+                        Ada.Text_IO.Put_Line
+                          ("      imprecision: " &
+                           To_String (Item.Imprecision_Source));
+                     end if;
+                  end;
+               end loop;
+            end if;
          end if;
 
          if Baseline_Matches > 0 then

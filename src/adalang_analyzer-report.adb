@@ -39,6 +39,8 @@ package body Adalang_Analyzer.Report is
       Caret_Width    : Natural;
       Rule           : Rules.Rule_Kind;
       Message        : Unbounded_String;
+      Explanation    : Unbounded_String;
+      Evidence       : Unbounded_String;
       Source_Text    : Unbounded_String;
       Fingerprint    : Unbounded_String;
       Matches_Base   : Boolean := False;
@@ -371,6 +373,10 @@ package body Adalang_Analyzer.Report is
                JSON_Escape (To_String (Info.Name)) &
                """, ""message"": """ &
                JSON_Escape (To_String (Item.Message)) &
+               """, ""explanation"": """ &
+               JSON_Escape (To_String (Item.Explanation)) &
+               """, ""evidence"": """ &
+               JSON_Escape (To_String (Item.Evidence)) &
                """, ""file"": """ &
                JSON_Escape (Normalized_Path (To_String (Item.Filename))) &
                """, ""line"": " &
@@ -485,7 +491,11 @@ package body Adalang_Analyzer.Report is
                JSON_Escape (To_String (Item.Message)) &
                """}, ""baselineState"": """ &
                (if Item.Matches_Base then "unchanged" else "new") &
-               """, ""partialFingerprints"": {""adalang/v1"": """ &
+               """, ""properties"": {""explanation"": """ &
+               JSON_Escape (To_String (Item.Explanation)) &
+               """, ""evidence"": """ &
+               JSON_Escape (To_String (Item.Evidence)) &
+               """}, ""partialFingerprints"": {""adalang/v1"": """ &
                To_String (Item.Fingerprint) &
                """}, ""locations"": [{""physicalLocation"": {" &
                """artifactLocation"": {""uri"": """ &
@@ -610,7 +620,9 @@ package body Adalang_Analyzer.Report is
       Column      : Natural;
       Caret_Width : Natural;
       Rule        : Rules.Rule_Kind;
-      Message     : String)
+      Message     : String;
+      Explanation : String := "";
+      Evidence    : String := "")
    is
       Rule_Name    : constant String :=
         Ada.Strings.Unbounded.To_String (Rules.Rule_Infos (Rule).Name);
@@ -632,6 +644,8 @@ package body Adalang_Analyzer.Report is
           Caret_Width  => Caret_Width,
           Rule         => Rule,
           Message      => To_Unbounded_String (Message),
+          Explanation  => To_Unbounded_String (Explanation),
+          Evidence     => To_Unbounded_String (Evidence),
           Source_Text  => To_Unbounded_String (Source_Text),
           Fingerprint  => To_Unbounded_String (Fingerprint),
           Matches_Base => Matches_Base));
@@ -658,6 +672,12 @@ package body Adalang_Analyzer.Report is
          Ada.Text_IO.Put_Line ("  advice: " &
                    Ada.Strings.Unbounded.To_String
                      (Rules.Rule_Infos (Rule).Guidance));
+         if Explanation /= "" then
+            Ada.Text_IO.Put_Line ("  why: " & Explanation);
+         end if;
+         if Evidence /= "" then
+            Ada.Text_IO.Put_Line ("  evidence: " & Evidence);
+         end if;
          Ada.Text_IO.Put_Line ("  quality: " &
                    Rules.Quality_Name (Rules.Rule_Infos (Rule).Quality) &
                    " (" &
@@ -681,7 +701,9 @@ package body Adalang_Analyzer.Report is
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Node    : Libadalang.Analysis.Ada_Node'Class;
       Rule    : Rules.Rule_Kind;
-      Message : String) is
+      Message : String;
+      Explanation : String := "";
+      Evidence    : String := "") is
    begin
       Report_Violation_At
         (Filename    => Unit.Get_Filename,
@@ -689,7 +711,9 @@ package body Adalang_Analyzer.Report is
          Column      => Natural (Node.Sloc_Range.Start_Column),
          Caret_Width => Highlight_Width (Node),
          Rule        => Rule,
-         Message     => Message);
+         Message     => Message,
+         Explanation => Explanation,
+         Evidence    => Evidence);
    end Report_Rule_Violation;
 
    procedure Report_Line_Violation
@@ -698,7 +722,9 @@ package body Adalang_Analyzer.Report is
       Column      : Natural;
       Caret_Width : Natural;
       Rule        : Rules.Rule_Kind;
-      Message     : String) is
+      Message     : String;
+      Explanation : String := "";
+      Evidence    : String := "") is
    begin
       Report_Violation_At
         (Filename    => Filename,
@@ -706,7 +732,9 @@ package body Adalang_Analyzer.Report is
          Column      => Column,
          Caret_Width => Caret_Width,
          Rule        => Rule,
-         Message     => Message);
+         Message     => Message,
+         Explanation => Explanation,
+         Evidence    => Evidence);
    end Report_Line_Violation;
 
 end Adalang_Analyzer.Report;

@@ -87,7 +87,9 @@ package Adalang_Analyzer.Report is
       Column      : Natural;
       Caret_Width : Natural;
       Rule        : Rules.Rule_Kind;
-      Message     : String);
+      Message     : String;
+      Explanation : String := "";
+      Evidence    : String := "");
    --  Shared by Report_Rule_Violation (AST-node checks) and
    --  Report_Line_Violation (raw source-text checks that have no single
    --  Ada_Node to anchor a report on).
@@ -96,9 +98,13 @@ package Adalang_Analyzer.Report is
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Node    : Libadalang.Analysis.Ada_Node'Class;
       Rule    : Rules.Rule_Kind;
-      Message : String);
+      Message : String;
+      Explanation : String := "";
+      Evidence    : String := "");
    --  AST-node violation report: derives the location and caret width from
-   --  Node's source span.
+   --  Node's source span. Explanation describes why the rule matched;
+   --  Evidence records the concrete fact derived by the analysis. Both are
+   --  optional so checks can adopt explainable diagnostics incrementally.
 
    procedure Report_Line_Violation
      (Filename    : String;
@@ -106,7 +112,9 @@ package Adalang_Analyzer.Report is
       Column      : Natural;
       Caret_Width : Natural;
       Rule        : Rules.Rule_Kind;
-      Message     : String);
+      Message     : String;
+      Explanation : String := "";
+      Evidence    : String := "");
    --  Raw source-text violation report, for checks (Long_Line,
    --  Trailing_Whitespace) that scan file text directly rather than the
    --  Libadalang AST.
