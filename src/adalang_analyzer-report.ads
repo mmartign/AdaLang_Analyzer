@@ -61,6 +61,15 @@ package Adalang_Analyzer.Report is
    --  deliberately a small, diffable text format rather than a serialized
    --  implementation detail.
 
+   procedure Write_Compliance_Report (Standard : String; Filename : String);
+   --  Writes a non-normative, Markdown, per-objective evidence report for
+   --  Standard ("do178c" is the only value currently accepted) to Filename,
+   --  or to standard output when Filename is empty. Reports the enabled
+   --  rules mapped to each objective, this run's open and baselined
+   --  findings against them, and the inline-suppression rationale trail.
+   --  This is verification-support evidence, not a compliance
+   --  determination; see POSITIONING.md.
+
    procedure Finalize_Output;
    --  Emits JSON or SARIF output after all source files have been analyzed.
    --  Text diagnostics are emitted as findings arrive, so this is a no-op for

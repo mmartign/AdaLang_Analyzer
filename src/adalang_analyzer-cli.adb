@@ -30,6 +30,7 @@ with Libadalang.Unit_Files;
 
 with Adalang_Analyzer.Checks;
 with Adalang_Analyzer.Circular_Dependencies;
+with Adalang_Analyzer.Compliance_Mapping;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Config_File;   use Adalang_Analyzer.Config_File;
 with Adalang_Analyzer.Flow_Interp;
@@ -53,6 +54,8 @@ package body Adalang_Analyzer.CLI is
    Baseline_Output  : Unbounded_String;
    Report_Filename  : Unbounded_String;
    Report_Format    : Output_Format := Text_Output;
+   Compliance_Report_Standard : Unbounded_String;
+   Compliance_Report_Output  : Unbounded_String;
 
    function Normalized_File_Name (Name : String) return String is
    begin
@@ -125,6 +128,12 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line
         ("  --write-baseline=<file> Write this run's finding fingerprints");
       Ada.Text_IO.Put_Line
+        ("  --compliance-report=<standard>  Write a per-objective evidence " &
+         "report ('do178c' or 'iso26262')");
+      Ada.Text_IO.Put_Line
+        ("  --compliance-report-output=<file>  Destination for " &
+         "--compliance-report (default: stdout)");
+      Ada.Text_IO.Put_Line
         ("  -complexity-threshold=<n>  Set complexity limit (default: 10)");
       Ada.Text_IO.Put_Line
         ("  -nesting-threshold=<n>     Set nesting depth limit (default: 4)");
@@ -185,6 +194,25 @@ package body Adalang_Analyzer.CLI is
          Invalid_Options := True;
       end if;
    end Set_Report_Format;
+
+   --  Validates a --compliance-report value before recording it, so an
+   --  unsupported standard fails the invocation instead of silently
+   --  producing no report.
+   procedure Set_Compliance_Report_Standard (Name : String) is
+      Found : Boolean;
+      Ignored_Kind : constant Adalang_Analyzer.Compliance_Mapping.Standard_Kind
+        := Adalang_Analyzer.Compliance_Mapping.Lookup_Standard (Name, Found);
+      pragma Unreferenced (Ignored_Kind);
+   begin
+      if Found then
+         Compliance_Report_Standard := To_Unbounded_String (Name);
+      else
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: unsupported compliance standard '" & Name &
+            "' (supported: 'do178c', 'iso26262')");
+         Invalid_Options := True;
+      end if;
+   end Set_Compliance_Report_Standard;
 
    --  Applies a GCC-style "+R<check>" / "-R<check>" switch, enabling or
    --  disabling exactly the named check.
@@ -359,39 +387,7 @@ package body Adalang_Analyzer.CLI is
    end Enable_Verification_Preset;
 
    procedure Enable_Automotive_Preset is
-      Automotive_Rules : constant array (Positive range <>) of Rule_Kind :=
-        (No_Goto, No_Abort, No_Raise, No_Access_To_Subp_Def,
-         No_Unchecked_Conversion, Floating_Equality, Magic_Number,
-         Dead_Store, Overwritten_Assignment, Shadowed_Declaration,
-         Infinite_Loop, Constant_Condition, Unreachable_Code,
-         Unreachable_Branch, Unreachable_Case_Alternative,
-         Overlapping_Case_Ranges, Exception_Swallowed,
-         Division_By_Zero, Reversed_Range, Self_Assignment,
-         Contradictory_Condition, No_Recursion,
-         Non_Short_Circuit_Condition, Address_Clause,
-         Function_Side_Effect, SPARK_Mode,
-         Missing_Global_Contract, Global_Contract_Mismatch,
-         Missing_Depends_Contract, Incomplete_Depends_Contract,
-         Depends_Contract_Mismatch,
-         Uninitialized_Output, Known_Precondition_Failure,
-         Known_Postcondition_Failure, Known_Assertion_Failure,
-         Known_Range_Check_Failure, Known_Index_Check_Failure,
-         Known_Overflow_Failure, Aliasing_Between_Parameters,
-         Missing_Loop_Variant, Known_Discriminant_Check_Failure,
-         Potentially_Blocking_Operation, No_Dynamic_Allocation,
-         Restricted_Access_Type, No_Explicit_Dereference,
-         No_Unchecked_Deallocation, No_Tasking, No_Rendezvous,
-         No_Select, No_Requeue, No_Asynchronous_Transfer,
-         Exception_Propagation, No_Dispatching_Call, No_Classwide_Type,
-         No_Controlled_Type, Complete_Initialization, Uninitialized_Read,
-         Volatile_Atomic_Consistency, Representation_Clause_Policy,
-         Library_Level_Initialization, Redundant_Type_Conversion,
-         Missing_Overriding_Indicator,
-         Generic_Instantiation_Limit, Dependency_Limit,
-         Circular_Package_Dependency,
-         Cyclomatic_Complexity, Deep_Nesting,
-         Naming_Convention, No_Compiler_Extensions,
-         No_Runtime_Check_Suppression, Suppression_Without_Rationale);
+      Automotive_Rules : Rule_List renames Rules.Automotive_Rules;
    begin
       Active_Preset := Automotive_Preset;
       Active_Assurance_Profile := No_Assurance_Profile;
@@ -405,31 +401,9 @@ package body Adalang_Analyzer.CLI is
    end Enable_Automotive_Preset;
 
    procedure Enable_DO_178C_Preset (Level_Text : String) is
-      type Rule_List is array (Positive range <>) of Rule_Kind;
-
-      Core_Rules : constant Rule_List :=
-        (Exception_Swallowed, Empty_Exception_Handler, Handler_Order,
-         Unreachable_Code, Unreachable_Branch,
-         Unreachable_Case_Alternative, Division_By_Zero, Reversed_Range,
-         Self_Assignment, Contradictory_Condition, Constant_Condition,
-         Known_Precondition_Failure, Known_Postcondition_Failure,
-         Known_Assertion_Failure, Known_Range_Check_Failure,
-         Known_Index_Check_Failure, Known_Overflow_Failure,
-         Aliasing_Between_Parameters, Exception_Propagation);
-      Level_C_Rules : constant Rule_List :=
-        (Missing_Requirement_Trace, Malformed_Requirement_Trace,
-         Dead_Store, Overwritten_Assignment, Uninitialized_Output,
-         Global_Contract_Mismatch, Incomplete_Depends_Contract,
-         Depends_Contract_Mismatch, Function_Side_Effect,
-         No_Recursion, Non_Short_Circuit_Condition);
-      Level_AB_Rules : constant Rule_List :=
-        (Suppression_Without_Rationale, No_Dynamic_Allocation,
-         No_Unchecked_Conversion, No_Unchecked_Deallocation,
-         Complete_Initialization, Uninitialized_Read, No_Dispatching_Call,
-         Missing_Global_Contract, Missing_Depends_Contract,
-         Missing_Loop_Variant, Potentially_Blocking_Operation,
-         No_Compiler_Extensions, Library_Level_Initialization,
-         Cyclomatic_Complexity, Deep_Nesting);
+      Core_Rules     : Rule_List renames DO_178C_Core_Rules;
+      Level_C_Rules  : Rule_List renames DO_178C_Level_C_Rules;
+      Level_AB_Rules : Rule_List renames DO_178C_Level_AB_Rules;
       Level : constant String :=
         Ada.Characters.Handling.To_Upper
           (Ada.Strings.Fixed.Trim (Level_Text, Ada.Strings.Both));
@@ -945,6 +919,40 @@ package body Adalang_Analyzer.CLI is
                then
                   Baseline_Output :=
                     To_Unbounded_String (Arg (Arg'First + 17 .. Arg'Last));
+               elsif Arg = "--compliance-report" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for " &
+                        "--compliance-report");
+                     Invalid_Options := True;
+                  else
+                     Set_Compliance_Report_Standard
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 20
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, "--compliance-report=") = Arg'First
+               then
+                  Set_Compliance_Report_Standard
+                    (Arg (Arg'First + 20 .. Arg'Last));
+               elsif Arg = "--compliance-report-output" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for " &
+                        "--compliance-report-output");
+                     Invalid_Options := True;
+                  else
+                     Compliance_Report_Output := To_Unbounded_String
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 27
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, "--compliance-report-output=") = Arg'First
+               then
+                  Compliance_Report_Output :=
+                    To_Unbounded_String (Arg (Arg'First + 27 .. Arg'Last));
                elsif Arg = "-q" or else Arg = "-quiet" then
                   Quiet_Mode := True;
                elsif Arg = "-v" or else Arg = "-verbose" then
@@ -1268,6 +1276,12 @@ package body Adalang_Analyzer.CLI is
 
       if Baseline_Output /= Null_Unbounded_String then
          Write_Baseline (To_String (Baseline_Output));
+      end if;
+
+      if Compliance_Report_Standard /= Null_Unbounded_String then
+         Write_Compliance_Report
+           (To_String (Compliance_Report_Standard),
+            To_String (Compliance_Report_Output));
       end if;
 
       if Selected_Output_Format = Text_Output and then not Quiet_Mode then

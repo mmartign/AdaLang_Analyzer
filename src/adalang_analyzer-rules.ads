@@ -125,6 +125,77 @@ package Adalang_Analyzer.Rules is
       Suppression_Without_Rationale
    );
 
+   type Rule_List is array (Positive range <>) of Rule_Kind;
+
+   --  The three DO-178C profile rule groups from Adalang_Analyzer.CLI's
+   --  Enable_DO_178C_Preset, promoted here so the profile-enabling logic and
+   --  Adalang_Analyzer.Compliance_Mapping's objective-to-rule mapping share
+   --  one definition instead of two hand-copied lists that could drift.
+   DO_178C_Core_Rules : aliased constant Rule_List :=
+     (Exception_Swallowed, Empty_Exception_Handler, Handler_Order,
+      Unreachable_Code, Unreachable_Branch,
+      Unreachable_Case_Alternative, Division_By_Zero, Reversed_Range,
+      Self_Assignment, Contradictory_Condition, Constant_Condition,
+      Known_Precondition_Failure, Known_Postcondition_Failure,
+      Known_Assertion_Failure, Known_Range_Check_Failure,
+      Known_Index_Check_Failure, Known_Overflow_Failure,
+      Aliasing_Between_Parameters, Exception_Propagation);
+
+   DO_178C_Level_C_Rules : aliased constant Rule_List :=
+     (Missing_Requirement_Trace, Malformed_Requirement_Trace,
+      Dead_Store, Overwritten_Assignment, Uninitialized_Output,
+      Global_Contract_Mismatch, Incomplete_Depends_Contract,
+      Depends_Contract_Mismatch, Function_Side_Effect,
+      No_Recursion, Non_Short_Circuit_Condition);
+
+   DO_178C_Level_AB_Rules : aliased constant Rule_List :=
+     (Suppression_Without_Rationale, No_Dynamic_Allocation,
+      No_Unchecked_Conversion, No_Unchecked_Deallocation,
+      Complete_Initialization, Uninitialized_Read, No_Dispatching_Call,
+      Missing_Global_Contract, Missing_Depends_Contract,
+      Missing_Loop_Variant, Potentially_Blocking_Operation,
+      No_Compiler_Extensions, Library_Level_Initialization,
+      Cyclomatic_Complexity, Deep_Nesting);
+
+   --  The automotive profile rule list from Adalang_Analyzer.CLI's
+   --  Enable_Automotive_Preset, promoted here for the same reason as the
+   --  DO-178C lists above: Adalang_Analyzer.Compliance_Mapping's ISO 26262
+   --  objective-to-rule mapping must cite exactly the rules --automotive
+   --  actually enables, not a second hand-copied list.
+   Automotive_Rules : aliased constant Rule_List :=
+     (No_Goto, No_Abort, No_Raise, No_Access_To_Subp_Def,
+      No_Unchecked_Conversion, Floating_Equality, Magic_Number,
+      Dead_Store, Overwritten_Assignment, Shadowed_Declaration,
+      Infinite_Loop, Constant_Condition, Unreachable_Code,
+      Unreachable_Branch, Unreachable_Case_Alternative,
+      Overlapping_Case_Ranges, Exception_Swallowed,
+      Division_By_Zero, Reversed_Range, Self_Assignment,
+      Contradictory_Condition, No_Recursion,
+      Non_Short_Circuit_Condition, Address_Clause,
+      Function_Side_Effect, SPARK_Mode,
+      Missing_Global_Contract, Global_Contract_Mismatch,
+      Missing_Depends_Contract, Incomplete_Depends_Contract,
+      Depends_Contract_Mismatch,
+      Uninitialized_Output, Known_Precondition_Failure,
+      Known_Postcondition_Failure, Known_Assertion_Failure,
+      Known_Range_Check_Failure, Known_Index_Check_Failure,
+      Known_Overflow_Failure, Aliasing_Between_Parameters,
+      Missing_Loop_Variant, Known_Discriminant_Check_Failure,
+      Potentially_Blocking_Operation, No_Dynamic_Allocation,
+      Restricted_Access_Type, No_Explicit_Dereference,
+      No_Unchecked_Deallocation, No_Tasking, No_Rendezvous,
+      No_Select, No_Requeue, No_Asynchronous_Transfer,
+      Exception_Propagation, No_Dispatching_Call, No_Classwide_Type,
+      No_Controlled_Type, Complete_Initialization, Uninitialized_Read,
+      Volatile_Atomic_Consistency, Representation_Clause_Policy,
+      Library_Level_Initialization, Redundant_Type_Conversion,
+      Missing_Overriding_Indicator,
+      Generic_Instantiation_Limit, Dependency_Limit,
+      Circular_Package_Dependency,
+      Cyclomatic_Complexity, Deep_Nesting,
+      Naming_Convention, No_Compiler_Extensions,
+      No_Runtime_Check_Suppression, Suppression_Without_Rationale);
+
    type Software_Quality is
      (Quality_Security, Quality_Reliability, Quality_Maintainability);
 

@@ -11,11 +11,14 @@ preset_rules="$work/preset-rules"
 matrix_rules="$work/matrix-rules"
 manifest_rules="$work/manifest-rules"
 
+#  Enable_Automotive_Preset (adalang_analyzer-cli.adb) enables exactly
+#  Rules.Automotive_Rules, so that promoted, single-source-of-truth constant
+#  in rules.ads is what this test scrapes.
 sed -n \
-  '/Automotive_Rules : constant/,/^[[:space:]]*begin$/p' \
-  src/adalang_analyzer-cli.adb |
+  '/Automotive_Rules : aliased constant Rule_List :=/,/^$/p' \
+  src/adalang_analyzer-rules.ads |
   grep -o '[A-Z][A-Za-z0-9_]*' |
-  grep -v -E '^(Automotive_Rules|Positive|Rule_Kind)$' |
+  grep -v -E '^(Automotive_Rules|Rule_List)$' |
   sort >"$preset_rules"
 
 sed -n 's/^| [0-9][0-9]* | `\([^`]*\)`.*/\1/p' "$matrix" |

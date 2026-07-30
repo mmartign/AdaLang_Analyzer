@@ -193,7 +193,7 @@ because Ada differs from C.
 | Structural coverage and dynamic testing | Not provided. | Supply unit/integration tests, requirements-based tests, structural coverage where required, robustness tests, and target execution evidence. |
 | Tool confidence and qualification | No qualification artifacts are supplied. | Perform the applicable tool-confidence assessment and validation; document failure modes, detection controls, version pinning, and qualification needs. |
 | Independent validation corpus | Rule fixtures test expected findings and clean cases. | Add seeded, boundary, negative, project-scale, cross-version, and independent oracle tests with measured false-positive and false-negative results. |
-| Compliance reporting | Text, JSON, SARIF, and baselines exist, but no compliance summary exists. | Generate a controlled report containing configuration, analyzed scope, skipped constructs, results, deviations, manual obligations, and evidence references. |
+| Compliance reporting | `--compliance-report=<do178c\|iso26262>` generates a Markdown, per-objective evidence report (mapped checks, enabled/open/baselined status per objective, inline-suppression rationale trail, baseline-matched findings, and unsupported activities). The `iso26262` categories are the non-normative grouping below, not a clause-by-clause mapping to the licensed standard. Markdown only; a machine-readable (JSON/SARIF) form remains open. | Add a structured export format for tooling that consumes the report programmatically; revisit `iso26262` with a clause-level mapping only if reviewed against a licensed copy of the standard by a qualified reviewer. |
 
 ## Minimum defensible workflow
 

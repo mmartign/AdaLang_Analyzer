@@ -25,6 +25,7 @@ with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Interfaces;
 
+with Adalang_Analyzer.Compliance_Mapping;
 with Adalang_Analyzer.Config;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Text_Utils;
@@ -33,6 +34,8 @@ package body Adalang_Analyzer.Report is
 
    use Ada.Strings.Unbounded;
    use type Adalang_Analyzer.Config.Rule_State;
+   use type Adalang_Analyzer.Config.Assurance_Profile;
+   use type Adalang_Analyzer.Rules.Rule_Kind;
 
    type Finding is record
       Filename       : Unbounded_String;
@@ -51,6 +54,21 @@ package body Adalang_Analyzer.Report is
    package Finding_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Finding);
 
+   --  One entry per finding dropped by an inline "adalang-analyzer: ignore"
+   --  comment. Report_Violation_At records these instead of only silently
+   --  discarding them, so Write_Compliance_Report can show a suppression
+   --  rationale trail rather than an unaccountable gap between findings
+   --  detected and findings reported.
+   type Suppressed_Finding is record
+      Filename    : Unbounded_String;
+      Line_Number : Natural;
+      Rule        : Rules.Rule_Kind;
+      Rationale   : Unbounded_String;
+   end record;
+
+   package Suppressed_Finding_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Suppressed_Finding);
+
    package String_Vectors is new Ada.Containers.Indefinite_Vectors
      (Index_Type => Positive, Element_Type => String);
 
@@ -67,7 +85,8 @@ package body Adalang_Analyzer.Report is
       Hash            => Ada.Strings.Hash,
       Equivalent_Keys => "=");
 
-   Findings          : Finding_Vectors.Vector;
+   Findings           : Finding_Vectors.Vector;
+   Suppressed_Findings : Suppressed_Finding_Vectors.Vector;
    Baseline          : Fingerprint_Count_Maps.Map;
    Current_Format    : Output_Format := Text_Output;
    Output_Filename   : Unbounded_String;
@@ -326,6 +345,206 @@ package body Adalang_Analyzer.Report is
          end if;
          raise;
    end Write_Baseline;
+
+   --  Standard is assumed already validated by the caller (Adalang_Analyzer.
+   --  CLI checks it against Compliance_Mapping.Lookup_Standard before ever
+   --  calling this procedure); "do178c" is the only supported value.
+   procedure Write_Compliance_Report (Standard : String; Filename : String) is
+      Found : Boolean;
+      Kind  : constant Compliance_Mapping.Standard_Kind :=
+        Compliance_Mapping.Lookup_Standard (Standard, Found);
+      pragma Unreferenced (Found);
+      --  Found is unused: the CLI validates Standard before ever calling
+      --  this procedure, so Kind is always the resolved, supported value.
+
+      Standard_Text : constant String := Compliance_Mapping.Standard_Name (Kind);
+
+      Objectives : constant Compliance_Mapping.Objective_Array :=
+        (case Kind is
+           when Compliance_Mapping.DO_178C =>
+             Compliance_Mapping.DO_178C_Objectives,
+           when Compliance_Mapping.ISO_26262 =>
+             Compliance_Mapping.ISO_26262_Objectives);
+
+      Unsupported : constant Compliance_Mapping.Unsupported_Array :=
+        (case Kind is
+           when Compliance_Mapping.DO_178C =>
+             Compliance_Mapping.DO_178C_Unsupported,
+           when Compliance_Mapping.ISO_26262 =>
+             Compliance_Mapping.ISO_26262_Unsupported);
+
+      File    : Ada.Text_IO.File_Type;
+      To_File : constant Boolean := Filename /= "";
+
+      procedure Line (Text : String) is
+      begin
+         if To_File then
+            Ada.Text_IO.Put_Line (File, Text);
+         else
+            Ada.Text_IO.Put_Line (Text);
+         end if;
+      end Line;
+
+      function Contains
+        (List : Rules.Rule_List; Rule : Rules.Rule_Kind) return Boolean is
+      begin
+         for R of List loop
+            if R = Rule then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Contains;
+
+      Disclaimer : constant String :=
+        "This report is verification-support evidence, not a compliance " &
+        "determination. A clean result means only that the checks listed " &
+        "below produced no finding this run; it does not prove absence " &
+        "of defects and does not by itself satisfy any " & Standard_Text &
+        " objective. Objective labels are AdaLang Analyzer's own " &
+        "non-normative paraphrase of general " & Standard_Text &
+        "-relevant safety themes, not a reproduction of " & Standard_Text &
+        "'s normative text or its official numbering. Verify wording and " &
+        "applicability against your licensed copy of " & Standard_Text &
+        " and your certification or functional-safety review process.";
+
+      Enabled_Rule_Count : Natural := 0;
+   begin
+      for Rule in Rules.Rule_Kind loop
+         if Config.Rule_States (Rule) = Config.Enabled then
+            Enabled_Rule_Count := Enabled_Rule_Count + 1;
+         end if;
+      end loop;
+
+      if To_File then
+         Ada.Text_IO.Create (File, Ada.Text_IO.Out_File, Filename);
+      end if;
+
+      Line
+        ("# AdaLang Analyzer -- " & Standard_Text &
+         " compliance evidence report");
+      Line ("");
+      Line ("Tool version: " & Config.Analyzer_Version);
+      Line ("Standard: " & Standard_Text);
+      Line
+        ("Assurance profile: " &
+         (if Config.Active_Assurance_Profile = Config.No_Assurance_Profile
+          then "none selected for this run"
+          else Config.Assurance_Profile_Name));
+      Line ("Files analyzed: " & Text_Utils.To_Decimal (Source_File_Count));
+      Line ("Enabled checks: " & Text_Utils.To_Decimal (Enabled_Rule_Count));
+      Line ("");
+      Line ("> " & Disclaimer);
+      Line ("");
+      Line ("## Objectives");
+      Line ("");
+      Line
+        ("| Objective | Mapped checks | Enabled this run | Open findings" &
+         " | Baselined findings | Manual note |");
+      Line ("|---|---|---|---|---|---|");
+
+      for Obj of Objectives loop
+         declare
+            List          : Rules.Rule_List renames Obj.Mapped_Rules.all;
+            Enabled_Count : Natural := 0;
+            Open_Count    : Natural := 0;
+            Base_Count    : Natural := 0;
+            Names         : Unbounded_String;
+            First         : Boolean := True;
+         begin
+            for R of List loop
+               if not First then
+                  Append (Names, ", ");
+               end if;
+               First := False;
+               Append (Names, Rules.Rule_Infos (R).Name);
+
+               if Config.Rule_States (R) = Config.Enabled then
+                  Enabled_Count := Enabled_Count + 1;
+               end if;
+            end loop;
+
+            for F of Findings loop
+               if Contains (List, F.Rule) then
+                  if F.Matches_Base then
+                     Base_Count := Base_Count + 1;
+                  else
+                     Open_Count := Open_Count + 1;
+                  end if;
+               end if;
+            end loop;
+
+            Line
+              ("| " & To_String (Obj.Id) & " | " & To_String (Names) &
+               " | " &
+               (if Enabled_Count = 0 then "no"
+                elsif Enabled_Count = List'Length then "yes"
+                else "partial") &
+               " | " & Text_Utils.To_Decimal (Open_Count) & " | " &
+               Text_Utils.To_Decimal (Base_Count) & " | " &
+               To_String (Obj.Manual_Note) & " |");
+         end;
+      end loop;
+
+      Line ("");
+      Line ("## Suppression rationale trail");
+      Line ("");
+      Line
+        ("Every inline `adalang-analyzer: ignore` suppression recorded " &
+         "during this run, not limited to the objectives above:");
+      Line ("");
+      Line ("| File | Line | Check | Rationale |");
+      Line ("|---|---|---|---|");
+      for Item of Suppressed_Findings loop
+         Line
+           ("| " & To_String (Item.Filename) & " | " &
+            Text_Utils.To_Decimal (Item.Line_Number) & " | " &
+            To_String (Rules.Rule_Infos (Item.Rule).Name) & " | " &
+            (if Length (Item.Rationale) = 0
+             then "*(none recorded)*" else To_String (Item.Rationale)) &
+            " |");
+      end loop;
+
+      Line ("");
+      Line ("## Baseline-matched findings");
+      Line ("");
+      Line
+        ("Findings matching a `--baseline` entry are excluded from the " &
+         "open-finding counts above. Baseline entries carry no rationale " &
+         "metadata, unlike the inline suppressions above:");
+      Line ("");
+      Line ("| File | Line | Check |");
+      Line ("|---|---|---|");
+      for Item of Findings loop
+         if Item.Matches_Base then
+            Line
+              ("| " & To_String (Item.Filename) & " | " &
+               Text_Utils.To_Decimal (Item.Line_Number) & " | " &
+               To_String (Rules.Rule_Infos (Item.Rule).Name) & " |");
+         end if;
+      end loop;
+
+      Line ("");
+      Line ("## Objectives with no automated support");
+      Line ("");
+      for Item of Unsupported loop
+         Line ("- **" & To_String (Item.Name) & "**: " &
+               To_String (Item.Note));
+      end loop;
+
+      Line ("");
+      Line ("> " & Disclaimer);
+
+      if To_File then
+         Ada.Text_IO.Close (File);
+      end if;
+   exception
+      when others =>
+         if Ada.Text_IO.Is_Open (File) then
+            Ada.Text_IO.Close (File);
+         end if;
+         raise;
+   end Write_Compliance_Report;
 
    function SARIF_Level (Severity : Rules.Issue_Severity) return String is
    begin
@@ -723,6 +942,23 @@ package body Adalang_Analyzer.Report is
       return Ada.Strings.Fixed.Index (Source_Text, Marker) /= 0;
    end Is_Suppressed;
 
+   --  Text following "rationale:" on a suppression line, trimmed; "" when
+   --  the suppression carries no rationale (Suppression_Without_Rationale
+   --  reports that gap separately -- this just records what is present).
+   function Extract_Rationale (Source_Text : String) return String is
+      Marker : constant String := "rationale:";
+      Pos    : constant Natural :=
+        Ada.Strings.Fixed.Index (Source_Text, Marker);
+   begin
+      if Pos = 0 then
+         return "";
+      end if;
+
+      return Ada.Strings.Fixed.Trim
+        (Source_Text (Pos + Marker'Length .. Source_Text'Last),
+         Ada.Strings.Both);
+   end Extract_Rationale;
+
    function Is_Generated_Config_File (Filename : String) return Boolean is
       Suffix : constant String := "_config.ads";
    begin
@@ -770,6 +1006,13 @@ package body Adalang_Analyzer.Report is
         Consume_Baseline_Occurrence (Fingerprint);
    begin
       if Is_Suppressed (Source_Text, Rule_Name) then
+         Suppressed_Finding_Vectors.Append
+           (Suppressed_Findings,
+            (Filename    => To_Unbounded_String (Filename),
+             Line_Number => Line_Number,
+             Rule        => Rule,
+             Rationale   =>
+               To_Unbounded_String (Extract_Rationale (Source_Text))));
          return;
       end if;
 

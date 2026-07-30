@@ -1,5 +1,7 @@
 # adalang_analyzer
 
+[![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
+
 `adalang_analyzer` is an independent command-line static analysis tool for Ada
 source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
@@ -448,6 +450,37 @@ and lifecycle evidence. Projects taking certification credit from analyzer
 results must separately assess tool qualification under DO-330. See
 [FAA AC 20-115D](https://www.faa.gov/regulations_policies/advisory_circulars/index.cfm/go/document.information/documentID/1032046).
 
+### Compliance reporting
+
+```sh
+./bin/adalang_analyzer --do178c=A --compliance-report=do178c \
+  --compliance-report-output=compliance.md -P adalang_analyzer.gpr
+
+./bin/adalang_analyzer --automotive --compliance-report=iso26262 \
+  --compliance-report-output=compliance.md -P adalang_analyzer.gpr
+```
+
+Writes a Markdown, per-objective evidence report to
+`--compliance-report-output` (or standard output if omitted), for either
+`do178c` (paired with a `--do178c=<level>` run) or `iso26262` (paired with an
+`--automotive` run). For each objective it lists the mapped checks, whether
+they were enabled this run, and this run's open and baselined findings
+against them; it also lists every inline suppression recorded this run
+together with its rationale, every finding matched against `--baseline`
+(which currently carries no rationale of its own), and the verification
+activities this analyzer does not automate at all (structural coverage,
+requirements-based or dynamic testing, object-code or run-time-error proof
+beyond the supported subset, tool qualification).
+
+An unrecognized standard fails the invocation rather than silently producing
+no report. Objective labels are AdaLang's own paraphrase: for `do178c`, of
+publicly discussed DO-178C Annex A Table A-5 activities; for `iso26262`, of
+the same general safety themes already summarized non-normatively in
+[AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md).
+Neither cites the respective standard's normative text or official
+numbering, and the report states this. Like the profiles above, this report
+is verification-support evidence, not a compliance determination.
+
 ## Requirements
 
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
@@ -549,6 +582,10 @@ Useful options include:
                  Treat matching stable finding fingerprints as existing
 --write-baseline=<file>
                  Write this run's finding fingerprints for later comparison
+--compliance-report=<standard>
+                 Write a per-objective evidence report ('do178c' or 'iso26262')
+--compliance-report-output=<file>
+                 Destination for --compliance-report (default: stdout)
 -complexity-threshold=<n>
                  Set the Cyclomatic_Complexity limit (default: 10)
 -nesting-threshold=<n>
