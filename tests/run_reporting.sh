@@ -10,6 +10,10 @@ sarif="$work/findings.sarif"
 baseline="$work/findings.baseline"
 proof_json="$work/proof.json"
 clean_proof_json="$work/proof-clean.json"
+automotive_json="$work/automotive.json"
+automotive_sarif="$work/automotive.sarif"
+automotive_config="$work/automotive.cfg"
+automotive_baseline="$work/automotive.baseline"
 
 if "$analyzer" --format=json --output="$json" \
      --write-baseline="$baseline" \
@@ -42,6 +46,59 @@ grep -F '"properties": {"explanation": "The two Boolean operands are structural 
   "$sarif" >/dev/null
 grep -F '"evidence": "left operand =>' "$sarif" >/dev/null
 grep -F '"adalang/v1": "' "$sarif" >/dev/null
+
+#  Automotive evidence records the selected preset and the exact effective
+#  configuration after later command-line refinements. Project/scenario,
+#  configuration, baseline, threshold, analyzed-file, and skipped-check
+#  context make a saved report reproducible rather than relying on the preset
+#  label alone.
+cat >"$automotive_config" <<'EOF'
+--automotive
+-complexity-threshold=7
+EOF
+cat >"$automotive_baseline" <<'EOF'
+# Empty evidence baseline
+EOF
+if "$analyzer" --config="$automotive_config" \
+     -checks='-*,No_Runtime_Check_Suppression' \
+     -Ptests/verification_differential.gpr \
+     -XREPORT_MODE=automotive \
+     --baseline="$automotive_baseline" \
+     --format=json --output="$automotive_json" \
+     tests/automotive_runtime_suppression_findings.adb
+then
+   echo "expected automotive metadata fixture to produce violations" >&2
+   exit 1
+fi
+grep -F '"selectedPreset": "automotive"' "$automotive_json" >/dev/null
+grep -F '"toolVersion": "0.1.0-dev"' "$automotive_json" >/dev/null
+grep -F '"No_Runtime_Check_Suppression"' "$automotive_json" >/dev/null
+if [ "$(grep -c '^      "[A-Za-z_]*"$' "$automotive_json")" -ne 1 ]; then
+   echo "structured report did not preserve the effective enabled-rule set" >&2
+   cat "$automotive_json" >&2
+   exit 1
+fi
+grep -F '"cyclomaticComplexity": 7' "$automotive_json" >/dev/null
+grep -F '"configFile": "' "$automotive_json" >/dev/null
+grep -F 'automotive.cfg"' "$automotive_json" >/dev/null
+grep -F 'automotive.baseline"' "$automotive_json" >/dev/null
+grep -F '"tests/verification_differential.gpr"' "$automotive_json" >/dev/null
+grep -F '"REPORT_MODE=automotive"' "$automotive_json" >/dev/null
+grep -F '"tests/automotive_runtime_suppression_findings.adb"' \
+  "$automotive_json" >/dev/null
+grep -F '"skippedChecks": 0' "$automotive_json" >/dev/null
+
+if "$analyzer" --automotive -checks='-*,No_Runtime_Check_Suppression' \
+     --format=sarif --output="$automotive_sarif" \
+     tests/automotive_runtime_suppression_findings.adb
+then
+   echo "expected automotive SARIF fixture to produce violations" >&2
+   exit 1
+fi
+grep -F '"selectedPreset": "automotive"' "$automotive_sarif" >/dev/null
+grep -F '"enabledRules": [' "$automotive_sarif" >/dev/null
+grep -F '"No_Runtime_Check_Suppression"' "$automotive_sarif" >/dev/null
+grep -F '"analyzedFiles": [' "$automotive_sarif" >/dev/null
 
 #  The text interface keeps its historical diagnostic and exit behavior.
 if "$analyzer" -checks='Contradictory_Condition' \

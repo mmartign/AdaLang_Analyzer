@@ -28,7 +28,14 @@ Run the evidence checks with:
 ```sh
 sh tests/run_recommended_gate.sh
 sh tests/run_quality_metrics.sh
+sh tests/run_automotive_evidence.sh
 ```
+
+`automotive_rule_evidence.tsv` maps every check enabled by `--automotive` to a
+positive and clean invocation. `run_automotive_evidence.sh` fails if the
+implemented preset, the Automotive Ada Compliance Matrix, and this manifest
+do not contain the same rule set, or if any mapped fixture stops producing
+the expected result.
 
 ## Precision regression index
 

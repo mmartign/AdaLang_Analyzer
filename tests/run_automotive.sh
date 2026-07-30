@@ -92,6 +92,24 @@ done
 "$analyzer" -q -generic-threshold=1 -dependency-threshold=1 \
   -checks="$policy_rules" tests/automotive_policy_clean.adb
 
+#  Disabling language-defined run-time checks weakens the safety properties
+#  that range, overflow, index, discriminant, and access checks provide.
+runtime_suppression_rule='No_Runtime_Check_Suppression'
+if "$analyzer" -checks="$runtime_suppression_rule" \
+     tests/automotive_runtime_suppression_findings.adb >"$output" 2>&1
+then
+   echo "expected run-time-check suppression findings" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[No_Runtime_Check_Suppression\]' "$output")" -ne 4 ]
+then
+   echo "unexpected run-time-check suppression findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+"$analyzer" -q -checks="$runtime_suppression_rule" \
+  tests/automotive_runtime_suppression_clean.adb
+
 #  Alire-generated configuration pragmas are build metadata, not authored
 #  compiler extensions, and cannot be removed from the generated source.
 "$analyzer" -q -checks='No_Compiler_Extensions' \
@@ -114,5 +132,32 @@ then
 fi
 grep -F '[Naming_Convention]' "$output" >/dev/null
 grep -F '[No_Compiler_Extensions]' "$output" >/dev/null
+
+#  The expanded preset reuses mature low-noise checks rather than maintaining
+#  a separate automotive implementation for the same defect classes.
+if "$analyzer" --automotive -complexity-threshold=2 \
+     tests/advanced_findings.adb >"$output" 2>&1
+then
+   echo "automotive preset unexpectedly missed expanded defect checks" >&2
+   exit 1
+fi
+for rule in \
+   Exception_Swallowed Unreachable_Case_Alternative \
+   Overlapping_Case_Ranges Cyclomatic_Complexity
+do
+   grep -F "[$rule]" "$output" >/dev/null || {
+      echo "expanded automotive preset is missing $rule" >&2
+      cat "$output" >&2
+      exit 1
+   }
+done
+
+if "$analyzer" --automotive \
+     tests/automotive_runtime_suppression_findings.adb >"$output" 2>&1
+then
+   echo "automotive preset missed run-time-check suppression" >&2
+   exit 1
+fi
+grep -F '[No_Runtime_Check_Suppression]' "$output" >/dev/null
 
 echo "automotive profile tests passed"

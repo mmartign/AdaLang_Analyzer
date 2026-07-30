@@ -150,7 +150,7 @@ package body Adalang_Analyzer.CLI is
    --  Prints the tool's version for -version.
    procedure Print_Version is
    begin
-      Ada.Text_IO.Put_Line ("adalang-analyzer version 0.1.0-dev");
+      Ada.Text_IO.Put_Line ("adalang-analyzer version " & Analyzer_Version);
    end Print_Version;
 
    --  Prints every registered check with its description and remediation
@@ -306,6 +306,7 @@ package body Adalang_Analyzer.CLI is
          Redundant_Type_Conversion, Handler_Order,
          Aliasing_Between_Parameters, Known_Discriminant_Check_Failure);
    begin
+      Active_Preset := Recommended_Preset;
       Active_Assurance_Profile := No_Assurance_Profile;
       Verification_Mode := False;
       for Rule in Rule_Kind loop
@@ -338,6 +339,7 @@ package body Adalang_Analyzer.CLI is
          Aliasing_Between_Parameters, Missing_Loop_Variant,
          Known_Discriminant_Check_Failure, Potentially_Blocking_Operation);
    begin
+      Active_Preset := SPARK_Preset;
       Active_Assurance_Profile := No_Assurance_Profile;
       Verification_Mode := False;
       for Rule in Rule_Kind loop
@@ -352,6 +354,7 @@ package body Adalang_Analyzer.CLI is
    procedure Enable_Verification_Preset is
    begin
       Enable_SPARK_Preset;
+      Active_Preset := Verification_Preset;
       Verification_Mode := True;
    end Enable_Verification_Preset;
 
@@ -361,15 +364,20 @@ package body Adalang_Analyzer.CLI is
          No_Unchecked_Conversion, Floating_Equality, Magic_Number,
          Dead_Store, Overwritten_Assignment, Shadowed_Declaration,
          Infinite_Loop, Constant_Condition, Unreachable_Code,
+         Unreachable_Branch, Unreachable_Case_Alternative,
+         Overlapping_Case_Ranges, Exception_Swallowed,
          Division_By_Zero, Reversed_Range, Self_Assignment,
          Contradictory_Condition, No_Recursion,
          Non_Short_Circuit_Condition, Address_Clause,
-         Function_Side_Effect, Global_Contract_Mismatch,
-         Incomplete_Depends_Contract, Depends_Contract_Mismatch,
+         Function_Side_Effect, SPARK_Mode,
+         Missing_Global_Contract, Global_Contract_Mismatch,
+         Missing_Depends_Contract, Incomplete_Depends_Contract,
+         Depends_Contract_Mismatch,
          Uninitialized_Output, Known_Precondition_Failure,
          Known_Postcondition_Failure, Known_Assertion_Failure,
          Known_Range_Check_Failure, Known_Index_Check_Failure,
          Known_Overflow_Failure, Aliasing_Between_Parameters,
+         Missing_Loop_Variant, Known_Discriminant_Check_Failure,
          Potentially_Blocking_Operation, No_Dynamic_Allocation,
          Restricted_Access_Type, No_Explicit_Dereference,
          No_Unchecked_Deallocation, No_Tasking, No_Rendezvous,
@@ -381,8 +389,11 @@ package body Adalang_Analyzer.CLI is
          Missing_Overriding_Indicator,
          Generic_Instantiation_Limit, Dependency_Limit,
          Circular_Package_Dependency,
-         Naming_Convention, No_Compiler_Extensions);
+         Cyclomatic_Complexity, Deep_Nesting,
+         Naming_Convention, No_Compiler_Extensions,
+         No_Runtime_Check_Suppression, Suppression_Without_Rationale);
    begin
+      Active_Preset := Automotive_Preset;
       Active_Assurance_Profile := No_Assurance_Profile;
       Verification_Mode := False;
       for Rule in Rule_Kind loop
@@ -451,6 +462,7 @@ package body Adalang_Analyzer.CLI is
          return;
       end if;
 
+      Active_Preset := DO_178C_Preset;
       Enable (Core_Rules);
       if Active_Assurance_Profile in
         DO_178C_Level_A | DO_178C_Level_B | DO_178C_Level_C
@@ -679,6 +691,7 @@ package body Adalang_Analyzer.CLI is
       end if;
 
       Source_File_Count := Source_File_Count + 1;
+      Record_Analyzed_File (Filename);
       Log_Verbose ("Parsing: " & Filename);
 
       Check_Line_Based_Rules (Filename);
@@ -1156,6 +1169,15 @@ package body Adalang_Analyzer.CLI is
       end if;
 
       Set_Output (Report_Format, To_String (Report_Filename));
+      Set_Configuration_Files
+        (Config_Path   => To_String (Config_File_Path),
+         Baseline_Path => To_String (Baseline_File));
+      for P of Project_Gpr_Files loop
+         Record_Project_File (P);
+      end loop;
+      for Scenario of Scenario_Vars loop
+         Record_Scenario_Variable (Scenario);
+      end loop;
 
       if Baseline_File /= Null_Unbounded_String then
          begin

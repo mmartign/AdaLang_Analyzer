@@ -55,6 +55,18 @@ package body Adalang_Analyzer.Config is
       end case;
    end Assurance_Profile_Name;
 
+   function Preset_Name return String is
+   begin
+      case Active_Preset is
+         when No_Preset           => return "none";
+         when Recommended_Preset  => return "recommended";
+         when SPARK_Preset        => return "spark";
+         when Verification_Preset => return "verify";
+         when Automotive_Preset   => return "automotive";
+         when DO_178C_Preset      => return "do178c";
+      end case;
+   end Preset_Name;
+
    function Structural_Coverage_Objective return String is
    begin
       case Active_Assurance_Profile is

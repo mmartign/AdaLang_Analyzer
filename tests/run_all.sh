@@ -12,6 +12,7 @@ for test_script in \
   tests/run_recoverable_diagnostic.sh \
   tests/run_bug_findings.sh \
   tests/run_automotive.sh \
+  tests/run_automotive_evidence.sh \
   tests/run_do178c.sh \
   tests/run_circular_dependencies.sh \
   tests/run_cli_robustness.sh \

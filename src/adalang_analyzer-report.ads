@@ -39,6 +39,18 @@ package Adalang_Analyzer.Report is
    --  Selects the report representation and optional destination. An empty
    --  filename means standard output. Text output remains the default.
 
+   procedure Set_Configuration_Files
+     (Config_Path   : String;
+      Baseline_Path : String);
+   --  Records optional configuration and baseline inputs in structured
+   --  evidence. Empty strings mean that the corresponding input was unused.
+
+   procedure Record_Project_File (Filename : String);
+   procedure Record_Scenario_Variable (Value : String);
+   procedure Record_Analyzed_File (Filename : String);
+   --  Records invocation context and the files that passed the basic
+   --  existence/type checks and entered analysis.
+
    procedure Load_Baseline (Filename : String);
    --  Loads stable finding fingerprints, one per line. Matching findings are
    --  retained in the structured report as "baseline" findings but do not

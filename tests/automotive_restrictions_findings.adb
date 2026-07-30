@@ -25,6 +25,8 @@ procedure Automotive_Restrictions_Findings is
    W : Worker;
    X : Integer := P.all;
 begin
+   abort W;
+
    select
       delay 0.01;
    then abort

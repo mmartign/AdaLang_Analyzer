@@ -123,6 +123,7 @@ The analyzer currently provides the following checks:
 | Automotive | `Circular_Package_Dependency` | Maintainability | Medium | Reports groups of analyzed units whose with clauses form a dependency cycle. |
 | Automotive | `Naming_Convention` | Maintainability | Low | Reports one-character identifiers except loop indices and enumeration literals. |
 | Automotive | `No_Compiler_Extensions` | Maintainability | High | Reports implementation-defined pragmas, including extension-enabling pragmas. |
+| Automotive | `No_Runtime_Check_Suppression` | Reliability | High | Reports `Suppress`, `Suppress_All`, and check policies that ignore or disable Ada run-time checks. |
 | DO-178C support | `Missing_Requirement_Trace` | Reliability | High | Reports subprogram bodies without a nearby low-level requirement identifier. |
 | DO-178C support | `Malformed_Requirement_Trace` | Maintainability | Medium | Reports requirement annotations with no identifier. |
 | DO-178C support | `Suppression_Without_Rationale` | Maintainability | High | Reports analyzer suppressions that do not record a reviewable rationale. |
@@ -364,11 +365,16 @@ effects rather than paths or complete states to keep the default pass bounded.
 
 The `--automotive` preset combines these checks into a deliberately strict Ada
 profile. It covers allocation and access use; unchecked deallocation; tasking,
-rendezvous, select, requeue, and asynchronous transfer; exception escape;
-dispatching, class-wide, access-to-subprogram, controlled, and finalization
-features; initialization; volatile/atomic use; representation clauses;
-library elaboration; numeric operations and conversions; shadowing and naming;
-generic/dependency limits; and implementation-defined pragmas.
+rendezvous, select, requeue, and asynchronous transfer; exception handling and
+escape; dispatching, class-wide, access-to-subprogram, controlled, and
+finalization features; initialization; volatile/atomic use; representation
+clauses; library elaboration; numeric operations and conversions; unreachable
+selection logic; loop evidence; complexity and nesting; shadowing and naming;
+generic/dependency limits; implementation-defined pragmas; run-time-check
+suppression; and analyzer-suppression rationale. It is a strict superset of
+`--spark`: it also requires an explicit `Global` and `Depends` contract on
+every subprogram that needs one, and flags any region that explicitly leaves
+the SPARK subset via `SPARK_Mode => Off`.
 
 The preset is an engineering aid, not a claim of official MISRA or AUTOSAR
 conformance. MISRA and AUTOSAR rule applicability, documented deviations,
@@ -380,8 +386,9 @@ exception/dispatch summaries are conservative rather than full CodePeer-style
 path proofs.
 
 See the [Automotive Ada Compliance Matrix](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md)
-for a non-normative rule-by-rule mapping to automotive safety objectives,
-Ada-specific equivalents, limitations, and remaining compliance gaps.
+for a non-normative rule-by-rule mapping to the Ada Reference Manual's Annex H
+high-integrity restrictions and SPARK Reference Manual guidance, limitations,
+and remaining compliance gaps.
 
 ### DO-178C verification-support profiles
 
@@ -623,6 +630,13 @@ For CI systems that consume SARIF:
   --output=adalang.sarif --baseline=adalang.baseline src/*.adb
 ```
 
+JSON and SARIF reports include an `analysisConfiguration` manifest containing
+the analyzer version, selected preset, exact enabled-rule set, configurable
+thresholds, project and scenario inputs, config and baseline paths, analyzed
+files, and the number of skipped checks. This records the effective
+configuration after all config-file and command-line refinements; the preset
+name alone is not treated as sufficient evidence.
+
 Create or deliberately refresh the baseline after reviewing the complete
 finding set:
 
@@ -640,6 +654,7 @@ sh tests/run_quality_metrics.sh
 sh tests/run_reporting.sh
 sh tests/run_control_flow_graph_model.sh
 sh tests/run_automotive.sh
+sh tests/run_automotive_evidence.sh
 sh tests/run_do178c.sh
 sh tests/run_cli_robustness.sh
 sh tests/run_config_file.sh

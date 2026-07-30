@@ -900,6 +900,50 @@ package body Adalang_Analyzer.Checks is
                end if;
             end;
          end if;
+         if Rule_States (No_Runtime_Check_Suppression) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
+         then
+            declare
+               Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
+                 Node.As_Pragma_Node;
+               Name : constant String :=
+                 Normalize_Rule_Name (Node_Text (Pragma_Node.F_Id));
+
+               function Disables_Check return Boolean is
+               begin
+                  if Pragma_Node.F_Args.Children_Count < 2 then
+                     return False;
+                  end if;
+
+                  declare
+                     Policy : constant String :=
+                       Normalize_Rule_Name
+                         (Node_Text
+                            (Pragma_Node.F_Args.Child
+                               (Pragma_Node.F_Args.Children_Count)
+                               .As_Pragma_Argument_Assoc.P_Assoc_Expr));
+                  begin
+                     return Policy = "ignore" or else Policy = "off";
+                  end;
+               exception
+                  when others =>
+                     return False;
+               end Disables_Check;
+
+               Ignoring_Check : constant Boolean :=
+                 Name = "check-policy"
+                 and then Disables_Check;
+            begin
+               if Name = "suppress"
+                 or else Name = "suppress-all"
+                 or else Ignoring_Check
+               then
+                  Report_Rule_Violation
+                    (Unit, Node, No_Runtime_Check_Suppression,
+                     "run-time check suppression pragma " & Name & " used");
+               end if;
+            end;
+         end if;
          if Rule_States (Naming_Convention) = Enabled
            and then Node.Kind = Libadalang.Common.Ada_Defining_Name
            and then Node_Text (Node)'Length = 1

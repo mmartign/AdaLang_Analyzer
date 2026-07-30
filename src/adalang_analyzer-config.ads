@@ -22,7 +22,12 @@ with Adalang_Analyzer.Rules;
 --  that registry stays a pure, stateless constant table.
 package Adalang_Analyzer.Config is
 
+   Analyzer_Version : constant String := "0.1.0-dev";
+
    type Rule_State is (Disabled, Enabled);
+   type Preset_Kind is
+     (No_Preset, Recommended_Preset, SPARK_Preset, Verification_Preset,
+      Automotive_Preset, DO_178C_Preset);
    type Assurance_Profile is
      (No_Assurance_Profile, DO_178C_Level_A, DO_178C_Level_B,
       DO_178C_Level_C, DO_178C_Level_D);
@@ -30,6 +35,7 @@ package Adalang_Analyzer.Config is
    Rule_States : array (Rules.Rule_Kind) of Rule_State :=
      (others => Disabled);
 
+   Active_Preset : Preset_Kind := No_Preset;
    Active_Assurance_Profile : Assurance_Profile := No_Assurance_Profile;
    Verification_Mode : Boolean := False;
    --  Enables the bounded CFG/fixed-point verifier. This is intentionally
@@ -70,6 +76,9 @@ package Adalang_Analyzer.Config is
 
    function Assurance_Profile_Name return String;
    --  Stable human-readable name included in structured evidence.
+
+   function Preset_Name return String;
+   --  Stable command-line preset identifier included in structured evidence.
 
    function Structural_Coverage_Objective return String;
    --  Coverage objective associated with the selected DO-178C level. This is

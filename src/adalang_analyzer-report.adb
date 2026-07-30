@@ -15,6 +15,7 @@
 with Ada.Characters.Latin_1;
 with Ada.Containers;
 with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Vectors;
 with Ada.Containers.Vectors;
 with Ada.Directories;
 with Ada.Strings;
@@ -31,6 +32,7 @@ with Adalang_Analyzer.Text_Utils;
 package body Adalang_Analyzer.Report is
 
    use Ada.Strings.Unbounded;
+   use type Adalang_Analyzer.Config.Rule_State;
 
    type Finding is record
       Filename       : Unbounded_String;
@@ -49,6 +51,9 @@ package body Adalang_Analyzer.Report is
    package Finding_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Finding);
 
+   package String_Vectors is new Ada.Containers.Indefinite_Vectors
+     (Index_Type => Positive, Element_Type => String);
+
    --  A count per fingerprint, not a plain set: two distinct findings can
    --  legitimately share one fingerprint (it deliberately excludes line and
    --  column so line churn doesn't manufacture a new finding), e.g. two
@@ -66,6 +71,11 @@ package body Adalang_Analyzer.Report is
    Baseline          : Fingerprint_Count_Maps.Map;
    Current_Format    : Output_Format := Text_Output;
    Output_Filename   : Unbounded_String;
+   Config_Filename   : Unbounded_String;
+   Baseline_Filename : Unbounded_String;
+   Project_Files     : String_Vectors.Vector;
+   Scenario_Variables : String_Vectors.Vector;
+   Analyzed_Files    : String_Vectors.Vector;
 
    function Selected_Output_Format return Output_Format is (Current_Format);
 
@@ -76,6 +86,29 @@ package body Adalang_Analyzer.Report is
       Current_Format  := Format;
       Output_Filename := To_Unbounded_String (Filename);
    end Set_Output;
+
+   procedure Set_Configuration_Files
+     (Config_Path   : String;
+      Baseline_Path : String) is
+   begin
+      Config_Filename := To_Unbounded_String (Config_Path);
+      Baseline_Filename := To_Unbounded_String (Baseline_Path);
+   end Set_Configuration_Files;
+
+   procedure Record_Project_File (Filename : String) is
+   begin
+      Project_Files.Append (Filename);
+   end Record_Project_File;
+
+   procedure Record_Scenario_Variable (Value : String) is
+   begin
+      Scenario_Variables.Append (Value);
+   end Record_Scenario_Variable;
+
+   procedure Record_Analyzed_File (Filename : String) is
+   begin
+      Analyzed_Files.Append (Filename);
+   end Record_Analyzed_File;
 
    function Normalized_Path (Filename : String) return String is
       First   : Integer := Filename'First;
@@ -306,6 +339,103 @@ package body Adalang_Analyzer.Report is
       end case;
    end SARIF_Level;
 
+   procedure Emit_String_Array
+     (File       : Ada.Text_IO.File_Type;
+      Indent     : String;
+      Name       : String;
+      Items      : String_Vectors.Vector;
+      Paths      : Boolean := False;
+      Followed_By_More : Boolean := True)
+   is
+      First : Boolean := True;
+   begin
+      Ada.Text_IO.Put_Line (File, Indent & """" & Name & """: [");
+      for Item of Items loop
+         if not First then
+            Ada.Text_IO.Put_Line (File, ",");
+         end if;
+         First := False;
+         Ada.Text_IO.Put
+           (File, Indent & "  """ &
+            JSON_Escape
+              ((if Paths then Normalized_Path (Item) else Item)) & """");
+      end loop;
+      Ada.Text_IO.New_Line (File);
+      Ada.Text_IO.Put_Line
+        (File, Indent & "]" & (if Followed_By_More then "," else ""));
+   end Emit_String_Array;
+
+   procedure Emit_Enabled_Rules
+     (File   : Ada.Text_IO.File_Type;
+      Indent : String)
+   is
+      First : Boolean := True;
+   begin
+      Ada.Text_IO.Put_Line (File, Indent & """enabledRules"": [");
+      for Rule in Rules.Rule_Kind loop
+         if Config.Rule_States (Rule) = Config.Enabled then
+            if not First then
+               Ada.Text_IO.Put_Line (File, ",");
+            end if;
+            First := False;
+            Ada.Text_IO.Put
+              (File, Indent & "  """ &
+               JSON_Escape (To_String (Rules.Rule_Infos (Rule).Name)) & """");
+         end if;
+      end loop;
+      Ada.Text_IO.New_Line (File);
+      Ada.Text_IO.Put_Line (File, Indent & "],");
+   end Emit_Enabled_Rules;
+
+   procedure Emit_Analysis_Configuration
+     (File       : Ada.Text_IO.File_Type;
+      Indent     : String;
+      Followed_By_More : Boolean := True)
+   is
+      Inner : constant String := Indent & "  ";
+   begin
+      Ada.Text_IO.Put_Line (File, Indent & """analysisConfiguration"": {");
+      Ada.Text_IO.Put_Line
+        (File, Inner & """toolVersion"": """ &
+         JSON_Escape (Config.Analyzer_Version) & """,");
+      Ada.Text_IO.Put_Line
+        (File, Inner & """selectedPreset"": """ &
+         JSON_Escape (Config.Preset_Name) & """,");
+      Emit_Enabled_Rules (File, Inner);
+      Ada.Text_IO.Put_Line
+        (File, Inner & """thresholds"": {""cyclomaticComplexity"": " &
+         Text_Utils.To_Decimal (Config.Complexity_Threshold) &
+         ", ""nestingDepth"": " &
+         Text_Utils.To_Decimal (Config.Nesting_Threshold) &
+         ", ""parameterCount"": " &
+         Text_Utils.To_Decimal (Config.Parameter_Threshold) &
+         ", ""lineLength"": " &
+         Text_Utils.To_Decimal (Config.Line_Length_Threshold) &
+         ", ""genericInstantiations"": " &
+         Text_Utils.To_Decimal (Config.Generic_Threshold) &
+         ", ""dependencies"": " &
+         Text_Utils.To_Decimal (Config.Dependency_Threshold) & "},");
+      Ada.Text_IO.Put_Line
+        (File, Inner & """configFile"": """ &
+         JSON_Escape
+           (Normalized_Path (To_String (Config_Filename))) & """,");
+      Ada.Text_IO.Put_Line
+        (File, Inner & """baselineFile"": """ &
+         JSON_Escape
+           (Normalized_Path (To_String (Baseline_Filename))) & """,");
+      Emit_String_Array
+        (File, Inner, "projectFiles", Project_Files, Paths => True);
+      Emit_String_Array
+        (File, Inner, "scenarioVariables", Scenario_Variables);
+      Emit_String_Array
+        (File, Inner, "analyzedFiles", Analyzed_Files, Paths => True);
+      Ada.Text_IO.Put_Line
+        (File, Inner & """skippedChecks"": " &
+         Text_Utils.To_Decimal (Skipped_Nodes));
+      Ada.Text_IO.Put_Line
+        (File, Indent & "}" & (if Followed_By_More then "," else ""));
+   end Emit_Analysis_Configuration;
+
    procedure Emit_JSON (File : Ada.Text_IO.File_Type) is
       First : Boolean := True;
    begin
@@ -321,6 +451,7 @@ package body Adalang_Analyzer.Report is
       Ada.Text_IO.Put_Line
         (File, "  ""certificationClaim"": " &
          """verification support only; not a compliance determination"",");
+      Emit_Analysis_Configuration (File, "  ");
       Ada.Text_IO.Put_Line
         (File, "  ""filesScanned"": " &
          Text_Utils.To_Decimal (Source_File_Count) & ",");
@@ -465,13 +596,19 @@ package body Adalang_Analyzer.Report is
       end loop;
       Ada.Text_IO.New_Line (File);
       Ada.Text_IO.Put_Line (File, "  ]}},");
+      Ada.Text_IO.Put_Line (File, "  ""properties"": {");
       Ada.Text_IO.Put_Line
-        (File, "  ""properties"": {""assuranceProfile"": """ &
-         JSON_Escape (Config.Assurance_Profile_Name) &
-         """, ""structuralCoverageObjective"": """ &
-         JSON_Escape (Config.Structural_Coverage_Objective) &
-         """, ""certificationClaim"": " &
-         """verification support only; not a compliance determination""},");
+        (File, "    ""assuranceProfile"": """ &
+         JSON_Escape (Config.Assurance_Profile_Name) & """,");
+      Ada.Text_IO.Put_Line
+        (File, "    ""structuralCoverageObjective"": """ &
+         JSON_Escape (Config.Structural_Coverage_Objective) & """,");
+      Ada.Text_IO.Put_Line
+        (File, "    ""certificationClaim"": " &
+         """verification support only; not a compliance determination"",");
+      Emit_Analysis_Configuration
+        (File, "    ", Followed_By_More => False);
+      Ada.Text_IO.Put_Line (File, "  },");
       Ada.Text_IO.Put_Line (File, "  ""results"": [");
       First := True;
       for Item of Findings loop

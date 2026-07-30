@@ -119,6 +119,7 @@ package Adalang_Analyzer.Rules is
       Dependency_Limit,
       Naming_Convention,
       No_Compiler_Extensions,
+      No_Runtime_Check_Suppression,
       Missing_Requirement_Trace,
       Malformed_Requirement_Trace,
       Suppression_Without_Rationale
@@ -1101,6 +1102,15 @@ package Adalang_Analyzer.Rules is
            ("Use language-defined pragmas, compile with extensions disabled, " &
             "and isolate any approved vendor dependency."),
          Quality => Quality_Maintainability, Severity => Severity_High),
+      No_Runtime_Check_Suppression =>
+        (Name => To_Unbounded_String ("No_Runtime_Check_Suppression"),
+         Description => To_Unbounded_String
+           ("Find pragmas that suppress Ada run-time checks or configure a " &
+            "check policy to ignore them."),
+         Guidance => To_Unbounded_String
+           ("Keep run-time checks enabled, or isolate and justify any " &
+            "suppression with equivalent proof and target evidence."),
+         Quality => Quality_Reliability, Severity => Severity_High),
       Missing_Requirement_Trace =>
         (Name => To_Unbounded_String ("Missing_Requirement_Trace"),
          Description => To_Unbounded_String
