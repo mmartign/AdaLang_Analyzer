@@ -34,14 +34,14 @@ Clause numbers below are given for orientation against the Ada 2012/2022
 Reference Manual; confirm against the specific edition a project adopts, since
 numbering has shifted slightly across revisions.
 
-This baseline replaces an earlier version of this matrix that compared
-`--automotive` checks to the safety intent of MISRA C. That comparison mapped
-an Ada tool's checks onto a C coding standard's concern areas; since AdaLang
-analyzes Ada, not C, the Ada-native baseline above is a closer fit, and it
-requires no licensed standard to consult. A project that also needs a MISRA C,
-AUTOSAR C++, ISO 26262, or EN 50128 mapping must build that mapping separately
-against the licensed text of that standard; this document does not attempt
-it, and a clean `--automotive` run is not evidence toward it.
+The baseline compares to Ada and SPARK guidance rather than to a C coding
+standard because AdaLang analyzes Ada, not C: mapping an Ada tool's checks
+onto MISRA C's concern areas said more about MISRA C than about the checks
+themselves. The Ada-native baseline above is a closer fit, and unlike MISRA C,
+it requires no licensed standard to consult. A project that also needs a
+MISRA C, AUTOSAR C++, ISO 26262, or EN 50128 mapping must build that mapping
+separately against the licensed text of that standard; this document does not
+attempt it, and a clean `--automotive` run is not evidence toward it.
 
 The authoritative preset is `Enable_Automotive_Preset` in
 `src/adalang_analyzer-cli.adb`. It currently enables 71 checks.
