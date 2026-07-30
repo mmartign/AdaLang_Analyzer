@@ -379,6 +379,10 @@ pretending that a source-only analyzer can validate every target ABI, and
 exception/dispatch summaries are conservative rather than full CodePeer-style
 path proofs.
 
+See the [Automotive Ada Compliance Matrix](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md)
+for a non-normative rule-by-rule mapping to automotive safety objectives,
+Ada-specific equivalents, limitations, and remaining compliance gaps.
+
 ### DO-178C verification-support profiles
 
 Select a software level with:
