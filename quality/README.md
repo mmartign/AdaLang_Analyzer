@@ -22,6 +22,7 @@ not a claim that the analyzer has zero unknown mistakes.
   explicit `Obligation_Kind` families, each of which can still be classified
   as `Unproved` or `Unsupported`; it is not a whole-program proof claim.
 - Reviewed findings in the recommended self-analysis baseline.
+- Cases in the precision corpus (see "Precision corpus" below).
 
 Run the evidence checks with:
 
@@ -29,6 +30,7 @@ Run the evidence checks with:
 sh tests/run_recommended_gate.sh
 sh tests/run_quality_metrics.sh
 sh tests/run_automotive_evidence.sh
+sh tests/run_precision_corpus.sh
 ```
 
 `automotive_rule_evidence.tsv` maps every check enabled by `--automotive` to a
@@ -36,6 +38,43 @@ positive and clean invocation. `run_automotive_evidence.sh` fails if the
 implemented preset, the Automotive Ada Compliance Matrix, and this manifest
 do not contain the same rule set, or if any mapped fixture stops producing
 the expected result.
+
+## Precision corpus
+
+`precision_corpus.tsv` is a growing, machine-checked corpus of boundary and
+negative cases: fixtures constructed to sit exactly at a check's decision
+boundary, with the expected outcome (`clean` or `finding`) recorded
+alongside. `run_precision_corpus.sh` runs every row in isolation
+(`-checks="-*,<rule>"`) and fails the gate if any fixture's actual outcome
+disagrees with the recorded expectation — the corpus size itself is tracked
+as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
+evidence categories in this directory are tracked, so it can only grow, never
+silently shrink, across releases.
+
+Current coverage (12 cases): the six checks with a configurable numeric
+threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
+`Long_Line`, `Generic_Instantiation_Limit`, `Dependency_Limit` — each with an
+"exactly at the default threshold" fixture that must stay clean and a
+"threshold plus one" fixture that must fire. Every boundary value in the
+corpus was confirmed against the built analyzer's own diagnostic message
+(e.g. "cyclomatic complexity 11 exceeds threshold 10"), not derived from
+reading the check's source and assuming it is correct.
+
+This is a starting corpus, not a complete one. Still open, in roughly
+increasing order of effort:
+
+- Boundary/negative cases for checks without a numeric threshold (e.g.
+  suspicious-but-legitimate constructs that resemble a violation without
+  being one).
+- Folding the existing "Precision regression index" above into this same
+  measured mechanism, where a row maps cleanly to one rule and one
+  `tests/*.adb` fixture.
+- A project-scale corpus of real (non-synthetic) Ada code with a manually
+  reviewed sample, to estimate precision beyond hand-constructed fixtures.
+- Cross-version stability: re-running the same corpus across analyzer
+  releases and tracking whether previously stable results change.
+- Independent-oracle comparison against another tool (e.g. GNATcheck) on the
+  subset of checks with real overlap.
 
 ## Precision regression index
 

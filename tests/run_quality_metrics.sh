@@ -5,6 +5,7 @@ issues=quality/known_analysis_issues.tsv
 history=quality/release_metrics.csv
 baseline=quality/recommended.baseline
 obligations=src/adalang_analyzer-proof_obligations.ads
+precision_corpus=quality/precision_corpus.tsv
 
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' alire.toml)
 false_positives=$(awk -F '\t' \
@@ -18,8 +19,10 @@ supported_constructs=$(
     grep -Ec '^[[:space:]]*[(]?[A-Z][A-Za-z_]+[,)]'
 )
 baseline_findings=$(grep -Ec '^[0-9a-f]{16}$' "$baseline")
+precision_corpus_cases=$(awk -F '\t' \
+  '!/^#/ && NF { count++ } END { print count + 0 }' "$precision_corpus")
 
-expected="$version,$false_positives,$false_negatives,$supported_constructs,$baseline_findings"
+expected="$version,$false_positives,$false_negatives,$supported_constructs,$baseline_findings,$precision_corpus_cases"
 recorded=$(tail -n 1 "$history")
 
 if [ "$recorded" != "$expected" ]

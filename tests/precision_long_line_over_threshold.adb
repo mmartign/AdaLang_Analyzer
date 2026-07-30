@@ -1,0 +1,5 @@
+procedure Precision_Long_Line_Over_Threshold is
+begin
+--xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   null;
+end Precision_Long_Line_Over_Threshold;

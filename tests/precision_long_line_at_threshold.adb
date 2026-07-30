@@ -1,0 +1,5 @@
+procedure Precision_Long_Line_At_Threshold is
+begin
+--xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   null;
+end Precision_Long_Line_At_Threshold;

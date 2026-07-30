@@ -1,0 +1,13 @@
+# rule	case	fixture	expected	note
+Cyclomatic_Complexity	boundary-clean	tests/precision_cyclomatic_complexity_at_threshold.adb	clean	default threshold is 10; complexity of exactly 10 must not fire
+Cyclomatic_Complexity	boundary-finding	tests/precision_cyclomatic_complexity_over_threshold.adb	finding	complexity of 11 must fire
+Deep_Nesting	boundary-clean	tests/precision_deep_nesting_at_threshold.adb	clean	default threshold is 4; nesting depth of exactly 4 must not fire
+Deep_Nesting	boundary-finding	tests/precision_deep_nesting_over_threshold.adb	finding	nesting depth of 5 must fire
+Too_Many_Parameters	boundary-clean	tests/precision_too_many_parameters_at_threshold.adb	clean	default threshold is 6; exactly 6 parameters must not fire
+Too_Many_Parameters	boundary-finding	tests/precision_too_many_parameters_over_threshold.adb	finding	7 parameters must fire
+Long_Line	boundary-clean	tests/precision_long_line_at_threshold.adb	clean	default threshold is 120; a line of exactly 120 characters must not fire
+Long_Line	boundary-finding	tests/precision_long_line_over_threshold.adb	finding	a line of 121 characters must fire
+Generic_Instantiation_Limit	boundary-clean	tests/precision_generic_instantiation_limit_at_threshold.adb	clean	default threshold is 10; exactly 10 instantiations must not fire
+Generic_Instantiation_Limit	boundary-finding	tests/precision_generic_instantiation_limit_over_threshold.adb	finding	11 instantiations must fire
+Dependency_Limit	boundary-clean	tests/precision_dependency_limit_at_threshold.adb	clean	default threshold is 20; exactly 20 with clauses must not fire
+Dependency_Limit	boundary-finding	tests/precision_dependency_limit_over_threshold.adb	finding	21 with clauses must fire
