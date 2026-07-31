@@ -16,3 +16,7 @@ No_Compiler_Extensions	regression-negative	config/adalang_analyzer_config.ads	cl
 Uninitialized_Read	regression-negative	tests/uninitialized_read_clean.adb	clean	precision regression: a pure out actual initializes its variable
 Wrong_Parameter_Mode	regression-negative	tests/parameter_mode_clean.adb	clean	precision regression: a parameterless prefixed mutator writes its prefix
 Dead_Store	regression-negative	tests/parameter_mode_clean.adb	clean	precision regression: a parameterless prefixed mutator writes its prefix
+Redundant_Boolean_Comparison	regression-negative	tests/redundant_boolean_comparison_clean.adb	clean	precision regression: a same-named enumeration literal is not Standard.True/False
+Repeated_Statement	regression-negative	tests/volatile_register_writes_clean.adb	clean	precision regression: a volatile write is observable on its own, so a repeated identical write to it is not a copy-paste duplicate
+Overwritten_Assignment	regression-negative	tests/volatile_register_writes_clean.adb	clean	precision regression: a volatile write is observable on its own, so an unread earlier write to it is not overwritten dead code
+Dead_Store	regression-negative-volatile	tests/volatile_register_writes_clean.adb	clean	precision regression: a volatile write is observable on its own, so it does not need a later Ada-level read to be meaningful

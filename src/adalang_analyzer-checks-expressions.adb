@@ -12,6 +12,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;    use Adalang_Analyzer.Ada_Text;
@@ -40,6 +41,28 @@ package body Adalang_Analyzer.Checks.Expressions is
          --  Name resolution can legitimately fail for incomplete source.
          return False;
    end Is_Floating_Expression;
+
+   --  True when Node's static type is Standard.Boolean, as opposed to a
+   --  user-declared type that merely has an enumeration literal spelled
+   --  "True" or "False" (a homograph of the predefined literal, not an
+   --  instance of it). Used to keep Redundant_Boolean_Comparison from
+   --  firing on "X = True" when X is such a type: "X" alone would not be
+   --  the equivalent boolean-valued expression the check's advice assumes.
+   function Is_Standard_Boolean_Expression
+     (Node : Libadalang.Analysis.Expr'Class) return Boolean
+   is
+      Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+        Node.P_Expression_Type;
+   begin
+      return not Libadalang.Analysis.Is_Null (Expr_Type)
+        and then Langkit_Support.Text.To_UTF8
+                   (Expr_Type.P_Canonical_Fully_Qualified_Name) =
+                     "standard.boolean";
+   exception
+      when others =>
+         --  Name resolution can legitimately fail for incomplete source.
+         return False;
+   end Is_Standard_Boolean_Expression;
 
    --  Strips one layer of enclosing parentheses, if present, so operands
    --  that are otherwise structurally identical still compare equal by
@@ -185,6 +208,9 @@ package body Adalang_Analyzer.Checks.Expressions is
           | Libadalang.Common.Ada_Op_Neq
         and then (Is_Boolean_Literal (Expr.F_Left)
                     xor Is_Boolean_Literal (Expr.F_Right))
+        and then (if Is_Boolean_Literal (Expr.F_Left)
+                  then Is_Standard_Boolean_Expression (Expr.F_Right)
+                  else Is_Standard_Boolean_Expression (Expr.F_Left))
       then
          Report_Rule_Violation
            (Unit, Expr, Redundant_Boolean_Comparison,

@@ -302,9 +302,14 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                then
                   declare
                      Current : constant String := Canonical_Text (Stmt);
+                     Decl    : constant Libadalang.Analysis.Basic_Decl :=
+                       Data_Flow.Assigned_Declaration (Stmt);
                   begin
                      if Current /= ""
                        and then Current = To_String (Previous_Assignment)
+                       and then (Libadalang.Analysis.Is_Null (Decl)
+                                 or else not Data_Flow.Is_Externally_Observable
+                                   (Decl))
                      then
                         Report_Rule_Violation
                           (Unit, Stmt, Repeated_Statement,
@@ -338,6 +343,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                      if Data_Flow.Is_Trackable_Assignment (Stmt)
                        and then not Libadalang.Analysis.Is_Null (Decl)
                        and then not Is_Self_Assignment
+                       and then not Data_Flow.Is_Externally_Observable (Decl)
                      then
                         for J in I + 1 .. List.Children_Count loop
                            declare
@@ -503,6 +509,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               and then Decl.Kind = Libadalang.Common.Ada_Object_Decl
               and then not Libadalang.Analysis.Is_Null (Subprogram)
               and then Is_Local_To_Subprogram (Decl, Subprogram)
+              and then not Data_Flow.Is_Externally_Observable (Decl)
               and then not Data_Flow.Has_Read_After
                 (Subprogram.F_Stmts, Decl, Stmt)
             then
@@ -633,6 +640,8 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                                (Subprogram)
                              and then Is_Local_To_Subprogram
                                (Decl, Subprogram)
+                             and then not Data_Flow.Is_Externally_Observable
+                               (Decl)
                              and then not Data_Flow.Has_Read_After_Node
                                (Subprogram.F_Stmts, Decl, Stmt)
                            then

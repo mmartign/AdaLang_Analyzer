@@ -51,7 +51,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (17 cases):
+Current coverage (21 cases):
 
 - 12 threshold boundary cases: the six checks with a configurable numeric
   threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
@@ -61,13 +61,15 @@ Current coverage (17 cases):
   corpus was confirmed against the built analyzer's own diagnostic message
   (e.g. "cyclomatic complexity 11 exceeds threshold 10"), not derived from
   reading the check's source and assuming it is correct.
-- 5 regression-negative cases, folded in from the "Precision regression
+- 9 regression-negative cases, folded in from the "Precision regression
   index" below: `Library_Level_Initialization`, `No_Compiler_Extensions`,
-  `Uninitialized_Read`, `Wrong_Parameter_Mode`, and `Dead_Store`, each on the
-  existing fixture the index already pointed at. Only rows that map cleanly
-  to one rule and one checked-in fixture were folded in this way; the
-  remaining index rows reference the analyzer's own source or a bounded
-  `--verify` proof-obligation outcome rather than a `Rule_Kind` finding on a
+  `Uninitialized_Read`, `Wrong_Parameter_Mode`, `Dead_Store` (twice, on two
+  distinct fixtures), `Redundant_Boolean_Comparison`, `Repeated_Statement`,
+  and `Overwritten_Assignment`, each on the existing fixture the index
+  already pointed at. Only rows that map cleanly to one rule and one
+  checked-in fixture were folded in this way; the remaining index rows
+  reference the analyzer's own source or a bounded `--verify`
+  proof-obligation outcome rather than a `Rule_Kind` finding on a
   `tests/*.adb` fixture, and stay prose-only rather than force an uncertain
   mapping into a gate (see the index below for which).
 
@@ -98,6 +100,8 @@ Each precision correction has an executable regression:
 | State captured by a nested verifier pass is not a dead store | Flow-interpreter self-check in `run_recommended.sh` (not folded: same reason) |
 | Required cleanup status outputs are consumed | VC-prover self-check in `run_recommended.sh` (not folded: same reason) |
 | Direct outer `out`-to-`out` forwarding is a write, not a read | `verification_diff_modular_call.adb`, run by `run_verification.sh` and `run_gnatprove_differential.sh` (not folded: this is a bounded `--verify` proof-obligation outcome, not a `Rule_Kind` finding) |
+| A same-named enumeration literal is not `Standard.True`/`Standard.False` | `redundant_boolean_comparison_clean.adb`; also `Redundant_Boolean_Comparison` in `precision_corpus.tsv` |
+| A write to a Volatile/Atomic/Address-clause object is observable on its own, independent of a later Ada-level read or a repeated identical write | `volatile_register_writes_clean.adb`; also `Repeated_Statement`, `Overwritten_Assignment`, and `Dead_Store` (case `regression-negative-volatile`) in `precision_corpus.tsv` |
 
 When another precision bug is fixed, add or extend a fixture and add its row
 here in the same change.

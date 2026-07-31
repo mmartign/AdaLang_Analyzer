@@ -1,3 +1,5 @@
 # id	kind	status	description
 # kind is false-positive or false-negative; status is open or closed.
 FP-001	false-positive	closed	Fixed by formal-mode-aware call scanning; covered by verification_diff_modular_call.adb.
+FP-002	false-positive	closed	Redundant_Boolean_Comparison fired on a same-named enumeration literal instead of Standard.True/False; fixed by requiring the non-literal operand's type to resolve to Standard.Boolean; covered by redundant_boolean_comparison_clean.adb.
+FP-003	false-positive	closed	Dead_Store, Overwritten_Assignment, and Repeated_Statement fired on Volatile/Atomic/Address-clause objects (memory-mapped hardware registers), where a write is observable on its own and does not need a later Ada-level read; fixed by an Is_Externally_Observable exemption in Adalang_Analyzer.Checks.Data_Flow; covered by volatile_register_writes_clean.adb.

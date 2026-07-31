@@ -111,4 +111,15 @@ private package Adalang_Analyzer.Checks.Data_Flow is
    --  detection conservative rather than risking a false positive from
    --  misclassifying an ordinary name reference as a call.
 
+   function Is_Externally_Observable
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
+   --  True when Decl carries Volatile, Atomic, Volatile_Full_Access, or an
+   --  Address aspect (aspect specification, pragma, or attribute-definition
+   --  clause form). Each write to such an object is itself an observable
+   --  effect -- typically a memory-mapped register -- independent of
+   --  whether the enclosing Ada code later reads it back or writes it
+   --  again. Dead_Store, Overwritten_Assignment, and Repeated_Statement
+   --  exempt these declarations, since their "no later read" and
+   --  "identical consecutive write" reasoning assumes an ordinary variable.
+
 end Adalang_Analyzer.Checks.Data_Flow;

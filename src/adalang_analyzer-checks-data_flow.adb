@@ -12,6 +12,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
@@ -810,5 +811,88 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       when others =>
          return False;
    end Is_Direct_Recursive_Call;
+
+   --  True when Sibling is "for <Decl's name>'Address use ...;": the
+   --  pre-Ada-2012 attribute-definition-clause spelling of an address
+   --  clause, written as its own declarative item rather than as part of
+   --  Decl's declaration, so neither P_Has_Aspect nor P_Get_Aspect sees it
+   --  from Decl alone.
+   function Is_Address_Clause_For
+     (Sibling   : Libadalang.Analysis.Ada_Node'Class;
+      Decl_Name : String) return Boolean
+   is
+   begin
+      if Sibling.Kind /= Libadalang.Common.Ada_Attribute_Def_Clause then
+         return False;
+      end if;
+
+      declare
+         Attribute_Expr : constant Libadalang.Analysis.Name :=
+           Sibling.As_Attribute_Def_Clause.F_Attribute_Expr;
+      begin
+         return not Libadalang.Analysis.Is_Null (Attribute_Expr)
+           and then Attribute_Expr.Kind = Libadalang.Common.Ada_Attribute_Ref
+           and then Canonical_Text
+             (Attribute_Expr.As_Attribute_Ref.F_Attribute) = "address"
+           and then Canonical_Text
+             (Attribute_Expr.As_Attribute_Ref.F_Prefix) = Decl_Name;
+      end;
+   end Is_Address_Clause_For;
+
+   function Is_Externally_Observable
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is
+      --  P_Has_Aspect only answers for boolean aspects (it always reports
+      --  Address as absent, aspect-specification or attribute-clause form
+      --  alike); P_Get_Aspect / Exists is the general form that covers a
+      --  value aspect such as Address too -- but only its aspect-
+      --  specification spelling ("with Address => ..."). Checked
+      --  individually, not as one "or else" chain: resolving a
+      --  representation-clause-form Address can raise a Libadalang
+      --  property error on an otherwise unrelated declaration, and that
+      --  must not suppress a Volatile/Atomic match already found, nor the
+      --  attribute-definition-clause fallback below.
+      function Has_Named_Aspect (Name : String) return Boolean is
+      begin
+         return Libadalang.Analysis.Exists
+           (Decl.P_Get_Aspect
+              (Langkit_Support.Text.To_Unbounded_Text
+                 (Langkit_Support.Text.To_Text (Name))));
+      exception
+         when others =>
+            return False;
+      end Has_Named_Aspect;
+   begin
+      if Has_Named_Aspect ("Volatile")
+        or else Has_Named_Aspect ("Atomic")
+        or else Has_Named_Aspect ("Volatile_Full_Access")
+        or else Has_Named_Aspect ("Address")
+      then
+         return True;
+      end if;
+
+      declare
+         Decl_Name : constant String :=
+           Canonical_Text (Decl.P_Defining_Name);
+         Decl_List : constant Libadalang.Analysis.Ada_Node := Decl.Parent;
+      begin
+         if Decl_Name = "" or else Libadalang.Analysis.Is_Null (Decl_List)
+         then
+            return False;
+         end if;
+
+         for I in 1 .. Decl_List.Children_Count loop
+            if Is_Address_Clause_For (Decl_List.Child (I), Decl_Name) then
+               return True;
+            end if;
+         end loop;
+      end;
+
+      return False;
+   exception
+      when others =>
+         --  Name resolution can legitimately fail for incomplete source.
+         return False;
+   end Is_Externally_Observable;
 
 end Adalang_Analyzer.Checks.Data_Flow;
