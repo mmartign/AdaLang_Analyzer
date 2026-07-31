@@ -1,2 +1,2 @@
 version,open_known_false_positives,open_known_false_negatives,supported_verification_constructs,reviewed_baseline_findings,precision_corpus_cases
-0.1.0-dev,0,0,12,22,21
+0.1.0-dev,0,0,12,22,24
