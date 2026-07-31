@@ -11,3 +11,8 @@ Generic_Instantiation_Limit	boundary-clean	tests/precision_generic_instantiation
 Generic_Instantiation_Limit	boundary-finding	tests/precision_generic_instantiation_limit_over_threshold.adb	finding	11 instantiations must fire
 Dependency_Limit	boundary-clean	tests/precision_dependency_limit_at_threshold.adb	clean	default threshold is 20; exactly 20 with clauses must not fire
 Dependency_Limit	boundary-finding	tests/precision_dependency_limit_over_threshold.adb	finding	21 with clauses must fire
+Library_Level_Initialization	regression-negative	tests/automotive_state_clean.ads	clean	precision regression: a static attribute reference is not an elaboration call
+No_Compiler_Extensions	regression-negative	config/adalang_analyzer_config.ads	clean	precision regression: Alire-generated configuration pragmas are build metadata, not authored extensions
+Uninitialized_Read	regression-negative	tests/uninitialized_read_clean.adb	clean	precision regression: a pure out actual initializes its variable
+Wrong_Parameter_Mode	regression-negative	tests/parameter_mode_clean.adb	clean	precision regression: a parameterless prefixed mutator writes its prefix
+Dead_Store	regression-negative	tests/parameter_mode_clean.adb	clean	precision regression: a parameterless prefixed mutator writes its prefix

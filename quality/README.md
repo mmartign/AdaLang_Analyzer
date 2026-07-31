@@ -51,14 +51,25 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (12 cases): the six checks with a configurable numeric
-threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
-`Long_Line`, `Generic_Instantiation_Limit`, `Dependency_Limit` — each with an
-"exactly at the default threshold" fixture that must stay clean and a
-"threshold plus one" fixture that must fire. Every boundary value in the
-corpus was confirmed against the built analyzer's own diagnostic message
-(e.g. "cyclomatic complexity 11 exceeds threshold 10"), not derived from
-reading the check's source and assuming it is correct.
+Current coverage (17 cases):
+
+- 12 threshold boundary cases: the six checks with a configurable numeric
+  threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
+  `Long_Line`, `Generic_Instantiation_Limit`, `Dependency_Limit` — each with
+  an "exactly at the default threshold" fixture that must stay clean and a
+  "threshold plus one" fixture that must fire. Every boundary value in the
+  corpus was confirmed against the built analyzer's own diagnostic message
+  (e.g. "cyclomatic complexity 11 exceeds threshold 10"), not derived from
+  reading the check's source and assuming it is correct.
+- 5 regression-negative cases, folded in from the "Precision regression
+  index" below: `Library_Level_Initialization`, `No_Compiler_Extensions`,
+  `Uninitialized_Read`, `Wrong_Parameter_Mode`, and `Dead_Store`, each on the
+  existing fixture the index already pointed at. Only rows that map cleanly
+  to one rule and one checked-in fixture were folded in this way; the
+  remaining index rows reference the analyzer's own source or a bounded
+  `--verify` proof-obligation outcome rather than a `Rule_Kind` finding on a
+  `tests/*.adb` fixture, and stay prose-only rather than force an uncertain
+  mapping into a gate (see the index below for which).
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
@@ -66,9 +77,6 @@ increasing order of effort:
 - Boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
   being one).
-- Folding the existing "Precision regression index" above into this same
-  measured mechanism, where a row maps cleanly to one rule and one
-  `tests/*.adb` fixture.
 - A project-scale corpus of real (non-synthetic) Ada code with a manually
   reviewed sample, to estimate precision beyond hand-constructed fixtures.
 - Cross-version stability: re-running the same corpus across analyzer
@@ -82,14 +90,14 @@ Each precision correction has an executable regression:
 
 | Corrected mechanism | Regression evidence |
 | --- | --- |
-| Static attributes are not elaboration calls | `automotive_state_clean.ads`, run by `run_automotive.sh` |
-| Generated configuration pragmas are not authored extensions | `run_automotive.sh` generated-config check |
-| A pure `out` actual initializes its variable | `uninitialized_read_clean.adb`, run by `run_bug_findings.sh` |
-| A parameterless prefixed mutator writes its prefix | `parameter_mode_clean.adb`, run by `run_bug_findings.sh` |
-| Failure-path `out` initialization is not an overwritten assignment | Numeric-literal self-check in `run_recommended.sh` |
-| State captured by a nested verifier pass is not a dead store | Flow-interpreter self-check in `run_recommended.sh` |
-| Required cleanup status outputs are consumed | VC-prover self-check in `run_recommended.sh` |
-| Direct outer `out`-to-`out` forwarding is a write, not a read | `verification_diff_modular_call.adb`, run by `run_verification.sh` and `run_gnatprove_differential.sh` |
+| Static attributes are not elaboration calls | `automotive_state_clean.ads`, run by `run_automotive.sh`; also `Library_Level_Initialization` in `precision_corpus.tsv` |
+| Generated configuration pragmas are not authored extensions | `run_automotive.sh` generated-config check; also `No_Compiler_Extensions` in `precision_corpus.tsv` |
+| A pure `out` actual initializes its variable | `uninitialized_read_clean.adb`, run by `run_bug_findings.sh`; also `Uninitialized_Read` in `precision_corpus.tsv` |
+| A parameterless prefixed mutator writes its prefix | `parameter_mode_clean.adb`, run by `run_bug_findings.sh`; also `Wrong_Parameter_Mode` and `Dead_Store` in `precision_corpus.tsv` |
+| Failure-path `out` initialization is not an overwritten assignment | Numeric-literal self-check in `run_recommended.sh` (not folded into `precision_corpus.tsv`: the fixture is the analyzer's own source, not a `tests/*.adb` file) |
+| State captured by a nested verifier pass is not a dead store | Flow-interpreter self-check in `run_recommended.sh` (not folded: same reason) |
+| Required cleanup status outputs are consumed | VC-prover self-check in `run_recommended.sh` (not folded: same reason) |
+| Direct outer `out`-to-`out` forwarding is a write, not a read | `verification_diff_modular_call.adb`, run by `run_verification.sh` and `run_gnatprove_differential.sh` (not folded: this is a bounded `--verify` proof-obligation outcome, not a `Rule_Kind` finding) |
 
 When another precision bug is fixed, add or extend a fixture and add its row
 here in the same change.
