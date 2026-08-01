@@ -131,7 +131,111 @@ taken here beyond recording the quantified evidence.
     6.4.1 leaves unspecified, even though squaring in place is very likely
     safe in this particular implementation.
 
+## Muen Separation Kernel (attempted, inconclusive)
+
+- **Source**: `jcdubois/muen` on GitHub (mirror of the codelabs.ch original).
+- **Result: not usable as-is.** `kernel/kernel.gpr` depends on several
+  packages (`policy`, `crash_audit`, `muen_common`, `muinterrupts`,
+  `muschedinfo`, `mutimedevents`) that are not submodules at all — they are
+  generated at build time from an XML system-policy definition supplied by a
+  downstream integrator, not present in the core kernel repository. Running
+  the 56 hand-written kernel sources directly (no `-P`) produced 270 skipped
+  locations out of a much smaller finding count, and spot-checking one
+  `Uninitialized_Output` finding (`sk-subjects_events.adb`, `Consume_Event`)
+  confirmed it was a resolution artifact, not a real issue: the parameter is
+  genuinely written via a named-actual call, but the callee's own package
+  couldn't be resolved from this partial file set. Getting trustworthy
+  signal out of Muen would require populating the `common`/`rts`/
+  `build-cfg` submodules and running Muen's own policy-generation tooling
+  against an example system — real infrastructure work, not attempted here.
+
+## CubedOS (cubesatlab/cubedos)
+
+- **Source**: `cubesatlab/cubedos` on GitHub, `src/library/cubedlib.gpr` —
+  the core framework library (self-contained, no external `with`
+  dependencies, unlike the top-level `cubedos.gpr` which needs AUnit).
+- **Method**: `adalang_analyzer -P cubedlib.gpr --recommended --spark`.
+  20 files scanned, 41 violations, 8 `Uninitialized_Output` findings.
+
+### Confirmed analyzer mistake (fixed): FP-008
+
+6 of the 8 `Uninitialized_Output` findings were false positives sharing one
+root cause: `cubedos-lib-xdr.adb` defines a family of `Encode`/`Decode`
+overloads (`XDR_Integer`, `XDR_Unsigned`, `XDR_Boolean`, `XDR_Hyper`, ...)
+that share the same parameter count and modes, differing only in `Value`'s
+type. Each forwards its own `out` parameter (`Last`) purely positionally to
+another overload of the same name, e.g.:
+
+```ada
+procedure Encode (Value : in XDR_Integer; Data : in out XDR_Array;
+                   Position : in XDR_Index_Type; Last : out XDR_Index_Type)
+is
+begin
+   Encode (XDR_Integer_To_Unsigned (Value), Data, Position, Last);
+end Encode;
+```
+
+`Call.P_Call_Params` demands one fully precise resolution of which overload
+is selected for the *whole* call and returns nothing at all when that
+fails — which it does here, since the ambiguity is severe enough that even
+`Assoc.P_Get_Params (Imprecise_Fallback => True)` (the per-actual fallback
+already used elsewhere in the codebase, e.g.
+`Adalang_Analyzer.Checks.Data_Flow.Reads_Declaration`) raises rather than
+returning empty. Only the more lenient operation of resolving the callee
+*name* on its own (`Call.F_Name.P_Referenced_Decl (Imprecise_Fallback =>
+True)`) succeeds. Fixed by adding a position-based fallback
+(`Callee_Formal_At_Position`) for purely positional actuals: resolve just
+the callee, then pair the Nth actual to the Nth formal by literal position.
+Reproduced with a 3-overload, 20-line fixture
+(`uninitialized_output_overloaded_forward_clean.adb`) faithfully copying the
+real type shapes; confirmed to fail pre-fix and pass post-fix.
+
+While fixing this, the analyzer's own self-analysis gate caught a real
+style regression in the fix itself: two new `exception when others =>
+null;` handlers tripped `Empty_Exception_Handler`/`Exception_Swallowed`.
+Replaced with `Log_Verbose_Once` diagnostics, matching the codebase's
+existing convention — a small, useful demonstration of the gate doing its
+job on new code, not just old code.
+
+### Scope observation, not a defect: static-bounded-loop writes (open)
+
+The remaining `Uninitialized_Output` findings in `cubedos-lib-xdr.adb`
+(3, after the `FP-008` fix) write a scalar `out` parameter unconditionally
+inside a `for I in 1 .. 3 loop`:
+
+```ada
+for I in 1 .. 3 loop
+   Temporary_2 := Temporary_1 * 256 + XDR_Unsigned (Data (Position + I));
+   Value := Temporary_2;
+   Temporary_1 := Value;
+end loop;
+```
+
+Every loop kind (`for`, `while`, plain `loop`) is deliberately treated as
+"might not execute at all" by `Interpret_Initialization` — a documented,
+reasonable default for loops that can `exit` or whose range isn't
+statically known to be non-empty. But `for I in 1 .. 3` has a *statically*
+non-empty range and no `exit`/`return`/`raise` before the write, so the
+write is in fact unconditional. This is a narrower, more tractable relative
+of the already-documented array-loop-coverage limitation (Tokeneer's
+`SetFileDetails`, Simple Components' `Read`) — that one needs reasoning
+about a loop's bounds against an *array's* full index range; this one only
+needs "is this discrete range statically non-empty," with no array
+reasoning at all. Left open rather than folded into `FP-008`, to keep that
+fix scoped to the overload-resolution problem it was diagnosed from.
+
+One of the 8 original findings was **not** a false positive:
+`cubedos-lib-sorters.adb`'s `Pop_Heap` (`Result : out Element_Type`) has a
+body that is literally `null;` — genuinely unimplemented stub code, not yet
+written by the CubedOS authors. Correctly flagged.
+
+Cumulative effect of the `FP-008` fix on the same CubedOS run:
+
+| Check | Before | After |
+| --- | --- | --- |
+| Total violations | 41 | 37 |
+| `Uninitialized_Output` | 8 | 4 (1 genuine stub, 3 open static-loop case) |
+
 ## Future corpora
 
-Candidates identified but not yet run: CubedOS (SPARK cubesat flight
-software), the Muen Separation Kernel, and AWS (Ada Web Server).
+AWS (Ada Web Server) remains a candidate, not yet run.

@@ -676,6 +676,44 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return False;
    end Callee_Writes_Global;
 
+   --  The Position'th formal (1-based, flattening multi-name Param_Specs
+   --  like "A, B : out Integer" into two positions) of Call's callee,
+   --  resolved leniently: only the callee name itself needs to resolve,
+   --  not which exact overload was selected when several share the same
+   --  parameter count and modes. Valid only for a purely positional
+   --  actual at that position, since an imprecisely chosen overload need
+   --  not have the same formal names as the one actually selected -- only
+   --  the same shape, which is what a positional actual relies on anyway.
+   function Callee_Formal_At_Position
+     (Call     : Libadalang.Analysis.Call_Expr'Class;
+      Position : Positive) return Libadalang.Analysis.Defining_Name
+   is
+      Callee : constant Libadalang.Analysis.Basic_Decl :=
+        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      Spec   : Libadalang.Analysis.Base_Subp_Spec;
+      Index  : Natural := 0;
+   begin
+      if Libadalang.Analysis.Is_Null (Callee) then
+         return Libadalang.Analysis.No_Defining_Name;
+      end if;
+      Spec := Callee.P_Subp_Spec_Or_Null;
+      if Libadalang.Analysis.Is_Null (Spec) then
+         return Libadalang.Analysis.No_Defining_Name;
+      end if;
+      for Formal of Spec.P_Params loop
+         for Id of Formal.F_Ids loop
+            Index := Index + 1;
+            if Index = Position then
+               return Id.As_Defining_Name;
+            end if;
+         end loop;
+      end loop;
+      return Libadalang.Analysis.No_Defining_Name;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Defining_Name;
+   end Callee_Formal_At_Position;
+
    function Statement_Writes_Parameter
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Param : Libadalang.Analysis.Param_Spec;
@@ -690,15 +728,91 @@ package body Adalang_Analyzer.SPARK_Readiness is
               Node.As_Call_Stmt.F_Call;
          begin
             if Call.Kind = Libadalang.Common.Ada_Call_Expr then
-               for Pair of Call.P_Call_Params loop
-                  if Formal_Mode (Libadalang.Analysis.Param (Pair)) =
-                       Libadalang.Common.Ada_Mode_Out
-                    and then Same_Parameter
-                      (Libadalang.Analysis.Actual (Pair), Param, Name)
-                  then
-                     return True;
-                  end if;
-               end loop;
+               declare
+                  Position : Natural := 0;
+               begin
+                  for I in 1 .. Call.As_Call_Expr.F_Suffix.Children_Count
+                  loop
+                     declare
+                        Child : constant Libadalang.Analysis.Ada_Node :=
+                          Call.As_Call_Expr.F_Suffix.Child (I);
+                     begin
+                        if Child.Kind = Libadalang.Common.Ada_Param_Assoc
+                        then
+                           Position := Position + 1;
+                           declare
+                              Assoc : constant
+                                Libadalang.Analysis.Param_Assoc :=
+                                  Child.As_Param_Assoc;
+                           begin
+                              if Same_Parameter
+                                (Assoc.F_R_Expr, Param, Name)
+                              then
+                                 --  P_Get_Params demands a single, fully
+                                 --  precise resolution of which overload
+                                 --  this call selects and can itself raise
+                                 --  even with Imprecise_Fallback set, which
+                                 --  happens easily when several overloads
+                                 --  share the same parameter count and
+                                 --  modes (a common shape for a family of
+                                 --  Encode/Decode procedures differing
+                                 --  only in one parameter's type). For a
+                                 --  positional actual (no designator), fall
+                                 --  back to resolving just the callee name
+                                 --  -- a more lenient resolution that
+                                 --  succeeds even when the exact overload
+                                 --  is ambiguous -- and pairing by literal
+                                 --  position instead.
+                                 begin
+                                    for Formal_Name of
+                                      Assoc.P_Get_Params
+                                        (Imprecise_Fallback => True)
+                                    loop
+                                       if Formal_Mode (Formal_Name) =
+                                         Libadalang.Common.Ada_Mode_Out
+                                       then
+                                          return True;
+                                       end if;
+                                    end loop;
+                                 exception
+                                    when Exc : others =>
+                                       Log_Verbose_Once
+                                         ("skipping P_Get_Params " &
+                                          "resolution: " &
+                                          Ada.Exceptions.Exception_Message
+                                            (Exc));
+                                 end;
+
+                                 if Libadalang.Analysis.Is_Null
+                                   (Assoc.F_Designator)
+                                 then
+                                    declare
+                                       Formal_Name : constant
+                                         Libadalang.Analysis.Defining_Name
+                                         := Callee_Formal_At_Position
+                                           (Call.As_Call_Expr, Position);
+                                    begin
+                                       if not Libadalang.Analysis.Is_Null
+                                         (Formal_Name)
+                                         and then Formal_Mode
+                                           (Formal_Name) =
+                                           Libadalang.Common.Ada_Mode_Out
+                                       then
+                                          return True;
+                                       end if;
+                                    end;
+                                 end if;
+                              end if;
+                           exception
+                              when Exc : others =>
+                                 Log_Verbose_Once
+                                   ("skipping call-actual resolution: " &
+                                    Ada.Exceptions.Exception_Message (Exc));
+                           end;
+                        end if;
+                     end;
+                  end loop;
+               end;
             end if;
             if Callee_Writes_Global (Call, Param, Name) then
                return True;
