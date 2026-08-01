@@ -89,19 +89,75 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
          return Libadalang.Analysis.No_Expr;
    end Contract_Expression;
 
+   type SPARK_Mode_State is record
+      Has_Mode : Boolean := False;
+      Is_Off   : Boolean := False;
+   end record;
+
+   function Own_SPARK_Mode
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return SPARK_Mode_State
+   is
+      Aspect : constant Libadalang.Analysis.Aspect :=
+        Decl.P_Get_Aspect
+          (Langkit_Support.Text.To_Unbounded_Text
+             (Langkit_Support.Text.To_Text ("SPARK_Mode")));
+   begin
+      if not Libadalang.Analysis.Exists (Aspect) then
+         return (Has_Mode => False, Is_Off => False);
+      end if;
+      return
+        (Has_Mode => True,
+         Is_Off   =>
+           not Libadalang.Analysis.Is_Null
+             (Libadalang.Analysis.Value (Aspect))
+           and then Normalize_Rule_Name
+             (Node_Text (Libadalang.Analysis.Value (Aspect))) = "off");
+   exception
+      when others =>
+         return (Has_Mode => False, Is_Off => False);
+   end Own_SPARK_Mode;
+
    function Effective_SPARK_Enabled
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
    is
-      Aspect : Libadalang.Analysis.Aspect;
+      Mode     : SPARK_Mode_State;
+      Ancestor : Libadalang.Analysis.Ada_Node;
    begin
-      Aspect := Decl.P_Get_Aspect
-        (Langkit_Support.Text.To_Unbounded_Text
-           (Langkit_Support.Text.To_Text ("SPARK_Mode")));
-      return not Libadalang.Analysis.Exists (Aspect)
-        or else Libadalang.Analysis.Is_Null
-          (Libadalang.Analysis.Value (Aspect))
-        or else Normalize_Rule_Name
-          (Node_Text (Libadalang.Analysis.Value (Aspect))) /= "off";
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return True;
+      end if;
+
+      Mode := Own_SPARK_Mode (Decl);
+      if Mode.Has_Mode then
+         return not Mode.Is_Off;
+      end if;
+
+      --  SPARK_Mode was not set directly on Decl: per the SPARK RM it is
+      --  inherited from the nearest enclosing package/subprogram/task/
+      --  protected body or spec. Libadalang's own aspect lookup only
+      --  follows type derivation for inheritance, not lexical scoping,
+      --  so the enclosing bodies/specs are walked by hand here.
+      Ancestor := Libadalang.Analysis.Ada_Node (Decl).Parent;
+      while not Libadalang.Analysis.Is_Null (Ancestor) loop
+         case Ancestor.Kind is
+            when Libadalang.Common.Ada_Package_Body
+               | Libadalang.Common.Ada_Package_Decl
+               | Libadalang.Common.Ada_Generic_Package_Decl
+               | Libadalang.Common.Ada_Subp_Body
+               | Libadalang.Common.Ada_Task_Body
+               | Libadalang.Common.Ada_Protected_Body
+            =>
+               Mode := Own_SPARK_Mode (Ancestor.As_Basic_Decl);
+               if Mode.Has_Mode then
+                  return not Mode.Is_Off;
+               end if;
+            when others =>
+               null;
+         end case;
+         Ancestor := Ancestor.Parent;
+      end loop;
+
+      return True;
    exception
       when others =>
          return True;
@@ -409,10 +465,27 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
                    (Node_Text (Assoc), "=> +") /= 0;
             begin
                Add_Key_References (Assoc.F_R_Expr, Inputs);
-               for Designator of Assoc.F_Designators loop
-                  declare
+
+               --  A combined-output designator such as "(A, B) => C" is not
+               --  a discrete choice list in Ada's own aggregate grammar
+               --  (that would need "|", not ","), so Libadalang parses the
+               --  parenthesized "A, B" as a nested positional aggregate:
+               --  one designator of kind Ada_Aggregate wrapping two
+               --  Aggregate_Assoc children "A" and "B", rather than as two
+               --  separate designators. Left as-is, Referenced_Key sees
+               --  that single Ada_Aggregate node, is not an identifier, and
+               --  resolves to no key -- silently dropping every output in
+               --  a combined list and misreporting the shared input as an
+               --  unused "null => Input" association instead. Expand that
+               --  nested aggregate's own associations here so each of its
+               --  identifiers is treated as its own output designator.
+               declare
+                  procedure Append_Association
+                    (Name_Node : Libadalang.Analysis.Ada_Node'Class;
+                     Site_Node : Libadalang.Analysis.Ada_Node'Class)
+                  is
                      Output : constant Key_Type :=
-                       Referenced_Key (Designator);
+                       Referenced_Key (Name_Node);
                      Actual_Inputs : Key_Vectors.Vector := Inputs;
                   begin
                      if Has_Plus then
@@ -423,12 +496,28 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
                          Output_Name => To_Unbounded_String
                            (if Libadalang.Analysis.Is_Null (Output) then
                                "null"
-                            else Node_Text (Designator)),
+                            else Node_Text (Name_Node)),
                          Inputs      => Actual_Inputs,
                          Site        =>
-                           Libadalang.Analysis.Ada_Node (Designator)));
-                  end;
-               end loop;
+                           Libadalang.Analysis.Ada_Node (Site_Node)));
+                  end Append_Association;
+               begin
+                  for Designator of Assoc.F_Designators loop
+                     if Designator.Kind = Libadalang.Common.Ada_Aggregate then
+                        for Nested of Designator.As_Base_Aggregate.F_Assocs
+                        loop
+                           if Nested.Kind =
+                             Libadalang.Common.Ada_Aggregate_Assoc
+                           then
+                              Append_Association
+                                (Nested.As_Aggregate_Assoc.F_R_Expr, Nested);
+                           end if;
+                        end loop;
+                     else
+                        Append_Association (Designator, Designator);
+                     end if;
+                  end loop;
+               end;
             end;
          end if;
       end loop;

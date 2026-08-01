@@ -245,23 +245,75 @@ package body Adalang_Analyzer.Flow_Interp is
          return Libadalang.Analysis.No_Basic_Decl;
    end Call_Declaration;
 
+   type SPARK_Mode_State is record
+      Has_Mode : Boolean := False;
+      Is_Off   : Boolean := False;
+   end record;
+
+   function Own_SPARK_Mode
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return SPARK_Mode_State
+   is
+      Aspect : constant Libadalang.Analysis.Aspect :=
+        Decl.P_Get_Aspect
+          (Langkit_Support.Text.To_Unbounded_Text
+             (Langkit_Support.Text.To_Text ("SPARK_Mode")));
+   begin
+      if not Libadalang.Analysis.Exists (Aspect) then
+         return (Has_Mode => False, Is_Off => False);
+      end if;
+      return
+        (Has_Mode => True,
+         Is_Off   =>
+           not Libadalang.Analysis.Is_Null
+             (Libadalang.Analysis.Value (Aspect))
+           and then Normalized_Text (Libadalang.Analysis.Value (Aspect)) =
+             "off");
+   exception
+      when others =>
+         return (Has_Mode => False, Is_Off => False);
+   end Own_SPARK_Mode;
+
    function Effective_SPARK_Enabled
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
    is
-      Aspect : Libadalang.Analysis.Aspect;
+      Mode     : SPARK_Mode_State;
+      Ancestor : Libadalang.Analysis.Ada_Node;
    begin
       if Libadalang.Analysis.Is_Null (Decl) then
          return True;
       end if;
 
-      Aspect := Decl.P_Get_Aspect
-        (Langkit_Support.Text.To_Unbounded_Text
-           (Langkit_Support.Text.To_Text ("SPARK_Mode")));
+      Mode := Own_SPARK_Mode (Decl);
+      if Mode.Has_Mode then
+         return not Mode.Is_Off;
+      end if;
 
-      return not Libadalang.Analysis.Exists (Aspect)
-        or else Libadalang.Analysis.Is_Null
-          (Libadalang.Analysis.Value (Aspect))
-        or else Normalized_Text (Libadalang.Analysis.Value (Aspect)) /= "off";
+      --  SPARK_Mode was not set directly on Decl: per the SPARK RM it is
+      --  inherited from the nearest enclosing package/subprogram/task/
+      --  protected body or spec. Libadalang's own aspect lookup only
+      --  follows type derivation for inheritance, not lexical scoping,
+      --  so the enclosing bodies/specs are walked by hand here.
+      Ancestor := Libadalang.Analysis.Ada_Node (Decl).Parent;
+      while not Libadalang.Analysis.Is_Null (Ancestor) loop
+         case Ancestor.Kind is
+            when Libadalang.Common.Ada_Package_Body
+               | Libadalang.Common.Ada_Package_Decl
+               | Libadalang.Common.Ada_Generic_Package_Decl
+               | Libadalang.Common.Ada_Subp_Body
+               | Libadalang.Common.Ada_Task_Body
+               | Libadalang.Common.Ada_Protected_Body
+            =>
+               Mode := Own_SPARK_Mode (Ancestor.As_Basic_Decl);
+               if Mode.Has_Mode then
+                  return not Mode.Is_Off;
+               end if;
+            when others =>
+               null;
+         end case;
+         Ancestor := Ancestor.Parent;
+      end loop;
+
+      return True;
    exception
       when others =>
          return True;

@@ -74,19 +74,75 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Expr;
    end Contract_Expression;
 
+   type SPARK_Mode_State is record
+      Has_Mode : Boolean := False;
+      Is_Off   : Boolean := False;
+   end record;
+
+   function Own_SPARK_Mode
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return SPARK_Mode_State
+   is
+      Aspect : constant Libadalang.Analysis.Aspect :=
+        Decl.P_Get_Aspect
+          (Langkit_Support.Text.To_Unbounded_Text
+             (Langkit_Support.Text.To_Text ("SPARK_Mode")));
+   begin
+      if not Libadalang.Analysis.Exists (Aspect) then
+         return (Has_Mode => False, Is_Off => False);
+      end if;
+      return
+        (Has_Mode => True,
+         Is_Off   =>
+           not Libadalang.Analysis.Is_Null
+             (Libadalang.Analysis.Value (Aspect))
+           and then Normalize_Rule_Name
+             (Node_Text (Libadalang.Analysis.Value (Aspect))) = "off");
+   exception
+      when others =>
+         return (Has_Mode => False, Is_Off => False);
+   end Own_SPARK_Mode;
+
    function Effective_SPARK_Enabled
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
    is
-      Aspect : Libadalang.Analysis.Aspect;
+      Mode     : SPARK_Mode_State;
+      Ancestor : Libadalang.Analysis.Ada_Node;
    begin
-      Aspect := Decl.P_Get_Aspect
-        (Langkit_Support.Text.To_Unbounded_Text
-           (Langkit_Support.Text.To_Text ("SPARK_Mode")));
-      return not Libadalang.Analysis.Exists (Aspect)
-        or else Libadalang.Analysis.Is_Null
-          (Libadalang.Analysis.Value (Aspect))
-        or else Normalize_Rule_Name
-          (Node_Text (Libadalang.Analysis.Value (Aspect))) /= "off";
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return True;
+      end if;
+
+      Mode := Own_SPARK_Mode (Decl);
+      if Mode.Has_Mode then
+         return not Mode.Is_Off;
+      end if;
+
+      --  SPARK_Mode was not set directly on Decl: per the SPARK RM it is
+      --  inherited from the nearest enclosing package/subprogram/task/
+      --  protected body or spec. Libadalang's own aspect lookup only
+      --  follows type derivation for inheritance, not lexical scoping,
+      --  so the enclosing bodies/specs are walked by hand here.
+      Ancestor := Libadalang.Analysis.Ada_Node (Decl).Parent;
+      while not Libadalang.Analysis.Is_Null (Ancestor) loop
+         case Ancestor.Kind is
+            when Libadalang.Common.Ada_Package_Body
+               | Libadalang.Common.Ada_Package_Decl
+               | Libadalang.Common.Ada_Generic_Package_Decl
+               | Libadalang.Common.Ada_Subp_Body
+               | Libadalang.Common.Ada_Task_Body
+               | Libadalang.Common.Ada_Protected_Body
+            =>
+               Mode := Own_SPARK_Mode (Ancestor.As_Basic_Decl);
+               if Mode.Has_Mode then
+                  return not Mode.Is_Off;
+               end if;
+            when others =>
+               null;
+         end case;
+         Ancestor := Ancestor.Parent;
+      end loop;
+
+      return True;
    exception
       when others =>
          return True;
@@ -502,6 +558,94 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return True;
    end Same_Parameter;
 
+   function Call_Declaration
+     (Call : Libadalang.Analysis.Name'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is
+   begin
+      if Call.Kind = Libadalang.Common.Ada_Call_Expr then
+         return Call.As_Call_Expr.F_Name.P_Referenced_Decl
+           (Imprecise_Fallback => True);
+      else
+         return Call.P_Referenced_Decl (Imprecise_Fallback => True);
+      end if;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Call_Declaration;
+
+   --  True when Expr (a Global contract's right-hand side, or one leaf of
+   --  one) mentions Param/Name anywhere in it. Used to see whether a
+   --  called subprogram's own Global contract already declares that it
+   --  writes Param as an up-level global -- the case a direct actual-
+   --  parameter scan in Statement_Writes_Parameter cannot see, because the
+   --  variable is never passed as an argument at the call site at all.
+   function Mentions_Parameter
+     (Expr  : Libadalang.Analysis.Ada_Node'Class;
+      Param : Libadalang.Analysis.Param_Spec;
+      Name  : String) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Expr) then
+         return False;
+      elsif Expr.Kind = Libadalang.Common.Ada_Identifier then
+         return Same_Parameter (Expr, Param, Name);
+      end if;
+      for I in 1 .. Expr.Children_Count loop
+         if Mentions_Parameter (Expr.Child (I), Param, Name) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Mentions_Parameter;
+
+   --  True when Call's own Global contract declares Param/Name as an
+   --  Output or In_Out global, i.e. the callee writes it directly as an
+   --  up-level reference rather than receiving it as an actual parameter.
+   function Callee_Writes_Global
+     (Call  : Libadalang.Analysis.Name'Class;
+      Param : Libadalang.Analysis.Param_Spec;
+      Name  : String) return Boolean
+   is
+      Decl   : constant Libadalang.Analysis.Basic_Decl :=
+        Call_Declaration (Call);
+      Global : Libadalang.Analysis.Expr;
+   begin
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return False;
+      end if;
+
+      Global := Contract_Expression (Decl, "Global");
+      if Libadalang.Analysis.Is_Null (Global)
+        or else Global.Kind not in Libadalang.Common.Ada_Base_Aggregate
+      then
+         return False;
+      end if;
+
+      for Item of Global.As_Base_Aggregate.F_Assocs loop
+         if Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
+            declare
+               Assoc : constant Libadalang.Analysis.Aggregate_Assoc :=
+                 Item.As_Aggregate_Assoc;
+               Mode  : constant String :=
+                 (if Assoc.F_Designators.Children_Count = 0 then "input"
+                  else Normalize_Rule_Name
+                    (Node_Text (Assoc.F_Designators.Child (1))));
+            begin
+               if (Mode = "output" or else Mode = "in-out")
+                 and then Mentions_Parameter (Assoc.F_R_Expr, Param, Name)
+               then
+                  return True;
+               end if;
+            end;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Callee_Writes_Global;
+
    function Statement_Writes_Parameter
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Param : Libadalang.Analysis.Param_Spec;
@@ -525,6 +669,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
                      return True;
                   end if;
                end loop;
+            end if;
+            if Callee_Writes_Global (Call, Param, Name) then
+               return True;
             end if;
          end;
       end if;
@@ -678,6 +825,39 @@ package body Adalang_Analyzer.SPARK_Readiness is
      (Expr    : Libadalang.Analysis.Expr;
       Outputs : in out Access_Vectors.Vector)
    is
+      --  A combined-output designator such as "(A, B) => C" is not a
+      --  discrete choice list in Ada's own aggregate grammar (that needs
+      --  "|", not ","), so Libadalang parses the parenthesized "A, B" as a
+      --  nested positional aggregate: one designator of kind Ada_Aggregate
+      --  wrapping two Aggregate_Assoc children "A" and "B", rather than as
+      --  two separate identifier designators. Include_Output expands that
+      --  nested aggregate below so each of its identifiers is still
+      --  collected as its own output.
+      procedure Include_Output
+        (Name_Node : Libadalang.Analysis.Ada_Node'Class;
+         Site_Node : Libadalang.Analysis.Ada_Node'Class)
+      is
+      begin
+         if Name_Node.Kind /= Libadalang.Common.Ada_Identifier then
+            return;
+         end if;
+         declare
+            Key : constant Libadalang.Analysis.Ada_Node :=
+              Libadalang.Analysis.Ada_Node
+                (Name_Node.As_Name.P_Referenced_Defining_Name);
+         begin
+            if not Libadalang.Analysis.Is_Null (Key) then
+               Include
+                 (Outputs, Key, Node_Text (Name_Node), Site_Node,
+                  Is_Read => False, Is_Written => True);
+            end if;
+         exception
+            when Exc : others =>
+               Log_Verbose_Once
+                 ("skipping output designator resolution: " &
+                  Ada.Exceptions.Exception_Message (Exc));
+         end;
+      end Include_Output;
    begin
       if Libadalang.Analysis.Is_Null (Expr)
         or else Expr.Kind not in Libadalang.Common.Ada_Base_Aggregate
@@ -688,23 +868,17 @@ package body Adalang_Analyzer.SPARK_Readiness is
       for Item of Expr.As_Base_Aggregate.F_Assocs loop
          if Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
             for Designator of Item.As_Aggregate_Assoc.F_Designators loop
-               if Designator.Kind = Libadalang.Common.Ada_Identifier then
-                  declare
-                     Key : constant Libadalang.Analysis.Ada_Node :=
-                       Libadalang.Analysis.Ada_Node
-                         (Designator.As_Name.P_Referenced_Defining_Name);
-                  begin
-                     if not Libadalang.Analysis.Is_Null (Key) then
-                        Include
-                          (Outputs, Key, Node_Text (Designator), Designator,
-                           Is_Read => False, Is_Written => True);
+               if Designator.Kind = Libadalang.Common.Ada_Aggregate then
+                  for Nested of Designator.As_Base_Aggregate.F_Assocs loop
+                     if Nested.Kind =
+                       Libadalang.Common.Ada_Aggregate_Assoc
+                     then
+                        Include_Output
+                          (Nested.As_Aggregate_Assoc.F_R_Expr, Nested);
                      end if;
-                  exception
-                     when Exc : others =>
-                        Log_Verbose_Once
-                          ("skipping output designator resolution: " &
-                           Ada.Exceptions.Exception_Message (Exc));
-                  end;
+                  end loop;
+               else
+                  Include_Output (Designator, Designator);
                end if;
             end loop;
          end if;
