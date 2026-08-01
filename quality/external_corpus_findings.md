@@ -95,9 +95,43 @@ taken here beyond recording the quantified evidence.
   positive for an unsound "any loop touching it counts" false negative).
   Left open; not yet triaged as a bug versus an accepted scope boundary.
 
+## Simple Components (Dmitry A. Kazakov)
+
+- **Source**: `alire-project/dak_simple_components` on GitHub, a mirror of
+  the SourceForge `simplecomponentsforada` project. Large, mature, non-SPARK
+  "ordinary Ada" — a deliberate contrast to Tokeneer's SPARK style, by a
+  different author entirely.
+- **Method**: `adalang_analyzer -P components.gpr --recommended` (the core
+  pure-Ada project; excludes the database/crypto/network binding
+  sub-projects). 359 files scanned, 1322 violations.
+- **Result: no new confirmed analyzer false positive.** Spot-checked rather
+  than exhaustively verified:
+  - `Same_Operand`/`Duplicate_Boolean_Operand` caught a real bug in the
+    library itself: `unbounded_unsigneds-parallel.adb:99`,
+    `if S1.Length > 0 and then S1.Length > 0 then` (almost certainly meant
+    to compare two different operands) — a true positive, and useful
+    evidence the checks find genuine defects on code the project didn't
+    write.
+  - The 158 `Uninitialized_Output` findings include the same loop-based
+    array-fill pattern documented as open above (e.g.
+    `block_streams.adb`'s `Read`, filling `Item` via
+    `while Last < Item'Last loop Item (Last) := ...; end loop;`) —
+    corroborating evidence that the limitation is real and recurring, not a
+    Tokeneer-specific artifact, and that the `FP-004`–`FP-007` fixes did not
+    need revisiting.
+  - `Function_Side_Effect` (50 findings, sampled `generic_b_tree.adb`):
+    nested callback functions mutating an enclosing scope's local via
+    closure capture. Looks like a legitimate true positive in every sampled
+    case, not a checker defect.
+  - `Aliasing_Between_Parameters` (1 finding): `unbounded_unsigneds.adb:3934`,
+    `Mul (Q, Q);`, resolves to
+    `procedure Mul (Multiplicand : in out Unbounded_Unsigned; Multiplier : Unbounded_Unsigned)`
+    — `Multiplicand` is written, `Multiplier` is read, both actuals are the
+    same object. A textbook true positive for the exact condition Ada RM
+    6.4.1 leaves unspecified, even though squaring in place is very likely
+    safe in this particular implementation.
+
 ## Future corpora
 
 Candidates identified but not yet run: CubedOS (SPARK cubesat flight
-software), the Muen Separation Kernel, Simple Components (large non-SPARK
-"ordinary Ada" library, a useful contrast to Tokeneer's SPARK style), and AWS
-(Ada Web Server).
+software), the Muen Separation Kernel, and AWS (Ada Web Server).
