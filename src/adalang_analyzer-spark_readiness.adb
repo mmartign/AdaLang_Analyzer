@@ -542,15 +542,45 @@ package body Adalang_Analyzer.SPARK_Readiness is
       Param  : Libadalang.Analysis.Param_Spec;
       Name   : String) return Boolean
    is
-      Decl : Libadalang.Analysis.Basic_Decl;
+      --  A write to a field of Param (Param.Field := ...), an element or
+      --  slice of it (Param (I) := ..., Param (Lo .. Hi) := ...), any
+      --  nested combination of those, or passing such a fragment as an
+      --  out actual elsewhere, still counts as writing Param at this
+      --  analysis's granularity: it has no per-field or per-element
+      --  tracking, so it cannot verify that every field or index was
+      --  covered, only that the object is being written at all. Walk down
+      --  through nested selected components and indexed/sliced names
+      --  (indexing and slicing share Call_Expr's syntax with an ordinary
+      --  call, disambiguated only by semantic resolution this analysis
+      --  does not need here) to the innermost prefix identifier before
+      --  comparing it against Param -- the same coarse, whole-object
+      --  treatment of composites already documented for Uninitialized_Read
+      --  (see the precision corpus).
+      Current : Libadalang.Analysis.Ada_Node := Libadalang.Analysis.Ada_Node
+        (Node);
+      Decl    : Libadalang.Analysis.Basic_Decl;
    begin
-      if Libadalang.Analysis.Is_Null (Node)
-        or else Node.Kind /= Libadalang.Common.Ada_Identifier
-        or else Normalize_Rule_Name (Node_Text (Node)) /= Name
+      loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            exit;
+         elsif Current.Kind = Libadalang.Common.Ada_Dotted_Name then
+            Current := Libadalang.Analysis.Ada_Node
+              (Current.As_Dotted_Name.F_Prefix);
+         elsif Current.Kind = Libadalang.Common.Ada_Call_Expr then
+            Current := Libadalang.Analysis.Ada_Node
+              (Current.As_Call_Expr.F_Name);
+         else
+            exit;
+         end if;
+      end loop;
+
+      if Libadalang.Analysis.Is_Null (Current)
+        or else Current.Kind /= Libadalang.Common.Ada_Identifier
+        or else Normalize_Rule_Name (Node_Text (Current)) /= Name
       then
          return False;
       end if;
-      Decl := Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      Decl := Current.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
       return Libadalang.Analysis.Is_Null (Decl)
         or else Decl = Libadalang.Analysis.Basic_Decl (Param);
    exception

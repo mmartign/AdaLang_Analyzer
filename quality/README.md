@@ -118,6 +118,15 @@ Each precision correction has an executable regression:
 When another precision bug is fixed, add or extend a fixture and add its row
 here in the same change.
 
+## External corpus findings
+
+`external_corpus_findings.md` records validation runs against real Ada/SPARK
+code the project did not write (as opposed to the hand-constructed precision
+corpus above), starting with a 120-file Tokeneer run that produced three
+confirmed, fixed false positives (`FP-004`, `FP-005`, `FP-006` in
+`known_analysis_issues.tsv`) and a quantified scope observation about
+`--verify`'s non-relational, intraprocedural limits on real code.
+
 ## Differential corpus
 
 The GNATprove differential gate contains 16 clean and 5 deliberately broken
