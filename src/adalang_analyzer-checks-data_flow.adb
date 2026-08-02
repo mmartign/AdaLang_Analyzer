@@ -15,7 +15,8 @@
 with Langkit_Support.Text;
 with Libadalang.Common;
 
-with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Ada_Text;  use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Checks.Data_Flow is
 
@@ -245,56 +246,246 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       return False;
    end Reads_Declaration;
 
+   --  Param's formal mode, found by walking up from its Defining_Name to
+   --  the enclosing Param_Spec. Mirrors Adalang_Analyzer.SPARK_Readiness.
+   --  Formal_Mode.
+   function Formal_Mode
+     (Param : Libadalang.Analysis.Defining_Name'Class)
+      return Libadalang.Common.Ada_Node_Kind_Type
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Param);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_Param_Spec then
+            return Current.As_Param_Spec.F_Mode.Kind;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return Libadalang.Common.Ada_Mode_Default;
+   exception
+      when others =>
+         return Libadalang.Common.Ada_Mode_Default;
+   end Formal_Mode;
+
+   --  The Position'th formal (1-based, flattening multi-name Param_Specs
+   --  like "A, B : out Integer" into two positions) of Call's callee,
+   --  resolved leniently: only the callee name itself needs to resolve,
+   --  not which exact overload was selected. Valid only for a purely
+   --  positional actual at that position. Mirrors Adalang_Analyzer.
+   --  SPARK_Readiness.Callee_Formal_At_Position -- duplicated rather than
+   --  shared, consistent with this project's existing style of small,
+   --  explicit per-module helpers over cross-module reuse for this kind
+   --  of narrow, leaf-level function.
+   function Callee_Formal_At_Position
+     (Call     : Libadalang.Analysis.Call_Expr'Class;
+      Position : Positive) return Libadalang.Analysis.Defining_Name
+   is
+      Callee : constant Libadalang.Analysis.Basic_Decl :=
+        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      Spec   : Libadalang.Analysis.Base_Subp_Spec;
+      Index  : Natural := 0;
+   begin
+      if Libadalang.Analysis.Is_Null (Callee) then
+         return Libadalang.Analysis.No_Defining_Name;
+      end if;
+      Spec := Callee.P_Subp_Spec_Or_Null;
+      if Libadalang.Analysis.Is_Null (Spec) then
+         return Libadalang.Analysis.No_Defining_Name;
+      end if;
+      for Formal of Spec.P_Params loop
+         for Id of Formal.F_Ids loop
+            Index := Index + 1;
+            if Index = Position then
+               return Id.As_Defining_Name;
+            end if;
+         end loop;
+      end loop;
+      return Libadalang.Analysis.No_Defining_Name;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Defining_Name;
+   end Callee_Formal_At_Position;
+
+   --  The callee's formal (of any name) whose own name matches
+   --  Designator_Name (already normalized), resolved as leniently as
+   --  Callee_Formal_At_Position. Mirrors Adalang_Analyzer.SPARK_Readiness.
+   --  Callee_Formal_By_Name.
+   function Callee_Formal_By_Name
+     (Call            : Libadalang.Analysis.Call_Expr'Class;
+      Designator_Name : String) return Libadalang.Analysis.Defining_Name
+   is
+      Callee : constant Libadalang.Analysis.Basic_Decl :=
+        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      Spec   : Libadalang.Analysis.Base_Subp_Spec;
+   begin
+      if Libadalang.Analysis.Is_Null (Callee) then
+         return Libadalang.Analysis.No_Defining_Name;
+      end if;
+      Spec := Callee.P_Subp_Spec_Or_Null;
+      if Libadalang.Analysis.Is_Null (Spec) then
+         return Libadalang.Analysis.No_Defining_Name;
+      end if;
+      for Formal of Spec.P_Params loop
+         for Id of Formal.F_Ids loop
+            if Text_Utils.Normalize_Rule_Name (Node_Text (Id)) =
+              Designator_Name
+            then
+               return Id.As_Defining_Name;
+            end if;
+         end loop;
+      end loop;
+      return Libadalang.Analysis.No_Defining_Name;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Defining_Name;
+   end Callee_Formal_By_Name;
+
+   --  Whether Assoc (the Position'th positional or named actual, matched
+   --  as writing Decl) is passed to an out/in-out formal, per Assoc.
+   --  P_Get_Params's own precise per-actual resolution when that
+   --  resolves at least one formal, or else -- since P_Get_Params can
+   --  fail entirely (return an empty result) even for an otherwise-
+   --  unambiguous call, the same Libadalang resolution fragility already
+   --  documented for Statement_Writes_Parameter (SPARK_Readiness,
+   --  Uninitialized_Output's own write detection): heavily overloaded
+   --  callees, or a formal typed Ada.Calendar.Time, are both confirmed
+   --  triggers -- the same lenient fallback used there: resolving just
+   --  the callee name and pairing by position or designator.
+   function Association_Writes_Actual
+     (Call     : Libadalang.Analysis.Call_Expr;
+      Assoc    : Libadalang.Analysis.Param_Assoc;
+      Position : Positive) return Boolean
+   is
+      Found_Formal : Boolean := False;
+   begin
+      for Formal_Name of
+        Assoc.P_Get_Params (Imprecise_Fallback => True)
+      loop
+         declare
+            Ancestor : Libadalang.Analysis.Ada_Node := Formal_Name.Parent;
+         begin
+            while not Libadalang.Analysis.Is_Null (Ancestor)
+              and then Ancestor.Kind not in
+                Libadalang.Common.Ada_Param_Spec_Range
+            loop
+               Ancestor := Ancestor.Parent;
+            end loop;
+
+            if not Libadalang.Analysis.Is_Null (Ancestor) then
+               Found_Formal := True;
+               if Ancestor.As_Param_Spec.F_Mode.Kind in
+                 Libadalang.Common.Ada_Mode_Out_Range
+                   | Libadalang.Common.Ada_Mode_In_Out_Range
+               then
+                  return True;
+               end if;
+            end if;
+         end;
+      end loop;
+
+      if Found_Formal then
+         return False;
+      end if;
+
+      declare
+         Formal : constant Libadalang.Analysis.Defining_Name :=
+           (if Libadalang.Analysis.Is_Null (Assoc.F_Designator) then
+               Callee_Formal_At_Position (Call, Position)
+            else
+               Callee_Formal_By_Name
+                 (Call,
+                  Text_Utils.Normalize_Rule_Name
+                    (Node_Text (Assoc.F_Designator))));
+      begin
+         return not Libadalang.Analysis.Is_Null (Formal)
+           and then Formal_Mode (Formal) in
+             Libadalang.Common.Ada_Mode_Out_Range
+               | Libadalang.Common.Ada_Mode_In_Out_Range;
+      end;
+   exception
+      when others =>
+         return False;
+   end Association_Writes_Actual;
+
+   --  The read-side counterpart to Association_Writes_Actual, with the
+   --  same fallback for the same reason.
+   function Association_Reads_Simple_Actual
+     (Call     : Libadalang.Analysis.Call_Expr;
+      Assoc    : Libadalang.Analysis.Param_Assoc;
+      Position : Positive) return Boolean
+   is
+      Found_Formal : Boolean := False;
+   begin
+      for Formal_Name of
+        Assoc.P_Get_Params (Imprecise_Fallback => True)
+      loop
+         declare
+            Ancestor : Libadalang.Analysis.Ada_Node := Formal_Name.Parent;
+         begin
+            while not Libadalang.Analysis.Is_Null (Ancestor)
+              and then Ancestor.Kind not in
+                Libadalang.Common.Ada_Param_Spec_Range
+            loop
+               Ancestor := Ancestor.Parent;
+            end loop;
+
+            if not Libadalang.Analysis.Is_Null (Ancestor) then
+               Found_Formal := True;
+               if Ancestor.As_Param_Spec.F_Mode.Kind not in
+                 Libadalang.Common.Ada_Mode_Out_Range
+               then
+                  return True;
+               end if;
+            end if;
+         end;
+      end loop;
+
+      if Found_Formal then
+         return False;
+      end if;
+
+      declare
+         Formal : constant Libadalang.Analysis.Defining_Name :=
+           (if Libadalang.Analysis.Is_Null (Assoc.F_Designator) then
+               Callee_Formal_At_Position (Call, Position)
+            else
+               Callee_Formal_By_Name
+                 (Call,
+                  Text_Utils.Normalize_Rule_Name
+                    (Node_Text (Assoc.F_Designator))));
+      begin
+         return not Libadalang.Analysis.Is_Null (Formal)
+           and then Formal_Mode (Formal) not in
+             Libadalang.Common.Ada_Mode_Out_Range;
+      end;
+   exception
+      when others =>
+         return False;
+   end Association_Reads_Simple_Actual;
+
    function Call_Writes_Declaration
      (Node : Libadalang.Analysis.Call_Expr;
       Decl : Libadalang.Analysis.Basic_Decl) return Boolean
    is
-      function Association_Writes_Actual
-        (Assoc : Libadalang.Analysis.Param_Assoc) return Boolean
-      is
-      begin
-         for Formal_Name of
-           Assoc.P_Get_Params (Imprecise_Fallback => True)
-         loop
-            declare
-               Ancestor : Libadalang.Analysis.Ada_Node := Formal_Name.Parent;
-            begin
-               while not Libadalang.Analysis.Is_Null (Ancestor)
-                 and then Ancestor.Kind not in
-                   Libadalang.Common.Ada_Param_Spec_Range
-               loop
-                  Ancestor := Ancestor.Parent;
-               end loop;
-
-               if not Libadalang.Analysis.Is_Null (Ancestor)
-                 and then Ancestor.As_Param_Spec.F_Mode.Kind in
-                   Libadalang.Common.Ada_Mode_Out_Range
-                     | Libadalang.Common.Ada_Mode_In_Out_Range
-               then
-                  return True;
-               end if;
-            end;
-         end loop;
-
-         return False;
-      exception
-         when others =>
-            return False;
-      end Association_Writes_Actual;
+      Position : Natural := 0;
    begin
       for I in 1 .. Node.F_Suffix.Children_Count loop
          declare
             Child : constant Libadalang.Analysis.Ada_Node :=
               Node.F_Suffix.Child (I);
          begin
-            if Child.Kind = Libadalang.Common.Ada_Param_Assoc
-              and then Child.As_Param_Assoc.F_R_Expr.Kind =
-                Libadalang.Common.Ada_Identifier
-              and then Matches_Declaration
-                (Child.As_Param_Assoc.F_R_Expr, Decl)
-              and then Association_Writes_Actual (Child.As_Param_Assoc)
-            then
-               return True;
+            if Child.Kind = Libadalang.Common.Ada_Param_Assoc then
+               Position := Position + 1;
+               if Child.As_Param_Assoc.F_R_Expr.Kind =
+                    Libadalang.Common.Ada_Identifier
+                 and then Matches_Declaration
+                   (Child.As_Param_Assoc.F_R_Expr, Decl)
+                 and then Association_Writes_Actual
+                   (Node, Child.As_Param_Assoc, Position)
+               then
+                  return True;
+               end if;
             end if;
          end;
       end loop;
@@ -306,41 +497,24 @@ package body Adalang_Analyzer.Checks.Data_Flow is
      (Node : Libadalang.Analysis.Call_Expr;
       Decl : Libadalang.Analysis.Basic_Decl) return Boolean
    is
+      Position : Natural := 0;
    begin
       for I in 1 .. Node.F_Suffix.Children_Count loop
          declare
             Child : constant Libadalang.Analysis.Ada_Node :=
               Node.F_Suffix.Child (I);
          begin
-            if Child.Kind = Libadalang.Common.Ada_Param_Assoc
-              and then Child.As_Param_Assoc.F_R_Expr.Kind =
-                Libadalang.Common.Ada_Identifier
-              and then Matches_Declaration
-                (Child.As_Param_Assoc.F_R_Expr, Decl)
-            then
-               for Formal_Name of
-                 Child.As_Param_Assoc.P_Get_Params
-                   (Imprecise_Fallback => True)
-               loop
-                  declare
-                     Ancestor : Libadalang.Analysis.Ada_Node :=
-                       Formal_Name.Parent;
-                  begin
-                     while not Libadalang.Analysis.Is_Null (Ancestor)
-                       and then Ancestor.Kind not in
-                         Libadalang.Common.Ada_Param_Spec_Range
-                     loop
-                        Ancestor := Ancestor.Parent;
-                     end loop;
-
-                     if not Libadalang.Analysis.Is_Null (Ancestor)
-                       and then Ancestor.As_Param_Spec.F_Mode.Kind not in
-                         Libadalang.Common.Ada_Mode_Out_Range
-                     then
-                        return True;
-                     end if;
-                  end;
-               end loop;
+            if Child.Kind = Libadalang.Common.Ada_Param_Assoc then
+               Position := Position + 1;
+               if Child.As_Param_Assoc.F_R_Expr.Kind =
+                    Libadalang.Common.Ada_Identifier
+                 and then Matches_Declaration
+                   (Child.As_Param_Assoc.F_R_Expr, Decl)
+                 and then Association_Reads_Simple_Actual
+                   (Node, Child.As_Param_Assoc, Position)
+               then
+                  return True;
+               end if;
             end if;
          end;
       end loop;

@@ -704,3 +704,66 @@ Covered by `uninitialized_read_nested_subprogram_order_clean.adb` (clean)
 and `uninitialized_read_nested_subprogram_order_guard.adb` (a genuine,
 direct read in the enclosing subprogram's own statements, near an
 unrelated nested subprogram, must still be flagged).
+
+### Confirmed analyzer mistake (fixed): FP-018
+
+Following up on the `aws-net-acceptors.adb:274` finding FP-017 exposed
+(`Error` misreported as read-before-assignment, even though `Sets.
+Is_Read_Ready (Acceptor.Set, Acceptor.Index, Ready, Error);` genuinely
+initializes it): building a minimal, isolated reproduction of *that exact
+file* proved surprisingly resistant — several attempts at recreating its
+nested-generic-instantiation shape (`package Sets is new Generic_Sets
+(Socket_Data_Type);` inside the generic package `AWS.Net.Acceptors`)
+stayed clean. Running the real file standalone (outside the 273-file
+batch) was clean too, confirming the batch context itself matters to
+Libadalang's resolution behavior here — a materially harder thing to
+isolate than any earlier finding this pass.
+
+Rather than keep guessing at the trigger, the question was reframed:
+`Uninitialized_Read`'s write-detection (`Call_Writes_Declaration`,
+`Call_Reads_Simple_Actual` in `Checks.Data_Flow`) relies solely on
+Libadalang's `Assoc.P_Get_Params (Imprecise_Fallback => True)` — the
+*exact* per-actual resolution mechanism already proven, twice, to fail on
+an otherwise-unambiguous call (`FP-008`: heavy overload; `FP-012`: a
+formal typed `Ada.Calendar.Time`) for a *different* check's write
+detection (`SPARK_Readiness.Statement_Writes_Parameter`, behind
+`Uninitialized_Output`), which already has a lenient fallback for exactly
+this. `Uninitialized_Read`'s own detection never received the same
+fallback. Reusing the already-confirmed `FP-012` trigger directly against
+`Uninitialized_Read` (not `aws-net-acceptors.adb` at all) reproduced a
+clean, reliable, in-isolation failure:
+
+```ada
+Waiter_Information.Info (S, M, D, C);   --  D : Ada.Calendar.Time
+if C = 0 then                           --  falsely "read before assigned"
+```
+
+confirming the same resolution gap independently affects this check too,
+without needing to pin down `aws-net-acceptors.adb`'s own specific
+trigger.
+
+Fixed by adding `Callee_Formal_At_Position`, `Callee_Formal_By_Name`, and
+`Formal_Mode` to `Checks.Data_Flow` — duplicating, not sharing, the
+equivalent functions already in `SPARK_Readiness` (this project's
+established style for this kind of narrow, leaf-level helper) — and using
+them in `Call_Writes_Declaration`/`Call_Reads_Simple_Actual` exactly as
+`Statement_Writes_Parameter` already does: whenever `P_Get_Params`
+resolves no formal at all for a given actual, fall back to resolving just
+the callee name and pairing by position or designator.
+
+Confirmed against the real corpus: one instance disappeared —
+`aws-session.adb`'s `Get_Value`, where `Found` is genuinely initialized by
+`Get_Node (Sessions, SID, Node, Found);` — with no new findings appearing
+anywhere.
+
+The `aws-net-acceptors.adb` finding that prompted this investigation,
+however, is **still open**: it only reproduces in the full 273-file batch
+context, and even `Callee_Formal_At_Position`'s own callee-name
+resolution (`Call.F_Name.P_Referenced_Decl`) apparently still fails
+there — a different, deeper layer of the same general problem than the
+one this fix addresses, needing its own investigation.
+
+Covered by `uninitialized_read_positional_forward_clean.adb` (clean) and
+`uninitialized_read_positional_forward_guard.adb` (a variable never
+forwarded at all, at the same resolution-fragile callee shape, must still
+be flagged).
