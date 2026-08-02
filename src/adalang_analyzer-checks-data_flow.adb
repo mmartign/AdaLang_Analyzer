@@ -80,6 +80,30 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       Resolved : constant Libadalang.Analysis.Basic_Decl :=
         Referenced_Declaration (Node);
    begin
+      --  An attribute designator ("Last" in "Data'Last", "First" in
+      --  "Data'First", ...) is syntactically an identifier but never
+      --  refers to a declaration -- Libadalang's own resolution correctly
+      --  returns null for it, which would otherwise fall through to the
+      --  spelling-based fallback below and get mistaken for an unrelated
+      --  local variable of the same name. "First" and "Last" are also two
+      --  of the most common variable names for tracking string/array
+      --  bounds, the exact scenario this collides with; observed in the
+      --  wild misclassifying "Last := Fixed.Index (Data (First .. Data
+      --  'Last), ...);" -- Last's own initializing assignment -- as a
+      --  read of Last because "Data'Last" was matched by spelling.
+      --  Checking the node's own prefix identity (not just its Kind and
+      --  parent's Kind) is required so a genuine reference used as an
+      --  attribute prefix, e.g. "Last'Size" where Last really is the
+      --  tracked variable, is not also excluded.
+      if Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Node.Parent.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Libadalang.Analysis.Ada_Node
+          (Node.Parent.As_Attribute_Ref.F_Attribute) =
+            Libadalang.Analysis.Ada_Node (Node)
+      then
+         return False;
+      end if;
+
       if not Libadalang.Analysis.Is_Null (Resolved) then
          return Resolved = Decl;
       end if;

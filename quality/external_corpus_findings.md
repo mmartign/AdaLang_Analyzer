@@ -475,3 +475,86 @@ parameter) — with no new findings appearing anywhere in the corpus.
 Covered by `wrong_parameter_mode_partial_write_clean.adb` (clean) and
 `wrong_parameter_mode_partial_write_guard.adb` (a direct, whole-object
 assignment must still be flagged).
+
+### Confirmed analyzer mistake (fixed): FP-015
+
+Moving on to `Uninitialized_Read` (39 findings, no single file
+concentrated like the previous two categories): the top file,
+`aws-headers-values.adb` (6 findings), included one that stood out —
+flagged at the variable's own initializing assignment:
+
+```ada
+Last  : Natural;
+begin
+   Last := Fixed.Index (Data (First .. Data'Last), VDel);
+```
+
+`Last := Fixed.Index (...)` is `Last`'s first and only prior mention —
+its own initializing write — yet the analyzer reported it as a *read*.
+The expression also contains `Data'Last`, an **attribute designator**:
+syntactically an identifier (Libadalang parses the "Last" naming the
+attribute as an `Ada_Identifier` node), but never a reference to any
+declaration. `Adalang_Analyzer.Checks.Data_Flow.Matches_Declaration` —
+shared read/write-detection infrastructure used by `Uninitialized_Read`,
+`Dead_Store`, and other data-flow checks — first attempts semantic
+resolution, then falls back to a plain spelling comparison whenever that
+fails. Libadalang's resolution correctly returns null for the attribute
+designator, which fed straight into that fallback: its spelling ("Last")
+matched the unrelated local variable `Last` by pure text, misclassifying
+the whole statement as a read of it before that same statement's write
+was even considered. `First` and `Last` are two of the most common
+variable names for tracking string/array bounds — exactly the standard
+attributes they collide with — so this was a broad, easy-to-hit class,
+not a one-off.
+
+Reproduced in isolation before changing anything:
+
+```ada
+procedure Repro_Last (Data : String) is
+   Last : Natural;
+begin
+   Last := Ada.Strings.Fixed.Index (Data (Data'First .. Data'Last), "x");
+end Repro_Last;
+```
+
+flagged `Uninitialized_Read` on `Last`; renaming the variable to
+`Position` (same shape, no colliding attribute) produced no finding,
+confirming the collision was the cause.
+
+Fixed by adding an early check in `Matches_Declaration`: an identifier
+that is specifically the `F_Attribute` child of its parent `Attribute_
+Ref` (not merely appearing somewhere inside one, so a genuine reference
+used as an attribute *prefix* — e.g. `Last'Size` where `Last` really is
+the tracked variable — is unaffected) never matches any declaration,
+returning `False` before the spelling fallback ever runs.
+
+Confirmed against the real corpus: `Uninitialized_Read` findings dropped
+from 39 to 35 — `aws-headers-values.adb`, `aws-log.adb`,
+`aws-config-ini.adb`, `aws-config-utils.adb`, one each — with no new
+findings appearing anywhere and no change to any other check's totals in
+this corpus (though the fix, being in shared infrastructure, should also
+help `Dead_Store` and the other checks that call `Matches_Declaration` on
+future corpora).
+
+The other 5 `Uninitialized_Read` findings in `aws-headers-values.adb`
+turned out to be a second, distinct bug, not yet fixed: `Split`'s nested
+function `To_Set` declares locals (`Name_First`, `Name_Last`, `Value_
+First`, `Value_Last`) that are fully initialized by a call to `Next_Value`
+(all four are its `out`-mode formals) before `To_Set`'s own nested
+function `Element` — which reads them as up-level references — is ever
+invoked; `Element`'s body, however, is textually declared *before* that
+`Next_Value` call, and `Data_Flow.First_Access`'s plain pre-order AST walk
+has no special case for a nested subprogram body being a declaration
+(elaborated, not executed, at its textual position) rather than a
+statement, so it finds the read inside `Element`'s body before it reaches
+the initializing call. The same shape affects `Split` itself over `First`
+(read inside `To_Set`, which textually precedes `Split`'s own initializing
+assignment to `First`). Left open for a future pass — the fix requires
+`First_Access` to distinguish a nested subprogram's declaration position
+from its actual call sites, a materially different traversal than the
+attribute-designator fix above.
+
+Covered by `uninitialized_read_attribute_designator_clean.adb` (clean)
+and `uninitialized_read_attribute_designator_guard.adb` (a genuine
+attribute-prefix reference to the tracked variable must still be
+flagged).
