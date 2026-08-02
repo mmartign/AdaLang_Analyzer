@@ -145,7 +145,9 @@ package body Adalang_Analyzer.CLI is
         ("  -generic-threshold=<n> Set generic-instantiation limit (default: 10)");
       Ada.Text_IO.Put_Line
         ("  -dependency-threshold=<n> Set with-clause limit (default: 20)");
-      Ada.Text_IO.Put_Line ("  -v, -verbose          Enable verbose output");
+      Ada.Text_IO.Put_Line
+        ("  -v, -verbose          Enable verbose output (required in text" &
+         " format to list per-proof-obligation detail lines)");
       Ada.Text_IO.Put_Line ("  -q, -quiet            Suppress summary output");
       Ada.Text_IO.Put_Line
         ("  --config=<file>       Use this config file instead of " &
@@ -1358,6 +1360,10 @@ package body Adalang_Analyzer.CLI is
                      end if;
                   end;
                end loop;
+            else
+               Ada.Text_IO.Put_Line
+                 ("  (details suppressed; rerun with -v to list each" &
+                  " proof obligation)");
             end if;
          end if;
 

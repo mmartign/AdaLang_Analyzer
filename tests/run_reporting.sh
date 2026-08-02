@@ -154,6 +154,24 @@ grep -F '      why: assertion condition is false based on the incoming state' \
 grep -F '      evidence: assertion condition => false' \
   "$work/proof-text" >/dev/null
 
+#  Without -v the per-obligation detail lines are omitted, but the summary
+#  still declares a nonzero total; a note must make that omission explicit
+#  so downstream tooling parsing the text report isn't silently misled.
+if "$analyzer" -checks=Known_Assertion_Failure \
+     tests/proof_assertion_findings.adb >"$work/proof-text-quiet" 2>&1
+then
+   echo "expected proof assertion fixture to produce violations" >&2
+   exit 1
+fi
+grep -F '  Total : 3' "$work/proof-text-quiet" >/dev/null
+grep -F \
+  '  (details suppressed; rerun with -v to list each proof obligation)' \
+  "$work/proof-text-quiet" >/dev/null
+if grep -F '  Details:' "$work/proof-text-quiet" >/dev/null; then
+   echo "did not expect proof obligation details without -v" >&2
+   exit 1
+fi
+
 #  A clean finding run is not presented as proved safe. Its applicable
 #  assertions are visible as unproved while the command remains successful.
 "$analyzer" --format=json --output="$clean_proof_json" \

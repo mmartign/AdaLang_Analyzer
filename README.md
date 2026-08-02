@@ -154,8 +154,13 @@ fields, and SARIF results preserve both values in their `properties` object.
 This is initially populated for contradictory conditions and selected
 assertion, contract, range, index, overflow, and division-by-zero findings;
 other checks retain their existing message and rule guidance while they are
-migrated incrementally. Running with `-v` also prints the method, explanation,
-abstract-state evidence, and source of imprecision for each proof obligation.
+migrated incrementally. In text output, individual proof obligations are only
+listed with `-v`; without it, only the aggregate total and per-status counts
+are printed. Running with `-v` prints each obligation's location, method,
+explanation, abstract-state evidence, and source of imprecision. Tooling that
+parses the text report for individual proof obligations must pass `-v`, or use
+`--format=json`/`--compliance-report`, which always include the full
+per-obligation data regardless of verbosity.
 
 The data-flow checks are intraprocedural and deliberately conservative.
 `Dead_Store` follows resolved simple-object and array-component assignments in
@@ -596,7 +601,8 @@ Useful options include:
                  Set the Generic_Instantiation_Limit (default: 10)
 -dependency-threshold=<n>
                  Set the Dependency_Limit (default: 20)
--v, -verbose     Print files as they are parsed
+-v, -verbose     Print files as they are parsed; required in text format to
+                 list per-proof-obligation detail lines
 -q, -quiet       Suppress the final summary
 --config=<file>  Use this config file instead of auto-discovery
 --no-config      Disable auto-discovery of adalang_analyzer.cfg
