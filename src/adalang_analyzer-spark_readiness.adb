@@ -537,6 +537,35 @@ package body Adalang_Analyzer.SPARK_Readiness is
       end loop;
    end Collect_Accesses;
 
+   --  The nearest enclosing Subp_Body or Entry_Body containing Node, i.e.
+   --  the declaration whose own defining name a nested statement can use
+   --  to prefix-qualify one of its own formal parameters (Ada's general
+   --  unit-name qualification, RM 8.3), typically to reach a parameter
+   --  that a same-named component of an enclosing protected or task
+   --  object would otherwise shadow for simple-name visibility.
+   --  No_Basic_Decl if Node isn't nested in either.
+   function Enclosing_Subprogram_Or_Entry
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is
+      Current : Libadalang.Analysis.Ada_Node := Libadalang.Analysis.Ada_Node
+        (Node);
+   begin
+      loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Libadalang.Analysis.No_Basic_Decl;
+         elsif Current.Kind in Libadalang.Common.Ada_Subp_Body
+           | Libadalang.Common.Ada_Entry_Body
+         then
+            return Current.As_Basic_Decl;
+         end if;
+         Current := Current.Parent;
+      end loop;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Enclosing_Subprogram_Or_Entry;
+
    function Same_Parameter
      (Node   : Libadalang.Analysis.Ada_Node'Class;
       Param  : Libadalang.Analysis.Param_Spec;
@@ -560,6 +589,32 @@ package body Adalang_Analyzer.SPARK_Readiness is
         (Node);
       Decl    : Libadalang.Analysis.Basic_Decl;
    begin
+      --  "Subp_Name.Param := ...;" inside "procedure Subp_Name (Param :
+      --  out ...)" writes Param via the subprogram's own name used as a
+      --  qualifier, not a field access on some other object named
+      --  Subp_Name -- there is none. Recognized before the prefix-unwrap
+      --  loop below, which would otherwise inspect "Subp_Name" (the
+      --  qualifier) instead of "Param" (the actual target, in the
+      --  suffix) and wrongly conclude the parameter was never written.
+      if Current.Kind = Libadalang.Common.Ada_Dotted_Name
+        and then Normalize_Rule_Name
+          (Node_Text (Current.As_Dotted_Name.F_Suffix)) = Name
+      then
+         declare
+            Prefix_Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Current.As_Dotted_Name.F_Prefix.P_Referenced_Decl
+                (Imprecise_Fallback => True);
+            Enclosing   : constant Libadalang.Analysis.Basic_Decl :=
+              Enclosing_Subprogram_Or_Entry (Node);
+         begin
+            if not Libadalang.Analysis.Is_Null (Enclosing)
+              and then Prefix_Decl = Enclosing
+            then
+               return True;
+            end if;
+         end;
+      end if;
+
       loop
          if Libadalang.Analysis.Is_Null (Current) then
             exit;

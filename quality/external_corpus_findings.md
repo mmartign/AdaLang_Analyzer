@@ -276,6 +276,61 @@ live re-run of the checkout):
 | Total violations | 41 | 34 |
 | `Uninitialized_Output` | 8 | 1 (genuine stub) |
 
-## Future corpora
+## AWS (Ada Web Server, AdaCore/aws)
 
-AWS (Ada Web Server) remains a candidate, not yet run.
+- **Source**: `AdaCore/aws` on GitHub. The full project (`aws.gpr`) is an
+  aggregate requiring its own `make setup` (external variables like
+  `TGT_DIR`, plus XMLAda/GNATcoll/OpenSSL availability), which this
+  environment doesn't have configured. Rather than build that out, ran
+  directly against source files with no `-P`, the same fallback used for
+  Muen: `src/core`, `src/extended`, `src/http2` (273 `.ads`/`.adb` files;
+  `templates_parser` is an unfetched git submodule and was skipped).
+- **Method**: `adalang_analyzer --recommended` over all 273 files at once
+  (passed via `xargs` from a file list, not as shell-expanded positional
+  arguments — the file count is large enough that it's worth naming the
+  invocation shape explicitly for reproducibility).
+- **Baseline run**: 382 violations. Largest categories: `Wrong_Parameter_Mode`
+  (126), `Uninitialized_Output` (112), `Uninitialized_Read` (39),
+  `Dead_Store` (23), `Empty_Exception_Handler` (20).
+
+### Confirmed analyzer mistake (fixed): FP-011
+
+Sampling the `Uninitialized_Output` findings (spot-checked, not exhaustively
+verified — same methodology as Simple Components), `aws-server-push.adb`
+stood out: its `protected body Waiter_Information` writes each of its `Info`
+procedure's four out parameters as `Info.Size := ...;`, `Info.Counter :=
+...;`, etc. — using the enclosing procedure's own name (`Info`) to qualify
+its own parameters. This is standard Ada (RM 8.3's general unit-name
+qualification): `Waiter_Information` (the protected object) has same-named
+private components (`Size`, `Counter`, ...), which would otherwise shadow
+the parameters for simple-name visibility inside the body, so the codebase's
+style consistently disambiguates by prefixing with the *enclosing
+subprogram's own name*, not the protected object's. `Same_Parameter`'s
+existing prefix-unwrap loop always inspected a `Dotted_Name`'s prefix
+(`Info`) and discarded the suffix (`Size`), so it checked the wrong
+identifier against the tracked parameter name and concluded it was never
+written — even though this is a completely different shape from the
+`Param.Field := ...` case `Same_Parameter` already handles (there, the
+*prefix* is the tracked object and the *suffix* is one of its fields; here,
+the *suffix* is the tracked object and the *prefix* is just a qualifier
+naming the enclosing unit).
+
+Fixed by adding a check, ahead of the existing unwrap loop, for exactly this
+shape: the suffix matches the tracked parameter's name, and the prefix
+resolves to the nearest enclosing `Subp_Body` or `Entry_Body` (the new
+`Enclosing_Subprogram_Or_Entry`). This is narrow and additive — it requires
+an exact correspondence between the prefix and the specific enclosing
+construct, so a genuinely different, same-named entity (e.g. `R.Size :=
+...;` where `R` is a different `in out` parameter of a record type with its
+own `Size` field) is unaffected; verified with a guard fixture
+(`uninitialized_output_own_name_qualifier_guard.adb`) alongside the clean
+one. Confirmed against the real file by diffing `aws-server-push.adb`'s own
+`Uninitialized_Output` output before and after the fix: exactly the 6
+targeted findings (the `Info` procedure's 4 parameters, plus
+`Shutdown_If_Empty`'s `Open` and `Get`'s `Queue`, both qualified the same
+way elsewhere in the same file) disappeared, nothing new appeared. The
+file's remaining 10 `Uninitialized_Output` findings are unrelated — at
+least one looks like a distinct, unconfirmed gap (an out parameter forwarded
+by name to a *protected object's* operation, e.g. `Waiter_Information.Info
+(Size => Size, ...)`, rather than an ordinary subprogram) — not
+investigated further this pass.
