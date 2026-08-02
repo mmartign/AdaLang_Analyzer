@@ -556,6 +556,60 @@ package body Adalang_Analyzer.Checks.Declarations is
       return False;
    end Parameter_Is_Written;
 
+   --  Whether Node writes Param as a whole -- a direct assignment ("Param
+   --  := ...;"), forwarding to another out/in-out formal, or a
+   --  parameterless prefixed mutator call ("Param.Operation;") -- as
+   --  opposed to only a selected component, indexed component, or slice of
+   --  it ("Param.Field := ...;", "Param (I) := ...;"). Recommending mode
+   --  "out" for a parameter written only through such a partial
+   --  assignment destination would misrepresent its contract: "out"
+   --  formally disclaims any need for the incoming value, but a partial
+   --  write inherently depends on every part it does not touch already
+   --  holding a meaningful value from before the call (observed in the
+   --  wild: AWS.Config.Set's single-field config setters, each writing
+   --  one element of a many-element parameter array through "O.P
+   --  (Some_Key).Some_Field := Value;" while leaving every other
+   --  configuration value untouched, which Write_Target_Contains
+   --  Parameter's coarse, any-depth unwrap credited as writing the whole
+   --  Object). Identical to Parameter_Is_Written except for the
+   --  Assign_Stmt case, which requires the destination to be Param
+   --  itself rather than unwrapping down to it -- the other write shapes
+   --  already forward or fully replace the parameter, so they need no
+   --  narrower check here.
+   function Parameter_Is_Wholly_Written
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Param : Libadalang.Analysis.Param_Spec;
+      Name  : String) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+         return Parameter_Name_Matches
+           (Node.As_Assign_Stmt.F_Dest, Param, Name);
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
+         return Call_Uses_Parameter_Mode
+             (Node.As_Call_Expr.F_Suffix, Param, Name, For_Read => False)
+           or else
+             (Node.Parent.Kind = Libadalang.Common.Ada_Call_Stmt
+              and then Contains_Parameter_Reference
+                (Node.As_Call_Expr.F_Name, Param, Name));
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt
+        and then Node.As_Call_Stmt.F_Call.Kind =
+          Libadalang.Common.Ada_Dotted_Name
+      then
+         return Contains_Parameter_Reference
+           (Node.As_Call_Stmt.F_Call.As_Dotted_Name.F_Prefix, Param, Name);
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if Parameter_Is_Wholly_Written (Node.Child (I), Param, Name) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Parameter_Is_Wholly_Written;
+
    --  Reports Unused_Variable for every local object declared directly in
    --  Decls that is referenced nowhere among its sibling declarations or
    --  within Stmts, then recurses into every nested declare block
@@ -756,13 +810,18 @@ package body Adalang_Analyzer.Checks.Declarations is
                        Parameter_Is_Written (Subprogram.F_Decls, Param, Name)
                        or else Parameter_Is_Written
                          (Subprogram.F_Stmts, Param, Name);
+                     Is_Wholly_Written : constant Boolean :=
+                       Parameter_Is_Wholly_Written
+                         (Subprogram.F_Decls, Param, Name)
+                       or else Parameter_Is_Wholly_Written
+                         (Subprogram.F_Stmts, Param, Name);
                   begin
                      if Is_Read and then not Is_Written then
                         Report_Rule_Violation
                           (Unit, Id, Wrong_Parameter_Mode,
                            "parameter '" & Node_Text (Id) &
                              "' is only read; use mode in");
-                     elsif Is_Written and then not Is_Read then
+                     elsif Is_Wholly_Written and then not Is_Read then
                         Report_Rule_Violation
                           (Unit, Id, Wrong_Parameter_Mode,
                            "parameter '" & Node_Text (Id) &

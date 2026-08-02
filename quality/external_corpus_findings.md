@@ -421,3 +421,57 @@ scope for this project).
 Covered by `uninitialized_output_prefixed_clear_clean.adb` (clean) and
 `uninitialized_output_prefixed_clear_guard.adb` (still flags the
 unrelated-parameter case).
+
+### Confirmed analyzer mistake (fixed): FP-014
+
+With the `Uninitialized_Output` findings in `aws-server-push.adb`
+resolved, the corpus's largest remaining category — `Wrong_Parameter_Mode`
+at 126 findings — turned out to be extremely concentrated: 70 of the 126
+were in a single file, `aws-config-set.adb`, all with the identical shape:
+
+```ada
+procedure Accept_Queue_Size (O : in out Object; Value : Positive) is
+begin
+   O.P (Accept_Queue_Size).Pos_Value := Value;
+end Accept_Queue_Size;
+```
+
+`AWS.Config.Set` is a package of single-field setters, one per
+configuration key, each writing exactly one element of `Object`'s
+many-element parameter array (`O.P`) while leaving every other
+configuration value untouched. `Wrong_Parameter_Mode`'s write-detection
+(`Adalang_Analyzer.Checks.Declarations.Parameter_Is_Written`) delegates
+its `Assign_Stmt` case to `Write_Target_Contains_Parameter`, which
+deliberately unwraps any depth of nested selector/index to credit the
+base object as written — correct for `Dead_Store` and `Uninitialized_
+Output`'s coarser "was this touched at all" questions, but wrong for a
+mode-change recommendation: Ada's `out` mode formally disclaims any need
+for the parameter's incoming value, while a write to only part of it
+(`O.P (Accept_Queue_Size).Pos_Value`, one of dozens of independent
+elements) inherently depends on every untouched part already holding a
+meaningful prior value — precisely why these procedures are declared
+`in out`, not `out`, in the first place.
+
+Fixed by adding `Parameter_Is_Wholly_Written`: identical to `Parameter_
+Is_Written` (same call-forwarding and parameterless-prefixed-mutator
+cases, unchanged, from the `FP-013`-adjacent fix already in that
+function) except its `Assign_Stmt` case requires the destination to be
+the parameter itself (`Parameter_Name_Matches`, no unwrap) rather than
+any nested selector/index reaching down into it. Used only to gate the
+"is only written; use mode out" recommendation in `Analyze_Subprogram`;
+the "is only read; use mode in" recommendation, `Dead_Store`, and
+`Uninitialized_Output` all keep using the original, unchanged `Parameter_
+Is_Written`/`Write_Target_Contains_Parameter`, so their behavior is
+unaffected.
+
+Confirmed against the real corpus: `Wrong_Parameter_Mode` findings dropped
+from 126 to 54 — all 70 in `aws-config-set.adb`, plus 2 more of the
+identical shape found elsewhere in the same corpus
+(`AWS.Net.Generic_Sets.Set_Data`'s `Set.Set (Index).Data := Data;`,
+`AWS.Client.HTTP_Utils.Decrement_Authentication_Attempt`'s `Counter
+(Level) := @ - 1;`, both single-element writes into a larger array
+parameter) — with no new findings appearing anywhere in the corpus.
+
+Covered by `wrong_parameter_mode_partial_write_clean.adb` (clean) and
+`wrong_parameter_mode_partial_write_guard.adb` (a direct, whole-object
+assignment must still be flagged).
