@@ -854,6 +854,242 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return True;
    end Contains_Loop_Escape;
 
+   --  Param's array index type (dimension 0) when Param's own type is an
+   --  array type; No_Base_Type_Decl otherwise (including scalars, records,
+   --  and anything this analysis fails to resolve). Used to decide whether
+   --  a for-loop's iteration domain necessarily visits every index Param
+   --  has.
+   function Array_Index_Type
+     (Param : Libadalang.Analysis.Param_Spec)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+      Elem_Type : Libadalang.Analysis.Base_Type_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Param.F_Type_Expr) then
+         return Libadalang.Analysis.No_Base_Type_Decl;
+      end if;
+      Elem_Type := Param.F_Type_Expr.P_Designated_Type_Decl;
+      if Libadalang.Analysis.Is_Null (Elem_Type)
+        or else not Elem_Type.P_Is_Array_Type
+      then
+         return Libadalang.Analysis.No_Base_Type_Decl;
+      end if;
+      return Elem_Type.P_Index_Type (Dim => 0);
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Type_Decl;
+   end Array_Index_Type;
+
+   --  True when a for-loop's iteration expression necessarily visits every
+   --  value of Index_Type, recognized in exactly two shapes: a bare
+   --  subtype mark naming that same index subtype ("for I in Index_Type
+   --  loop", the common shape for an array declared "array (Index_Type)
+   --  of ..."), or "for I in Param'Range loop", whose coverage holds by
+   --  definition regardless of what the bounds actually are. Anything
+   --  else (an explicit "Low .. High" range, a constrained subtype
+   --  indication, a container iterator, ...) is left unrecognized rather
+   --  than risking a wrong match.
+   function Loop_Covers_Index_Range
+     (Spec       : Libadalang.Analysis.For_Loop_Spec;
+      Index_Type : Libadalang.Analysis.Base_Type_Decl;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Name       : String) return Boolean
+   is
+      Iter : constant Libadalang.Analysis.Ada_Node := Spec.F_Iter_Expr;
+   begin
+      if Libadalang.Analysis.Is_Null (Iter) then
+         return False;
+      end if;
+
+      case Iter.Kind is
+         when Libadalang.Common.Ada_Identifier
+            | Libadalang.Common.Ada_Dotted_Name =>
+            declare
+               Domain : constant Libadalang.Analysis.Basic_Decl :=
+                 Iter.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+            begin
+               return not Libadalang.Analysis.Is_Null (Domain)
+                 and then Domain.Kind in Libadalang.Common.Ada_Base_Type_Decl
+                 and then Libadalang.Analysis.Basic_Decl
+                   (Domain.As_Base_Type_Decl.P_Canonical_Type) =
+                     Libadalang.Analysis.Basic_Decl
+                       (Index_Type.P_Canonical_Type);
+            end;
+
+         when Libadalang.Common.Ada_Attribute_Ref =>
+            declare
+               Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                 Iter.As_Attribute_Ref;
+            begin
+               return
+                 Normalize_Rule_Name (Node_Text (Attr.F_Attribute)) =
+                   "range"
+                 and then Same_Parameter (Attr.F_Prefix, Param, Name);
+            end;
+
+         when others =>
+            return False;
+      end case;
+   exception
+      when others =>
+         return False;
+   end Loop_Covers_Index_Range;
+
+   --  The single index expression of a Call_Expr's suffix, e.g. the "I" in
+   --  "Arr (I)". No_Expr for anything but exactly one positional or named
+   --  actual (in particular, a multi-dimensional index list is left
+   --  unrecognized rather than guessed at).
+   function Single_Index_Expression
+     (Suffix : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Expr
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Suffix) then
+         return Libadalang.Analysis.No_Expr;
+      elsif Suffix.Kind in Libadalang.Common.Ada_Expr then
+         return Suffix.As_Expr;
+      elsif Suffix.Kind = Libadalang.Common.Ada_Assoc_List
+        and then Suffix.Children_Count = 1
+        and then Suffix.Child (1).Kind = Libadalang.Common.Ada_Param_Assoc
+      then
+         return Suffix.Child (1).As_Param_Assoc.F_R_Expr;
+      else
+         return Libadalang.Analysis.No_Expr;
+      end if;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Single_Index_Expression;
+
+   function List_Always_Writes_Loop_Index
+     (List     : Libadalang.Analysis.Ada_Node'Class;
+      Param    : Libadalang.Analysis.Param_Spec;
+      Name     : String;
+      Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean;
+
+   --  True when Node -- a statement reached along every path through an
+   --  already-escape-free loop body (Contains_Loop_Escape has ruled out
+   --  exit/return/raise/goto anywhere in it) -- unconditionally writes
+   --  Param indexed by exactly the loop's own control variable, e.g.
+   --  "Param (I) := ...;" where I is that variable. If/case statements
+   --  recurse into every alternative (an "if" with no "else" can never be
+   --  unconditional here); anything else (nested loops, calls, ...) is
+   --  conservatively not recognized as a qualifying write.
+   function Statement_Always_Writes_Loop_Index
+     (Node     : Libadalang.Analysis.Ada_Node'Class;
+      Param    : Libadalang.Analysis.Param_Spec;
+      Name     : String;
+      Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Assign_Stmt =>
+            declare
+               Dest : constant Libadalang.Analysis.Name :=
+                 Node.As_Assign_Stmt.F_Dest;
+            begin
+               if Dest.Kind /= Libadalang.Common.Ada_Call_Expr then
+                  return False;
+               end if;
+               declare
+                  Call        : constant Libadalang.Analysis.Call_Expr :=
+                    Dest.As_Call_Expr;
+                  Prefix_Decl : constant Libadalang.Analysis.Basic_Decl :=
+                    Call.F_Name.P_Referenced_Decl
+                      (Imprecise_Fallback => True);
+                  Index       : constant Libadalang.Analysis.Expr :=
+                    Single_Index_Expression (Call.F_Suffix);
+               begin
+                  return
+                    Normalize_Rule_Name (Node_Text (Call.F_Name)) = Name
+                    and then (Libadalang.Analysis.Is_Null (Prefix_Decl)
+                      or else Prefix_Decl =
+                        Libadalang.Analysis.Basic_Decl (Param))
+                    and then not Libadalang.Analysis.Is_Null (Index)
+                    and then Index.Kind = Libadalang.Common.Ada_Identifier
+                    and then Index.As_Name.P_Referenced_Decl
+                      (Imprecise_Fallback => True) = Loop_Var;
+               end;
+            end;
+
+         when Libadalang.Common.Ada_If_Stmt =>
+            declare
+               Stmt : constant Libadalang.Analysis.If_Stmt :=
+                 Node.As_If_Stmt;
+            begin
+               if Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
+                 or else not List_Always_Writes_Loop_Index
+                   (Stmt.F_Then_Stmts, Param, Name, Loop_Var)
+                 or else not List_Always_Writes_Loop_Index
+                   (Stmt.F_Else_Part.F_Stmts, Param, Name, Loop_Var)
+               then
+                  return False;
+               end if;
+               for Alt of Stmt.F_Alternatives loop
+                  if not List_Always_Writes_Loop_Index
+                    (Alt.F_Stmts, Param, Name, Loop_Var)
+                  then
+                     return False;
+                  end if;
+               end loop;
+               return True;
+            end;
+
+         when Libadalang.Common.Ada_Case_Stmt =>
+            declare
+               Stmt : constant Libadalang.Analysis.Case_Stmt :=
+                 Node.As_Case_Stmt;
+            begin
+               if Stmt.F_Alternatives.Children_Count = 0 then
+                  return False;
+               end if;
+               for Alt of Stmt.F_Alternatives loop
+                  if not List_Always_Writes_Loop_Index
+                    (Alt.F_Stmts, Param, Name, Loop_Var)
+                  then
+                     return False;
+                  end if;
+               end loop;
+               return True;
+            end;
+
+         when Libadalang.Common.Ada_Decl_Block =>
+            return List_Always_Writes_Loop_Index
+              (Node.As_Decl_Block.F_Stmts.F_Stmts, Param, Name, Loop_Var);
+
+         when others =>
+            --  Ada's own exhaustiveness rules make every other statement
+            --  kind (nested loops, calls, null statements, ...) either
+            --  irrelevant to this particular write shape or too involved
+            --  to reason about here; not recognized as a qualifying write.
+            return False;
+      end case;
+   exception
+      when others =>
+         return False;
+   end Statement_Always_Writes_Loop_Index;
+
+   function List_Always_Writes_Loop_Index
+     (List     : Libadalang.Analysis.Ada_Node'Class;
+      Param    : Libadalang.Analysis.Param_Spec;
+      Name     : String;
+      Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      for Index in 1 .. List.Children_Count loop
+         if Statement_Always_Writes_Loop_Index
+           (List.Child (Index), Param, Name, Loop_Var)
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end List_Always_Writes_Loop_Index;
+
    type Init_Result is record
       Can_Fall_Through : Boolean := True;
       Initialized      : Boolean := False;
@@ -975,29 +1211,58 @@ package body Adalang_Analyzer.SPARK_Readiness is
                Bad_Return);
 
          when Libadalang.Common.Ada_For_Loop_Stmt =>
-            --  A "for I in Low .. High loop" with a statically non-empty
-            --  range is guaranteed to run its body at least once. If that
-            --  body has no exit/return/raise/goto anywhere (so nothing can
-            --  leave before finishing a pass) and unconditionally writes the
-            --  parameter by the end of one pass, the write is not
-            --  contingent on how many iterations actually run. This is
-            --  deliberately narrower than reasoning about whether a loop
-            --  covers every index of an array: it only asks whether the
-            --  discrete range is non-empty, never whether the body's writes
-            --  cover a whole composite object.
+            --  Two distinct, narrow proofs that a for-loop unconditionally
+            --  initializes Param, neither of which generalizes to the
+            --  other:
+            --
+            --  Scalar: "for I in Low .. High loop" with a statically
+            --  non-empty range is guaranteed to run its body at least
+            --  once. If that body has no exit/return/raise/goto anywhere
+            --  (so nothing can leave before finishing a pass) and
+            --  unconditionally writes Param by the end of one pass, the
+            --  write is not contingent on how many iterations actually
+            --  run. This alone says nothing about whether a loop covers
+            --  every index of an array: Same_Parameter's coarse,
+            --  whole-object treatment of composites would let a write to
+            --  just one element of a partial-range loop through here too,
+            --  which is why this path is only trusted when Param is not
+            --  itself an array (see the coverage proof below for that
+            --  case).
+            --
+            --  Array coverage: "for I in Index_Type loop" or "for I in
+            --  Param'Range loop" whose iteration domain is provably
+            --  Param's own full index range, combined with an
+            --  unconditional "Param (I) := ...;" indexed by exactly that
+            --  control variable, proves every index gets written -- with
+            --  no need to reason about the range's bounds at all.
             declare
                Spec        : constant Libadalang.Analysis.For_Loop_Spec :=
                  Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
                Body_Result : constant Init_Result := Interpret_List
                  (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name, Initial,
                   Bad_Return);
+               Index_Type  : constant Libadalang.Analysis.Base_Type_Decl :=
+                 Array_Index_Type (Param);
             begin
-               if Body_Result.Initialized
-                 and then Spec.F_Loop_Type.Kind =
-                   Libadalang.Common.Ada_Iter_Type_In
-                 and then not Contains_Loop_Escape
-                   (Node.As_Base_Loop_Stmt.F_Stmts)
+               if Spec.F_Loop_Type.Kind /= Libadalang.Common.Ada_Iter_Type_In
+                 or else Contains_Loop_Escape (Node.As_Base_Loop_Stmt.F_Stmts)
                then
+                  return (True, Initial);
+               end if;
+
+               if not Libadalang.Analysis.Is_Null (Index_Type) then
+                  if Loop_Covers_Index_Range
+                       (Spec, Index_Type, Param, Name)
+                    and then List_Always_Writes_Loop_Index
+                       (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name,
+                        Libadalang.Analysis.Basic_Decl (Spec.F_Var_Decl))
+                  then
+                     return (True, True);
+                  end if;
+                  return (True, Initial);
+               end if;
+
+               if Body_Result.Initialized then
                   declare
                      Bounds : constant Static_Interval :=
                        Choice_Interval (Spec.F_Iter_Expr);

@@ -81,19 +81,34 @@ call-effect summaries, both substantial engineering efforts matching
 expansion of that [verify] boundary"), not a bug-fix-sized change. No action
 taken here beyond recording the quantified evidence.
 
-### Not yet investigated
+### Confirmed analyzer mistake (fixed): FP-010
 
-- One residual `Uninitialized_Output` finding after the `FP-007` fix:
-  `auditlog.adb`, `SetFileDetails`, writes its `LogFileEntries` array through
-  `for I in LogFileIndexT loop LogFileEntries (I) := NumberEntries; end loop;`
-  rather than by literal index or field name. Confirming that the loop
-  covers every index of the array would require reasoning about the loop's
-  index bounds against the parameter's own index subtype — a materially
-  different, harder problem than recognizing a direct field/index write, and
-  deliberately not attempted by the `FP-007` fix (which only widens
-  recognition of direct writes, not loop coverage, to avoid trading a false
-  positive for an unsound "any loop touching it counts" false negative).
-  Left open; not yet triaged as a bug versus an accepted scope boundary.
+One residual `Uninitialized_Output` finding after the `FP-007` fix:
+`auditlog.adb`, `SetFileDetails`, writes its `LogFileEntries` array through
+`for I in LogFileIndexT loop LogFileEntries (I) := NumberEntries; end loop;`
+rather than by literal index or field name. `LogFileIndexT` is exactly the
+index subtype `LogFileEntries` is declared over, so the loop necessarily
+visits every index — this is precisely the "bare subtype mark" shape
+`Adalang_Analyzer.SPARK_Readiness.Loop_Covers_Index_Range` recognizes (see
+FP-010 in `quality/known_analysis_issues.tsv`). Verified with a fixture
+reproducing the same subtype-iteration shape
+(`uninitialized_output_array_loop_subtype_clean.adb`) rather than a fresh
+live re-run of the Tokeneer checkout.
+
+This fix was found while working a step further than originally planned:
+special-casing statically bounded scalar loop writes (FP-009) turned out,
+on closer inspection, to also silently accept a *partial*-range array loop
+as fully initializing (e.g. `for I in 1 .. 2 loop Arr (I) := 0; end loop;`
+on a 3-element array), because `Same_Parameter`'s coarse whole-object
+treatment of `Arr (I) := ...` (from FP-007) cannot by itself distinguish
+"wrote one element" from "wrote every element." Caught by testing that
+exact partial-range shape before FP-009 shipped externally, not by an
+external report. Closing it properly required doing the array-coverage
+reasoning this section previously left open, rather than only narrowing
+FP-009 back down — see FP-010's full description in
+`quality/known_analysis_issues.tsv` for how the two recognized coverage
+shapes (bare subtype mark, `Param'Range`) avoid needing any bound
+arithmetic at all.
 
 ## Simple Components (Dmitry A. Kazakov)
 
@@ -113,12 +128,16 @@ taken here beyond recording the quantified evidence.
     evidence the checks find genuine defects on code the project didn't
     write.
   - The 158 `Uninitialized_Output` findings include the same loop-based
-    array-fill pattern documented as open above (e.g.
-    `block_streams.adb`'s `Read`, filling `Item` via
-    `while Last < Item'Last loop Item (Last) := ...; end loop;`) —
-    corroborating evidence that the limitation is real and recurring, not a
-    Tokeneer-specific artifact, and that the `FP-004`–`FP-007` fixes did not
-    need revisiting.
+    array-fill pattern documented above (e.g. `block_streams.adb`'s `Read`,
+    filling `Item` via `while Last < Item'Last loop Item (Last) := ...; end
+    loop;`) — corroborating evidence that the limitation is real and
+    recurring, not a Tokeneer-specific artifact, and that the `FP-004`–
+    `FP-007` fixes did not need revisiting. Unlike Tokeneer's `SetFileDetails`
+    (a `for` loop, now fixed by FP-010), this is a `while` loop bounded by a
+    runtime comparison against `Item'Last`, not a `for` loop whose iteration
+    domain is provably the whole index range by construction; FP-010
+    deliberately only reasons about `for` loops, so this instance remains
+    open.
   - `Function_Side_Effect` (50 findings, sampled `generic_b_tree.adb`):
     nested callback functions mutating an enclosing scope's local via
     closure capture. Looks like a legitimate true positive in every sampled
