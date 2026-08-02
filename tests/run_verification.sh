@@ -26,7 +26,9 @@ symbolic_loop=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-loop.XXXXXX")
 loop_vc_relational=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-relational.XXXXXX")
 loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
 out_forwarding=$(mktemp "${TMPDIR:-/tmp}/adalang-out-forwarding.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding"' EXIT HUP INT TERM
+interprocedural_effects=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-effects.XXXXXX")
+interprocedural_ordinary=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-ordinary.XXXXXX")
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -60,6 +62,39 @@ run_json "$out_forwarding" tests/verification_diff_modular_call.adb
 if grep -F '"kind": "initialization-check", "status": "definite-error"' \
   "$out_forwarding" >/dev/null; then
    echo "out-to-out forwarding was classified as an uninitialized read" >&2
+   exit 1
+fi
+
+run_json "$interprocedural_effects" \
+  tests/interprocedural_effect_summaries.adb
+grep -F '"operation": "Denominator = 0", "status": "proved-safe"' \
+  "$interprocedural_effects" >/dev/null
+grep -F '"kind": "initialization-check", "status": "proved-safe"' \
+  "$interprocedural_effects" | grep -F '"operation": "Result"' >/dev/null
+grep -F '"kind": "initialization-check", "status": "unproved"' \
+  "$interprocedural_effects" | grep -F '"operation": "Maybe_Result"' \
+  >/dev/null
+grep -F '"kind": "initialization-check", "status": "definite-error"' \
+  "$interprocedural_effects" | grep -F '"operation": "Shadow_Result"' \
+  >/dev/null
+grep -F '"operation": "Changed = 1", "status": "unproved"' \
+  "$interprocedural_effects" >/dev/null
+if grep -F '"operation": "Changed = 1", "status": "proved-safe"' \
+  "$interprocedural_effects" >/dev/null; then
+   echo "transitive nonlocal write left stale state in verification" >&2
+   exit 1
+fi
+
+ordinary_status=0
+"$analyzer" -checks=Division_By_Zero \
+  tests/interprocedural_effect_summaries.adb >"$interprocedural_ordinary" 2>&1 \
+  || ordinary_status=$?
+if [ "$ordinary_status" -ne 1 ] \
+  || [ "$(grep -c '\[Division_By_Zero\]' "$interprocedural_ordinary")" -ne 1 ]
+then
+   echo "ordinary flow did not retain an unaffected fact across a known call" \
+     >&2
+   cat "$interprocedural_ordinary" >&2
    exit 1
 fi
 if grep -F '"line": 23, "column": 20, "operation": "Result"' \

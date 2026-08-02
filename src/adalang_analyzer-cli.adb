@@ -1241,6 +1241,30 @@ package body Adalang_Analyzer.CLI is
                Normalize => True);
          end loop;
 
+         --  Summary discovery deliberately uses a separate context. Semantic
+         --  property failures are memoized by Libadalang; isolating this
+         --  speculative whole-input pass prevents one failed summary query
+         --  from changing which ordinary checks later run in the main
+         --  context.
+         declare
+            Summary_Ctx : constant Libadalang.Analysis.Analysis_Context :=
+              Libadalang.Analysis.Create_Context
+                (Unit_Provider =>
+                   Adalang_Analyzer.Unit_Provider.Create
+                     (Primary =>
+                        Libadalang.Auto_Provider
+                          .Create_Auto_Provider_Reference (Input_Files),
+                      Fallback =>
+                        Libadalang.Unit_Files.Default_Provider));
+         begin
+            Adalang_Analyzer.Subprogram_Summaries.Reset;
+            for F of Files_To_Process loop
+               Adalang_Analyzer.Subprogram_Summaries.Scan_Unit
+                 (Summary_Ctx.Get_From_File (F));
+            end loop;
+            Adalang_Analyzer.Subprogram_Summaries.Complete;
+         end;
+
          Ctx := Libadalang.Analysis.Create_Context
            (Unit_Provider =>
               Adalang_Analyzer.Unit_Provider.Create
@@ -1250,20 +1274,10 @@ package body Adalang_Analyzer.CLI is
                  Fallback => Libadalang.Unit_Files.Default_Provider));
       end;
 
-      if Rule_States (Potentially_Blocking_Operation) = Enabled
-        or else Rule_States (Exception_Propagation) = Enabled
-      then
-         Adalang_Analyzer.Subprogram_Summaries.Reset;
-         for F of Files_To_Process loop
-            Adalang_Analyzer.Subprogram_Summaries.Scan_Unit
-              (Ctx.Get_From_File (F));
-         end loop;
-         Adalang_Analyzer.Subprogram_Summaries.Complete;
-         Log_Verbose
-           ("Built " &
-            To_Decimal (Adalang_Analyzer.Subprogram_Summaries.Count) &
-            " subprogram summaries");
-      end if;
+      Log_Verbose
+        ("Built " &
+         To_Decimal (Adalang_Analyzer.Subprogram_Summaries.Count) &
+         " subprogram summaries");
 
       for F of Files_To_Process loop
          Process_File (F, Ctx);

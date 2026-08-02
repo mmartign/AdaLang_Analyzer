@@ -26,6 +26,7 @@ with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;
+with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Text_Utils;
 with Adalang_Analyzer.VC_Prover;
 
@@ -406,6 +407,49 @@ package body Adalang_Analyzer.Flow_Interp is
       return Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Node));
    end Normalized_Text;
 
+   function Flow_Object_Key
+     (Node : Libadalang.Analysis.Ada_Node'Class) return String is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Defining_Name
+      then
+         return "";
+      end if;
+
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Node.As_Defining_Name.P_Basic_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Decl) then
+            return "";
+         end if;
+         return Langkit_Support.Text.To_UTF8
+           (Decl.P_Unique_Identifying_Name) & ":" & Normalized_Text (Node);
+      end;
+   exception
+      when others =>
+         return "";
+   end Flow_Object_Key;
+
+   procedure Havoc_Object_Key
+     (State : in out Flow_State;
+      Key   : String)
+   is
+   begin
+      if Key = "" then
+         return;
+      end if;
+      for Index in 1 .. Binding_Count (State) loop
+         declare
+            Binding : constant Flow_Binding := Binding_At (State, Index);
+         begin
+            if Flow_Object_Key (Binding.Decl) = Key then
+               Flow_Havoc (State, Binding.Decl);
+            end if;
+         end;
+      end loop;
+   end Havoc_Object_Key;
+
    function Call_Declaration
      (Call : Libadalang.Analysis.Name'Class)
       return Libadalang.Analysis.Basic_Decl is
@@ -696,6 +740,21 @@ package body Adalang_Analyzer.Flow_Interp is
       Decl : constant Libadalang.Analysis.Basic_Decl :=
         Call_Declaration (Call);
    begin
+      if Adalang_Analyzer.Subprogram_Summaries.Callee_State_Effects_Known
+           (Call)
+      then
+         for Index in 1 ..
+           Adalang_Analyzer.Subprogram_Summaries.Callee_Global_Write_Count
+             (Call)
+         loop
+            Havoc_Object_Key
+              (State,
+               Adalang_Analyzer.Subprogram_Summaries.Callee_Global_Write
+                 (Call, Index));
+         end loop;
+         return;
+      end if;
+
       if Libadalang.Analysis.Is_Null (Decl) then
          Flow_Havoc_All (State);
          return;
@@ -750,9 +809,28 @@ package body Adalang_Analyzer.Flow_Interp is
    is
    begin
       for Pair of Call.P_Call_Params loop
-         if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
+         if Formal_Is_Writable (Libadalang.Analysis.Param (Pair))
+           and then
+             (not Adalang_Analyzer.Subprogram_Summaries
+                    .Callee_State_Effects_Known (Call)
+              or else Adalang_Analyzer.Subprogram_Summaries
+                .Callee_Formal_May_Write
+                  (Call, Libadalang.Analysis.Param (Pair)))
+         then
             Havoc_Identifiers_In
               (Libadalang.Analysis.Actual (Pair), State);
+         end if;
+
+         if Adalang_Analyzer.Subprogram_Summaries
+              .Callee_Formal_Definitely_Writes
+                (Call, Libadalang.Analysis.Param (Pair))
+           and then Libadalang.Analysis.Actual (Pair).Kind =
+             Libadalang.Common.Ada_Identifier
+         then
+            Flow_Set_Initialized
+              (State,
+               Flow_Referenced_Name (Libadalang.Analysis.Actual (Pair)),
+               Bool_True);
          end if;
       end loop;
    exception

@@ -38,9 +38,11 @@ package Adalang_Analyzer.Flow_Interp is
    --  prefix of the assignments applied, which this straight-line model
    --  doesn't account for). SPARK Pre contracts narrow the entry state,
    --  Post contracts are scanned in the exit state, and calls invalidate
-   --  writable state named by their Global contracts. Resolved calls map
-   --  actual values to formals for known precondition failures and transfer
-   --  simple postcondition facts back to writable actuals.
+   --  writable state named by complete body summaries or Global contracts.
+   --  Complete summaries also preserve unaffected bindings and recognize
+   --  simple out-formal initialization on every normal return. Resolved calls
+   --  map actual values to formals for known precondition failures and
+   --  transfer simple postcondition facts back to writable actuals.
 
    procedure Verify_Unit
      (Unit : Libadalang.Analysis.Analysis_Unit);

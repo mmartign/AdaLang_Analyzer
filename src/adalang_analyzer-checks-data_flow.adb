@@ -16,6 +16,7 @@ with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;  use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Checks.Data_Flow is
@@ -374,9 +375,14 @@ package body Adalang_Analyzer.Checks.Data_Flow is
 
             if not Libadalang.Analysis.Is_Null (Ancestor) then
                Found_Formal := True;
-               if Ancestor.As_Param_Spec.F_Mode.Kind in
-                 Libadalang.Common.Ada_Mode_Out_Range
-                   | Libadalang.Common.Ada_Mode_In_Out_Range
+               if
+                 (if Adalang_Analyzer.Subprogram_Summaries
+                       .Callee_State_Effects_Known (Call)
+                  then Adalang_Analyzer.Subprogram_Summaries
+                    .Callee_Formal_May_Write (Call, Formal_Name)
+                  else Ancestor.As_Param_Spec.F_Mode.Kind in
+                    Libadalang.Common.Ada_Mode_Out_Range
+                      | Libadalang.Common.Ada_Mode_In_Out_Range)
                then
                   return True;
                end if;
@@ -399,9 +405,14 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                     (Node_Text (Assoc.F_Designator))));
       begin
          return not Libadalang.Analysis.Is_Null (Formal)
-           and then Formal_Mode (Formal) in
-             Libadalang.Common.Ada_Mode_Out_Range
-               | Libadalang.Common.Ada_Mode_In_Out_Range;
+           and then
+             (if Adalang_Analyzer.Subprogram_Summaries
+                   .Callee_State_Effects_Known (Call)
+              then Adalang_Analyzer.Subprogram_Summaries
+                .Callee_Formal_May_Write (Call, Formal)
+              else Formal_Mode (Formal) in
+                Libadalang.Common.Ada_Mode_Out_Range
+                  | Libadalang.Common.Ada_Mode_In_Out_Range);
       end;
    exception
       when others =>
@@ -432,8 +443,13 @@ package body Adalang_Analyzer.Checks.Data_Flow is
 
             if not Libadalang.Analysis.Is_Null (Ancestor) then
                Found_Formal := True;
-               if Ancestor.As_Param_Spec.F_Mode.Kind not in
-                 Libadalang.Common.Ada_Mode_Out_Range
+               if
+                 (if Adalang_Analyzer.Subprogram_Summaries
+                       .Callee_State_Effects_Known (Call)
+                  then Adalang_Analyzer.Subprogram_Summaries
+                    .Callee_Formal_May_Read (Call, Formal_Name)
+                  else Ancestor.As_Param_Spec.F_Mode.Kind not in
+                    Libadalang.Common.Ada_Mode_Out_Range)
                then
                   return True;
                end if;
@@ -456,8 +472,13 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                     (Node_Text (Assoc.F_Designator))));
       begin
          return not Libadalang.Analysis.Is_Null (Formal)
-           and then Formal_Mode (Formal) not in
-             Libadalang.Common.Ada_Mode_Out_Range;
+           and then
+             (if Adalang_Analyzer.Subprogram_Summaries
+                   .Callee_State_Effects_Known (Call)
+              then Adalang_Analyzer.Subprogram_Summaries
+                .Callee_Formal_May_Read (Call, Formal)
+              else Formal_Mode (Formal) not in
+                Libadalang.Common.Ada_Mode_Out_Range);
       end;
    exception
       when others =>

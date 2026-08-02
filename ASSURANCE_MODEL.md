@@ -129,8 +129,10 @@ boundaries:
   assumptions through straight-line code and branch edges.
 - Contract lookup and limited transfer of simple precondition and
   postcondition facts.
-- Fixed-point propagation of a small number of monotone interprocedural
-  effects, such as may-raise and may-block.
+- Fixed-point propagation of monotone interprocedural effects: may-raise,
+  may-block, formal reads/writes, and direct or transitive nonlocal writes.
+- Conservative all-path recognition of simple formal initialization on every
+  normal return, consumed only for complete resolved call boundaries.
 - Separate SPARK dependency inference with conservative fallbacks.
 
 These mechanisms support useful findings but do not constitute exhaustive
@@ -279,8 +281,10 @@ The `--verify` boundary is deliberately narrow:
 - Loops analyzed by work-list fixed-point iteration with interval widening,
   plus inductive initialization/preservation VCs and invariant summaries for
   leading invariants over straight-line scalar loop bodies.
-- Resolved SPARK calls with explicit global effects and structurally
-  non-aliased simple writable actuals.
+- Calls whose analyzed bodies have complete conservative state-effect
+  summaries, plus resolved SPARK calls with explicit global effects and
+  structurally non-aliased simple writable actuals for relational contract
+  transfer.
 - Side-effect-free scalar assertion formulas over initialized integer and
   Boolean objects, with `+`, `-`, `*`, comparisons, equality, and Boolean
   connectives.

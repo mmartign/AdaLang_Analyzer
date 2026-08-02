@@ -238,13 +238,16 @@ replacement for GNATprove.
 
 The supported verification core is structured sequential integer and Boolean
 code, statically bounded array indexing, initialization tracking, and simple
-assertion, precondition, and postcondition facts. Resolved modular calls
-require SPARK mode, an explicit `Global` aspect, and non-aliased simple
-writable actuals. Unknown call effects invalidate affected state. Access
-types and explicit dereference, dispatching/class-wide behavior, tasking and
-protected operations, floating-point proof, generic subprogram
-instantiations, and unsupported transfers such as `goto` are outside the
-proof boundary.
+assertion, precondition, and postcondition facts. Calls to bodies present in
+the analyzed source set use conservative interprocedural summaries for formal
+writes, definite initialization on every normal return, and transitive
+nonlocal writes. A summary is trusted only when its complete transitive call
+boundary resolves; otherwise unknown effects retain the existing conservative
+invalidation. Relational contract transfer still requires SPARK mode, an
+explicit `Global` aspect, and non-aliased simple writable actuals. Access types
+and explicit dereference, dispatching/class-wide behavior, tasking and
+protected operations, floating-point proof, generic subprogram instantiations,
+and unsupported transfers such as `goto` are outside the proof boundary.
 
 For assertions that remain unknown after abstract interpretation, `--verify`
 also has a small scalar verification-condition backend. It translates
@@ -363,10 +366,16 @@ resolved to its one live alternative. `Potentially_Blocking_Operation` reports
 a `delay` statement or entry call in a protected procedure or function. Before
 the checking pass, a compact call-summary registry propagates blocking and
 raising effects to a fixed point, so calls that transitively reach a blocking
-operation are also reported. Nested subprogram bodies remain independently
-summarized rather than being mistaken for direct execution by their parent.
-This is the first shared interprocedural-summary service; it stores monotone
-effects rather than paths or complete states to keep the default pass bounded.
+operation are also reported. The same registry records incoming formal reads,
+body-observed formal writes, all-path normal-return initialization, and direct
+or transitive writes to nonlocal objects. Ordinary data-flow checks and
+`--verify` use those effects to retain unaffected facts and initialize simple
+`out` actuals only when every normal return writes the corresponding formal.
+Nested subprogram bodies remain independently summarized rather than being
+mistaken for direct execution by their parent. The summaries store monotone
+effects rather than paths or complete states to keep the pass bounded; any
+unresolved transitive call makes state effects incomplete and restores the
+unknown-call fallback.
 
 The `--automotive` preset combines these checks into a deliberately strict Ada
 profile. It covers allocation and access use; unchecked deallocation; tasking,
