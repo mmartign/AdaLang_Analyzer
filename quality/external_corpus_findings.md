@@ -363,3 +363,61 @@ writing an unrelated `out` parameter that's never actually forwarded.
 With both FP-011 and FP-012 fixed, `aws-server-push.adb`'s
 `Uninitialized_Output` count drops from 16 to 6; the remaining findings
 were not investigated further this pass.
+
+### Confirmed analyzer mistake (fixed): FP-013
+
+Re-cloning `AdaCore/aws` fresh and re-running the same `--recommended` scan
+over `src/core`, `src/extended`, `src/http2` (still 273 files) to continue
+where the previous pass left off found upstream had moved on in the
+interim: only 3 of the 6 previously-residual `Uninitialized_Output`
+findings in `aws-server-push.adb` still existed (`Get_Data`'s `Data`,
+`Send`'s `Queue`, `Unregister_Clients`'s `Queue`); the other 3 were gone,
+presumably resolved by unrelated upstream changes to the file rather than
+anything on this project's side.
+
+Investigating the 3 survivors: `Unregister_Clients`'s `Queue : out
+Tables.Map` is initialized by a single unconditional `Queue.Clear;`
+right at the top of the body — a parameterless prefixed procedure call
+(`Object.Operation;`), which Libadalang represents as a bare `Dotted_Name`
+with no `Call_Expr` node at all. `Adalang_Analyzer.SPARK_Readiness.
+Statement_Writes_Parameter` (the write-recognition function behind
+`Uninitialized_Output`) only ever inspected `Ada_Call_Expr` call
+statements, so this call was invisible to it — the exact same shape
+already fixed for `Wrong_Parameter_Mode` and `Dead_Store` in
+`Adalang_Analyzer.Checks.Declarations.Parameter_Is_Written` (see
+`quality/README.md`'s precision regression index), but left open in the
+separate `SPARK_Readiness` write-recognition path `Uninitialized_Output`
+actually uses.
+
+Fixed by adding an `Ada_Dotted_Name` branch to `Statement_Writes_Parameter`
+that reuses `Same_Parameter` directly on the call node: `Same_Parameter`'s
+own prefix-unwrap loop (added for FP-011) already walks a `Dotted_Name`
+down past its suffix to its prefix before comparing identifiers, which is
+exactly what's needed here too, so no new unwrap logic was required. Like
+every other call-based write this function already recognizes, the
+callee's own body is not verified to actually initialize the parameter —
+only that the parameter is the controlling actual of a mutator-shaped
+call — consistent with how `Wrong_Parameter_Mode`/`Dead_Store` already
+treat this shape. A guard fixture (a second, unrelated out parameter left
+untouched by the same call) confirms the fix does not spill a write credit
+onto the wrong parameter.
+
+Confirmed against the real file by diffing `aws-server-push.adb`'s own
+`Uninitialized_Output` output before and after the fix: exactly the
+`Unregister_Clients` finding disappeared, nothing new appeared, and the
+corpus-wide total dropped from 372 to 371.
+
+The other 2 survivors were reviewed and are **not** analyzer mistakes:
+`Get_Data`'s `Data : out Stream_Element_Array` is written only inside a
+`while` loop over `Holder.Chunks`, so an empty chunk list reaches the
+normal return with `Data` never assigned; `Send`'s `Queue : out Tables.Map`
+has an early `return;` (unmatched `Group_Id`) that bypasses the later
+`Queue.Clear;` entirely. Both are real paths to an uninitialized `out`
+parameter on a normal return, not analyzer false positives, and are left
+open (not filed as known issues, since the analyzer's behavior here is
+correct — they would need upstream AWS review to resolve, which is out of
+scope for this project).
+
+Covered by `uninitialized_output_prefixed_clear_clean.adb` (clean) and
+`uninitialized_output_prefixed_clear_guard.adb` (still flags the
+unrelated-parameter case).

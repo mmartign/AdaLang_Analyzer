@@ -913,6 +913,22 @@ package body Adalang_Analyzer.SPARK_Readiness is
                      end;
                   end loop;
                end;
+            elsif Call.Kind = Libadalang.Common.Ada_Dotted_Name
+              and then Same_Parameter (Call, Param, Name)
+            then
+               --  A parameterless prefixed procedure call has no Call_Expr
+               --  node: Libadalang represents "Queue.Clear;" as a bare
+               --  Dotted_Name, consistently with the same shape already
+               --  handled for Wrong_Parameter_Mode and Dead_Store in
+               --  Adalang_Analyzer.Checks.Declarations.Parameter_Is_Written.
+               --  Same_Parameter's own prefix-unwrap loop already reaches
+               --  past the Dotted_Name's suffix (the method name) to its
+               --  prefix, so it can be reused directly on the whole call.
+               --  Like every other call-based write recognized above, this
+               --  is unconditional: the callee's own body is not verified
+               --  to actually initialize Param, only that Param is used as
+               --  the controlling actual of a mutator-shaped call.
+               return True;
             end if;
             if Callee_Writes_Global (Call, Param, Name) then
                return True;
