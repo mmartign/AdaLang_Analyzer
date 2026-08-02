@@ -197,7 +197,7 @@ Replaced with `Log_Verbose_Once` diagnostics, matching the codebase's
 existing convention — a small, useful demonstration of the gate doing its
 job on new code, not just old code.
 
-### Scope observation, not a defect: static-bounded-loop writes (open)
+### Confirmed analyzer mistake (fixed): FP-009
 
 The remaining `Uninitialized_Output` findings in `cubedos-lib-xdr.adb`
 (3, after the `FP-008` fix) write a scalar `out` parameter unconditionally
@@ -211,30 +211,51 @@ for I in 1 .. 3 loop
 end loop;
 ```
 
-Every loop kind (`for`, `while`, plain `loop`) is deliberately treated as
-"might not execute at all" by `Interpret_Initialization` — a documented,
-reasonable default for loops that can `exit` or whose range isn't
-statically known to be non-empty. But `for I in 1 .. 3` has a *statically*
-non-empty range and no `exit`/`return`/`raise` before the write, so the
-write is in fact unconditional. This is a narrower, more tractable relative
-of the already-documented array-loop-coverage limitation (Tokeneer's
+Every loop kind (`for`, `while`, plain `loop`) was deliberately treated as
+"might not execute at all" by `Interpret_Initialization` — a reasonable
+default for loops that can `exit` or whose range isn't statically known to
+be non-empty. But `for I in 1 .. 3` has a *statically* non-empty range and
+no `exit`/`return`/`raise`/`goto` before the write, so the write is in fact
+unconditional. This is a narrower, more tractable relative of the
+already-documented array-loop-coverage limitation (Tokeneer's
 `SetFileDetails`, Simple Components' `Read`) — that one needs reasoning
 about a loop's bounds against an *array's* full index range; this one only
 needs "is this discrete range statically non-empty," with no array
-reasoning at all. Left open rather than folded into `FP-008`, to keep that
-fix scoped to the overload-resolution problem it was diagnosed from.
+reasoning at all.
+
+Fixed by special-casing `Ada_For_Loop_Stmt` in
+`Adalang_Analyzer.SPARK_Readiness.Interpret_Initialization`: when the
+iteration range's bounds are statically known (via the existing
+`Adalang_Analyzer.Flow_Eval.Choice_Interval`, reused as-is from the
+proof-obligation/case-range checks) and non-empty, and the loop body
+contains no `exit`/`return`/`raise`/`goto` anywhere (the new
+`Contains_Loop_Escape`), the body's own computed `Init_Result` is trusted
+instead of discarded, since nothing can leave the loop before finishing a
+pass. `while`/plain loops, and any `for` loop that does contain an early
+exit, remain conservatively unresolved — deliberately, to avoid trading
+this false positive for a false negative on a genuinely conditional write
+(e.g. `for I in 1 .. 3 loop if Stop then exit; end if; Value := I; end
+loop;` must still be flagged, since the exit can be taken before `Value`
+is ever written). Verified with two fixtures faithfully copying the real
+type shapes and loop body — `uninitialized_output_static_loop_clean.adb`
+(fails pre-fix, passes post-fix) and
+`uninitialized_output_static_loop_early_exit.adb` (a sibling with an added
+`exit`, confirmed to still fire both before and after the fix) — rather
+than a fresh live re-run of the CubedOS checkout itself.
 
 One of the 8 original findings was **not** a false positive:
 `cubedos-lib-sorters.adb`'s `Pop_Heap` (`Result : out Element_Type`) has a
 body that is literally `null;` — genuinely unimplemented stub code, not yet
 written by the CubedOS authors. Correctly flagged.
 
-Cumulative effect of the `FP-008` fix on the same CubedOS run:
+Expected cumulative effect of the `FP-008` and `FP-009` fixes on the same
+CubedOS run (extrapolated from the fixture reproductions above, not a fresh
+live re-run of the checkout):
 
 | Check | Before | After |
 | --- | --- | --- |
-| Total violations | 41 | 37 |
-| `Uninitialized_Output` | 8 | 4 (1 genuine stub, 3 open static-loop case) |
+| Total violations | 41 | 34 |
+| `Uninitialized_Output` | 8 | 1 (genuine stub) |
 
 ## Future corpora
 

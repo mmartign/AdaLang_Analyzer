@@ -825,6 +825,35 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return False;
    end Statement_Writes_Parameter;
 
+   function Contains_Loop_Escape
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Exit_Stmt
+            | Libadalang.Common.Ada_Return_Stmt
+            | Libadalang.Common.Ada_Extended_Return_Stmt
+            | Libadalang.Common.Ada_Raise_Stmt
+            | Libadalang.Common.Ada_Goto_Stmt =>
+            return True;
+
+         when others =>
+            for Index in 1 .. Node.Children_Count loop
+               if Contains_Loop_Escape (Node.Child (Index)) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+      end case;
+   exception
+      when others =>
+         return True;
+   end Contains_Loop_Escape;
+
    type Init_Result is record
       Can_Fall_Through : Boolean := True;
       Initialized      : Boolean := False;
@@ -945,12 +974,49 @@ package body Adalang_Analyzer.SPARK_Readiness is
               (Node.As_Decl_Block.F_Stmts.F_Stmts, Param, Name, Initial,
                Bad_Return);
 
-         when Libadalang.Common.Ada_For_Loop_Stmt
-            | Libadalang.Common.Ada_While_Loop_Stmt
+         when Libadalang.Common.Ada_For_Loop_Stmt =>
+            --  A "for I in Low .. High loop" with a statically non-empty
+            --  range is guaranteed to run its body at least once. If that
+            --  body has no exit/return/raise/goto anywhere (so nothing can
+            --  leave before finishing a pass) and unconditionally writes the
+            --  parameter by the end of one pass, the write is not
+            --  contingent on how many iterations actually run. This is
+            --  deliberately narrower than reasoning about whether a loop
+            --  covers every index of an array: it only asks whether the
+            --  discrete range is non-empty, never whether the body's writes
+            --  cover a whole composite object.
+            declare
+               Spec        : constant Libadalang.Analysis.For_Loop_Spec :=
+                 Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
+               Body_Result : constant Init_Result := Interpret_List
+                 (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name, Initial,
+                  Bad_Return);
+            begin
+               if Body_Result.Initialized
+                 and then Spec.F_Loop_Type.Kind =
+                   Libadalang.Common.Ada_Iter_Type_In
+                 and then not Contains_Loop_Escape
+                   (Node.As_Base_Loop_Stmt.F_Stmts)
+               then
+                  declare
+                     Bounds : constant Static_Interval :=
+                       Choice_Interval (Spec.F_Iter_Expr);
+                  begin
+                     if Bounds.Known and then Bounds.Low <= Bounds.High then
+                        return (True, True);
+                     end if;
+                  end;
+               end if;
+               return (True, Initial);
+            end;
+
+         when Libadalang.Common.Ada_While_Loop_Stmt
             | Libadalang.Common.Ada_Loop_Stmt =>
             --  Inspect returns inside the body, but do not assume that a loop
             --  initializes an output: even a plain loop can leave through an
-            --  exit before the assignment.
+            --  exit before the assignment, and neither has a statically
+            --  known non-empty iteration count the way a numeric for-loop
+            --  can.
             declare
                Ignored : constant Init_Result := Interpret_List
                  (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name, Initial,
