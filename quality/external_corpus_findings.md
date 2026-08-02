@@ -558,3 +558,64 @@ Covered by `uninitialized_read_attribute_designator_clean.adb` (clean)
 and `uninitialized_read_attribute_designator_guard.adb` (a genuine
 attribute-prefix reference to the tracked variable must still be
 flagged).
+
+### Confirmed analyzer mistake (fixed): FP-016
+
+Checking `Dead_Store` (23 findings) next found the same kind of
+concentration as `Wrong_Parameter_Mode` earlier: 13 of the 23 were in a
+single file, `aws-http2-stream.adb`, all reported on assignments
+immediately followed by `return;` inside a large `case` statement:
+
+```ada
+   Info : Error_Details renames Self.Error_Detail;
+   --  ...
+begin
+   Error := C_No_Error;
+   Info  := Error_No_Details;
+   --  ...
+   if Self.Id /= 0 and then Self.Id mod 2 = 0 then
+      Error := C_Protocol_Error;
+      Info  := Error_Stream_Id_Even;
+      return;
+```
+
+`Received_Frame`'s `Error` parameter is genuinely `out` mode, so its
+final writes before `return` were never a problem — `Dead_Store` only
+ever considers `Ada_Object_Decl`s, and `Error`'s declaration is a
+`Param_Spec`, which the check already excludes correctly. `Info`,
+though, is a **renaming**: `Info : Error_Details renames Self.
+Error_Detail;`, where `Self` is an `in out` parameter. A write to `Info`
+is really a write to `Self.Error_Detail`, observable by the caller after
+return (and by other code that reads `Self.Error_Detail` directly
+elsewhere) — never a locally dead store. But `Info`'s own declaration
+*is* textually nested inside `Received_Frame`, so `Adalang_Analyzer.
+Checks.Control_Flow.Is_Local_To_Subprogram` — a purely lexical-scope test
+— considered it local regardless of what it renamed. Compounding this,
+`Data_Flow.Ultimate_Object` (the existing mechanism that already resolves
+simple renamings like `Y renames X;` back to `X`'s own declaration, used
+via `Assigned_Declaration` to figure out what a bare `Info := ...;`
+statement actually writes) only ever followed a renamed object that was
+itself a bare identifier — never one reached through a selected
+component like `Self.Error_Detail`. So `Info := ...;` resolved to
+`Info`'s own renaming declaration rather than to `Self`, and the write
+looked, from `Dead_Store`'s point of view, exactly like a write to an
+ordinary, purely local variable named `Info` that just happened to never
+be read again by that name.
+
+Fixed by adding `Renames_Nonlocal_Object` in `Checks.Control_Flow`: walks
+the renamed object down through any depth of selected/indexed component
+or dereference — the same coarse, "whichever depth of nesting, only the
+base object matters" treatment already used elsewhere in this project
+(e.g. `Same_Parameter`) — to its base identifier, and disqualifies a
+declaration from `Dead_Store` whenever that base is not itself local to
+the enclosing subprogram. A renaming of a genuinely local object's field
+(`Y : F renames Local_Var.Field;`) is unaffected, since its base *is*
+local.
+
+Confirmed against the real corpus: `Dead_Store` findings dropped from 23
+to 10 — all 13 in `aws-http2-stream.adb`, exactly the ones on `Info :=
+...;` assignments — with no new findings appearing anywhere.
+
+Covered by `dead_store_renaming_of_parameter_field_clean.adb` (clean) and
+`dead_store_renaming_of_parameter_field_guard.adb` (a renaming of a
+genuinely local object's field must still be flagged).

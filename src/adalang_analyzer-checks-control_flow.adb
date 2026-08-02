@@ -264,6 +264,92 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       return False;
    end Is_Local_To_Subprogram;
 
+   --  Whether Decl -- already known to be an Ada_Object_Decl local to
+   --  Subprogram, as Is_Local_To_Subprogram itself establishes before a
+   --  caller reaches this check -- is actually tracking meaningfully local
+   --  storage, as opposed to being a renaming of part of a longer-lived
+   --  object (a parameter's or global's field, element, or dereferenced
+   --  part). Is_Local_To_Subprogram is a purely lexical-scope test: a
+   --  renaming declaration is "local" by that test even when what it
+   --  renames is not, because the declaration itself is textually nested
+   --  inside Subprogram regardless of what it aliases. Observed in the
+   --  wild: AWS.HTTP2.Stream's "Info : Error_Details renames Self.
+   --  Error_Detail;", where Self is an in-out parameter -- a write to Info
+   --  is really a write to Self.Error_Detail, observable by the caller
+   --  after return and by any other code that later reads Self.
+   --  Error_Detail directly, never a locally dead store, yet Dead_Store's
+   --  own write-tracking (Data_Flow.Assigned_Declaration) resolves a bare
+   --  "Info := ...;" to Info's own renaming declaration rather than
+   --  Self's, because Data_Flow.Ultimate_Object only follows a renamed
+   --  object that is itself a bare identifier ("Y renames X;"), not one
+   --  reached through a selected component, indexed component, or
+   --  dereference. Walks the same shapes here, coarsely, the same
+   --  "whichever depth of nesting, only the base object matters" treatment
+   --  already used elsewhere in this project (e.g. Same_Parameter): a
+   --  renaming of a bare local variable ("Y renames X;" where X is itself
+   --  local to Subprogram) is unaffected, since only a renamed object that
+   --  walks down to something NOT local to Subprogram disqualifies Decl.
+   function Renames_Nonlocal_Object
+     (Decl       : Libadalang.Analysis.Basic_Decl;
+      Subprogram : Libadalang.Analysis.Subp_Body) return Boolean
+   is
+   begin
+      if Decl.Kind /= Libadalang.Common.Ada_Object_Decl then
+         return False;
+      end if;
+
+      declare
+         Clause : constant Libadalang.Analysis.Renaming_Clause :=
+           Decl.As_Object_Decl.F_Renaming_Clause;
+      begin
+         if Libadalang.Analysis.Is_Null (Clause) then
+            return False;
+         end if;
+
+         declare
+            Current : Libadalang.Analysis.Ada_Node :=
+              Libadalang.Analysis.Ada_Node (Clause.F_Renamed_Object);
+         begin
+            loop
+               case Current.Kind is
+                  when Libadalang.Common.Ada_Dotted_Name =>
+                     Current := Libadalang.Analysis.Ada_Node
+                       (Current.As_Dotted_Name.F_Prefix);
+                  when Libadalang.Common.Ada_Call_Expr =>
+                     Current := Libadalang.Analysis.Ada_Node
+                       (Current.As_Call_Expr.F_Name);
+                  when Libadalang.Common.Ada_Explicit_Deref =>
+                     Current := Libadalang.Analysis.Ada_Node
+                       (Current.As_Explicit_Deref.F_Prefix);
+                  when others =>
+                     exit;
+               end case;
+            end loop;
+
+            if Current.Kind /= Libadalang.Common.Ada_Identifier then
+               --  A shape this coarse walk does not understand (e.g. the
+               --  renamed object is itself a function call's result) --
+               --  conservatively treat as non-local rather than risk a
+               --  false Dead_Store report.
+               return True;
+            end if;
+
+            declare
+               Base : constant Libadalang.Analysis.Basic_Decl :=
+                 Current.As_Name.P_Referenced_Decl
+                   (Imprecise_Fallback => True);
+            begin
+               return Libadalang.Analysis.Is_Null (Base)
+                 or else Base.Kind /= Libadalang.Common.Ada_Object_Decl
+                 or else not Is_Local_To_Subprogram (Base, Subprogram);
+            end;
+         end;
+      end;
+   exception
+      when others =>
+         return True;
+   end Renames_Nonlocal_Object;
+
    procedure Analyze_Statement_List  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       List : Libadalang.Analysis.Ada_Node'Class)
@@ -509,6 +595,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               and then Decl.Kind = Libadalang.Common.Ada_Object_Decl
               and then not Libadalang.Analysis.Is_Null (Subprogram)
               and then Is_Local_To_Subprogram (Decl, Subprogram)
+              and then not Renames_Nonlocal_Object (Decl, Subprogram)
               and then not Data_Flow.Is_Externally_Observable (Decl)
               and then not Data_Flow.Has_Read_After
                 (Subprogram.F_Stmts, Decl, Stmt)
