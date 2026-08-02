@@ -619,3 +619,88 @@ to 10 — all 13 in `aws-http2-stream.adb`, exactly the ones on `Info :=
 Covered by `dead_store_renaming_of_parameter_field_clean.adb` (clean) and
 `dead_store_renaming_of_parameter_field_guard.adb` (a renaming of a
 genuinely local object's field must still be flagged).
+
+### Confirmed analyzer mistake (fixed): FP-017
+
+Returning to the nested-subprogram-ordering bug diagnosed but left open
+under FP-015 — `Data_Flow.First_Access`'s plain pre-order AST walk has no
+notion of actual call order, so a read inside a nested subprogram body
+declared earlier than a later initializing statement of the enclosing
+subprogram was mistaken for happening before it, even though the nested
+body is only ever actually invoked afterwards:
+
+```ada
+function To_Set return Set is
+   Name_First  : Positive;
+   Name_Last   : Natural;
+   Value_First : Positive;
+   Value_Last  : Natural;
+
+   function Element return Data is    --  declared here, reads the four
+   begin                              --  locals as up-level references
+      ...
+   end Element;
+
+begin
+   ...
+   Next_Value                         --  initializes all four via its
+     (Header_Value, First,            --  own out-mode formals -- but
+      Name_First, Name_Last,          --  only runs *after* Element's
+      Value_First, Value_Last);       --  declaration, textually
+   return Element & To_Set;           --  Element is only ever *called*
+end To_Set;                           --  here, after Next_Value
+```
+
+Fixed by skipping recursion into any child node of kind `Ada_Subp_Body` or
+`Ada_Entry_Body` during `First_Access`'s walk: a nested subprogram or
+entry body is a declaration, elaborated but not executed at its own
+textual position, so a read or write inside it does not happen "here" the
+way a statement does. This trades away detecting a genuine read through a
+nested body invoked *before* the tracked variable's initialization
+(unrecognized here, not soundly ruled out) for not flagging the common,
+correct case — the same bias toward fewer false positives already
+established throughout this project.
+
+(While implementing this, an early version called `.Kind` on a loop
+child before checking whether `Node.Child (I)` was null — Libadalang can
+return a null node for a sparse list slot — which raised inside
+`First_Access` and surfaced as a generic "skipping checks: null node
+argument" message instead of a finding. Caught by the guard fixture below
+before it was committed; fixed by checking `Is_Null` first.)
+
+Confirmed against the real corpus: `Uninitialized_Read` findings dropped
+from 35 (the count after FP-015/FP-016) to 29 — the 5 `aws-headers-
+values.adb` findings left open under FP-015 are gone (`To_Set`'s four
+locals plus `Split`'s own `First`), plus 2 more of the identical shape in
+other files (`aws-net-acceptors.adb`, `aws-url-set.adb`).
+
+One previously-hidden, unrelated finding was exposed in the process, at
+`aws-net-acceptors.adb:274` (`Error` in `Acceptors.Get`) — **not** fixed
+in this pass, left open: `Ready, Error : Boolean;` are genuinely
+initialized by `Sets.Is_Read_Ready (Acceptor.Set, Acceptor.Index, Ready,
+Error);`, a positional call to a procedure instantiated from a *nested*
+generic (`package Sets is new Generic_Sets (Socket_Data_Type);` inside
+the generic package `AWS.Net.Acceptors`, `Socket_Data_Type` itself the
+outer generic's own formal type). Before this fix, the scan never reached
+this call at all — it stopped earlier, at the very read this fix
+resolves, inside the nested function `Accept_Listening`. With that
+resolved, the scan now reaches the real initializing call, but
+`Data_Flow.Call_Writes_Declaration` (and `Call_Reads_Simple_Actual`)
+apparently fail to resolve the formal mode through this generic-of-a-
+generic instantiation (both silently return `False` via their own
+`exception when others` handlers, with no diagnostic — confirmed no `-v`
+skip message is emitted for this file), so the call registers as neither
+a read nor a write and the scan continues to the next real access, a
+genuine read a few lines later, misreporting *that* as the first one.
+This is not a regression from this fix — `Error` was already misreported
+before it, just at a different, also-wrong location (masked by the
+now-fixed ordering bug) — but is a distinct root cause (a Libadalang
+resolution-fragility case in the same family as `FP-008`/`FP-012`, for a
+different check's write-detection path that lacks their lenient,
+callee-name-only fallback) and needs its own investigation, left for a
+future pass.
+
+Covered by `uninitialized_read_nested_subprogram_order_clean.adb` (clean)
+and `uninitialized_read_nested_subprogram_order_guard.adb` (a genuine,
+direct read in the enclosing subprogram's own statements, near an
+unrelated nested subprogram, must still be flagged).

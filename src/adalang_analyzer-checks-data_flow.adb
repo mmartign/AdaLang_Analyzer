@@ -790,11 +790,40 @@ package body Adalang_Analyzer.Checks.Data_Flow is
 
       for I in 1 .. Node.Children_Count loop
          declare
-            Result : constant Access_Result :=
-              First_Access (Node.Child (I), Decl, After);
+            Child : constant Libadalang.Analysis.Ada_Node := Node.Child (I);
          begin
-            if Result.Kind /= No_Access then
-               return Result;
+            --  A nested subprogram or entry body is a declaration: it is
+            --  elaborated, not executed, at its own textual position, so
+            --  a read or write inside it does not happen "here" the way a
+            --  statement does. This plain pre-order walk has no notion of
+            --  actual call order, so without this exclusion a read deep
+            --  inside a nested body declared earlier in the enclosing
+            --  declarative part -- but only ever called later, after Decl
+            --  is genuinely initialized by a statement of the enclosing
+            --  subprogram itself -- would be mistaken for happening
+            --  before that initialization (observed in the wild: AWS.
+            --  Headers.Values.Split's nested To_Set calls Next_Value,
+            --  whose out-mode formals initialize To_Set's own locals,
+            --  before ever invoking its own nested Element, which reads
+            --  them as up-level references; Element's declaration,
+            --  though, textually precedes that Next_Value call). This
+            --  trades away detecting a genuine read through a nested body
+            --  invoked before Decl's initialization -- unrecognized here,
+            --  not soundly ruled out -- for not flagging the common,
+            --  correct case; consistent with this project's general bias
+            --  toward fewer false positives.
+            if Libadalang.Analysis.Is_Null (Child)
+              or else Child.Kind not in Libadalang.Common.Ada_Subp_Body
+                | Libadalang.Common.Ada_Entry_Body
+            then
+               declare
+                  Result : constant Access_Result :=
+                    First_Access (Child, Decl, After);
+               begin
+                  if Result.Kind /= No_Access then
+                     return Result;
+                  end if;
+               end;
             end if;
          end;
       end loop;
