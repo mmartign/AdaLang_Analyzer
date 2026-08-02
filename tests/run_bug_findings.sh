@@ -663,6 +663,29 @@ then
    exit 1
 fi
 
+if ! "$analyzer" -q -checks='Uninitialized_Read' \
+     tests/uninitialized_read_unresolved_call_clean.adb
+then
+   echo "unresolved call was bypassed to report a later definite read" >&2
+   exit 1
+fi
+
+if "$analyzer" -checks='Uninitialized_Read' \
+     tests/uninitialized_read_unresolved_call_guard.adb >"$output" 2>&1
+then
+   echo "expected resolved input actual to produce an uninitialized read" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[Uninitialized_Read\]' "$output")" -ne 1 ] \
+  || ! grep -F \
+       "uninitialized_read_unresolved_call_guard.adb:12:4: warning:" \
+       "$output" >/dev/null
+then
+   echo "unexpected unresolved-call guard findings" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 if "$analyzer" -checks='Missing_Overriding_Indicator' \
      tests/overriding_indicator_findings.ads >"$output" 2>&1
 then

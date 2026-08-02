@@ -8,6 +8,8 @@ unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-unsupported.XXXXXX")
 call=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-call.XXXXXX")
 many=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-many.XXXXXX")
 initialization=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-init.XXXXXX")
+initialization_defaults=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-init-defaults.XXXXXX")
+initialization_rename=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-init-rename.XXXXXX")
 exception_model=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-exception.XXXXXX")
 vc_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-clean.XXXXXX")
 vc_error=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-error.XXXXXX")
@@ -24,7 +26,7 @@ symbolic_loop=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-loop.XXXXXX")
 loop_vc_relational=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-relational.XXXXXX")
 loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
 out_forwarding=$(mktemp "${TMPDIR:-/tmp}/adalang-out-forwarding.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -72,6 +74,27 @@ grep -F '"kind": "assertion", "status": "proved-safe"' "$many" >/dev/null
 run_json "$initialization" tests/verification_initialization_error.adb
 grep -F '"kind": "initialization-check", "status": "definite-error"' \
   "$initialization" >/dev/null
+
+run_json "$initialization_defaults" \
+  tests/verification_initialization_defaults_clean.adb
+if grep -F '"kind": "initialization-check", "status": "definite-error"' \
+  "$initialization_defaults" >/dev/null; then
+   echo "default-initialized or renamed object was classified as definitely uninitialized" >&2
+   exit 1
+fi
+grep -F '"kind": "initialization-check", "status": "proved-safe"' \
+  "$initialization_defaults" | grep -F '"operation": "Copy"' >/dev/null
+grep -F '"kind": "initialization-check", "status": "unproved"' \
+  "$initialization_defaults" | grep -F '"operation": "Item"' >/dev/null
+grep -F '"kind": "initialization-check", "status": "unproved"' \
+  "$initialization_defaults" | grep -F '"operation": "Data"' >/dev/null
+grep -F '"kind": "initialization-check", "status": "unproved"' \
+  "$initialization_defaults" | grep -F '"operation": "Overlay"' >/dev/null
+
+run_json "$initialization_rename" \
+  tests/verification_initialization_rename_error.adb
+grep -F '"kind": "initialization-check", "status": "definite-error"' \
+  "$initialization_rename" >/dev/null
 
 run_json "$exception_model" tests/verification_exception_model.adb
 grep -F '"kind": "division-by-zero", "status": "unproved"' \

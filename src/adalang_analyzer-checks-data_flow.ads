@@ -75,7 +75,8 @@ private package Adalang_Analyzer.Checks.Data_Flow is
    --  General form used for writes performed by calls through out/in-out
    --  actual parameters.
 
-   type Access_Kind is (No_Access, Read_Access, Write_Access);
+   type Access_Kind is
+     (No_Access, Read_Access, Write_Access, Unknown_Access);
 
    type Access_Result is record
       Kind : Access_Kind := No_Access;
@@ -90,7 +91,9 @@ private package Adalang_Analyzer.Checks.Data_Flow is
    --  or after After's end position, in source order, or a No_Access
    --  result if neither occurs. A write is only recognized as a plain
    --  identifier-target assignment (see Is_Trackable_Assignment) or a simple
-   --  identifier passed to an out or in out parameter. Backs
+   --  identifier passed to an out or in out parameter. Unknown_Access stops
+   --  the search when an unresolved call may read or write the object, since
+   --  a later read cannot then be classified definitely. Backs
    --  Uninitialized_Read: a declaration with no default expression whose
    --  first subsequent access is a read has been read before any value was
    --  ever stored into it.

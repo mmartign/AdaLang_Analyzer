@@ -206,6 +206,181 @@ package body Adalang_Analyzer.Flow_Interp is
          return Libadalang.Analysis.No_Ada_Node;
    end Flow_Referenced_Name;
 
+   --  Determine the initialization state of an object declaration that has
+   --  no explicit default expression. A renaming denotes an existing object,
+   --  so a simple renaming inherits that object's state. For a newly declared
+   --  object, only a resolved scalar type justifies the strong conclusion
+   --  that a subsequent read is definitely uninitialized. Other types may
+   --  have language-defined or type-defined initialization; keep those
+   --  unknown unless a more precise model establishes their state.
+   function Implicit_Initialization
+     (Decl  : Libadalang.Analysis.Object_Decl;
+      State : Flow_State) return Abstract_Bool
+   is
+      Clause : constant Libadalang.Analysis.Renaming_Clause :=
+        Decl.F_Renaming_Clause;
+   begin
+      if not Libadalang.Analysis.Is_Null (Clause) then
+         declare
+            Renamed : constant Libadalang.Analysis.Ada_Node :=
+              Flow_Referenced_Name (Clause.F_Renamed_Object);
+         begin
+            if Libadalang.Analysis.Is_Null (Renamed) then
+               return Bool_Unknown;
+            end if;
+            return Flow_Initialization (State, Renamed);
+         end;
+      end if;
+
+      --  An address clause overlays storage whose validity this local flow
+      --  model cannot infer. In particular, a scalar view may denote bytes
+      --  that were initialized through another object, so it is not sound to
+      --  call the view definitely uninitialized.
+      if Has_Aspect (Decl, "Address") then
+         return Bool_Unknown;
+      end if;
+
+      declare
+         Type_Expr : constant Libadalang.Analysis.Type_Expr :=
+           Decl.F_Type_Expr;
+      begin
+         if Libadalang.Analysis.Is_Null (Type_Expr) then
+            return Bool_Unknown;
+         end if;
+
+         declare
+            Base : constant Libadalang.Analysis.Base_Type_Decl :=
+              Type_Expr.P_Designated_Type_Decl;
+         begin
+            if not Libadalang.Analysis.Is_Null (Base)
+              and then Base.P_Is_Scalar_Type
+            then
+               return Bool_False;
+            end if;
+         end;
+      end;
+
+      return Bool_Unknown;
+   exception
+      when others =>
+         return Bool_Unknown;
+   end Implicit_Initialization;
+
+   --  On entry, an out parameter is not uniformly equivalent to a fresh
+   --  scalar object. Scalar out parameters have no value; composite and
+   --  private types can have default-initialized parts or other semantics
+   --  that this bounded model does not resolve. Preserve the strong error
+   --  result only for a known scalar type.
+   function Output_Parameter_Initialization
+     (Param : Libadalang.Analysis.Param_Spec) return Abstract_Bool
+   is
+      Type_Expr : constant Libadalang.Analysis.Type_Expr := Param.F_Type_Expr;
+   begin
+      if Libadalang.Analysis.Is_Null (Type_Expr) then
+         return Bool_Unknown;
+      end if;
+
+      declare
+         Base : constant Libadalang.Analysis.Base_Type_Decl :=
+           Type_Expr.P_Designated_Type_Decl;
+      begin
+         if not Libadalang.Analysis.Is_Null (Base)
+           and then Base.P_Is_Scalar_Type
+         then
+            return Bool_False;
+         end if;
+      end;
+
+      return Bool_Unknown;
+   exception
+      when others =>
+         return Bool_Unknown;
+   end Output_Parameter_Initialization;
+
+   --  True when evaluating an identifier requires its stored value. Bounds,
+   --  representation, address, and access attributes inspect an object's
+   --  subtype or identity rather than reading that value. Likewise, the base
+   --  name of an assignment target is written, although index expressions in
+   --  that target are still reads and therefore are not excluded here.
+   function Initialization_Read_Required
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Node);
+
+      function Is_Nonvalue_Attribute
+        (Prefix : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+         Parent : constant Libadalang.Analysis.Ada_Node := Prefix.Parent;
+      begin
+         if Parent.Kind /= Libadalang.Common.Ada_Attribute_Ref
+           or else Libadalang.Analysis.Ada_Node
+             (Parent.As_Attribute_Ref.F_Prefix) /= Prefix
+         then
+            return False;
+         end if;
+
+         declare
+            Attribute_Name : constant String :=
+              Text_Utils.Normalize_Rule_Name
+                (Ada_Text.Node_Text (Parent.As_Attribute_Ref.F_Attribute));
+         begin
+            return Attribute_Name in
+              "access" | "address" | "alignment" | "component-size"
+                | "first" | "last" | "length" | "object-size" | "range"
+                | "size" | "unchecked-access" | "unrestricted-access"
+                | "value-size";
+         end;
+      exception
+         when others =>
+            return False;
+      end Is_Nonvalue_Attribute;
+   begin
+      if Libadalang.Analysis.Is_Null (Current)
+        or else Current.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return True;
+      end if;
+
+      loop
+         if Is_Nonvalue_Attribute (Current) then
+            return False;
+         end if;
+
+         declare
+            Parent : constant Libadalang.Analysis.Ada_Node := Current.Parent;
+         begin
+            if Libadalang.Analysis.Is_Null (Parent) then
+               return True;
+            elsif Parent.Kind = Libadalang.Common.Ada_Assign_Stmt
+              and then Libadalang.Analysis.Ada_Node
+                (Parent.As_Assign_Stmt.F_Dest) = Current
+            then
+               return False;
+            elsif
+              (Parent.Kind = Libadalang.Common.Ada_Dotted_Name
+               and then Libadalang.Analysis.Ada_Node
+                 (Parent.As_Dotted_Name.F_Prefix) = Current)
+              or else
+                (Parent.Kind = Libadalang.Common.Ada_Call_Expr
+                 and then Libadalang.Analysis.Ada_Node
+                   (Parent.As_Call_Expr.F_Name) = Current)
+              or else
+                (Parent.Kind = Libadalang.Common.Ada_Explicit_Deref
+                 and then Libadalang.Analysis.Ada_Node
+                   (Parent.As_Explicit_Deref.F_Prefix) = Current)
+            then
+               Current := Parent;
+            else
+               return True;
+            end if;
+         end;
+      end loop;
+   exception
+      when others =>
+         return True;
+   end Initialization_Read_Required;
+
    --  The defining name written by an assignment whose destination is a
    --  plain identifier, or No_Ada_Node for anything else (a more complex
    --  destination such as an array or record component).
@@ -1319,6 +1494,7 @@ package body Adalang_Analyzer.Flow_Interp is
 
       if Config.Verification_Mode
         and then Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Initialization_Read_Required (Node)
       then
          declare
             Key     : constant Libadalang.Analysis.Ada_Node :=
@@ -1790,11 +1966,16 @@ package body Adalang_Analyzer.Flow_Interp is
                         end loop;
                      end;
                   else
-                     for Id of Decl.F_Ids loop
-                        Flow_Set_Initialized
-                          (State, Libadalang.Analysis.Ada_Node (Id),
-                           Bool_False);
-                     end loop;
+                     declare
+                        Initialized : constant Abstract_Bool :=
+                          Implicit_Initialization (Decl, State);
+                     begin
+                        for Id of Decl.F_Ids loop
+                           Flow_Set_Initialized
+                             (State, Libadalang.Analysis.Ada_Node (Id),
+                              Initialized);
+                        end loop;
+                     end;
                   end if;
                end;
             end if;
@@ -2520,7 +2701,9 @@ package body Adalang_Analyzer.Flow_Interp is
                   begin
                      Flow_Set_Initialized
                        (State, Key,
-                        (if Is_Output_Only then Bool_False else Bool_True));
+                        (if Is_Output_Only
+                         then Output_Parameter_Initialization (Param)
+                         else Bool_True));
                      if not Is_Output_Only then
                         Flow_Range_Set (State, Key, Bounds);
                      end if;
@@ -2549,10 +2732,15 @@ package body Adalang_Analyzer.Flow_Interp is
               Decl.F_Default_Expr;
          begin
             if Libadalang.Analysis.Is_Null (Default) then
-               for Id of Decl.F_Ids loop
-                  Flow_Set_Initialized
-                    (State, Libadalang.Analysis.Ada_Node (Id), Bool_False);
-               end loop;
+               declare
+                  Initialized : constant Abstract_Bool :=
+                    Implicit_Initialization (Decl, State);
+               begin
+                  for Id of Decl.F_Ids loop
+                     Flow_Set_Initialized
+                       (State, Libadalang.Analysis.Ada_Node (Id), Initialized);
+                  end loop;
+               end;
                return;
             end if;
 
@@ -3658,11 +3846,7 @@ package body Adalang_Analyzer.Flow_Interp is
                end if;
             end;
          elsif Node.Kind = Libadalang.Common.Ada_Identifier
-           and then
-             (Node.Parent.Kind /= Libadalang.Common.Ada_Assign_Stmt
-              or else Libadalang.Analysis.Ada_Node
-                (Node.Parent.As_Assign_Stmt.F_Dest) /=
-                  Libadalang.Analysis.Ada_Node (Node))
+           and then Initialization_Read_Required (Node)
          then
             declare
                Key     : constant Libadalang.Analysis.Ada_Node :=

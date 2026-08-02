@@ -1,0 +1,9 @@
+project AWS_GNATprove_Benchmark extends "@AWS_SRC_PROJECT@" is
+   --  Diagnostic-only compatibility project. The unmodified GNATprove lanes
+   --  remain authoritative; this exclusion allows the flow front end to show
+   --  the next SPARK migration boundaries after the Valid_Value blocker.
+   for Excluded_Source_Files use ("aws-client-http_utils.adb");
+   for Object_Dir use external ("AWS_GNATPROVE_OBJECT_DIR");
+   for Library_Dir use external ("AWS_GNATPROVE_LIBRARY_DIR");
+   for Library_Name use "aws_src_benchmark";
+end AWS_GNATprove_Benchmark;

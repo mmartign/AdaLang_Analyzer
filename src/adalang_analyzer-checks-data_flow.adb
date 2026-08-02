@@ -952,8 +952,13 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                   return (Kind => Write_Access,
                            Node => Libadalang.Analysis.Ada_Node (Node));
                end if;
-               return
-                 (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+               --  The actual is present but its formal mode remains
+               --  unresolved. The call may initialize it, so continuing to a
+               --  later read and reporting that read as definitely preceding
+               --  every write is unsound. Preserve the uncertainty as a
+               --  terminal first-access result.
+               return (Kind => Unknown_Access,
+                        Node => Libadalang.Analysis.Ada_Node (Node));
             elsif Reads_Declaration (Node, Decl) then
                return (Kind => Read_Access,
                         Node => Libadalang.Analysis.Ada_Node (Node));

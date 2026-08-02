@@ -756,14 +756,43 @@ Confirmed against the real corpus: one instance disappeared —
 `Get_Node (Sessions, SID, Node, Found);` — with no new findings appearing
 anywhere.
 
-The `aws-net-acceptors.adb` finding that prompted this investigation,
-however, is **still open**: it only reproduces in the full 273-file batch
+The `aws-net-acceptors.adb` finding that prompted this investigation remained
+open after `FP-018`: it only reproduced in the full 273-file batch
 context, and even `Callee_Formal_At_Position`'s own callee-name
 resolution (`Call.F_Name.P_Referenced_Decl`) apparently still fails
-there — a different, deeper layer of the same general problem than the
-one this fix addresses, needing its own investigation.
+there — a different, deeper layer of the same general problem. It is closed
+by `FP-019` below.
 
 Covered by `uninitialized_read_positional_forward_clean.adb` (clean) and
 `uninitialized_read_positional_forward_guard.adb` (a variable never
 forwarded at all, at the same resolution-fragile callee shape, must still
 be flagged).
+
+### Confirmed analyzer mistake (fixed): FP-019
+
+The original 273-file invocation was reproduced and reduced to six real AWS
+files: `aws-net-acceptors.adb`/`.ads`, `aws-net-generic_sets.adb`/`.ads`,
+`aws-net.ads`, and `aws.ads`. The acceptor body is clean alone; explicitly
+supplying the root and parent specs changes Libadalang's provider state and
+makes every available formal-resolution path fail for the nested generic
+calls. This includes per-actual `P_Get_Params`, whole-callee resolution, the
+called-subprogram specification, and the instantiated package prefix, so
+another declaration-reconstruction fallback would depend on semantic links
+that are themselves unavailable.
+
+`First_Access` previously returned `No_Access` for that unresolved call and
+continued scanning. It then reached `Error`, `Count`, or `Success` later and
+claimed the read definitely happened before every write, even though each
+object had already been passed to a call that may write it. The correction
+adds a terminal `Unknown_Access` result: an unresolved simple actual stops the
+definite first-access search. Resolved `in` actuals still return
+`Read_Access`; resolved `out` actuals return `Write_Access`; and resolved
+`in out` actuals retain their read-before-write behavior.
+
+The minimized AWS trigger is clean after the fix. On the exact original
+273-file invocation, all three `aws-net-acceptors.adb` false positives
+disappeared and `Uninitialized_Read` findings fell from 28 to 4 (total
+findings from 275 to 251). The local clean/guard pair reproduces the semantic
+boundary without depending on AWS: an unresolved call followed by a read is
+clean, while passing the same uninitialized shape to a resolved `in` formal
+is still flagged.

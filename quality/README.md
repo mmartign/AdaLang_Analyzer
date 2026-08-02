@@ -119,6 +119,7 @@ Each precision correction has an executable regression:
 | A renaming of part of a longer-lived parameter or global (`Info : T renames Self.Field;`) is not local, even though its own declaration is textually nested inside the subprogram | `dead_store_renaming_of_parameter_field_clean.adb`/`_guard.adb`; also `Dead_Store` in `precision_corpus.tsv` (`Checks.Control_Flow.Renames_Nonlocal_Object`) |
 | A nested subprogram or entry body is a declaration -- elaborated, not executed, at its own textual position -- so a read or write inside it does not happen "here" the way a statement does; it only happens when the nested body is actually called | `uninitialized_read_nested_subprogram_order_clean.adb`/`_guard.adb`; also `Uninitialized_Read` in `precision_corpus.tsv` (`Checks.Data_Flow.First_Access` skips recursing into `Ada_Subp_Body`/`Ada_Entry_Body` children) |
 | Libadalang's per-actual resolution (`P_Get_Params`) can fail to classify an actual even on an otherwise-unambiguous call (heavy overload; a formal typed `Ada.Calendar.Time`); every write/read detector built on it needs the same lenient callee-name-only, pair-by-position-or-designator fallback, not just the first one that hit it | `uninitialized_read_positional_forward_clean.adb`/`_guard.adb`; also `Uninitialized_Read` in `precision_corpus.tsv` (`Checks.Data_Flow.Call_Writes_Declaration`/`Call_Reads_Simple_Actual`, alongside the original fix in `SPARK_Readiness.Statement_Writes_Parameter` for `FP-008`/`FP-012`) |
+| When every formal-resolution path fails for a simple call actual, the call may have initialized that object; a later read is unknown, not definitely before every write. Resolved input actuals remain reads | `uninitialized_read_unresolved_call_clean.adb`/`_guard.adb`; also `Uninitialized_Read` in `precision_corpus.tsv` (`Checks.Data_Flow.First_Access` returns `Unknown_Access` at the unresolved call boundary) |
 
 When another precision bug is fixed, add or extend a fixture and add its row
 here in the same change.
@@ -131,6 +132,12 @@ corpus above), starting with a 120-file Tokeneer run that produced three
 confirmed, fixed false positives (`FP-004`, `FP-005`, `FP-006` in
 `known_analysis_issues.tsv`) and a quantified scope observation about
 `--verify`'s non-relational, intraprocedural limits on real code.
+
+`benchmarks/aws/` adds the reproducible project-scale comparison against a
+pinned AdaCore/aws revision. It records AdaLang's ordinary, SPARK-readiness,
+and bounded-verification coverage; GNATprove's unmodified-project boundary;
+and the precision issue found by manually reviewing AdaLang `Definite_Error`
+outcomes, including its fix and pinned-corpus validation.
 
 ## Differential corpus
 
