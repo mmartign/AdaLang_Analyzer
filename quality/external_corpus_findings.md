@@ -328,9 +328,38 @@ one. Confirmed against the real file by diffing `aws-server-push.adb`'s own
 `Uninitialized_Output` output before and after the fix: exactly the 6
 targeted findings (the `Info` procedure's 4 parameters, plus
 `Shutdown_If_Empty`'s `Open` and `Get`'s `Queue`, both qualified the same
-way elsewhere in the same file) disappeared, nothing new appeared. The
-file's remaining 10 `Uninitialized_Output` findings are unrelated — at
-least one looks like a distinct, unconfirmed gap (an out parameter forwarded
-by name to a *protected object's* operation, e.g. `Waiter_Information.Info
-(Size => Size, ...)`, rather than an ordinary subprogram) — not
-investigated further this pass.
+way elsewhere in the same file) disappeared, nothing new appeared.
+
+### Confirmed analyzer mistake (fixed): FP-012
+
+Checking whether FP-011 had left a related gap open in the same file
+surfaced a second, distinct false positive at the very next residual
+finding: the *outer*, ordinary (non-protected) wrapper procedure `Info`
+(distinct from the protected body's own `Info` above) forwards its four
+out parameters by named actual to `Waiter_Information.Info (Size => Size,
+Max_Size => Max_Size, Max_Size_DT => Max_Size_DT, Counter => Counter)` — an
+otherwise perfectly ordinary out-actual-forwarding call, the kind this
+analysis already recognizes elsewhere. Bisecting a synthetic reproduction
+down from the real shape (two closer, hand-written syntheses that dropped
+the `Ada.Calendar.Time`-typed `Max_Size_DT` formal both failed to reproduce
+it) isolated the trigger precisely: a formal typed `Ada.Calendar.Time` on
+an otherwise-unambiguous protected-operation call is, on its own, enough to
+make Libadalang's own per-actual resolution (`Assoc.P_Get_Params`) fail to
+classify *every* actual in the call, not just that one formal — a
+Libadalang limitation, not investigated further here. The existing FP-008
+fallback (`Callee_Formal_At_Position`, resolving just the callee name and
+pairing by position when the precise resolution fails) only ever applied
+to purely positional actuals; a *named* actual hitting this same
+resolution gap had no fallback at all and was silently never recognized as
+a write.
+
+Fixed by adding `Callee_Formal_By_Name`, the named-actual counterpart to
+`Callee_Formal_At_Position`: the same lenient callee-name-only resolution,
+matching the actual's designator against a formal by name instead of by
+position. A guard fixture confirms a named actual naming a genuinely `in`
+formal on a callee hitting the same resolution gap isn't mistaken for
+writing an unrelated `out` parameter that's never actually forwarded.
+
+With both FP-011 and FP-012 fixed, `aws-server-push.adb`'s
+`Uninitialized_Output` count drops from 16 to 6; the remaining findings
+were not investigated further this pass.

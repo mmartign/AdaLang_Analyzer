@@ -769,6 +769,42 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Defining_Name;
    end Callee_Formal_At_Position;
 
+   --  The callee's formal (of any name) whose own name matches
+   --  Designator_Name (already normalized), resolved as leniently as
+   --  Callee_Formal_At_Position: only the callee name itself needs to
+   --  resolve. The named-actual counterpart to that position-based
+   --  lookup, needed because Libadalang's own full per-actual resolution
+   --  (Assoc.P_Get_Params) can fail to classify a named actual in cases
+   --  Callee_Formal_At_Position cannot help with either, since that one
+   --  only applies to purely positional actuals.
+   function Callee_Formal_By_Name
+     (Call            : Libadalang.Analysis.Call_Expr'Class;
+      Designator_Name : String) return Libadalang.Analysis.Defining_Name
+   is
+      Callee : constant Libadalang.Analysis.Basic_Decl :=
+        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      Spec   : Libadalang.Analysis.Base_Subp_Spec;
+   begin
+      if Libadalang.Analysis.Is_Null (Callee) then
+         return Libadalang.Analysis.No_Defining_Name;
+      end if;
+      Spec := Callee.P_Subp_Spec_Or_Null;
+      if Libadalang.Analysis.Is_Null (Spec) then
+         return Libadalang.Analysis.No_Defining_Name;
+      end if;
+      for Formal of Spec.P_Params loop
+         for Id of Formal.F_Ids loop
+            if Normalize_Rule_Name (Node_Text (Id)) = Designator_Name then
+               return Id.As_Defining_Name;
+            end if;
+         end loop;
+      end loop;
+      return Libadalang.Analysis.No_Defining_Name;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Defining_Name;
+   end Callee_Formal_By_Name;
+
    function Statement_Writes_Parameter
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Param : Libadalang.Analysis.Param_Spec;
@@ -806,18 +842,23 @@ package body Adalang_Analyzer.SPARK_Readiness is
                                  --  P_Get_Params demands a single, fully
                                  --  precise resolution of which overload
                                  --  this call selects and can itself raise
-                                 --  even with Imprecise_Fallback set, which
+                                 --  even with Imprecise_Fallback set. This
                                  --  happens easily when several overloads
                                  --  share the same parameter count and
                                  --  modes (a common shape for a family of
                                  --  Encode/Decode procedures differing
-                                 --  only in one parameter's type). For a
-                                 --  positional actual (no designator), fall
-                                 --  back to resolving just the callee name
-                                 --  -- a more lenient resolution that
-                                 --  succeeds even when the exact overload
-                                 --  is ambiguous -- and pairing by literal
-                                 --  position instead.
+                                 --  only in one parameter's type), but also
+                                 --  for at least one otherwise-unambiguous
+                                 --  protected-operation call observed in
+                                 --  the wild (a formal typed Ada.Calendar.
+                                 --  Time seems to be enough on its own to
+                                 --  trip it). Either way, fall back to
+                                 --  resolving just the callee name -- a
+                                 --  more lenient resolution that succeeds
+                                 --  even then -- and pairing the actual to
+                                 --  a formal by literal position (no
+                                 --  designator) or by matching designator
+                                 --  name instead.
                                  begin
                                     for Formal_Name of
                                       Assoc.P_Get_Params
@@ -838,25 +879,29 @@ package body Adalang_Analyzer.SPARK_Readiness is
                                             (Exc));
                                  end;
 
-                                 if Libadalang.Analysis.Is_Null
-                                   (Assoc.F_Designator)
-                                 then
-                                    declare
-                                       Formal_Name : constant
-                                         Libadalang.Analysis.Defining_Name
-                                         := Callee_Formal_At_Position
-                                           (Call.As_Call_Expr, Position);
-                                    begin
-                                       if not Libadalang.Analysis.Is_Null
-                                         (Formal_Name)
-                                         and then Formal_Mode
-                                           (Formal_Name) =
-                                           Libadalang.Common.Ada_Mode_Out
+                                 declare
+                                    Formal_Name : constant
+                                      Libadalang.Analysis.Defining_Name :=
+                                      (if Libadalang.Analysis.Is_Null
+                                         (Assoc.F_Designator)
                                        then
-                                          return True;
-                                       end if;
-                                    end;
-                                 end if;
+                                          Callee_Formal_At_Position
+                                            (Call.As_Call_Expr, Position)
+                                       else
+                                          Callee_Formal_By_Name
+                                            (Call.As_Call_Expr,
+                                             Normalize_Rule_Name
+                                               (Node_Text
+                                                  (Assoc.F_Designator))));
+                                 begin
+                                    if not Libadalang.Analysis.Is_Null
+                                      (Formal_Name)
+                                      and then Formal_Mode (Formal_Name) =
+                                        Libadalang.Common.Ada_Mode_Out
+                                    then
+                                       return True;
+                                    end if;
+                                 end;
                               end if;
                            exception
                               when Exc : others =>
