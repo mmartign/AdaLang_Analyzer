@@ -1213,3 +1213,62 @@ rather than analyzer mistakes:
 
 No action taken on any of these beyond this sampling; not filed as known
 issues, since the analyzer's behavior here appears correct.
+
+### GNATprove comparison attempt
+
+With both `Uninitialized_Read` false positives closed (`FP-029`, `FP-030`),
+a direct GNATprove run on the same corpus was attempted, to compare
+against a tool with actual formal-verification meaning for its documented
+SPARK scope rather than just against AdaLang's own bounded `--verify`
+mode. `gnatprove` (16.1.0) and the `arm-eabi` cross-compiler (`gnat_arm_elf`
+15.3.1) were installed via `alr install`; neither was present before.
+
+Getting even close to a real run surfaced a chain of environment/version
+obstacles, each pointing at the same underlying cause: Certyflie and its
+`Ada_Drivers_Library` submodule were written against a GNAT toolchain from
+around 2018-2020, and the Alire-packaged toolchain available today is
+substantially newer.
+
+- Runtime naming changed upstream: `cf_ada_spark.gpr`'s closure asks for
+  `"ravenscar-full-stm32f4"` / `"ravenscar-sfp-stm32f4"` (old naming); the
+  modern `gnat_arm_elf` toolchain only ships the renamed equivalents,
+  `"embedded-stm32f4"` and `"light-tasking-stm32f4"`.
+- Unlike AdaLang Analyzer, which tolerates a deliberately scoped subset of
+  files (a `with`ed unit outside the analyzed set just becomes a
+  `Property_Error` for that one reference, without aborting the rest of the
+  file), GNATprove requires a fully closed, compilable dependency graph
+  before Phase 2 (`Global` contract generation) can even begin. Pointing it
+  at AdaLang's own scoped file list immediately failed on `stm32.ads` and
+  similar board-driver units that genuinely exist in the cloned submodule
+  but sit outside that deliberately narrower scope.
+- Pulling in the full board-driver closure (as `cf_ada_spark.gpr` itself
+  does) hit a GPR-file ordering restriction the modern, GPR2-based tooling
+  enforces but the original ~2018 tooling did not:
+  `Ada_Drivers_Library/boards/crazyflie/crazyflie_full.gpr` reads
+  `Project'Target` in a plain variable assignment before its own later
+  `for Target use "arm-eabi";` clause, which current `gnatprove` rejects
+  outright regardless of `--target=`/`--RTS=` passed on the command line.
+  Worked around locally (in the scratch clone only, not part of this
+  repository) by moving the `for Target use`/`for Runtime` clauses earlier
+  in that same file.
+- With that resolved, `gnatprove -P cf_ada_spark.gpr --mode=check` reached
+  Phase 2 and failed on a genuine Ada legality error in
+  `middleware/src/filesystem/file_io.adb` ("implicit conversion of
+  stand-alone anonymous access object not allowed") -- code belonging to
+  the FAT-filesystem middleware that ships as part of
+  `Ada_Drivers_Library`'s board support, entirely unrelated to the
+  flight-control logic this corpus study is actually about, but pulled
+  into the same closure regardless because GNATprove analyzes whole
+  projects, not scoped file lists.
+
+Stopped here rather than continue patching an unknown number of further
+legacy-compiler-compatibility errors in code outside this study's actual
+area of interest (filesystem, BLE, audio middleware). The practical
+conclusion stands on its own as a real difference between the two tools,
+independent of any further findings a completed run might have produced:
+AdaLang Analyzer's Libadalang foundation tolerates an incomplete or
+partially out-of-date codebase enough to still produce useful, scoped
+findings; GNATprove's whole-project, fully-elaborated model does not, and
+an 8-year-old embedded project needs real toolchain-currency work before
+GNATprove can even start, independent of anything about the SPARK content
+of the flight-control code itself.
