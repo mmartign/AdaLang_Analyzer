@@ -22,6 +22,8 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Text_IO;
 
+with GNAT.OS_Lib; use type GNAT.OS_Lib.String_Access;
+
 with GNATCOLL.VFS;
 
 with Libadalang.Analysis;
@@ -1165,6 +1167,36 @@ package body Adalang_Analyzer.CLI is
                "-checks=<list>, --recommended, --spark, --verify, " &
                "--automotive, or --do178c=<level> to actually analyze " &
                "the source");
+         end if;
+      end;
+
+      --  Both the -P and project-less paths resolve with'd units (Interfaces,
+      --  Ada.*, System, ...) through Libadalang.Unit_Files.Default_Provider,
+      --  which in turn asks GNATCOLL.Projects to run "gnatls -v" to locate
+      --  the default runtime's predefined source path; -P only contributes
+      --  the project's own source list; it does not feed the project's
+      --  runtime into this lookup. Without a "gnatls" on PATH, that lookup
+      --  finds nothing, so any with'd runtime package is entirely
+      --  unresolved -- which reliably (not just occasionally) trips a
+      --  Libadalang defect deep in privacy/type resolution for subtypes of
+      --  such packages (see known_analysis_issues.tsv, FP-029), silently
+      --  degrading the affected checks instead of merely losing precision.
+      --  Warning here turns a missing-toolchain environment from a quiet,
+      --  scattered coverage gap into something the user can actually fix.
+      declare
+         Gnatls : GNAT.OS_Lib.String_Access :=
+           GNAT.OS_Lib.Locate_Exec_On_Path ("gnatls");
+      begin
+         if Gnatls = null then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "adalang-analyzer: warning: no 'gnatls' found on PATH; " &
+               "types from with'd runtime packages (Interfaces, Ada.*, " &
+               "System, ...) will not resolve, which silently degrades " &
+               "some checks (see known_analysis_issues.tsv, FP-029); add " &
+               "a GNAT toolchain to PATH to avoid this");
+         else
+            GNAT.OS_Lib.Free (Gnatls);
          end if;
       end;
 

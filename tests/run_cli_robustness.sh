@@ -53,14 +53,16 @@ fi
 
 #  A subtype of a scalar type from a with'd, externally defined package
 #  (e.g. Interfaces.Integer_16) makes Libadalang's own property
-#  implementation intermittently raise Property_Error while matching a
-#  subprogram body against its separately declared spec (see
-#  known_analysis_issues.tsv, FP-029). This has been confirmed to occur on
-#  most runs of the identical binary against the identical input but not
-#  reproducibly on every single run, which points to genuine undefined
-#  behavior upstream in Libadalang rather than a deterministic logic
-#  branch -- so this check tolerates either outcome instead of asserting
-#  the failure always happens. The fixture's unused parameter is an
+#  implementation raise Property_Error while matching a subprogram body
+#  against its separately declared spec (see known_analysis_issues.tsv,
+#  FP-029). This is deterministic, not flaky: it depends on whether a real
+#  GNAT toolchain ("gnatls") is on PATH, since that is what the analyzer's
+#  Unit_Provider relies on (via GNATCOLL.Projects) to resolve with'd
+#  runtime packages such as Interfaces at all. It fails whenever no such
+#  toolchain is on PATH (this repository's own default shell has none) and
+#  succeeds cleanly whenever one is -- this check tolerates either
+#  outcome so it passes regardless of the invoking environment, rather
+#  than assuming one or the other. The fixture's unused parameter is an
 #  unrelated, genuine Unused_Parameter finding, so a nonzero exit status
 #  here is expected; what this checks is that the run always completes
 #  and reports it, whether or not the affected checks were skipped and
