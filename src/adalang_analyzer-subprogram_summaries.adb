@@ -447,9 +447,23 @@ package body Adalang_Analyzer.Subprogram_Summaries is
         Libadalang.Analysis.Basic_Decl (Subprogram);
    begin
       declare
-         Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
-           Subprogram.P_Decl_Part (Imprecise_Fallback => True);
+         --  Decl_Part is assigned here rather than initialized in the
+         --  declarative part above: a Property_Error raised while
+         --  elaborating a declare block's own declarative part is not
+         --  handled by that block's own handlers (RM 11.2), so with
+         --  Decl_Part as a constant initializer, a failing P_Decl_Part
+         --  bypassed this block's handler entirely and was instead caught
+         --  by Register_Body's own outer handler below, which discards the
+         --  whole summary instead of falling back to Subprogram. This
+         --  restores the intended narrow fallback for P_Decl_Part failures
+         --  in general; it does not, by itself, close FP-029, whose
+         --  reduced case still fails one step later when Declaration_Name
+         --  (also needing to resolve the same externally defined subtype
+         --  to build a mangled name) hits the identical upstream defect.
+         Decl_Part : Libadalang.Analysis.Basic_Decl :=
+           Libadalang.Analysis.No_Basic_Decl;
       begin
+         Decl_Part := Subprogram.P_Decl_Part (Imprecise_Fallback => True);
          if not Libadalang.Analysis.Is_Null (Decl_Part) then
             Key_Decl := Decl_Part;
          end if;
