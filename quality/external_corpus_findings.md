@@ -1076,42 +1076,117 @@ appearing anywhere. Covered by
 bare-identifier shape under `pragma Assert`, genuinely evaluated at
 runtime, must still be flagged).
 
-### Residual `Uninitialized_Read` findings (3, open)
+### Residual `Uninitialized_Read` findings (3, resolved as FP-030)
 
 The remaining 3 findings (`stabilizer.adb:355` and `:392` twice, inside
-`Stabilizer_Alt_Hold_Update`) are puzzling rather than clearly one or the
+`Stabilizer_Alt_Hold_Update`) were puzzling rather than clearly one or the
 other: the flagged variables (`Prev_Integ`, `Baro_V_Speed`, `Alt_Hold_PID_
 Out`, all plain `Float`/fixed-point locals) are each written by a plain
 `Var := Expr;` statement earlier in the same `if` branch, which should have
 registered as `Write_Access` and ended `First_Access`'s search before ever
-reaching the later, reported read -- yet it doesn't. `Alt_Hold_PID`, read on
+reaching the later, reported read -- yet it didn't. `Alt_Hold_PID`, read on
 both of the flagged lines, is of a type from a generic instantiation
 (`package Altitude_Pid is new Pid (...)`, `Alt_Hold_PID : Altitude_Pid.
 Pid_Object`), the same general family of construct already proven fragile
 for other checks' formal-resolution paths (`FP-008`/`FP-012`/`FP-018`/
-`FP-019`/`FP-021`), which makes it a plausible suspect here too, but a
-hand-written minimal reproduction of the same shape (a generic `Pid_Object`
-record, a `Pid_Init` procedure, a local `Float` written then read across an
+`FP-019`/`FP-021`), which made it a plausible suspect, but a hand-written
+minimal reproduction of the same shape (a generic `Pid_Object` record, a
+`Pid_Init` procedure, a local `Float` written then read across an
 intervening call, mirroring the real file line for line) stayed clean --
 the same "resistant to synthetic reproduction, only reproduces in the
 original file's own multi-file context" difficulty already noted for
-`FP-018` before it was finally isolated as `FP-019`. Separately, this exact
-run also logs `skipping checks at <SubpBody ["Stabilizer_Alt_Hold_Update"]
-...>: types.ads:9:4-9:46: dereferencing a null access` -- traced to
-`subtype T_Int32 is Interfaces.Integer_32;`, an utterly ordinary
-declaration with nothing unresolved about it, so this is a real internal
-robustness gap independent of any specific check's logic. Confirmed,
-though, that this particular message does *not* explain the read-before-
-write puzzle above: it is emitted from `Checks.Evaluate_Node`'s own
-node-level exception handler, which only skips whichever checks dispatch
-directly on the `SubpBody` node itself before unconditionally continuing
-the recursive descent into every child regardless -- `Uninitialized_Read`
-is triggered separately, once per `Object_Decl` encountered during that
-same descent, and is not gated by this handler at all. Left open as two
-distinct, unresolved observations rather than force a fix without a
-confirmed root cause: the null-access robustness gap, and the read-before-
-write ordering anomaly, both narrower in scope than they first appeared but
-neither yet root-caused.
+`FP-018` before it was finally isolated as `FP-019`. This exact run also
+logs `skipping checks at <SubpBody ["Stabilizer_Alt_Hold_Update"] ...>:
+types.ads:9:4-9:46: dereferencing a null access` -- confirmed, though, that
+this particular message does *not* explain the read-before-write puzzle: it
+is emitted from `Checks.Evaluate_Node`'s own node-level exception handler,
+which only skips whichever checks dispatch directly on the `SubpBody` node
+itself before unconditionally continuing the recursive descent into every
+child regardless -- `Uninitialized_Read` is triggered separately, once per
+`Object_Decl` encountered during that same descent, and is not gated by
+this handler at all.
+
+Root-caused with temporary `Ada.Text_IO`/`GNAT.Traceback.Symbolic`
+instrumentation (added, used, and reverted) inside
+`Checks.Data_Flow.Referenced_Declaration` and `First_Access`. The trace
+showed `Referenced_Declaration` raising the *same* `FP-029` `Property_Error`
+(`types.ads:9:4-9:46`) for essentially every identifier in
+`Stabilizer_Alt_Hold_Update` -- constants, calls, enumeration literals, and
+the plain locals in question alike -- silently swallowed by
+`Referenced_Declaration`'s own blanket `when others => return
+No_Basic_Decl;` with no log line, which is why this bug had no diagnostic
+trail pointing at it until now. `First_Access`'s write-detection
+(`Assigned_Declaration (Node) = Decl`) relies solely on exact declaration
+identity with no fallback, so once resolution fails for any name in the
+subprogram, every later plain-identifier write goes undetected; its sibling
+read-detection path (`Reads_Declaration`, via `Matches_Declaration`) already
+tolerates the identical resolution failure through a spelling-based
+fallback, so reads kept firing while writes silently stopped being
+recognized -- explaining exactly why the *write* at `:343`/`:382`/`:387`
+was missed while the *read* at `:355`/`:392` still matched. Fixed by using
+`Matches_Declaration (Stmt.F_Dest, Decl)` for a plain-identifier
+destination instead, giving write-detection the same fallback
+read-detection already had. Filed as `FP-030` (closed); confirmed against
+the real corpus (88 files, `--recommended`): `Uninitialized_Read` fell from
+3 to 0, with the complete violation-count diff otherwise identical before
+and after the fix. No fixture: this specific write-then-read shape resisted
+three separate synthetic reproduction attempts (a bare Interfaces-derived
+subtype, the same subtype with a `use_type_clause` and a consuming
+expression, and a from-scratch generic instantiation mirroring `Pid`'s own
+record/range shape), the same difficulty already documented for
+`FP-018`/`FP-019`.
+
+While investigating a fourth reproduction attempt (a from-scratch generic
+package with `Float`-ranged formal parameters used directly in a nested
+subtype declaration, unrelated to `Interfaces`), a *different*,
+apparently pre-existing false positive turned up: `Uninitialized_Read`
+fired on the generic's own formal parameters (`LOW_LIMIT`/`HIGH_LIMIT`)
+where they appear in `subtype T_Val is Float range LOW_LIMIT ..
+HIGH_LIMIT;`, textually inside the generic's own visible part. A generic
+formal object is always given a value by instantiation, never by a
+statement in the generic's own text, so treating it as an ordinary
+uninitialized local is a likely defect. Not investigated further here --
+out of scope for this session -- but worth a dedicated look; noted for a
+future pass rather than filed as a known issue without a confirmed root
+cause.
+
+### Root-caused (not locally fixable): FP-029
+
+The null-access message above, and three siblings at `types.ads:8:4-8:46`,
+`types.ads:15:21-15:46`, and `types.ads:16:21-16:47`, all trace to
+`crazyflie_support/src/types.ads`'s block of `subtype T_IntNN is
+Interfaces.IntegerNN;` / `type T_UintNN is new Interfaces.UnsignedNN;`
+declarations -- ordinary constructs with nothing unresolved about them.
+Reduced to a minimal single-file case (`with Interfaces;` at library level,
+a nested `Types` package with one such subtype, a nested `Pkg` package
+whose `Foo` takes a parameter of that subtype with its body declared
+separately from its spec) and instrumented with a symbolic traceback
+(`GNAT.Traceback.Symbolic`, temporarily, on both affected exception
+handlers) to find the exact call chain. Both independent call sites --
+`Subprogram_Summaries.Register_Body`'s `Body.P_Decl_Part` (resolving
+`Foo`'s separate declaration to build its interprocedural summary) and
+`SPARK_Readiness.Check_Discriminant_Access`'s ordinary name resolution on
+an unrelated `Dotted_Name` -- bottom out in the identical Libadalang chain:
+`Subtype_Decl_P_Get_Type` -> `Base_Subtype_Decl_P_From_Type_Bound` ->
+`Base_Subtype_Decl_P_Is_Private` -> `Base_Type_Decl_P_Next_Part` ->
+`Raise_Property_Exception`, inside vendored `libadalang-implementation.adb`.
+This confirms the corpus run's own framing: the gap is shared and
+independent of any specific check's logic, since it is reachable from two
+structurally unrelated analyses. It is an upstream Libadalang defect in
+resolving the privacy/"next part" of a plain subtype of an externally
+with'd package's scalar type during signature matching and name
+resolution, not an AdaLang Analyzer logic error, and there is no fix
+available on this side of the boundary. Both call sites already contain it
+correctly via their existing `when others` handler (skip and log, keep
+going), but the net effect is a real coverage gap: no interprocedural
+summary is registered for `Foo`, and the discriminant check silently does
+not run on the `Dotted_Name`, for any subprogram whose profile mentions
+such a subtype. Filed as `FP-029` (open; false-negative-shaped, no local
+fix possible) in `known_analysis_issues.tsv`. Covered by
+`external_subtype_signature_match_robustness.adb` and a CLI-robustness
+check in `run_cli_robustness.sh` confirming the run still completes and
+reports its (unrelated, genuine) `Unused_Parameter` finding rather than
+aborting.
 
 ### Spot-checked, not fixed (open)
 

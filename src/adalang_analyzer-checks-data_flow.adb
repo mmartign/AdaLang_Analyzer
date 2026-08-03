@@ -1144,9 +1144,30 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                if Is_Read then
                   return (Kind => Read_Access,
                            Node => Libadalang.Analysis.Ada_Node (Node));
-               elsif Assigned_Declaration (Node) = Decl
-                 and then Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+               elsif Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+                 and then Matches_Declaration (Stmt.F_Dest, Decl)
                then
+                  --  Assigned_Declaration alone would miss this write
+                  --  whenever Libadalang's own semantic resolution fails
+                  --  for the destination identifier (e.g. an unrelated
+                  --  Property_Error elsewhere in the same declarative
+                  --  region poisons name resolution for the whole
+                  --  subprogram): it relies solely on exact declaration
+                  --  identity, with no fallback, while Matches_Declaration
+                  --  already falls back to comparing spelling in that
+                  --  case -- the same fallback Reads_Declaration relies on
+                  --  for a plain-identifier read. Without this, a genuine
+                  --  "Decl := Expr;" earlier in the same subprogram went
+                  --  unrecognized as a write, and First_Access read right
+                  --  past it to report the next, later read of Decl as if
+                  --  it were the first access. Observed in the wild in
+                  --  AdaCore/Certyflie's stabilizer.adb, Stabilizer_Alt_
+                  --  Hold_Update: Prev_Integ, Baro_V_Speed, and Alt_Hold_
+                  --  PID_Out are each written by a plain assignment earlier
+                  --  in the same if-branch, but every name in that
+                  --  subprogram fails semantic resolution once Libadalang's
+                  --  own equation solving touches the Interfaces-derived
+                  --  subtypes in types.ads (see FP-029).
                   return (Kind => Write_Access,
                            Node => Libadalang.Analysis.Ada_Node (Node));
                end if;

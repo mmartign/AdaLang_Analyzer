@@ -51,4 +51,24 @@ then
    exit 1
 fi
 
+#  A subtype of a scalar type from a with'd, externally defined package
+#  (e.g. Interfaces.Integer_16) makes Libadalang's own property
+#  implementation raise Property_Error while matching a subprogram body
+#  against its separately declared spec (see known_analysis_issues.tsv,
+#  FP-029). The fixture's unused parameter is an unrelated, genuine
+#  Unused_Parameter finding, so a nonzero exit status here is expected;
+#  what this checks is that the run still completes and reports it, with
+#  the affected checks skipped and logged rather than the whole run
+#  aborting.
+"$analyzer" -v --recommended \
+     tests/external_subtype_signature_match_robustness.adb >"$output" 2>&1 || true
+if ! grep -F 'skipping subprogram summary registration:' "$output" >/dev/null \
+   || ! grep -F 'skipping discriminant check:' "$output" >/dev/null \
+   || ! grep -F 'Files scanned : 1' "$output" >/dev/null
+then
+   echo "external-subtype signature-match case did not degrade gracefully" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 echo "CLI robustness tests passed"
