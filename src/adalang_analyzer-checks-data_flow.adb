@@ -106,6 +106,29 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          return False;
       end if;
 
+      --  A named-actual designator ("LSB" in "To_Integer_16 (LSB =>
+      --  Buffer (0), ...)") names the *callee's* formal, never a
+      --  reference to any declaration visible at the call site -- the
+      --  same shape as the attribute-designator case above, and reached
+      --  the same way: a generic recursive walk (e.g. Reads_Declaration's
+      --  own fallback over an unhandled node) visits a Param_Assoc's
+      --  children indiscriminately, including F_Designator alongside
+      --  F_R_Expr, with no way to tell "this is the formal name" from
+      --  "this is part of the actual expression" except by checking
+      --  identity against the parent's own F_Designator. Observed in the
+      --  wild: a local "LSB : Float" (an unrelated running total) never
+      --  otherwise assigned, colliding by spelling with the LSB formal of
+      --  an unrelated To_Integer_16 (LSB, MSB : UInt8) function called
+      --  with named actuals a few lines later -- misclassified as a read
+      --  of the local before its own eventual initialization.
+      if Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Node.Parent.Kind = Libadalang.Common.Ada_Param_Assoc
+        and then Node.Parent.As_Param_Assoc.F_Designator =
+          Libadalang.Analysis.Ada_Node (Node)
+      then
+         return False;
+      end if;
+
       if not Libadalang.Analysis.Is_Null (Resolved) then
          return Resolved = Decl;
       end if;
@@ -269,6 +292,73 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          return Libadalang.Common.Ada_Mode_Default;
    end Formal_Mode;
 
+   --  Every candidate subprogram sharing Call's callee name that has the
+   --  same total (flattened) formal count as Call has actuals, used only
+   --  when Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True)
+   --  itself returns nothing usable -- observed for a family of same-named
+   --  overloads where one profile carries a System.Address-typed formal
+   --  and the actuals are purely positional: enough on its own to make
+   --  Libadalang's own ad-hoc imprecise-fallback resolution resolve the
+   --  call right back to the (unrelated, differently-shaped) enclosing
+   --  subprogram itself rather than the sibling overload actually called.
+   --  Mirrors Adalang_Analyzer.SPARK_Readiness.Callee_Candidate_By_Arity --
+   --  see that function's own commentary for the full rationale, including
+   --  why specs and bodies are never compared against each other to avoid
+   --  double-counting one subprogram as two same-arity candidates.
+   function Callee_Candidate_By_Arity
+     (Call : Libadalang.Analysis.Call_Expr'Class)
+      return Libadalang.Analysis.Base_Subp_Spec
+   is
+      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+
+      function Best_Of_Kind
+        (Skip_Bodies : Boolean) return Libadalang.Analysis.Base_Subp_Spec
+      is
+         Result : Libadalang.Analysis.Base_Subp_Spec :=
+           Libadalang.Analysis.No_Base_Subp_Spec;
+      begin
+         for Candidate of Call.F_Name.P_All_Env_Elements loop
+            if not Libadalang.Analysis.Is_Null (Candidate)
+              and then Candidate.Kind in Libadalang.Common.Ada_Basic_Decl
+              and then
+                (not Skip_Bodies
+                 or else Candidate.Kind /=
+                   Libadalang.Common.Ada_Subp_Body)
+            then
+               declare
+                  Spec  : constant Libadalang.Analysis.Base_Subp_Spec :=
+                    Candidate.As_Basic_Decl.P_Subp_Spec_Or_Null;
+                  Count : Natural := 0;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Spec) then
+                     for Formal of Spec.P_Params loop
+                        Count := Count + Formal.F_Ids.Children_Count;
+                     end loop;
+                     if Count = Actual_Count then
+                        if not Libadalang.Analysis.Is_Null (Result) then
+                           return Libadalang.Analysis.No_Base_Subp_Spec;
+                        end if;
+                        Result := Spec;
+                     end if;
+                  end if;
+               end;
+            end if;
+         end loop;
+         return Result;
+      end Best_Of_Kind;
+
+      Decl_Match : constant Libadalang.Analysis.Base_Subp_Spec :=
+        Best_Of_Kind (Skip_Bodies => True);
+   begin
+      if not Libadalang.Analysis.Is_Null (Decl_Match) then
+         return Decl_Match;
+      end if;
+      return Best_Of_Kind (Skip_Bodies => False);
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Subp_Spec;
+   end Callee_Candidate_By_Arity;
+
    --  The Position'th formal (1-based, flattening multi-name Param_Specs
    --  like "A, B : out Integer" into two positions) of Call's callee,
    --  resolved leniently: only the callee name itself needs to resolve,
@@ -284,25 +374,37 @@ package body Adalang_Analyzer.Checks.Data_Flow is
    is
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
-      Spec   : Libadalang.Analysis.Base_Subp_Spec;
-      Index  : Natural := 0;
-   begin
-      if Libadalang.Analysis.Is_Null (Callee) then
-         return Libadalang.Analysis.No_Defining_Name;
-      end if;
-      Spec := Callee.P_Subp_Spec_Or_Null;
-      if Libadalang.Analysis.Is_Null (Spec) then
-         return Libadalang.Analysis.No_Defining_Name;
-      end if;
-      for Formal of Spec.P_Params loop
-         for Id of Formal.F_Ids loop
-            Index := Index + 1;
-            if Index = Position then
-               return Id.As_Defining_Name;
-            end if;
+
+      function Formal_At
+        (Spec : Libadalang.Analysis.Base_Subp_Spec)
+         return Libadalang.Analysis.Defining_Name
+      is
+         Index : Natural := 0;
+      begin
+         if Libadalang.Analysis.Is_Null (Spec) then
+            return Libadalang.Analysis.No_Defining_Name;
+         end if;
+         for Formal of Spec.P_Params loop
+            for Id of Formal.F_Ids loop
+               Index := Index + 1;
+               if Index = Position then
+                  return Id.As_Defining_Name;
+               end if;
+            end loop;
          end loop;
-      end loop;
-      return Libadalang.Analysis.No_Defining_Name;
+         return Libadalang.Analysis.No_Defining_Name;
+      end Formal_At;
+
+      Result : Libadalang.Analysis.Defining_Name :=
+        Libadalang.Analysis.No_Defining_Name;
+   begin
+      if not Libadalang.Analysis.Is_Null (Callee) then
+         Result := Formal_At (Callee.P_Subp_Spec_Or_Null);
+      end if;
+      if Libadalang.Analysis.Is_Null (Result) then
+         Result := Formal_At (Callee_Candidate_By_Arity (Call));
+      end if;
+      return Result;
    exception
       when others =>
          return Libadalang.Analysis.No_Defining_Name;
@@ -318,25 +420,37 @@ package body Adalang_Analyzer.Checks.Data_Flow is
    is
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
-      Spec   : Libadalang.Analysis.Base_Subp_Spec;
-   begin
-      if Libadalang.Analysis.Is_Null (Callee) then
-         return Libadalang.Analysis.No_Defining_Name;
-      end if;
-      Spec := Callee.P_Subp_Spec_Or_Null;
-      if Libadalang.Analysis.Is_Null (Spec) then
-         return Libadalang.Analysis.No_Defining_Name;
-      end if;
-      for Formal of Spec.P_Params loop
-         for Id of Formal.F_Ids loop
-            if Text_Utils.Normalize_Rule_Name (Node_Text (Id)) =
-              Designator_Name
-            then
-               return Id.As_Defining_Name;
-            end if;
+
+      function Formal_Named
+        (Spec : Libadalang.Analysis.Base_Subp_Spec)
+         return Libadalang.Analysis.Defining_Name
+      is
+      begin
+         if Libadalang.Analysis.Is_Null (Spec) then
+            return Libadalang.Analysis.No_Defining_Name;
+         end if;
+         for Formal of Spec.P_Params loop
+            for Id of Formal.F_Ids loop
+               if Text_Utils.Normalize_Rule_Name (Node_Text (Id)) =
+                 Designator_Name
+               then
+                  return Id.As_Defining_Name;
+               end if;
+            end loop;
          end loop;
-      end loop;
-      return Libadalang.Analysis.No_Defining_Name;
+         return Libadalang.Analysis.No_Defining_Name;
+      end Formal_Named;
+
+      Result : Libadalang.Analysis.Defining_Name :=
+        Libadalang.Analysis.No_Defining_Name;
+   begin
+      if not Libadalang.Analysis.Is_Null (Callee) then
+         Result := Formal_Named (Callee.P_Subp_Spec_Or_Null);
+      end if;
+      if Libadalang.Analysis.Is_Null (Result) then
+         Result := Formal_Named (Callee_Candidate_By_Arity (Call));
+      end if;
+      return Result;
    exception
       when others =>
          return Libadalang.Analysis.No_Defining_Name;
@@ -951,8 +1065,19 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                   return (Kind => Write_Access,
                            Node => Libadalang.Analysis.Ada_Node (Node));
                end if;
-               return
-                 (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+               --  Decl is neither read by the RHS nor the assignment's own
+               --  (simple) destination, but the RHS can still be, or
+               --  contain, a function call using Decl as an out-mode
+               --  actual -- e.g. "Nb_Touch := This.I2C_Read (Reg,
+               --  Status);", an ordinary Ada function with an out
+               --  parameter, called for its return value inside a larger
+               --  expression rather than as its own call statement. This
+               --  whole Ada_Assign_Stmt case, once reached, always returns
+               --  without ever falling through to the generic child
+               --  recursion below -- where the Ada_Call_Expr case that
+               --  would otherwise recognize that write lives -- so
+               --  delegate to it explicitly over just the RHS.
+               return First_Access (Stmt.F_Expr, Decl, After);
             end;
          elsif Node.Kind = Libadalang.Common.Ada_Identifier
            and then Matches_Declaration (Node, Decl)

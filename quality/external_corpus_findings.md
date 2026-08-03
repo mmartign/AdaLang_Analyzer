@@ -796,3 +796,210 @@ findings from 275 to 251). The local clean/guard pair reproduces the semantic
 boundary without depending on AWS: an unresolved call followed by a read is
 clean, while passing the same uninitialized shape to a resolved `in` formal
 is still flagged.
+
+## Ada Drivers Library (AdaCore/Ada_Drivers_Library)
+
+- **Source**: `AdaCore/Ada_Drivers_Library` on GitHub, a large collection of
+  embedded hardware drivers (sensors, displays, radios, storage) for STM32
+  and other microcontrollers. Deliberately chosen to fill a gap the prior
+  corpora didn't cover: hardware-register-facing, volatile/`Import`-overlay
+  embedded code, distinct from Tokeneer's proof style, Simple Components'
+  and AWS's general-purpose libraries, and CubedOS's small SPARK framework.
+- **Method**: most `.gpr` files in this repository are board- or demo-
+  specific and require a cross-compilation runtime (ZFP/SFP) this
+  environment doesn't have configured, the same obstacle previously hit
+  with Muen and AWS. `hal/src` (the target-independent hardware-abstraction
+  interfaces) and `components/src` (portable sensor/display/radio drivers
+  built only against those interfaces, no board-specific runtime) together
+  form a self-contained, `-P`-less source set: `adalang_analyzer
+  --recommended -v hal/src/*.ad? components/src/**/*.ad?` (133 files, via a
+  file list, not shell-expanded positional arguments -- the same
+  reproducibility note as AWS's invocation).
+- **Baseline run**: 1322 violations. Largest categories: `Wrong_Parameter_Mode`
+  (58), `Dead_Store` (56), `Uninitialized_Output` (131), `Unused_Parameter`
+  (28), `Unused_Variable` (23), `Uninitialized_Read` (20).
+
+### Confirmed analyzer mistake (fixed): FP-021
+
+`Uninitialized_Output` findings were heavily concentrated in one file,
+`components/src/radio/hm11/hm11.adb` (111 of 131). The dominant shape: a
+public procedure with two overloads of the same name, one wider (with a
+`System.Address`-typed `Received` formal, e.g. for a raw response buffer)
+forwarding an `out` parameter positionally to the other, narrower one, e.g.:
+
+```ada
+procedure Transmit_And_Check
+  (This : in out HM11_Driver; Command, Expect : String;
+   Status : out UART_Status) is
+begin
+   Transmit_And_Check
+     (This, Command, Expect, This.Responce'Address, Expect'Length, Status);
+end Transmit_And_Check;
+```
+
+`Statement_Writes_Parameter`'s existing lenient fallback (`Callee_Formal_At_
+Position`, added for FP-008) resolves `Call.F_Name.P_Referenced_Decl` and
+looks up the formal at the actual's literal position -- but for this exact
+shape, Libadalang's own imprecise-fallback resolution resolves the call
+back to the *enclosing*, narrower overload itself (confirmed by isolating a
+minimal reproduction and printing the resolved declaration's own image: it
+came back as the 2-formal enclosing subprogram, not the 4-formal sibling
+actually being called), so the lookup silently ran out of formals before
+reaching the sought position and returned nothing, with no exception to log.
+A further instance of the general resolution fragility already worked
+around for FP-008/FP-012/FP-018/FP-019, this time defeating even the
+existing lenient fallback outright rather than the primary resolution.
+
+Fixed by adding `Callee_Candidate_By_Arity` to both
+`Adalang_Analyzer.SPARK_Readiness` and (duplicated, per this project's
+existing per-module-helper style) `Adalang_Analyzer.Checks.Data_Flow`: when
+the directly-resolved callee's own spec doesn't actually contain a formal
+at the sought position/name, search every same-named candidate visible at
+the call site (`Name.P_All_Env_Elements`) for one whose total formal count
+matches the call's actual count. `P_Canonical_Part` -- the natural way to
+deduplicate a subprogram's spec and body, both returned separately by
+`P_All_Env_Elements`, so they aren't double-counted as two same-arity
+candidates -- was tried first and rejected: on this exact same-name-overload-
+plus-`System.Address` shape it maps the two overloads' bodies to *each
+other's* specs, the same underlying confusion this function exists to route
+around. Deduplicated instead by trying spec-kind candidates before body-kind
+ones, and only comparing within one kind at a time.
+
+Confirmed against the real corpus: `Uninitialized_Output` fell from 131 to
+74 (the residual 74 are, on inspection, dominated by a different, unrelated,
+and apparently genuine shape -- a `Result` parameter assigned only inside
+`if Status = Ok then ... end if;`, so a failed transmission genuinely leaves
+it unwritten -- not investigated further as a false positive). Covered by
+`uninitialized_output_overload_arity_fallback_clean.adb` (clean) and
+`uninitialized_output_overload_arity_fallback_guard.adb` (a second out
+parameter never forwarded at all, at the same shape, must still be
+flagged).
+
+### Confirmed analyzer mistake (fixed): FP-022
+
+`Uninitialized_Read`'s 20 findings were dominated (12 of 20) by a single
+shape: a local declared with the `Import` aspect as an overlay onto a
+buffer another layer (DMA, a prior driver call) already populated, e.g.:
+
+```ada
+if Status = Ok then
+   declare
+      S : Character with Import,
+        Address => This.Responce (Ok_Get'Length + 1)'Address;
+   begin
+      Switch := S = '1';
+```
+
+Such an object is defined to get its value from outside the Ada code and
+needs no explicit initializer, but `Analyze_Object_Declaration`'s
+`Uninitialized_Read` gate checked only for a default expression, a
+renaming clause, and scalar-ness -- with no aspect exemption at all, unlike
+`Dead_Store`/`Overwritten_Assignment`/`Repeated_Statement`, which already
+exempt `Volatile`/`Atomic`/`Address`-aspected declarations via
+`Data_Flow.Is_Externally_Observable` (FP-003). Every observed `Import`
+overlay also carries an `Address` aspect (`Import` alone needs somewhere to
+import from), so that existing, already-vetted test applies directly.
+Fixed by adding it to the same gate; no new aspect-detection code was
+needed. Confirmed against the real corpus: `Uninitialized_Read` fell from
+20 to 8. Covered by `uninitialized_read_import_overlay_clean.adb` (clean)
+and `uninitialized_read_import_overlay_guard.adb` (an ordinary scalar with
+no externally-observable aspect must still be flagged).
+
+### Confirmed analyzer mistake (fixed): FP-023
+
+Of the 8 residual `Uninitialized_Read` findings, 7 shared a second shape: a
+function with an `out`-mode formal, called for its return value inside a
+larger expression rather than as its own call statement, e.g.:
+
+```ada
+Nb_Touch := This.I2C_Read (FT6206_TD_STAT_REG, Status);
+if not Status then
+   return 0;
+```
+
+`Data_Flow.First_Access`'s `Ada_Assign_Stmt` case correctly excludes
+`Status` from being treated as read by the RHS (`Reads_Declaration`'s own
+`Call_Expr` handling already recognizes an out-mode actual as not a read),
+but every path through that case returns unconditionally -- so it never
+falls through to the generic child recursion below, where the
+`Ada_Call_Expr` case that would recognize the nested call *as a write*
+actually lives. The write was silently dropped as `No_Access`, and the scan
+continued to the next real access (`Status` inside `if not Status then`),
+misreporting that later mention as the first one.
+
+Fixed by delegating to `First_Access` itself, recursively, over just the
+RHS whenever neither the read case nor the simple-destination-write case
+matches, giving a nested call expression the same chance at
+`Ada_Call_Expr`-based write recognition any ordinary call statement already
+gets. Confirmed against the real corpus: `Uninitialized_Read` fell from 8
+to 1 (`components/src/range_sensor/VL53L0X/vl53l0x.adb`'s `SPAD_Info`,
+`components/src/touch_panel/ft6x06/ft6x06.adb` and `.../ft5336/ft5336.adb`'s
+`I2C_Read`, all called this same way). Covered by
+`uninitialized_read_function_out_actual_clean.adb` (clean) and
+`uninitialized_read_function_out_actual_guard.adb` (a variable never
+forwarded to the function at all, at the same call-in-expression shape,
+must still be flagged).
+
+### Confirmed analyzer mistake (fixed): FP-024
+
+The last residual `Uninitialized_Read` finding,
+`components/src/motion/bno055/bosch_bno055.adb`'s `Output`, was a distinct,
+third shape:
+
+```ada
+LSB : Float;   --  unrelated running total, declared far above
+...
+New_X := To_Integer_16 (LSB => Buffer (0), MSB => Buffer (1));
+```
+
+`New_X := To_Integer_16 (...)`'s own initializing assignment was flagged as
+a *read* of the unrelated local `LSB`, because the named actual's own
+designator ("LSB", naming `To_Integer_16`'s formal) happens to share its
+spelling with that local. `Reads_Declaration`'s `Ada_Call_Expr` case only
+specially handles a `Param_Assoc` whose actual expression (`F_R_Expr`) is
+itself a plain identifier; here the actual is `Buffer (0)`, so it falls
+back to a fully generic recursive walk over the whole `Param_Assoc` node,
+which visits every child indiscriminately -- including `F_Designator`
+(the formal's own name) right alongside `F_R_Expr` (the actual expression)
+-- and `Matches_Declaration`'s existing spelling-based fallback (already a
+documented, deliberate tradeoff from FP-015) matched the designator by pure
+text. The same general shape as FP-015's attribute-designator collision,
+but for a named-actual designator instead of an attribute name.
+
+Fixed by adding an early check to `Matches_Declaration`, mirroring the
+existing attribute-designator one: an identifier that is specifically the
+`F_Designator` child of its parent `Param_Assoc` never matches any
+declaration, regardless of Libadalang's own resolution outcome for it,
+since a formal designator could never legitimately denote a locally
+tracked object. Confirmed against the real corpus: `Uninitialized_Read`
+fell from 1 to 0. Covered by
+`uninitialized_read_named_actual_designator_clean.adb` (clean) and
+`uninitialized_read_named_actual_designator_guard.adb` (a local genuinely
+passed as the actual expression, not just sharing the designator's
+spelling, must still be flagged when read before assignment).
+
+### Spot-checked, not fixed: `Wrong_Parameter_Mode` and `Dead_Store` (open)
+
+With `Uninitialized_Output`/`Uninitialized_Read` false positives closed out,
+the corpus's other two large categories were sampled rather than
+exhaustively verified, per this project's usual methodology:
+
+- `Wrong_Parameter_Mode` (58 findings, top file
+  `components/src/motion/l3gd20/l3gd20.adb`, 29 findings, all "`This` is
+  only read; use mode in"): `L3GD20`'s `This : in out Three_Axis_Gyroscope`
+  convention is applied uniformly across the type's whole primitive set,
+  but its private `Read`/`Write` helpers take `This` by mode `in`, so a
+  method like `Sleep` that only calls `Read`/`Write` genuinely never
+  mutates `This` -- a real, if minor, mode-tightening opportunity, not an
+  analyzer mistake. Matches the true-positive `Wrong_Parameter_Mode`
+  pattern already documented for Simple Components.
+- `Dead_Store` (56 findings, top file
+  `components/src/radio/nrf24l01p/nrf24l01p.adb`, 15 findings, all on a
+  single multi-output `Get_Status (This, TX_Full, Max_TX, TX_Sent,
+  RX_Resived, Pipe);` call): several callers only care about one or two of
+  `Get_Status`'s five reported outputs and discard the rest into locals
+  that are genuinely never read again in that subprogram -- exactly what
+  `Dead_Store` is defined to find, not an analyzer mistake.
+
+No action taken on either beyond this sampling; not filed as known issues,
+since the analyzer's behavior here appears correct.

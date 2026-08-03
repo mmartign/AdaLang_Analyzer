@@ -731,6 +731,89 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return False;
    end Callee_Writes_Global;
 
+   --  Every candidate subprogram sharing Call's callee name that has the
+   --  same total (flattened) formal count as Call has actuals, used only
+   --  when Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True)
+   --  itself returns nothing usable -- observed for a family of same-named
+   --  overloads where one profile carries a System.Address-typed formal
+   --  and the actuals are purely positional: enough on its own to make
+   --  Libadalang's own ad-hoc imprecise-fallback resolution resolve the
+   --  call right back to the (unrelated, differently-shaped) enclosing
+   --  subprogram itself rather than the sibling overload actually called.
+   --  A further instance of the same general resolution fragility already
+   --  worked around for FP-008/FP-012/FP-018. Resolved by arity alone,
+   --  exactly like the functions below already do once a single callee is
+   --  in hand: if more than one candidate shares the same arity, that is a
+   --  genuine ambiguity this cannot resolve, and it returns nothing rather
+   --  than guessing.
+   --
+   --  P_All_Env_Elements returns both the spec and the body of every
+   --  matching subprogram as separate nodes, which would otherwise be
+   --  double-counted as two same-arity candidates for one real
+   --  subprogram. Rather than cross-reference which body belongs to which
+   --  spec (P_Canonical_Part/P_Decl_Part are themselves not reliable for
+   --  this exact same-name-overload shape -- the same resolution fragility
+   --  this function exists to route around), the two kinds are simply
+   --  never compared against each other: specs are tried first among
+   --  themselves, and bodies are only considered at all when no spec
+   --  anywhere in scope has a matching arity (i.e. every visible candidate
+   --  is a body acting as its own declaration).
+   function Callee_Candidate_By_Arity
+     (Call : Libadalang.Analysis.Call_Expr'Class)
+      return Libadalang.Analysis.Base_Subp_Spec
+   is
+      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+
+      function Best_Of_Kind
+        (Skip_Bodies : Boolean) return Libadalang.Analysis.Base_Subp_Spec
+      is
+         Result : Libadalang.Analysis.Base_Subp_Spec :=
+           Libadalang.Analysis.No_Base_Subp_Spec;
+      begin
+         for Candidate of Call.F_Name.P_All_Env_Elements loop
+            if not Libadalang.Analysis.Is_Null (Candidate)
+              and then Candidate.Kind in Libadalang.Common.Ada_Basic_Decl
+              and then
+                (not Skip_Bodies
+                 or else Candidate.Kind /=
+                   Libadalang.Common.Ada_Subp_Body)
+            then
+               declare
+                  Spec  : constant Libadalang.Analysis.Base_Subp_Spec :=
+                    Candidate.As_Basic_Decl.P_Subp_Spec_Or_Null;
+                  Count : Natural := 0;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Spec) then
+                     for Formal of Spec.P_Params loop
+                        Count := Count + Formal.F_Ids.Children_Count;
+                     end loop;
+                     if Count = Actual_Count then
+                        if not Libadalang.Analysis.Is_Null (Result) then
+                           --  More than one same-arity candidate of this
+                           --  kind: really ambiguous.
+                           return Libadalang.Analysis.No_Base_Subp_Spec;
+                        end if;
+                        Result := Spec;
+                     end if;
+                  end if;
+               end;
+            end if;
+         end loop;
+         return Result;
+      end Best_Of_Kind;
+
+      Decl_Match : constant Libadalang.Analysis.Base_Subp_Spec :=
+        Best_Of_Kind (Skip_Bodies => True);
+   begin
+      if not Libadalang.Analysis.Is_Null (Decl_Match) then
+         return Decl_Match;
+      end if;
+      return Best_Of_Kind (Skip_Bodies => False);
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Subp_Spec;
+   end Callee_Candidate_By_Arity;
+
    --  The Position'th formal (1-based, flattening multi-name Param_Specs
    --  like "A, B : out Integer" into two positions) of Call's callee,
    --  resolved leniently: only the callee name itself needs to resolve,
@@ -739,31 +822,54 @@ package body Adalang_Analyzer.SPARK_Readiness is
    --  actual at that position, since an imprecisely chosen overload need
    --  not have the same formal names as the one actually selected -- only
    --  the same shape, which is what a positional actual relies on anyway.
+   --
+   --  When Call.F_Name.P_Referenced_Decl resolves to a same-named sibling
+   --  that turns out not to have a formal at Position at all -- observed
+   --  for a same-name, same-scope recursive-looking call where Libadalang
+   --  resolves back to the (unrelated, fewer-formal) enclosing overload
+   --  itself rather than the differently-shaped sibling actually being
+   --  called, triggered by a System.Address-typed formal on one of the
+   --  overloads -- Formal_At silently returns nothing for that (wrong)
+   --  candidate, and Callee_Candidate_By_Arity is retried instead. A
+   --  further instance of the general resolution fragility already worked
+   --  around for FP-008/FP-012/FP-018.
    function Callee_Formal_At_Position
      (Call     : Libadalang.Analysis.Call_Expr'Class;
       Position : Positive) return Libadalang.Analysis.Defining_Name
    is
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
-      Spec   : Libadalang.Analysis.Base_Subp_Spec;
-      Index  : Natural := 0;
-   begin
-      if Libadalang.Analysis.Is_Null (Callee) then
-         return Libadalang.Analysis.No_Defining_Name;
-      end if;
-      Spec := Callee.P_Subp_Spec_Or_Null;
-      if Libadalang.Analysis.Is_Null (Spec) then
-         return Libadalang.Analysis.No_Defining_Name;
-      end if;
-      for Formal of Spec.P_Params loop
-         for Id of Formal.F_Ids loop
-            Index := Index + 1;
-            if Index = Position then
-               return Id.As_Defining_Name;
-            end if;
+
+      function Formal_At
+        (Spec : Libadalang.Analysis.Base_Subp_Spec)
+         return Libadalang.Analysis.Defining_Name
+      is
+         Index : Natural := 0;
+      begin
+         if Libadalang.Analysis.Is_Null (Spec) then
+            return Libadalang.Analysis.No_Defining_Name;
+         end if;
+         for Formal of Spec.P_Params loop
+            for Id of Formal.F_Ids loop
+               Index := Index + 1;
+               if Index = Position then
+                  return Id.As_Defining_Name;
+               end if;
+            end loop;
          end loop;
-      end loop;
-      return Libadalang.Analysis.No_Defining_Name;
+         return Libadalang.Analysis.No_Defining_Name;
+      end Formal_At;
+
+      Result : Libadalang.Analysis.Defining_Name :=
+        Libadalang.Analysis.No_Defining_Name;
+   begin
+      if not Libadalang.Analysis.Is_Null (Callee) then
+         Result := Formal_At (Callee.P_Subp_Spec_Or_Null);
+      end if;
+      if Libadalang.Analysis.Is_Null (Result) then
+         Result := Formal_At (Callee_Candidate_By_Arity (Call));
+      end if;
+      return Result;
    exception
       when others =>
          return Libadalang.Analysis.No_Defining_Name;
@@ -776,30 +882,44 @@ package body Adalang_Analyzer.SPARK_Readiness is
    --  lookup, needed because Libadalang's own full per-actual resolution
    --  (Assoc.P_Get_Params) can fail to classify a named actual in cases
    --  Callee_Formal_At_Position cannot help with either, since that one
-   --  only applies to purely positional actuals.
+   --  only applies to purely positional actuals. Falls back to
+   --  Callee_Candidate_By_Arity on the same "resolved to a same-named
+   --  sibling with no such formal" condition as Callee_Formal_At_Position.
    function Callee_Formal_By_Name
      (Call            : Libadalang.Analysis.Call_Expr'Class;
       Designator_Name : String) return Libadalang.Analysis.Defining_Name
    is
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
-      Spec   : Libadalang.Analysis.Base_Subp_Spec;
-   begin
-      if Libadalang.Analysis.Is_Null (Callee) then
-         return Libadalang.Analysis.No_Defining_Name;
-      end if;
-      Spec := Callee.P_Subp_Spec_Or_Null;
-      if Libadalang.Analysis.Is_Null (Spec) then
-         return Libadalang.Analysis.No_Defining_Name;
-      end if;
-      for Formal of Spec.P_Params loop
-         for Id of Formal.F_Ids loop
-            if Normalize_Rule_Name (Node_Text (Id)) = Designator_Name then
-               return Id.As_Defining_Name;
-            end if;
+
+      function Formal_Named
+        (Spec : Libadalang.Analysis.Base_Subp_Spec)
+         return Libadalang.Analysis.Defining_Name
+      is
+      begin
+         if Libadalang.Analysis.Is_Null (Spec) then
+            return Libadalang.Analysis.No_Defining_Name;
+         end if;
+         for Formal of Spec.P_Params loop
+            for Id of Formal.F_Ids loop
+               if Normalize_Rule_Name (Node_Text (Id)) = Designator_Name then
+                  return Id.As_Defining_Name;
+               end if;
+            end loop;
          end loop;
-      end loop;
-      return Libadalang.Analysis.No_Defining_Name;
+         return Libadalang.Analysis.No_Defining_Name;
+      end Formal_Named;
+
+      Result : Libadalang.Analysis.Defining_Name :=
+        Libadalang.Analysis.No_Defining_Name;
+   begin
+      if not Libadalang.Analysis.Is_Null (Callee) then
+         Result := Formal_Named (Callee.P_Subp_Spec_Or_Null);
+      end if;
+      if Libadalang.Analysis.Is_Null (Result) then
+         Result := Formal_Named (Callee_Candidate_By_Arity (Call));
+      end if;
+      return Result;
    exception
       when others =>
          return Libadalang.Analysis.No_Defining_Name;

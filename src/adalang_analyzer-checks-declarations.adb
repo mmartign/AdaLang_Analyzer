@@ -527,7 +527,21 @@ package body Adalang_Analyzer.Checks.Declarations is
             Dest : constant Libadalang.Analysis.Name :=
               Node.As_Assign_Stmt.F_Dest;
          begin
-            return Write_Target_Contains_Parameter (Dest, Param, Name);
+            if Write_Target_Contains_Parameter (Dest, Param, Name) then
+               return True;
+            end if;
+            --  Param is not the assignment's own destination, but the RHS
+            --  can still be, or contain, a call using Param as an out/
+            --  in-out actual -- e.g. a function called for its return
+            --  value inside a larger expression, such as "Result :=
+            --  Statement_Initialization (..., Bad_Return);" where
+            --  Bad_Return is forwarded in-out. This whole Ada_Assign_Stmt
+            --  case always returns rather than falling through to the
+            --  generic child recursion below, where the Ada_Call_Expr
+            --  case that would recognize that write lives, so delegate to
+            --  it explicitly over the RHS.
+            return Parameter_Is_Written
+              (Node.As_Assign_Stmt.F_Expr, Param, Name);
          end;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
          return Call_Uses_Parameter_Mode
@@ -585,8 +599,17 @@ package body Adalang_Analyzer.Checks.Declarations is
       if Libadalang.Analysis.Is_Null (Node) then
          return False;
       elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
-         return Parameter_Name_Matches
-           (Node.As_Assign_Stmt.F_Dest, Param, Name);
+         if Parameter_Name_Matches
+           (Node.As_Assign_Stmt.F_Dest, Param, Name)
+         then
+            return True;
+         end if;
+         --  See the identical fallthrough in Parameter_Is_Written: a call
+         --  forwarding Param as an out/in-out actual, embedded in the
+         --  RHS of an assignment to something else, must still count as
+         --  writing Param even though the destination doesn't.
+         return Parameter_Is_Wholly_Written
+           (Node.As_Assign_Stmt.F_Expr, Param, Name);
       elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
          return Call_Uses_Parameter_Mode
              (Node.As_Call_Expr.F_Suffix, Param, Name, For_Read => False)
@@ -942,10 +965,18 @@ package body Adalang_Analyzer.Checks.Declarations is
          end loop;
       end if;
 
+      --  A Volatile/Atomic/Address-aspected declaration (the same test
+      --  Dead_Store etc. already use, see Data_Flow.Is_Externally_
+      --  Observable) gets its value from outside the Ada code -- typically
+      --  a memory-mapped register or a "with Import, Address => ..."
+      --  overlay onto a buffer some other layer (DMA, a driver call)
+      --  already populated -- so its first Ada-level mention being a read
+      --  is the expected shape, not a bug.
       if Rule_States (Uninitialized_Read) = Enabled
         and then Libadalang.Analysis.Is_Null (Decl.F_Default_Expr)
         and then Libadalang.Analysis.Is_Null (Decl.F_Renaming_Clause)
         and then Is_Scalar_Declaration (Decl)
+        and then not Data_Flow.Is_Externally_Observable (Decl.As_Basic_Decl)
       then
          declare
             Subprogram : constant Libadalang.Analysis.Subp_Body :=

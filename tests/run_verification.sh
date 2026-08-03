@@ -67,8 +67,9 @@ fi
 
 run_json "$interprocedural_effects" \
   tests/interprocedural_effect_summaries.adb
-grep -F '"operation": "Denominator = 0", "status": "proved-safe"' \
-  "$interprocedural_effects" >/dev/null
+grep -F '"kind": "assertion", "status": "proved-safe"' \
+  "$interprocedural_effects" | grep -F '"operation": "Denominator = 0"' \
+  >/dev/null
 grep -F '"kind": "initialization-check", "status": "proved-safe"' \
   "$interprocedural_effects" | grep -F '"operation": "Result"' >/dev/null
 grep -F '"kind": "initialization-check", "status": "unproved"' \
@@ -77,10 +78,12 @@ grep -F '"kind": "initialization-check", "status": "unproved"' \
 grep -F '"kind": "initialization-check", "status": "definite-error"' \
   "$interprocedural_effects" | grep -F '"operation": "Shadow_Result"' \
   >/dev/null
-grep -F '"operation": "Changed = 1", "status": "unproved"' \
-  "$interprocedural_effects" >/dev/null
-if grep -F '"operation": "Changed = 1", "status": "proved-safe"' \
-  "$interprocedural_effects" >/dev/null; then
+grep -F '"kind": "assertion", "status": "unproved"' \
+  "$interprocedural_effects" | grep -F '"operation": "Changed = 1"' \
+  >/dev/null
+if grep -F '"kind": "assertion", "status": "proved-safe"' \
+  "$interprocedural_effects" | grep -F '"operation": "Changed = 1"' \
+  >/dev/null; then
    echo "transitive nonlocal write left stale state in verification" >&2
    exit 1
 fi

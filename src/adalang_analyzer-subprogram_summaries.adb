@@ -229,8 +229,10 @@ package body Adalang_Analyzer.Subprogram_Summaries is
          end if;
       end loop;
    exception
-      when others =>
-         null;
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping formal-write marking: " &
+            Ada.Exceptions.Exception_Message (Exc));
    end Mark_Formal_Write;
 
    function Ultimate_Written_Name
