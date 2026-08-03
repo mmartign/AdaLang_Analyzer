@@ -1003,3 +1003,138 @@ exhaustively verified, per this project's usual methodology:
 
 No action taken on either beyond this sampling; not filed as known issues,
 since the analyzer's behavior here appears correct.
+
+## Certyflie (AdaCore/Certyflie)
+
+- **Source**: `AdaCore/Certyflie` on GitHub, the Ada/SPARK flight controller
+  for the Crazyflie nano quadcopter. Deliberately chosen to fill a gap none
+  of the prior corpora covered: real Ravenscar-style concurrency (`task`
+  bodies, `protected` objects with entries and barriers) and generic
+  package instantiation (`Pid`, instantiated once per control axis),
+  distinct from every earlier corpus's mostly sequential control/data-flow
+  shapes.
+- **Method**: `cf_ada_spark.gpr` targets `arm-eabi` with a cross-compilation
+  runtime this environment doesn't have configured, the same obstacle
+  already hit with Muen/AWS/Ada_Drivers_Library. `src` (the flight-control
+  logic: PID controller, stabilizer, commander, parameter/log subsystems,
+  `tasks.ads`) and `crazyflie_support/src` (the self-contained CRTP/
+  syslink/radio-link protocol layer, including all the tasking- and
+  protected-object-bearing files) together are `-P`-less and mostly
+  self-contained; `Ada_Drivers_Library` (a submodule, populated for this
+  run) supplies `hal/src` and the two motion-sensor components
+  (`mpu9250`, `ak8963`) actually `with`ed. The board-specific STM32 driver
+  stack (`STM32.Board`, `STM32.GPIO`, ...) that `crazyflie_support` also
+  `with`s was deliberately *not* pulled in, the same scoping choice already
+  made for the Ada_Drivers_Library corpus itself: `adalang_analyzer
+  --recommended -v` over 87 files, via a file list (not shell-expanded
+  positional arguments, the same reproducibility note as AWS's and Ada_
+  Drivers_Library's invocations).
+- **Baseline run**: 74 violations. Largest categories: `Dead_Store` (33),
+  `Uninitialized_Output` (5), `Uninitialized_Read` (7), `Wrong_Parameter_Mode`
+  (7), `Infinite_Loop` (8).
+
+### Confirmed analyzer mistake (fixed): FP-028
+
+4 of the 7 `Uninitialized_Read` findings shared one exact shape, in three
+different files (`parameter.adb`, `memory.adb`, `crazyflie_support/src/
+log.adb`, each a CRTP command-dispatch procedure with the identical local
+convention):
+
+```ada
+Command        : Parameter_TOC_Command;
+Packet_Handler  : CRTP_Packet_Handler;
+Has_Succeed     : Boolean;
+pragma Unreferenced (Has_Succeed);
+begin
+   ...
+```
+
+`Has_Succeed` is declared, immediately named in a `pragma Unreferenced` (to
+suppress an unrelated "declared but never read" warning further down, since
+it's only ever written, never read, elsewhere in the body), then assigned
+later. `Data_Flow.First_Access`'s plain pre-order walk over the subprogram
+body has no special case for a pragma: `Matches_Declaration` calls
+`P_Referenced_Decl` on the pragma argument identifier, which genuinely,
+correctly resolves back to `Has_Succeed`'s own declaration (a pragma
+argument really does denote the entity it names) -- with nothing to
+distinguish "this identifier is merely named by a compiler directive" from
+"this identifier's value is read here," unlike an executable pragma such as
+`Assert`, whose argument is a genuine boolean expression evaluated when
+execution reaches it.
+
+Fixed by adding an early check to `Matches_Declaration`, gated on the
+enclosing pragma's own name (not blanket-excluding every pragma argument,
+so a bare-identifier condition in an executable pragma is unaffected): an
+identifier that is the argument of a `pragma Unreferenced`, `Unmodified`, or
+`Warnings` never matches any declaration. The same narrow, name-gated style
+already used for `Assertion_Expression`'s "check"/"assert"/"assert_and_cut"/
+"loop_invariant" whitelist elsewhere in this project. Confirmed against the
+real corpus: `Uninitialized_Read` fell from 7 to 3, with no new findings
+appearing anywhere. Covered by
+`uninitialized_read_pragma_unreferenced_clean.adb` (clean) and
+`uninitialized_read_pragma_unreferenced_guard.adb` (the same colliding
+bare-identifier shape under `pragma Assert`, genuinely evaluated at
+runtime, must still be flagged).
+
+### Residual `Uninitialized_Read` findings (3, open)
+
+The remaining 3 findings (`stabilizer.adb:355` and `:392` twice, inside
+`Stabilizer_Alt_Hold_Update`) are puzzling rather than clearly one or the
+other: the flagged variables (`Prev_Integ`, `Baro_V_Speed`, `Alt_Hold_PID_
+Out`, all plain `Float`/fixed-point locals) are each written by a plain
+`Var := Expr;` statement earlier in the same `if` branch, which should have
+registered as `Write_Access` and ended `First_Access`'s search before ever
+reaching the later, reported read -- yet it doesn't. `Alt_Hold_PID`, read on
+both of the flagged lines, is of a type from a generic instantiation
+(`package Altitude_Pid is new Pid (...)`, `Alt_Hold_PID : Altitude_Pid.
+Pid_Object`), the same general family of construct already proven fragile
+for other checks' formal-resolution paths (`FP-008`/`FP-012`/`FP-018`/
+`FP-019`/`FP-021`), which makes it a plausible suspect here too, but a
+hand-written minimal reproduction of the same shape (a generic `Pid_Object`
+record, a `Pid_Init` procedure, a local `Float` written then read across an
+intervening call, mirroring the real file line for line) stayed clean --
+the same "resistant to synthetic reproduction, only reproduces in the
+original file's own multi-file context" difficulty already noted for
+`FP-018` before it was finally isolated as `FP-019`. Separately, this exact
+run also logs `skipping checks at <SubpBody ["Stabilizer_Alt_Hold_Update"]
+...>: types.ads:9:4-9:46: dereferencing a null access` -- traced to
+`subtype T_Int32 is Interfaces.Integer_32;`, an utterly ordinary
+declaration with nothing unresolved about it, so this is a real internal
+robustness gap independent of any specific check's logic. Confirmed,
+though, that this particular message does *not* explain the read-before-
+write puzzle above: it is emitted from `Checks.Evaluate_Node`'s own
+node-level exception handler, which only skips whichever checks dispatch
+directly on the `SubpBody` node itself before unconditionally continuing
+the recursive descent into every child regardless -- `Uninitialized_Read`
+is triggered separately, once per `Object_Decl` encountered during that
+same descent, and is not gated by this handler at all. Left open as two
+distinct, unresolved observations rather than force a fix without a
+confirmed root cause: the null-access robustness gap, and the read-before-
+write ordering anomaly, both narrower in scope than they first appeared but
+neither yet root-caused.
+
+### Spot-checked, not fixed (open)
+
+The remaining categories were sampled rather than exhaustively verified,
+per this project's usual methodology, and appear to be genuine findings
+rather than analyzer mistakes:
+
+- `Infinite_Loop` (8 findings, e.g. `crazyflie_system.adb`'s `System_Loop`
+  and `Last_Chance_Handler`): periodic Ravenscar task/handler bodies of the
+  form `loop delay until Next_Period; ...; end loop;` with no exit --
+  genuinely infinite by design, correctly identified as such.
+- `Empty_Loop` (2 findings, both in `crazyflie_support/src/io.adb`):
+  `while not STM32.USARTs.Rx_Ready (USART) loop null; end loop;`, a
+  standard embedded busy-wait poll of a hardware-facing function with an
+  empty body -- the loop body is, textually, exactly what the check is
+  defined to find.
+- `Wrong_Parameter_Mode` (7 findings, 4 in `free_fall.adb` alone, all "this
+  parameter is only read; use mode in"): the same true-positive
+  mode-tightening pattern already documented for Simple Components and
+  Ada_Drivers_Library's `L3GD20`.
+- `Function_Side_Effect` (3 findings, `crazyflie_support/src/imu.adb`):
+  the same nested-callback-mutating-an-enclosing-local shape already
+  documented as a legitimate true positive for Simple Components.
+
+No action taken on any of these beyond this sampling; not filed as known
+issues, since the analyzer's behavior here appears correct.

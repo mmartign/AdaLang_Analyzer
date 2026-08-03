@@ -129,6 +129,41 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          return False;
       end if;
 
+      --  A pragma argument naming an entity ("Has_Succeed" in "pragma
+      --  Unreferenced (Has_Succeed);") is never read at runtime: unlike an
+      --  executable pragma such as Assert, whose argument is a genuine
+      --  boolean expression evaluated when execution reaches it,
+      --  Unreferenced/Unmodified/Warnings are pure compiler directives
+      --  that merely name a declaration without ever inspecting its
+      --  value. Gated on the pragma's own name (not every pragma
+      --  argument) so a bare-identifier condition in an executable
+      --  pragma, e.g. "pragma Assert (Is_Ready);", still counts as a
+      --  read. Observed in the wild: "pragma Unreferenced
+      --  (Has_Succeed);" right after Has_Succeed's own declaration,
+      --  misclassified by First_Access's generic child walk as a read of
+      --  Has_Succeed before its first real assignment.
+      if Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Node.Parent.Kind =
+          Libadalang.Common.Ada_Pragma_Argument_Assoc
+        and then not Libadalang.Analysis.Is_Null (Node.Parent.Parent)
+        and then not Libadalang.Analysis.Is_Null (Node.Parent.Parent.Parent)
+        and then Node.Parent.Parent.Parent.Kind =
+          Libadalang.Common.Ada_Pragma_Node
+      then
+         declare
+            Pragma_Name : constant String :=
+              Canonical_Text
+                (Node.Parent.Parent.Parent.As_Pragma_Node.F_Id);
+         begin
+            if Pragma_Name = "unreferenced"
+              or else Pragma_Name = "unmodified"
+              or else Pragma_Name = "warnings"
+            then
+               return False;
+            end if;
+         end;
+      end if;
+
       if not Libadalang.Analysis.Is_Null (Resolved) then
          return Resolved = Decl;
       end if;
