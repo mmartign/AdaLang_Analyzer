@@ -814,6 +814,52 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Base_Subp_Spec;
    end Callee_Candidate_By_Arity;
 
+   --  Return the callable profile when Callee denotes an object whose type is
+   --  access-to-subprogram.  Indirect calls through record components and
+   --  discriminants resolve to the Component_Decl/Discriminant_Spec, not to
+   --  a subprogram declaration, so P_Subp_Spec_Or_Null cannot expose their
+   --  formals.  Resolve the object's type declaration instead and recover the
+   --  Subp_Spec embedded in its Access_To_Subp_Def.  This handles both named
+   --  and anonymous access-to-subprogram types.
+   function Access_To_Subprogram_Profile
+     (Callee : Libadalang.Analysis.Basic_Decl'Class)
+      return Libadalang.Analysis.Base_Subp_Spec
+   is
+      Type_Expression : Libadalang.Analysis.Type_Expr :=
+        Libadalang.Analysis.No_Type_Expr;
+      Type_Declaration : Libadalang.Analysis.Base_Type_Decl :=
+        Libadalang.Analysis.No_Base_Type_Decl;
+      Type_Definition : Libadalang.Analysis.Type_Def :=
+        Libadalang.Analysis.No_Type_Def;
+   begin
+      case Callee.Kind is
+         when Libadalang.Common.Ada_Component_Decl =>
+            Type_Expression :=
+              Callee.As_Component_Decl.F_Component_Def.F_Type_Expr;
+         when Libadalang.Common.Ada_Discriminant_Spec =>
+            Type_Expression := Callee.As_Discriminant_Spec.F_Type_Expr;
+         when others =>
+            return Libadalang.Analysis.No_Base_Subp_Spec;
+      end case;
+
+      Type_Declaration := Type_Expression.P_Designated_Type_Decl;
+      if Libadalang.Analysis.Is_Null (Type_Declaration)
+        or else Type_Declaration.Kind not in Libadalang.Common.Ada_Type_Decl
+      then
+         return Libadalang.Analysis.No_Base_Subp_Spec;
+      end if;
+
+      Type_Definition := Type_Declaration.As_Type_Decl.F_Type_Def;
+      if Type_Definition.Kind = Libadalang.Common.Ada_Access_To_Subp_Def then
+         return Libadalang.Analysis.Base_Subp_Spec
+           (Type_Definition.As_Access_To_Subp_Def.F_Subp_Spec);
+      end if;
+      return Libadalang.Analysis.No_Base_Subp_Spec;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Subp_Spec;
+   end Access_To_Subprogram_Profile;
+
    --  The Position'th formal (1-based, flattening multi-name Param_Specs
    --  like "A, B : out Integer" into two positions) of Call's callee,
    --  resolved leniently: only the callee name itself needs to resolve,
@@ -865,6 +911,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
    begin
       if not Libadalang.Analysis.Is_Null (Callee) then
          Result := Formal_At (Callee.P_Subp_Spec_Or_Null);
+         if Libadalang.Analysis.Is_Null (Result) then
+            Result := Formal_At (Access_To_Subprogram_Profile (Callee));
+         end if;
       end if;
       if Libadalang.Analysis.Is_Null (Result) then
          Result := Formal_At (Callee_Candidate_By_Arity (Call));
@@ -915,6 +964,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
    begin
       if not Libadalang.Analysis.Is_Null (Callee) then
          Result := Formal_Named (Callee.P_Subp_Spec_Or_Null);
+         if Libadalang.Analysis.Is_Null (Result) then
+            Result := Formal_Named (Access_To_Subprogram_Profile (Callee));
+         end if;
       end if;
       if Libadalang.Analysis.Is_Null (Result) then
          Result := Formal_Named (Callee_Candidate_By_Arity (Call));
