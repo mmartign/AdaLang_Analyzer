@@ -1926,6 +1926,93 @@ package body Adalang_Analyzer.Flow_Interp is
       return False;
    end Contains_VC_Arithmetic;
 
+   --  Checked separately from Interpret_Proof_Pragma so Verify_Subprogram's
+   --  Finalize_Node can replay the same determination against a CFG node's
+   --  own fully-converged State, marked Final (see FP-032, following
+   --  FP-031/FP-034's Ada_Identifier/Range_Check fixes).
+   procedure Check_Proof_Pragma_Assertion
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Cond    : Libadalang.Analysis.Expr;
+      State   : Flow_State;
+      Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
+      Final   : Boolean := False)
+   is
+   begin
+      if Config.Rule_States (Rules.Known_Assertion_Failure) /=
+        Config.Enabled
+      then
+         return;
+      end if;
+
+      declare
+         Value     : constant Abstract_Bool := Boolean_Value (Cond, State);
+         VC_Result : constant VC.VC_Result :=
+           (if Config.Verification_Mode and then Value = Bool_Unknown
+            then VC.Decide (Cond, State, Symbols) else VC.VC_Unknown);
+      begin
+         if Value = Bool_False
+           or else
+             (VC_Result = VC.VC_Refuted
+              and then not Contains_VC_Arithmetic (Cond))
+         then
+            Record_Definite_Error
+              (Unit, Cond, Proof.Assertion_Check,
+               (if VC_Result = VC.VC_Refuted
+                then Proof.External_Prover
+                else Proof.Abstract_Interpretation),
+               "assertion condition is false based on the incoming state",
+               (if VC_Result = VC.VC_Refuted
+                then VC.Evidence
+                else "assertion condition => false"),
+               Final => Final);
+            if Boolean_Value (Cond) = Bool_Unknown then
+               Report.Report_Rule_Violation
+                 (Unit, Cond, Rules.Known_Assertion_Failure,
+                  "assertion condition is false here based on earlier " &
+                    "state",
+                  Explanation =>
+                    "The incoming flow state makes the assertion " &
+                    "condition False.",
+                  Evidence =>
+                    (if VC_Result = VC.VC_Refuted
+                     then VC.Evidence
+                     else "assertion condition => false"));
+            end if;
+         elsif Config.Verification_Mode
+           and then
+             (Value = Bool_True or else VC_Result = VC.VC_Proved)
+         then
+            Record_Proved_Safe
+              (Unit, Cond, Proof.Assertion_Check,
+               (if VC_Result = VC.VC_Proved
+                then Proof.External_Prover
+                else Proof.Abstract_Interpretation),
+               (if VC_Result = VC.VC_Proved
+                then "scalar verification condition proved by the " &
+                  "external prover portfolio"
+                else "assertion condition is true in the incoming state"),
+               (if VC_Result = VC.VC_Proved
+                then VC.Evidence
+                else "assertion condition => true"),
+               Final => Final);
+         else
+            Record_Unproved
+              (Unit, Cond, Proof.Assertion_Check,
+               Proof.Abstract_Interpretation,
+               "assertion failure is not established, but the assertion " &
+                 "is not proved",
+               Imprecision =>
+                 (if VC_Result = VC.VC_Unavailable
+                  then "CVC5/Z3 prover portfolio is unavailable"
+                  elsif VC_Result = VC.VC_Unsupported
+                  then "expression is outside the scalar VC subset"
+                  else "abstract interpretation and the scalar VC " &
+                    "portfolio did not certify it"),
+               Final => Final);
+         end if;
+      end;
+   end Check_Proof_Pragma_Assertion;
+
    function Interpret_Proof_Pragma
      (Unit        : Libadalang.Analysis.Analysis_Unit;
       Pragma_Node : Libadalang.Analysis.Pragma_Node;
@@ -1944,74 +2031,8 @@ package body Adalang_Analyzer.Flow_Interp is
 
       Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
 
-      if Name /= "assume"
-        and then Config.Rule_States (Rules.Known_Assertion_Failure) =
-          Config.Enabled
-      then
-         declare
-            Value     : constant Abstract_Bool := Boolean_Value (Cond, State);
-            VC_Result : constant VC.VC_Result :=
-              (if Config.Verification_Mode and then Value = Bool_Unknown
-               then VC.Decide (Cond, State, Symbols) else VC.VC_Unknown);
-         begin
-            if Value = Bool_False
-              or else
-                (VC_Result = VC.VC_Refuted
-                 and then not Contains_VC_Arithmetic (Cond))
-            then
-               Record_Definite_Error
-                 (Unit, Cond, Proof.Assertion_Check,
-                  (if VC_Result = VC.VC_Refuted
-                   then Proof.External_Prover
-                   else Proof.Abstract_Interpretation),
-                  "assertion condition is false based on the incoming state",
-                  (if VC_Result = VC.VC_Refuted
-                   then VC.Evidence
-                   else "assertion condition => false"));
-               if Boolean_Value (Cond) = Bool_Unknown then
-                  Report.Report_Rule_Violation
-                    (Unit, Cond, Rules.Known_Assertion_Failure,
-                     "assertion condition is false here based on earlier " &
-                       "state",
-                     Explanation =>
-                       "The incoming flow state makes the assertion " &
-                       "condition False.",
-                     Evidence =>
-                       (if VC_Result = VC.VC_Refuted
-                        then VC.Evidence
-                        else "assertion condition => false"));
-               end if;
-            elsif Config.Verification_Mode
-              and then
-                (Value = Bool_True or else VC_Result = VC.VC_Proved)
-            then
-               Record_Proved_Safe
-                 (Unit, Cond, Proof.Assertion_Check,
-                  (if VC_Result = VC.VC_Proved
-                   then Proof.External_Prover
-                   else Proof.Abstract_Interpretation),
-                  (if VC_Result = VC.VC_Proved
-                   then "scalar verification condition proved by the " &
-                     "external prover portfolio"
-                   else "assertion condition is true in the incoming state"),
-                  (if VC_Result = VC.VC_Proved
-                   then VC.Evidence
-                   else "assertion condition => true"));
-            else
-               Record_Unproved
-                 (Unit, Cond, Proof.Assertion_Check,
-                  Proof.Abstract_Interpretation,
-                  "assertion failure is not established, but the assertion " &
-                    "is not proved",
-                  Imprecision =>
-                    (if VC_Result = VC.VC_Unavailable
-                     then "CVC5/Z3 prover portfolio is unavailable"
-                     elsif VC_Result = VC.VC_Unsupported
-                     then "expression is outside the scalar VC subset"
-                     else "abstract interpretation and the scalar VC " &
-                       "portfolio did not certify it"));
-            end if;
-         end;
+      if Name /= "assume" then
+         Check_Proof_Pragma_Assertion (Unit, Cond, State, Symbols);
       end if;
 
       --  Execution continues only when an assertion succeeds. Assume has
@@ -3845,6 +3866,37 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end Finalize_Overflow_Check;
 
+      --  As Finalize_Range_Check, for Assertion_Check via
+      --  Check_Proof_Pragma_Assertion, covering pragma Assert and the
+      --  per-visit condition check shared by pragma Loop_Invariant /
+      --  Loop_Variant (see FP-032, the same mechanism applied to
+      --  Interpret_Proof_Pragma's live recording).
+      procedure Finalize_Assertion_Check
+        (Cond      : Libadalang.Analysis.Expr;
+         Container : CFG.Node_Id)
+      is
+      begin
+         if not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Cond, Proof.Assertion_Check,
+               "assertion has not been established");
+         elsif Container /= CFG.No_Node
+           and then not Reachable (Container)
+         then
+            Record_Unreachable
+              (Unit, Cond, Proof.Assertion_Check,
+               "the containing CFG node is unreachable");
+         else
+            Check_Proof_Pragma_Assertion
+              (Unit, Cond,
+               (if Container = CFG.No_Node then Empty_Flow_State
+                else States (Container)),
+               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
+                else Symbolic_States (Container)),
+               Final => True);
+         end if;
+      end Finalize_Assertion_Check;
+
       procedure Finalize_Loop_Invariant
         (Condition : Libadalang.Analysis.Expr;
          Container : CFG.Node_Id)
@@ -4085,9 +4137,7 @@ package body Adalang_Analyzer.Flow_Interp is
                if not Libadalang.Analysis.Is_Null (Cond)
                  and then Name /= "assume"
                then
-                  Final_Outcome
-                    (Cond, Proof.Assertion_Check, Here,
-                     "assertion has not been established");
+                  Finalize_Assertion_Check (Cond, Here);
                   if Name = "loop-invariant" then
                      Finalize_Loop_Invariant (Cond, Here);
                   elsif Name = "loop-variant" then

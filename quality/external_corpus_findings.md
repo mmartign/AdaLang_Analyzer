@@ -158,7 +158,7 @@ and "the fixed-point state did not discharge this obligation" — both
 the original gap (calls through private-child boundaries and other spots
 interprocedural summaries don't yet reach).
 
-### Confirmed analyzer mistake (fixed): FP-031, and open: FP-032
+### Confirmed analyzer mistakes (fixed): FP-031, FP-032
 
 `Definite_Error` going from 0 to 2 was unexpected on a codebase AdaCore
 describes as fully verified, so both were investigated rather than folded
@@ -192,17 +192,26 @@ regression are in `FP-031` in `quality/known_analysis_issues.tsv`
 (`tests/verification_loop_stale_initialization.adb`, run by
 `run_verification.sh`).
 
-`enrolment.adb`'s case (`assertion`, on a `pragma Loop_Invariant`) is *not*
-fixed by the same change and remains open as `FP-032`: its live recording
+`enrolment.adb`'s case (`assertion`, on a `pragma Loop_Invariant`) was *not*
+fixed by the same change and was left open as `FP-032`: its live recording
 happens in `Interpret_Proof_Pragma`, not the `Ada_Identifier` path
 `Finalize_Node` was extended for, and `Finalize_Node`'s own `Pragma_Node`
-handling only ever falls back to a coarse "Unproved unless unsupported/
-unreachable" default rather than re-deriving Proved_Safe/Definite_Error —
-closing it needs `Finalize_Node` to replay `Interpret_Proof_Pragma` itself
-against the converged state with `Final => True`, plus a decision about
-what replaying a pragma's narrowing side effect means outside the live
-fixed point, which `FP-031`'s simpler read-only case didn't raise. See
-`FP-032` in `quality/known_analysis_issues.tsv`.
+handling only ever fell back to a coarse "Unproved unless unsupported/
+unreachable" default rather than re-deriving Proved_Safe/Definite_Error.
+Fixed later, alongside the `FP-034`–`FP-037` batch below: the
+assertion-determination logic was factored out of `Interpret_Proof_Pragma`
+into `Check_Proof_Pragma_Assertion` (leaving that function's own
+`Scan_Expression_For_Flow_Bugs` call and state-narrowing side effect out of
+the extracted core, since a replay must not repeat those), and
+`Finalize_Node` gained a `Finalize_Assertion_Check` helper that replays it
+against the converged state with `Final => True`. Confirmed with a fixture
+in `FP-034`'s exact shape (`pragma Assert` after a dynamically-bounded
+loop write, wrongly `Proved_Safe` before, correctly `Unproved` after); the
+original `enrolment.adb` case itself could not be used to confirm the fix
+in this environment, since without a GNAT toolchain on PATH (see `FP-029`)
+that file's semantic resolution already differs enough to report `Unproved`
+via a different method both before and after this change. See `FP-032` in
+`quality/known_analysis_issues.tsv`.
 
 ### Confirmed analyzer mistake (fixed): FP-038
 
@@ -236,8 +245,8 @@ later, out-of-range write — and never corrected once the fixed point
 actually converges. Re-running Tokeneer's `--verify`: `range-check`'s
 `Proved_Safe` count fell from 105 to 102, all three moving to `Unproved`
 (none to `Definite_Error`); `Definite_Error` stayed at 1, `FP-032`'s
-still-open, unrelated `enrolment.adb` case. Full detail in `FP-034` in
-`quality/known_analysis_issues.tsv`.
+`enrolment.adb` case (fixed separately, see above). Full detail in `FP-034`
+in `quality/known_analysis_issues.tsv`.
 
 ### Confirmed analyzer mistakes (fixed): FP-035, FP-036, FP-037
 
@@ -262,12 +271,11 @@ phantom obligations `Finalize_Node`'s old, unconditional `Final_Outcome`
 call created for `Bin_Op` nodes whose type never resolved to an integer,
 which the live check's own guard (now mirrored exactly in the replay)
 would never have created an obligation for in the first place.
-`Definite_Error` stayed at 1 throughout (`FP-032`'s still-open, unrelated
-`enrolment.adb` case). Full detail in `FP-035`, `FP-036`, and `FP-037` in
-`quality/known_analysis_issues.tsv`. `FP-032` (`Assertion_Check`) and
-`FP-033` (`Precondition_Check`) remain open — both route through the
-VC/symbolic prover, which needs real per-case design rather than a
-mechanical reapplication of this fix.
+`Definite_Error` stayed at 1 throughout (`FP-032`'s `enrolment.adb` case,
+fixed separately, see above). Full detail in `FP-035`, `FP-036`, and
+`FP-037` in `quality/known_analysis_issues.tsv`. `FP-033`
+(`Precondition_Check`) remains open, the same mechanism for a call's
+precondition rather than an assertion pragma.
 
 ## Simple Components (Dmitry A. Kazakov)
 
