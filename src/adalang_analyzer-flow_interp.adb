@@ -613,10 +613,11 @@ package body Adalang_Analyzer.Flow_Interp is
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
 
    procedure Check_Call_Precondition
-     (Unit  : Libadalang.Analysis.Analysis_Unit;
-      Call  : Libadalang.Analysis.Name'Class;
-      State : Flow_State;
-      Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State)
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Call    : Libadalang.Analysis.Name'Class;
+      State   : Flow_State;
+      Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
+      Final   : Boolean := False)
    is
       Decl : constant Libadalang.Analysis.Basic_Decl :=
         Call_Declaration (Call);
@@ -671,7 +672,8 @@ package body Adalang_Analyzer.Flow_Interp is
                    then Proof.External_Prover else Proof.Contract_Transfer),
                   "actual arguments make the precondition false",
                   (if VC_Result = VC.VC_Refuted
-                   then VC.Evidence else "precondition => false"));
+                   then VC.Evidence else "precondition => false"),
+                  Final => Final);
                Report.Report_Rule_Violation
                  (Unit, Call, Rules.Known_Precondition_Failure,
                   "actual arguments make the precondition false",
@@ -691,7 +693,8 @@ package body Adalang_Analyzer.Flow_Interp is
                    then Proof.External_Prover else Proof.Contract_Transfer),
                   "actual arguments satisfy the precondition",
                   (if VC_Result = VC.VC_Proved
-                   then VC.Evidence else "precondition => true"));
+                   then VC.Evidence else "precondition => true"),
+                  Final => Final);
             else
                Record_Unproved
                  (Unit, Call, Proof.Precondition_Check,
@@ -699,7 +702,8 @@ package body Adalang_Analyzer.Flow_Interp is
                   "precondition failure is not established, but absence is " &
                     "not proved",
                   Imprecision =>
-                    "current contract transfer does not certify safety");
+                    "current contract transfer does not certify safety",
+                  Final => Final);
             end if;
          end;
       end;
@@ -3897,6 +3901,53 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end Finalize_Assertion_Check;
 
+      --  As Finalize_Range_Check, for Precondition_Check via
+      --  Check_Call_Precondition (see FP-033, the same mechanism applied
+      --  to a call's precondition). A call statement's precondition is
+      --  live-recorded twice under two distinct stable IDs -- once for
+      --  the whole call (Process_Node's Ada_Call_Stmt handling, with the
+      --  full symbolic state) and once for just the callee name
+      --  (Scan_Expression_For_Flow_Bugs's own Ada_Call_Expr case, reached
+      --  by its generic recursion over the same call statement, without
+      --  symbols) -- so both must be replayed, not just one.
+      procedure Finalize_Precondition_Check
+        (Call      : Libadalang.Analysis.Call_Expr;
+         Container : CFG.Node_Id)
+      is
+      begin
+         if not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Call, Proof.Precondition_Check,
+               "call precondition has not been established");
+            Record_Unsupported
+              (Unit, Call.F_Name, Proof.Precondition_Check,
+               "call precondition has not been established");
+         elsif Container /= CFG.No_Node
+           and then not Reachable (Container)
+         then
+            Record_Unreachable
+              (Unit, Call, Proof.Precondition_Check,
+               "the containing CFG node is unreachable");
+            Record_Unreachable
+              (Unit, Call.F_Name, Proof.Precondition_Check,
+               "the containing CFG node is unreachable");
+         else
+            declare
+               State   : constant Flow_State :=
+                 (if Container = CFG.No_Node then Empty_Flow_State
+                  else States (Container));
+               Symbols : constant VC.Symbolic_State :=
+                 (if Container = CFG.No_Node then VC.Empty_Symbolic_State
+                  else Symbolic_States (Container));
+            begin
+               Check_Call_Precondition
+                 (Unit, Call, State, Symbols, Final => True);
+               Check_Call_Precondition
+                 (Unit, Call.F_Name, State, Symbols, Final => True);
+            end;
+         end if;
+      end Finalize_Precondition_Check;
+
       procedure Finalize_Loop_Invariant
         (Condition : Libadalang.Analysis.Expr;
          Container : CFG.Node_Id)
@@ -4108,9 +4159,7 @@ package body Adalang_Analyzer.Flow_Interp is
                           and then not Libadalang.Analysis.Is_Null
                             (Contract_Expression (Decl, "Pre"))
                         then
-                           Final_Outcome
-                             (Call.F_Name, Proof.Precondition_Check, Here,
-                              "call precondition has not been established");
+                           Finalize_Precondition_Check (Call, Here);
                         end if;
                      end;
 

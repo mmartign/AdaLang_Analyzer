@@ -35,7 +35,8 @@ loop_stale_index=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-index.XXXXXX")
 loop_stale_division=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-division.XXXXXX")
 loop_stale_overflow=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-overflow.XXXXXX")
 loop_stale_assert=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-assert.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert"' EXIT HUP INT TERM
+loop_stale_precondition=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-precondition.XXXXXX")
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -338,6 +339,20 @@ if grep -F '"kind": "assertion", "status": "proved-safe"' \
      "for-loop was stuck at a Proved_Safe recorded from" \
      "Interpret_Proof_Pragma's live, pre-convergence CFG visit instead of" \
      "Verify_Subprogram's final one" >&2
+   exit 1
+fi
+
+run_json "$loop_stale_precondition" tests/verification_loop_stale_precondition.adb
+grep -F '"kind": "precondition", "status": "unproved"' \
+  "$loop_stale_precondition" | grep -F '"operation": "Helper (Val)"' >/dev/null
+grep -F '"kind": "precondition", "status": "unproved"' \
+  "$loop_stale_precondition" | grep -F '"operation": "Helper"' >/dev/null
+if grep -F '"kind": "precondition", "status": "proved-safe"' \
+  "$loop_stale_precondition" >/dev/null; then
+   echo "a call precondition downstream of a dynamically-bounded for-loop" \
+     "was stuck at a Proved_Safe recorded from Check_Call_Precondition's" \
+     "live, pre-convergence CFG visit instead of Verify_Subprogram's" \
+     "final one" >&2
    exit 1
 fi
 

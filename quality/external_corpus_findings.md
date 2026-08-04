@@ -273,9 +273,36 @@ which the live check's own guard (now mirrored exactly in the replay)
 would never have created an obligation for in the first place.
 `Definite_Error` stayed at 1 throughout (`FP-032`'s `enrolment.adb` case,
 fixed separately, see above). Full detail in `FP-035`, `FP-036`, and
-`FP-037` in `quality/known_analysis_issues.tsv`. `FP-033`
-(`Precondition_Check`) remains open, the same mechanism for a call's
-precondition rather than an assertion pragma.
+`FP-037` in `quality/known_analysis_issues.tsv`.
+
+### Confirmed analyzer mistake (fixed): FP-033
+
+`Precondition_Check` (`Check_Call_Precondition`) got the same treatment as
+`FP-032`: a `Final` parameter threaded to its three `Record_*` calls, and a
+`Finalize_Precondition_Check` helper in `Finalize_Node` replaying it
+against the converged state. One complication surfaced only while
+implementing, not during the original audit: a single call statement with
+a `Pre` contract is live-recorded under *two* distinct stable IDs, not
+one — `Process_Node`'s own `Ada_Call_Stmt` handling records against the
+whole call (e.g. `"Helper (Val)"`, with the full symbolic state), and
+`Scan_Expression_For_Flow_Bugs`'s generic recursion independently reaches
+the same `Call_Expr` node moments later and records again against just the
+callee name (`"Helper"`, without symbols) — confirmed empirically, not
+merely by reading: a single such call produces two separate
+`"precondition"`-kind entries in `--verify`'s JSON output. Replaying only
+one of the two (a naive port of `FP-032`'s single-replay pattern) would
+have left the other permanently unfinalized — worse than stale, since it
+was never touched at all — so `Finalize_Precondition_Check` replays both.
+Reproduced with a fixture in `FP-034`'s shape; confirmed both directions by
+toggling the fix (wrongly `Proved_Safe` before, correctly `Unproved`
+after, on both stable IDs). As the original audit anticipated, the real
+Tokeneer corpus could not confirm this one either way: re-running
+`--verify` across the whole corpus finds zero `precondition-check`
+obligations at all, so the synthetic fixture is the only evidence, as it
+was for `FP-032`. Full detail in `FP-033` in
+`quality/known_analysis_issues.tsv`
+(`tests/verification_loop_stale_precondition.adb`, run by
+`run_verification.sh`).
 
 ## Simple Components (Dmitry A. Kazakov)
 
