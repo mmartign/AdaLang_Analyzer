@@ -36,7 +36,9 @@ loop_stale_division=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-division.XXXXXX
 loop_stale_overflow=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-overflow.XXXXXX")
 loop_stale_assert=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-assert.XXXXXX")
 loop_stale_precondition=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-precondition.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition"' EXIT HUP INT TERM
+global_aspect_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-clean.XXXXXX")
+global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -355,5 +357,20 @@ if grep -F '"kind": "precondition", "status": "proved-safe"' \
      "final one" >&2
    exit 1
 fi
+
+run_json "$global_aspect_clean" \
+  tests/verification_global_aspect_reference_clean.adb
+if grep -F '"status": "definite-error"' "$global_aspect_clean" >/dev/null; then
+   echo "a scalar named only in a nested subprogram declaration's Global" \
+     "aspect (never executed at that textual position) was misread as a" \
+     "read of the outer object before its real initializing assignment" \
+     "later in the enclosing body" >&2
+   exit 1
+fi
+
+run_json "$global_aspect_guard" \
+  tests/verification_global_aspect_reference_guard.adb
+grep -F '"kind": "initialization-check", "status": "definite-error"' \
+  "$global_aspect_guard" | grep -F '"operation": "Y"' >/dev/null
 
 echo "bounded verification tests passed"

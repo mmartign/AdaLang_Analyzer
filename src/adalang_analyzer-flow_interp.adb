@@ -4307,6 +4307,19 @@ package body Adalang_Analyzer.Flow_Interp is
             end;
          end if;
 
+         --  An aspect specification (Global, Depends, ...) is never
+         --  executed at its own textual position -- unlike Pre/Post, which
+         --  are genuinely-evaluated expressions and are already scanned
+         --  explicitly via Contract_Expression/Scan_Expression_For_Flow_Bugs
+         --  above, an aspect like "Global => (In_Out => (X, Y))" merely
+         --  names X and Y as a contract; it must not be walked as if it
+         --  were a read, or every scalar named in a nested subprogram's
+         --  Global aspect would appear to read the outer object before it
+         --  is ever assigned.
+         if Node.Kind = Libadalang.Common.Ada_Aspect_Spec then
+            return;
+         end if;
+
          for Index in 1 .. Node.Children_Count loop
             if Node.Kind /= Libadalang.Common.Ada_Subp_Body
               or else Libadalang.Analysis.Ada_Node (Node) =

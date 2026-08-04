@@ -134,6 +134,16 @@ documented SPARK scope. AdaLang's bounded mode uses CFG fixed-point abstract
 interpretation to classify a much narrower scalar subset. It does not
 reproduce GNATprove's verification-condition or prover engine.
 
+`benchmarks/sparknacl/` quantifies this on a real, fully-proved SPARK
+library: across 886 proof obligations both tools could evaluate at the same
+location, AdaLang never called something safe that GNATprove could not
+prove and never called something a definite error that GNATprove proved
+safe (see `benchmarks/sparknacl/RESULTS_2026-08-04.md`). AdaLang was
+`Unproved`/`Unsupported` far more often than GNATprove across the same set,
+consistent with "a much narrower scalar subset" above -- this is evidence
+of precision on the subset AdaLang attempts, not of matching GNATprove's
+coverage.
+
 The intended workflow is:
 
 ```text

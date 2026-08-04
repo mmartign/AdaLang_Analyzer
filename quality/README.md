@@ -91,12 +91,17 @@ increasing order of effort:
   suspicious-but-legitimate constructs that resemble a violation without
   being one) — the 3 added so far only cover 3 of the roughly 80 remaining
   checks.
-- A project-scale corpus of real (non-synthetic) Ada code with a manually
-  reviewed sample, to estimate precision beyond hand-constructed fixtures.
 - Cross-version stability: re-running the same corpus across analyzer
   releases and tracking whether previously stable results change.
-- Independent-oracle comparison against another tool (e.g. GNATcheck) on the
-  subset of checks with real overlap.
+
+Two items formerly listed here -- a project-scale corpus of real Ada code to
+estimate precision beyond hand-constructed fixtures, and an independent-oracle
+comparison against another tool on the subset of checks with real overlap --
+now have a first data point: `benchmarks/sparknacl/` compares `--verify`
+against GNATprove, per obligation, on a real, fully-proved SPARK library (see
+below). Treat that as a first data point, not a closed question: it should be
+re-run as the analyzer changes and extended to other corpora, the same way
+the external-corpus findings below are.
 
 ## Precision regression index
 
@@ -129,6 +134,7 @@ Each precision correction has an executable regression:
 | The same pre-convergence staleness as `FP-034`/`FP-031`, for a `pragma Assert`/`Loop_Invariant`/`Loop_Variant` condition's `Interpret_Proof_Pragma` recording instead of a range check | `verification_loop_stale_assert.adb`, run by `run_verification.sh`; see `FP-032` in `known_analysis_issues.tsv` (`Check_Proof_Pragma_Assertion`/`Finalize_Assertion_Check`) |
 | The same pre-convergence staleness as `FP-032`, for a call's precondition (`Check_Call_Precondition`) instead of a pragma condition; recorded under two distinct stable IDs per call (the whole call, and just the callee name), both needing their own replay | `verification_loop_stale_precondition.adb`, run by `run_verification.sh`; see `FP-033` in `known_analysis_issues.tsv` (`Finalize_Precondition_Check`) |
 | Every nested `Bin_Op` in a left-associative chain of plain `and`/`or` operators shares the same `Sloc_Range.Start` (the leftmost operand's position), so a chain of N operators must still report once, not N-1 times | `non_short_circuit_chain_findings.adb`, run by `run_bug_findings.sh` (not folded: the fixture's expected count is 1, not a `precision_corpus.tsv`-expressible clean/finding boundary); also fixed by `FP-038`'s `Already_Reported` deduplication, independent root cause |
+| A scalar named only in a nested subprogram declaration's `Global` aspect (a contract, never executed at that textual position) is not a read of the outer object, even though `Finalize_Node`'s whole-body walk shared one CFG position -- positioned before the object's real initializing assignment -- for the entire declaration, aspect included | `verification_global_aspect_reference_clean.adb`/`_guard.adb`, run by `run_verification.sh` (not folded: a bounded `--verify` proof-obligation outcome, not a `Rule_Kind` finding); see `FP-039` in `known_analysis_issues.tsv` (`Finalize_Node`'s new `Ada_Aspect_Spec` exclusion) |
 
 When another precision bug is fixed, add or extend a fixture and add its row
 here in the same change.
@@ -147,6 +153,17 @@ pinned AdaCore/aws revision. It records AdaLang's ordinary, SPARK-readiness,
 and bounded-verification coverage; GNATprove's unmodified-project boundary;
 and the precision issue found by manually reviewing AdaLang `Definite_Error`
 outcomes, including its fix and pinned-corpus validation.
+
+`benchmarks/sparknacl/` goes further: unlike AWS, GNATprove runs project-wide
+on SPARKNaCl (a small, self-contained, fully-proved SPARK library), so the
+two tools' proof obligations can be matched per (file, line, check kind) and
+compared directly rather than only at the aggregate level. The first run
+(`RESULTS_2026-08-04.md`) found zero cases of AdaLang calling something safe
+that GNATprove could not prove, and zero cases of AdaLang calling something a
+definite error that GNATprove proved safe, across 886 matched obligations —
+and, independently, surfaced a real false positive (`FP-039`, closed) in
+`Global`-aspect handling that the hand-constructed precision corpus had not
+covered.
 
 ## Differential corpus
 
