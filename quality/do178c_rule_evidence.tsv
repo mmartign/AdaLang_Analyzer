@@ -1,0 +1,52 @@
+# rule	finding invocation arguments	clean invocation arguments
+#
+# DO-178C Core tier (all levels A-D)
+Exception_Swallowed	tests/automotive_additional_findings.adb	tests/automotive_additional_clean.adb
+Empty_Exception_Handler	tests/advanced_findings.adb	tests/advanced_clean.adb
+Handler_Order	tests/general_checks2_findings.adb	tests/general_checks2_clean.adb
+Unreachable_Code	tests/bug_findings.adb	tests/clean_findings.adb
+Unreachable_Branch	tests/automotive_additional_findings.adb	tests/automotive_additional_clean.adb
+Unreachable_Case_Alternative	tests/advanced_findings.adb	tests/advanced_clean.adb
+Division_By_Zero	tests/flow_findings.adb	tests/flow_clean.adb
+Reversed_Range	tests/automotive_additional_findings.adb	tests/automotive_additional_clean.adb
+Self_Assignment	tests/call_and_rename_findings.adb	tests/data_flow_loop_clean.adb
+Contradictory_Condition	tests/bug_findings.adb	tests/clean_findings.adb
+Constant_Condition	tests/flow_findings.adb	tests/flow_clean.adb
+Known_Precondition_Failure	tests/spark_findings.adb	tests/spark_clean.adb
+Known_Postcondition_Failure	tests/spark_findings.adb	tests/spark_clean.adb
+Known_Assertion_Failure	tests/proof_assertion_findings.adb	tests/proof_assertion_clean.adb
+Known_Range_Check_Failure	tests/runtime_check_findings.adb	tests/runtime_check_clean.adb
+Known_Index_Check_Failure	tests/runtime_check_findings.adb	tests/runtime_check_clean.adb
+Known_Overflow_Failure	tests/overflow_findings.adb	tests/overflow_clean.adb
+Aliasing_Between_Parameters	tests/spark_checks2_findings.adb	tests/spark_checks2_clean.adb
+Exception_Propagation	tests/automotive_semantic_findings.adb	tests/automotive_semantic_clean.adb
+#
+# DO-178C Level C tier (levels A-C)
+Missing_Requirement_Trace	tests/do178c_findings.adb	tests/do178c_clean.adb
+Malformed_Requirement_Trace	tests/do178c_findings.adb	tests/do178c_clean.adb
+Dead_Store	tests/advanced_findings.adb	tests/advanced_clean.adb
+Overwritten_Assignment	tests/advanced_findings.adb	tests/advanced_clean.adb
+Uninitialized_Output	tests/spark_readiness_findings.adb	tests/spark_readiness_clean.adb
+Global_Contract_Mismatch	tests/spark_readiness_findings.adb	tests/spark_readiness_clean.adb
+Incomplete_Depends_Contract	tests/spark_readiness_findings.adb	tests/spark_readiness_clean.adb
+Depends_Contract_Mismatch	tests/spark_dependency_findings.adb	tests/spark_dependency_clean.adb
+Function_Side_Effect	tests/new_checks_findings.adb	tests/new_checks_clean.adb
+No_Recursion	tests/new_checks_findings.adb	tests/new_checks_clean.adb
+Non_Short_Circuit_Condition	tests/new_checks_findings.adb	tests/new_checks_clean.adb
+#
+# DO-178C Level A/B tier (levels A-B)
+Suppression_Without_Rationale	tests/do178c_findings.adb	tests/do178c_clean.adb
+No_Dynamic_Allocation	tests/automotive_restrictions_findings.adb	tests/automotive_restrictions_clean.adb
+No_Unchecked_Conversion	tests/high_value_findings.adb	tests/high_value_clean.adb
+No_Unchecked_Deallocation	tests/automotive_restrictions_findings.adb	tests/automotive_restrictions_clean.adb
+Complete_Initialization	tests/automotive_state_findings.ads tests/automotive_state_findings.adb	tests/automotive_state_clean.ads
+Uninitialized_Read	tests/uninitialized_read_findings.adb	tests/uninitialized_read_clean.adb
+No_Dispatching_Call	tests/automotive_semantic_findings.adb	tests/automotive_semantic_clean.adb
+Missing_Global_Contract	tests/spark_readiness_findings.adb	tests/spark_readiness_clean.adb
+Missing_Depends_Contract	tests/spark_readiness_findings.adb	tests/spark_readiness_clean.adb
+Missing_Loop_Variant	tests/spark_checks2_findings.adb	tests/spark_checks2_clean.adb
+Potentially_Blocking_Operation	tests/interprocedural_blocking_findings.adb	tests/interprocedural_blocking_clean.adb
+No_Compiler_Extensions	tests/automotive_policy_findings.adb	tests/automotive_policy_clean.adb
+Library_Level_Initialization	tests/automotive_state_findings.ads tests/automotive_state_findings.adb	tests/automotive_state_clean.ads
+Cyclomatic_Complexity	-complexity-threshold=2 tests/advanced_findings.adb	-complexity-threshold=20 tests/advanced_clean.adb
+Deep_Nesting	-nesting-threshold=3 tests/new_checks_findings.adb	-nesting-threshold=3 tests/new_checks_clean.adb

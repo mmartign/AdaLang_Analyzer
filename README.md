@@ -462,6 +462,11 @@ and lifecycle evidence. Projects taking certification credit from analyzer
 results must separately assess tool qualification under DO-330. See
 [FAA AC 20-115D](https://www.faa.gov/regulations_policies/advisory_circulars/index.cfm/go/document.information/documentID/1032046).
 
+See the [DO-178C Compliance Matrix](DO178C_COMPLIANCE_MATRIX.md) for a
+non-normative rule-by-rule mapping to DO-178C Annex A Table A-5 activity
+categories, the Ada Reference Manual, and SPARK Reference Manual guidance,
+limitations, and remaining compliance gaps.
+
 ### Compliance reporting
 
 ```sh

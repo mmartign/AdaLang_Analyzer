@@ -30,6 +30,7 @@ Run the evidence checks with:
 sh tests/run_recommended_gate.sh
 sh tests/run_quality_metrics.sh
 sh tests/run_automotive_evidence.sh
+sh tests/run_do178c_evidence.sh
 sh tests/run_precision_corpus.sh
 ```
 
@@ -38,6 +39,18 @@ positive and clean invocation. `run_automotive_evidence.sh` fails if the
 implemented preset, the Automotive Ada Compliance Matrix, and this manifest
 do not contain the same rule set, or if any mapped fixture stops producing
 the expected result.
+
+`do178c_rule_evidence.tsv` is the same pattern for `--do178c`: every check
+enabled under any of its four levels maps to a positive and clean invocation.
+`run_do178c_evidence.sh` fails under the same conditions as the automotive
+gate (preset, `DO178C_COMPLIANCE_MATRIX.md`, and this manifest must agree on
+the rule set, and every mapped fixture must still produce the expected
+result), plus one DO-178C-specific check the automotive gate has no
+equivalent for: `Enable_DO_178C_Preset` enables three tiers (a Core tier at
+every level, a Level C tier, and a Level A/B tier), so the gate also confirms
+the matrix's per-row "DO-178C level(s)" column agrees with which tier each
+rule actually comes from in `src/adalang_analyzer-rules.ads`, not just that
+every rule name appears somewhere in the table.
 
 ## Precision corpus
 
