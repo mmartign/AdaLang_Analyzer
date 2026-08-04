@@ -155,6 +155,17 @@ of just the one affected obligation -- see
 account of what that run does and does not show, including the before/after
 numbers from the fix.
 
+`benchmarks/saatana/` repeats the SPARKNaCl-style comparison on a third,
+independently-authored fully-proved corpus (HeisenbugLtd/Saatana): across
+101 proof obligations both tools could evaluate at the same location, again
+zero possible unsoundness and zero false positives, corroborating the
+SPARKNaCl result on a much smaller sample from a different author and
+domain -- see `benchmarks/saatana/RESULTS_2026-08-04.md`. Getting a
+comparable run out of this corpus at all required overriding three of the
+project's own GNATprove switches (an unavailable prover, a step budget tuned
+for that prover, and a report level the project never set), documented in
+`benchmarks/saatana/README.md`.
+
 The intended workflow is:
 
 ```text
