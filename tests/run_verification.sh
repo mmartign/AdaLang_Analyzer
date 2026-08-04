@@ -38,6 +38,8 @@ loop_stale_assert=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-assert.XXXXXX")
 loop_stale_precondition=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-precondition.XXXXXX")
 global_aspect_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-clean.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
+cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
+cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
 trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard"' EXIT HUP INT TERM
 
 run_json()
@@ -372,5 +374,36 @@ run_json "$global_aspect_guard" \
   tests/verification_global_aspect_reference_guard.adb
 grep -F '"kind": "initialization-check", "status": "definite-error"' \
   "$global_aspect_guard" | grep -F '"operation": "Y"' >/dev/null
+
+#  FP-040: a call whose callee is declared in a separate, with'd GNAT
+#  project can make Libadalang's own CallExpr.P_Kind raise Property_Error
+#  ("undetermined CallExpr kind") when its precise overload resolution
+#  fails across the project boundary. Finalize_Node's whole-body walk
+#  called P_Kind a second time directly in an if-condition, outside any
+#  begin/exception block, so the failure escaped Finalize_Node entirely
+#  and aborted the whole file via Process_File's outer handler instead of
+#  just this one obligation -- confirmed on a two-project fixture and on
+#  cubesatlab/cubedos (benchmarks/cubedos/), where it undercounted
+#  --verify's proof obligations on 21 of 49 files. -P is required here
+#  (unlike every other fixture in this file) since the bug only manifests
+#  across a real project boundary; a project-less bare-file run never
+#  exercises it.
+status=0
+"$analyzer" -P tests/verification_cross_project/main.gpr --verify -q \
+  --format=json --output="$cross_project" \
+  tests/verification_cross_project/verification_cross_project_clean.adb \
+  2>"$cross_project_stderr" || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "verification run failed for" \
+     "verification_cross_project_clean.adb with status $status" >&2
+   exit "$status"
+fi
+if grep -F "Error processing" "$cross_project_stderr" >/dev/null; then
+   echo "a call into a separate with'd project aborted the whole file's" \
+     "--verify processing instead of just skipping the one affected" \
+     "obligation (FP-040)" >&2
+   cat "$cross_project_stderr" >&2
+   exit 1
+fi
 
 echo "bounded verification tests passed"

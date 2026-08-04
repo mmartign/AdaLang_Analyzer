@@ -146,11 +146,14 @@ coverage.
 
 `benchmarks/cubedos/` repeats this comparison on a second, structurally
 different SPARK corpus (cubesatlab/cubedos). Unlike SPARKNaCl, this corpus
-is not fully proved, and the run itself surfaced a new, open analyzer
-limitation (`FP-040` in `quality/known_analysis_issues.tsv`) that undercounts
-`--verify`'s proof obligations on about two in five of the corpus's files --
-see `benchmarks/cubedos/RESULTS_2026-08-04.md` for the honest, caveat-heavy
-account of what that run does and does not show.
+is not fully proved, and the first run surfaced a new analyzer limitation
+(`FP-040` in `quality/known_analysis_issues.tsv`, now closed) that undercounted
+`--verify`'s proof obligations on about two in five of the corpus's files by
+letting a Libadalang property failure abort a whole file's analysis instead
+of just the one affected obligation -- see
+`benchmarks/cubedos/RESULTS_2026-08-04.md` for the honest, caveat-heavy
+account of what that run does and does not show, including the before/after
+numbers from the fix.
 
 The intended workflow is:
 

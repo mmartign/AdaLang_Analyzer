@@ -470,7 +470,7 @@ live re-run of the checkout):
 | Total violations | 41 | 34 |
 | `Uninitialized_Output` | 8 | 1 (genuine stub) |
 
-### `--verify` / GNATprove comparison and a new open issue: FP-040
+### `--verify` / GNATprove comparison and a fixed issue: FP-040
 
 A later session extended the CubedOS investigation from ordinary findings
 (above) to `--verify`'s bounded scalar proof obligations, run against the
@@ -487,24 +487,36 @@ write-up, is in `benchmarks/cubedos/README.md` and
   state, a `Global` aspect omission, uninitialized `out` parameters, and
   several range/precondition checks the provers could not complete). This
   makes GNATprove's verdict here a weaker oracle than on SPARKNaCl.
-- The run surfaced a new, currently open analyzer limitation: `--verify`'s
-  proof-obligation finalization pass hits Libadalang's own `Property_Error`
-  ("undetermined CallExpr kind", occasionally "dereferencing a null access")
-  on 21 of the 49 analyzed files, falling back conservatively per file
-  rather than crashing. This is not `FP-029` (a different error signature,
-  and `gnatls` was present throughout this run, ruling out FP-029's known
-  trigger). Recorded as `FP-040` in `known_analysis_issues.tsv`; not yet
-  root-caused. Its practical effect: `--verify`'s reported obligation count
-  (44, project-wide) is a real undercount, dominated by this fallback rather
-  than by genuine bounded-verification scope limits.
-- With only 2 of 44 AdaLang obligations having a matched GNATprove
-  counterpart at this revision (both in the expected "both flag a problem"
-  bucket, zero unsoundness or false positives observed), the comparison is
-  too small a sample to add meaningful confidence beyond SPARKNaCl's own
-  886-pair result — this run's real contribution is `FP-040` itself, caught
-  exactly the way this document's external-corpus validation practice
-  intends: real code the project did not write, surfacing a failure mode no
-  hand-written fixture had exercised.
+- The first run surfaced a new analyzer limitation: `--verify`'s
+  proof-obligation finalization pass (`Finalize_Node` in `flow_interp.adb`)
+  called several Libadalang properties directly outside any
+  `begin`/`exception` block, so a `Property_Error` from one of them —
+  `Call_Expr.P_Kind` genuinely fails with "undetermined CallExpr kind" for a
+  call whose callee is declared in a separate, `with`'d GNAT project, an
+  upstream Libadalang precise-resolution limit confirmed independent of
+  return type, library-vs-plain project, and generics — escaped
+  `Finalize_Node` entirely and aborted the whole file instead of just that
+  one obligation, on 21 of the 49 analyzed files. Root-caused with a
+  minimal, AUnit-free, two-project reproduction and a symbolic backtrace
+  (temporary `GNAT.Traceback.Symbolic` instrumentation, reverted) and fixed
+  by containing every branch's own property access inside a `begin`/
+  `exception` block, so a failure now skips only that node's own
+  obligations rather than aborting the file. Recorded as `FP-040` (closed)
+  in `known_analysis_issues.tsv`; regression: `tests/verification_cross_project/`,
+  run by `run_verification.sh`. Effect on this same run: whole-file aborts
+  went from 21/49 to 0, and reported proof obligations rose from 44 to 680
+  (`Proved_Safe` 2 to 16) without any `Definite_Error`/`Proved_Safe` verdict
+  changing for an obligation that was already being reported — the fix only
+  affects whether an obligation gets registered at all.
+- With only 7 of 680 AdaLang obligations having a matched GNATprove
+  counterpart at this revision (all in the expected "both flag a problem"
+  bucket, zero unsoundness or false positives observed, up from 2 of 44
+  before the fix), the comparison is still too small a sample to add
+  meaningful confidence beyond SPARKNaCl's own 886-pair result — this run's
+  real contribution was `FP-040` itself, caught exactly the way this
+  document's external-corpus validation practice intends: real code the
+  project did not write, surfacing a failure mode no hand-written fixture
+  had exercised.
 
 ## AWS (Ada Web Server, AdaCore/aws)
 

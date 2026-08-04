@@ -4068,242 +4068,287 @@ package body Adalang_Analyzer.Flow_Interp is
             end if;
          end;
 
-         if Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
-            declare
-               Expr : constant Libadalang.Analysis.Bin_Op := Node.As_Bin_Op;
-            begin
-               Finalize_Division_Check (Expr, Here);
-               Finalize_Overflow_Check (Expr, Here);
-            end;
-         elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
-            Finalize_Range_Check
-              (Node.As_Assign_Stmt.F_Expr,
-               Node.As_Assign_Stmt.F_Dest.P_Expression_Type, Here,
-               Rules.Known_Range_Check_Failure,
-               "assigned value is outside the target subtype range");
-         elsif Node.Kind = Libadalang.Common.Ada_Object_Decl
-           and then not Libadalang.Analysis.Is_Null
-             (Node.As_Object_Decl.F_Default_Expr)
-         then
-            Finalize_Range_Check
-              (Node.As_Object_Decl.F_Default_Expr,
-               Node.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl, Here,
-               Rules.Known_Range_Check_Failure,
-               "initial value is outside the object's subtype range");
-         elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
-            declare
-               Call : constant Libadalang.Analysis.Call_Expr :=
-                 Node.As_Call_Expr;
-            begin
-               case Call.P_Kind is
-                  when Libadalang.Common.Type_Conversion =>
-                     declare
-                        Decl  : constant Libadalang.Analysis.Basic_Decl :=
-                          Call.F_Name.P_Referenced_Decl;
-                        Value : constant Libadalang.Analysis.Expr :=
-                          Assoc_Expression (Call.F_Suffix, 1);
-                     begin
-                        if not Libadalang.Analysis.Is_Null (Decl)
-                          and then Decl.Kind in
-                            Libadalang.Common.Ada_Base_Type_Decl
-                          and then not Libadalang.Analysis.Is_Null (Value)
-                        then
-                           Finalize_Range_Check
-                             (Value, Decl.As_Base_Type_Decl, Here,
-                              Rules.Known_Range_Check_Failure,
-                              "value is outside the target subtype range");
-                        end if;
-                     end;
+         --  Several branches below call Libadalang properties
+         --  (P_Expression_Type, P_Designated_Type_Decl, ...) directly as
+         --  argument expressions, outside any begin/exception block of
+         --  their own. A Property_Error from one of those (e.g. the same
+         --  precise-resolution failure documented for FP-040's CallExpr.P_
+         --  Kind case, or the unrelated "dereferencing a null access"
+         --  memoized failures seen on real corpora such as CubedOS) used to
+         --  escape Finalize_Node entirely and abort the whole file via
+         --  Process_File's outer handler, instead of just this one node's
+         --  obligations. This outer handler makes every branch as
+         --  conservative as the Ada_Call_Expr/Ada_Identifier branches
+         --  already were: skip this node's own finalization and fall
+         --  through to the child-recursion loop below so the rest of the
+         --  file is still analyzed.
+         begin
+            if Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+               declare
+                  Expr : constant Libadalang.Analysis.Bin_Op := Node.As_Bin_Op;
+               begin
+                  Finalize_Division_Check (Expr, Here);
+                  Finalize_Overflow_Check (Expr, Here);
+               end;
+            elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+               Finalize_Range_Check
+                 (Node.As_Assign_Stmt.F_Expr,
+                  Node.As_Assign_Stmt.F_Dest.P_Expression_Type, Here,
+                  Rules.Known_Range_Check_Failure,
+                  "assigned value is outside the target subtype range");
+            elsif Node.Kind = Libadalang.Common.Ada_Object_Decl
+              and then not Libadalang.Analysis.Is_Null
+                (Node.As_Object_Decl.F_Default_Expr)
+            then
+               Finalize_Range_Check
+                 (Node.As_Object_Decl.F_Default_Expr,
+                  Node.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl, Here,
+                  Rules.Known_Range_Check_Failure,
+                  "initial value is outside the object's subtype range");
+            elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
+               declare
+                  Call : constant Libadalang.Analysis.Call_Expr :=
+                    Node.As_Call_Expr;
+               begin
+                  case Call.P_Kind is
+                     when Libadalang.Common.Type_Conversion =>
+                        declare
+                           Decl  : constant Libadalang.Analysis.Basic_Decl :=
+                             Call.F_Name.P_Referenced_Decl;
+                           Value : constant Libadalang.Analysis.Expr :=
+                             Assoc_Expression (Call.F_Suffix, 1);
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Decl)
+                             and then Decl.Kind in
+                               Libadalang.Common.Ada_Base_Type_Decl
+                             and then not Libadalang.Analysis.Is_Null (Value)
+                           then
+                              Finalize_Range_Check
+                                (Value, Decl.As_Base_Type_Decl, Here,
+                                 Rules.Known_Range_Check_Failure,
+                                 "value is outside the target subtype range");
+                           end if;
+                        end;
 
-                  when Libadalang.Common.Array_Index =>
-                     declare
-                        Array_Type : constant Libadalang.Analysis.Base_Type_Decl :=
-                          Call.F_Name.P_Expression_Type;
-                        Dimensions : constant Positive :=
-                          (if Call.F_Suffix.Kind in Libadalang.Common.Ada_Expr
-                           then 1 else Call.F_Suffix.Children_Count);
-                        Here_State : constant Flow_State :=
-                          (if Here = CFG.No_Node then Empty_Flow_State
-                           else States (Here));
-                     begin
-                        if not Libadalang.Analysis.Is_Null (Array_Type)
-                          and then Array_Type.P_Is_Array_Type
-                        then
-                           for Dimension in 1 .. Dimensions loop
-                              declare
-                                 Index_Value : constant
-                                   Libadalang.Analysis.Expr :=
-                                     Assoc_Expression
-                                       (Call.F_Suffix, Dimension);
-                              begin
-                                 if not Libadalang.Analysis.Is_Null
-                                   (Index_Value)
-                                 then
-                                    Finalize_Index_Check
-                                      (Index_Value,
-                                       Array_Index_Range
-                                         (Array_Type, Dimension, Here_State),
-                                       Here);
-                                 end if;
-                              end;
-                           end loop;
-                        end if;
-                     end;
+                     when Libadalang.Common.Array_Index =>
+                        declare
+                           Array_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+                             Call.F_Name.P_Expression_Type;
+                           Dimensions : constant Positive :=
+                             (if Call.F_Suffix.Kind in Libadalang.Common.Ada_Expr
+                              then 1 else Call.F_Suffix.Children_Count);
+                           Here_State : constant Flow_State :=
+                             (if Here = CFG.No_Node then Empty_Flow_State
+                              else States (Here));
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Array_Type)
+                             and then Array_Type.P_Is_Array_Type
+                           then
+                              for Dimension in 1 .. Dimensions loop
+                                 declare
+                                    Index_Value : constant
+                                      Libadalang.Analysis.Expr :=
+                                        Assoc_Expression
+                                          (Call.F_Suffix, Dimension);
+                                 begin
+                                    if not Libadalang.Analysis.Is_Null
+                                      (Index_Value)
+                                    then
+                                       Finalize_Index_Check
+                                         (Index_Value,
+                                          Array_Index_Range
+                                            (Array_Type, Dimension, Here_State),
+                                          Here);
+                                    end if;
+                                 end;
+                              end loop;
+                           end if;
+                        end;
 
-                  when Libadalang.Common.Call =>
-                     declare
-                        Decl : constant Libadalang.Analysis.Basic_Decl :=
-                          Call_Declaration (Call.F_Name);
-                     begin
-                        if not Libadalang.Analysis.Is_Null (Decl)
-                          and then not Libadalang.Analysis.Is_Null
-                            (Contract_Expression (Decl, "Pre"))
-                        then
-                           Finalize_Precondition_Check (Call, Here);
-                        end if;
-                     end;
+                     when Libadalang.Common.Call =>
+                        declare
+                           Decl : constant Libadalang.Analysis.Basic_Decl :=
+                             Call_Declaration (Call.F_Name);
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Decl)
+                             and then not Libadalang.Analysis.Is_Null
+                               (Contract_Expression (Decl, "Pre"))
+                           then
+                              Finalize_Precondition_Check (Call, Here);
+                           end if;
+                        end;
 
-                  when others =>
-                     null;
-               end case;
-            exception
-               when E : others =>
-                  Report_Recoverable_Failure_Once
-                    (Rule       => "Verification",
-                     Operation  => "finalize expression proof obligations",
-                     Source     => Ada_Text.Safe_Filename (Unit),
-                     Occurrence => E);
-            end;
-         elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node then
-            declare
-               Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
-                 Node.As_Pragma_Node;
-               Name : constant String :=
-                 Normalized_Text (Pragma_Node.F_Id);
-               Cond : constant Libadalang.Analysis.Expr :=
-                 Verification_Pragma_Condition (Pragma_Node);
-            begin
-               if not Libadalang.Analysis.Is_Null (Cond)
-                 and then Name /= "assume"
-               then
-                  Finalize_Assertion_Check (Cond, Here);
-                  if Name = "loop-invariant" then
-                     Finalize_Loop_Invariant (Cond, Here);
-                  elsif Name = "loop-variant" then
-                     Final_Outcome
-                       (Cond, Proof.Loop_Variant_Check, Here,
-                        "loop variant decrease is not discharged");
-                  end if;
-               end if;
-            end;
-         elsif Node.Kind = Libadalang.Common.Ada_Identifier
-           and then Initialization_Read_Required (Node)
-         then
-            declare
-               Key     : constant Libadalang.Analysis.Ada_Node :=
-                 Flow_Referenced_Name (Node);
-               Current : Libadalang.Analysis.Ada_Node := Key;
-               Tracked : Boolean := False;
-            begin
-               while not Libadalang.Analysis.Is_Null (Current) loop
-                  if Current.Kind in
-                    Libadalang.Common.Ada_Object_Decl_Range
-                      | Libadalang.Common.Ada_Param_Spec_Range
+                     when others =>
+                        null;
+                  end case;
+               exception
+                  when E : others =>
+                     Report_Recoverable_Failure_Once
+                       (Rule       => "Verification",
+                        Operation  => "finalize expression proof obligations",
+                        Source     => Ada_Text.Safe_Filename (Unit),
+                        Occurrence => E);
+               end;
+            elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node then
+               declare
+                  Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
+                    Node.As_Pragma_Node;
+                  Name : constant String :=
+                    Normalized_Text (Pragma_Node.F_Id);
+                  Cond : constant Libadalang.Analysis.Expr :=
+                    Verification_Pragma_Condition (Pragma_Node);
+               begin
+                  if not Libadalang.Analysis.Is_Null (Cond)
+                    and then Name /= "assume"
                   then
-                     Tracked := True;
-                     exit;
-                  elsif Current.Kind in Libadalang.Common.Ada_Basic_Decl then
-                     exit;
+                     Finalize_Assertion_Check (Cond, Here);
+                     if Name = "loop-invariant" then
+                        Finalize_Loop_Invariant (Cond, Here);
+                     elsif Name = "loop-variant" then
+                        Final_Outcome
+                          (Cond, Proof.Loop_Variant_Check, Here,
+                           "loop variant decrease is not discharged");
+                     end if;
                   end if;
-                  Current := Current.Parent;
-               end loop;
-               if Tracked then
-                  if not Boundary_Supported then
-                     Record_Unsupported
-                       (Unit, Node, Proof.Initialization_Check,
-                        "object initialization has not been established");
-                  elsif Here /= CFG.No_Node
-                    and then not Reachable (Here)
-                  then
-                     Record_Unreachable
-                       (Unit, Node, Proof.Initialization_Check,
-                        "the containing CFG node is unreachable");
-                  else
-                     --  Unlike the live recording this mirrors (made while
-                     --  Verify_Subprogram's CFG fixed point may still be
-                     --  mid-convergence for Here, and so can be based on an
-                     --  intermediate, not-yet-joined state), this call is
-                     --  made once, after the fixed point has fully
-                     --  converged, against Here's own final State -- so it
-                     --  is marked Final to always supersede whatever a
-                     --  premature live recording left behind for the same
-                     --  obligation (see FP-031).
-                     case Flow_Initialization
-                            ((if Here = CFG.No_Node then Empty_Flow_State
-                              else States (Here)),
-                             Key)
-                     is
-                        when Bool_True =>
-                           Record_Proved_Safe
-                             (Unit, Node, Proof.Initialization_Check,
-                              Proof.Flow_Analysis,
-                              "object is initialized on every incoming " &
-                                "path",
-                              "initialization => true", Final => True);
-                        when Bool_False =>
-                           Record_Definite_Error
-                             (Unit, Node, Proof.Initialization_Check,
-                              Proof.Flow_Analysis,
-                              "object is uninitialized on every incoming " &
-                                "path",
-                              "initialization => false", Final => True);
-                        when Bool_Unknown =>
-                           Record_Unproved
-                             (Unit, Node, Proof.Initialization_Check,
-                              Proof.Flow_Analysis,
-                              "object initialization is not established",
-                              Imprecision =>
-                                "incoming paths disagree or object is " &
-                                  "external",
-                              Final => True);
-                     end case;
+               end;
+            elsif Node.Kind = Libadalang.Common.Ada_Identifier
+              and then Initialization_Read_Required (Node)
+            then
+               declare
+                  Key     : constant Libadalang.Analysis.Ada_Node :=
+                    Flow_Referenced_Name (Node);
+                  Current : Libadalang.Analysis.Ada_Node := Key;
+                  Tracked : Boolean := False;
+               begin
+                  while not Libadalang.Analysis.Is_Null (Current) loop
+                     if Current.Kind in
+                       Libadalang.Common.Ada_Object_Decl_Range
+                         | Libadalang.Common.Ada_Param_Spec_Range
+                     then
+                        Tracked := True;
+                        exit;
+                     elsif Current.Kind in Libadalang.Common.Ada_Basic_Decl then
+                        exit;
+                     end if;
+                     Current := Current.Parent;
+                  end loop;
+                  if Tracked then
+                     if not Boundary_Supported then
+                        Record_Unsupported
+                          (Unit, Node, Proof.Initialization_Check,
+                           "object initialization has not been established");
+                     elsif Here /= CFG.No_Node
+                       and then not Reachable (Here)
+                     then
+                        Record_Unreachable
+                          (Unit, Node, Proof.Initialization_Check,
+                           "the containing CFG node is unreachable");
+                     else
+                        --  Unlike the live recording this mirrors (made while
+                        --  Verify_Subprogram's CFG fixed point may still be
+                        --  mid-convergence for Here, and so can be based on an
+                        --  intermediate, not-yet-joined state), this call is
+                        --  made once, after the fixed point has fully
+                        --  converged, against Here's own final State -- so it
+                        --  is marked Final to always supersede whatever a
+                        --  premature live recording left behind for the same
+                        --  obligation (see FP-031).
+                        case Flow_Initialization
+                               ((if Here = CFG.No_Node then Empty_Flow_State
+                                 else States (Here)),
+                                Key)
+                        is
+                           when Bool_True =>
+                              Record_Proved_Safe
+                                (Unit, Node, Proof.Initialization_Check,
+                                 Proof.Flow_Analysis,
+                                 "object is initialized on every incoming " &
+                                   "path",
+                                 "initialization => true", Final => True);
+                           when Bool_False =>
+                              Record_Definite_Error
+                                (Unit, Node, Proof.Initialization_Check,
+                                 Proof.Flow_Analysis,
+                                 "object is uninitialized on every incoming " &
+                                   "path",
+                                 "initialization => false", Final => True);
+                           when Bool_Unknown =>
+                              Record_Unproved
+                                (Unit, Node, Proof.Initialization_Check,
+                                 Proof.Flow_Analysis,
+                                 "object initialization is not established",
+                                 Imprecision =>
+                                   "incoming paths disagree or object is " &
+                                     "external",
+                                 Final => True);
+                        end case;
+                     end if;
                   end if;
-               end if;
-            exception
-               when E : others =>
-                  Report_Recoverable_Failure_Once
-                    (Rule       => "Initialization_Check",
-                     Operation  => "finalize identifier proof obligation",
-                     Source     => Ada_Text.Safe_Filename (Unit),
-                     Occurrence => E);
-            end;
-         end if;
+               exception
+                  when E : others =>
+                     Report_Recoverable_Failure_Once
+                       (Rule       => "Initialization_Check",
+                        Operation  => "finalize identifier proof obligation",
+                        Source     => Ada_Text.Safe_Filename (Unit),
+                        Occurrence => E);
+               end;
+            end if;
+         exception
+            when E : others =>
+               Report_Recoverable_Failure_Once
+                 (Rule       => "Verification",
+                  Operation  => "finalize node proof obligations",
+                  Source     => Ada_Text.Safe_Filename (Unit),
+                  Occurrence => E);
+         end;
 
          --  Final obligation enumeration follows the same read/write
          --  distinction as the transfer scan above. In particular, an
          --  identifier used as an out-only actual does not itself create an
          --  initialization obligation.
-         if Node.Kind = Libadalang.Common.Ada_Call_Expr
-           and then Node.As_Call_Expr.P_Kind = Libadalang.Common.Call
-         then
+         if Node.Kind = Libadalang.Common.Ada_Call_Expr then
+            declare
+               --  Node.As_Call_Expr.P_Kind can itself raise Property_Error
+               --  (e.g. Libadalang's own "undetermined CallExpr kind" when
+               --  precise overload resolution fails for a call into a
+               --  separate, with'd GNAT project -- see FP-040). Unlike the
+               --  case statement above, this second P_Kind call sits in an
+               --  if-condition rather than inside a begin/exception block,
+               --  so an unhandled failure here used to escape Finalize_Node
+               --  entirely and abort the whole file via Process_File's
+               --  outer handler instead of just this one obligation.
+               Is_Plain_Call : Boolean := False;
             begin
-               Finalize_Node (Node.As_Call_Expr.F_Name, Here);
-               for Pair of Node.As_Call_Expr.F_Name.P_Call_Params loop
-                  if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
-                    Libadalang.Common.Ada_Mode_Out
-                    or else Libadalang.Analysis.Actual (Pair).Kind /=
-                      Libadalang.Common.Ada_Identifier
-                  then
-                     Finalize_Node
-                       (Libadalang.Analysis.Actual (Pair), Here);
-                  end if;
-               end loop;
-               return;
-            exception
-               when others =>
-                  --  Fall through to conservative raw-tree enumeration when
-                  --  semantic parameter resolution is unavailable.
-                  null;
+               begin
+                  Is_Plain_Call :=
+                    Node.As_Call_Expr.P_Kind = Libadalang.Common.Call;
+               exception
+                  when others =>
+                     Is_Plain_Call := False;
+               end;
+
+               if Is_Plain_Call then
+                  begin
+                     Finalize_Node (Node.As_Call_Expr.F_Name, Here);
+                     for Pair of Node.As_Call_Expr.F_Name.P_Call_Params loop
+                        if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
+                          Libadalang.Common.Ada_Mode_Out
+                          or else Libadalang.Analysis.Actual (Pair).Kind /=
+                            Libadalang.Common.Ada_Identifier
+                        then
+                           Finalize_Node
+                             (Libadalang.Analysis.Actual (Pair), Here);
+                        end if;
+                     end loop;
+                     return;
+                  exception
+                     when others =>
+                        --  Fall through to conservative raw-tree
+                        --  enumeration when semantic parameter resolution
+                        --  is unavailable.
+                        null;
+                  end;
+               end if;
             end;
          end if;
 
