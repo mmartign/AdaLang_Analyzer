@@ -223,6 +223,23 @@ unaffected (`Register_At` already no-ops an identical repeated recording;
 only the ordinary-findings path lacked that). Full detail in `FP-038` in
 `quality/known_analysis_issues.tsv`.
 
+### Confirmed analyzer mistake (fixed): FP-034
+
+With `FP-038` out of the way, `Range_Check` (the highest-volume of the
+`FP-033`–`FP-037` audit list, and the one with the most `Proved_Safe`
+exposure) got the same `Final`-replay treatment as `FP-031`. This one
+demonstrates the dangerous direction directly rather than as a side
+finding: a range-check whose target value is set inside a
+dynamically-bounded loop can be recorded `Proved_Safe` from the CFG fixed
+point's first visit — before the loop's back edge has propagated a
+later, out-of-range write — and never corrected once the fixed point
+actually converges. Re-running Tokeneer's `--verify`: `range-check`'s
+`Proved_Safe` count fell from 105 to 102, all three moving to `Unproved`
+(none to `Definite_Error`); `Definite_Error` stayed at 1, `FP-032`'s
+still-open, unrelated `enrolment.adb` case. Full detail in `FP-034` in
+`quality/known_analysis_issues.tsv`. `FP-033`, `FP-035`, `FP-036`, and
+`FP-037` remain open, following the same pattern.
+
 ## Simple Components (Dmitry A. Kazakov)
 
 - **Source**: `alire-project/dak_simple_components` on GitHub, a mirror of

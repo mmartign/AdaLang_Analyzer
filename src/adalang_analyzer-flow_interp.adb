@@ -1349,7 +1349,8 @@ package body Adalang_Analyzer.Flow_Interp is
       Typ     : Libadalang.Analysis.Base_Type_Decl;
       State   : Flow_State;
       Rule    : Rules.Rule_Kind;
-      Message : String) is
+      Message : String;
+      Final   : Boolean := False) is
    begin
       if Config.Rule_States (Rule) /= Config.Enabled then
          return;
@@ -1378,7 +1379,8 @@ package body Adalang_Analyzer.Flow_Interp is
       elsif Definitely_Outside_Type (Value, Typ, State) then
          Record_Definite_Error
            (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
-            Message, "value range is outside the target subtype range");
+            Message, "value range is outside the target subtype range",
+            Final => Final);
          Report.Report_Rule_Violation
            (Unit, Value, Rule, Message,
             Explanation =>
@@ -1391,14 +1393,15 @@ package body Adalang_Analyzer.Flow_Interp is
          Record_Proved_Safe
            (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
             "value range is contained in the target subtype range",
-            "value bounds are within target bounds");
+            "value bounds are within target bounds", Final => Final);
       else
          Record_Unproved
            (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
             "range-check failure is not established, but absence is not " &
               "proved",
             Imprecision =>
-              "the current non-relational range domain is inconclusive");
+              "the current non-relational range domain is inconclusive",
+            Final => Final);
       end if;
    end Check_Value_Range;
 
@@ -3680,6 +3683,39 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end Final_Outcome;
 
+      --  As Final_Outcome, but for Range_Check specifically: rather than
+      --  always defaulting to Unproved, replays Check_Value_Range's own
+      --  Proved_Safe/Definite_Error/Unproved determination against
+      --  Container's own fully-converged State, marked Final so it
+      --  supersedes whatever a premature live recording (made while
+      --  Verify_Subprogram's CFG fixed point could still have been
+      --  mid-convergence for Container) left behind for the same
+      --  obligation (see FP-034, following FP-031's Ada_Identifier fix).
+      procedure Finalize_Range_Check
+        (Value     : Libadalang.Analysis.Expr'Class;
+         Typ       : Libadalang.Analysis.Base_Type_Decl;
+         Container : CFG.Node_Id;
+         Rule      : Rules.Rule_Kind;
+         Message   : String)
+      is
+      begin
+         if not Boundary_Supported then
+            Record_Unsupported (Unit, Value, Proof.Range_Check, Message);
+         elsif Container /= CFG.No_Node
+           and then not Reachable (Container)
+         then
+            Record_Unreachable
+              (Unit, Value, Proof.Range_Check,
+               "the containing CFG node is unreachable");
+         else
+            Check_Value_Range
+              (Unit, Value, Typ,
+               (if Container = CFG.No_Node then Empty_Flow_State
+                else States (Container)),
+               Rule, Message, Final => True);
+         end if;
+      end Finalize_Range_Check;
+
       procedure Finalize_Loop_Invariant
         (Condition : Libadalang.Analysis.Expr;
          Container : CFG.Node_Id)
@@ -3825,16 +3861,20 @@ package body Adalang_Analyzer.Flow_Interp is
                end if;
             end;
          elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
-            Final_Outcome
-              (Node.As_Assign_Stmt.F_Expr, Proof.Range_Check, Here,
-               "assignment range safety has not been established");
+            Finalize_Range_Check
+              (Node.As_Assign_Stmt.F_Expr,
+               Node.As_Assign_Stmt.F_Dest.P_Expression_Type, Here,
+               Rules.Known_Range_Check_Failure,
+               "assigned value is outside the target subtype range");
          elsif Node.Kind = Libadalang.Common.Ada_Object_Decl
            and then not Libadalang.Analysis.Is_Null
              (Node.As_Object_Decl.F_Default_Expr)
          then
-            Final_Outcome
-              (Node.As_Object_Decl.F_Default_Expr, Proof.Range_Check, Here,
-               "initializer range safety has not been established");
+            Finalize_Range_Check
+              (Node.As_Object_Decl.F_Default_Expr,
+               Node.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl, Here,
+               Rules.Known_Range_Check_Failure,
+               "initial value is outside the object's subtype range");
          elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
             declare
                Call : constant Libadalang.Analysis.Call_Expr :=
@@ -3843,14 +3883,20 @@ package body Adalang_Analyzer.Flow_Interp is
                case Call.P_Kind is
                   when Libadalang.Common.Type_Conversion =>
                      declare
+                        Decl  : constant Libadalang.Analysis.Basic_Decl :=
+                          Call.F_Name.P_Referenced_Decl;
                         Value : constant Libadalang.Analysis.Expr :=
                           Assoc_Expression (Call.F_Suffix, 1);
                      begin
-                        if not Libadalang.Analysis.Is_Null (Value) then
-                           Final_Outcome
-                             (Value, Proof.Range_Check, Here,
-                              "conversion range safety has not been " &
-                                "established");
+                        if not Libadalang.Analysis.Is_Null (Decl)
+                          and then Decl.Kind in
+                            Libadalang.Common.Ada_Base_Type_Decl
+                          and then not Libadalang.Analysis.Is_Null (Value)
+                        then
+                           Finalize_Range_Check
+                             (Value, Decl.As_Base_Type_Decl, Here,
+                              Rules.Known_Range_Check_Failure,
+                              "value is outside the target subtype range");
                         end if;
                      end;
 
