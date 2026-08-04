@@ -50,7 +50,8 @@ package body Adalang_Analyzer.Flow_Interp is
       Method         : Proof.Analysis_Method;
       Explanation    : String;
       Abstract_State : String := "";
-      Imprecision    : String := "") is
+      Imprecision    : String := "";
+      Final          : Boolean := False) is
    begin
       Proof.Register_At
         (Unit             => Unit,
@@ -61,7 +62,8 @@ package body Adalang_Analyzer.Flow_Interp is
          Abstract_State   => Abstract_State,
          Explanation      => Explanation,
          Imprecision_Source => Imprecision,
-         Configuration_Id => Config.Assurance_Profile_Name);
+         Configuration_Id => Config.Assurance_Profile_Name,
+         Final            => Final);
    end Record_Outcome;
 
    procedure Record_Definite_Error
@@ -70,11 +72,12 @@ package body Adalang_Analyzer.Flow_Interp is
       Kind           : Proof.Obligation_Kind;
       Method         : Proof.Analysis_Method;
       Explanation    : String;
-      Abstract_State : String := "") is
+      Abstract_State : String := "";
+      Final          : Boolean := False) is
    begin
       Record_Outcome
         (Unit, Node, Kind, Proof.Definite_Error, Method, Explanation,
-         Abstract_State);
+         Abstract_State, Final => Final);
    end Record_Definite_Error;
 
    procedure Record_Unproved
@@ -84,11 +87,12 @@ package body Adalang_Analyzer.Flow_Interp is
       Method         : Proof.Analysis_Method;
       Explanation    : String;
       Abstract_State : String := "";
-      Imprecision    : String := "") is
+      Imprecision    : String := "";
+      Final          : Boolean := False) is
    begin
       Record_Outcome
         (Unit, Node, Kind, Proof.Unproved, Method, Explanation,
-         Abstract_State, Imprecision);
+         Abstract_State, Imprecision, Final => Final);
    end Record_Unproved;
 
    procedure Record_Proved_Safe
@@ -97,11 +101,12 @@ package body Adalang_Analyzer.Flow_Interp is
       Kind           : Proof.Obligation_Kind;
       Method         : Proof.Analysis_Method;
       Explanation    : String;
-      Abstract_State : String := "") is
+      Abstract_State : String := "";
+      Final          : Boolean := False) is
    begin
       Record_Outcome
         (Unit, Node, Kind, Proof.Proved_Safe, Method, Explanation,
-         Abstract_State);
+         Abstract_State, Final => Final);
    end Record_Proved_Safe;
 
    procedure Record_Unreachable
@@ -3945,9 +3950,56 @@ package body Adalang_Analyzer.Flow_Interp is
                   Current := Current.Parent;
                end loop;
                if Tracked then
-                  Final_Outcome
-                    (Node, Proof.Initialization_Check, Here,
-                     "object initialization has not been established");
+                  if not Boundary_Supported then
+                     Record_Unsupported
+                       (Unit, Node, Proof.Initialization_Check,
+                        "object initialization has not been established");
+                  elsif Here /= CFG.No_Node
+                    and then not Reachable (Here)
+                  then
+                     Record_Unreachable
+                       (Unit, Node, Proof.Initialization_Check,
+                        "the containing CFG node is unreachable");
+                  else
+                     --  Unlike the live recording this mirrors (made while
+                     --  Verify_Subprogram's CFG fixed point may still be
+                     --  mid-convergence for Here, and so can be based on an
+                     --  intermediate, not-yet-joined state), this call is
+                     --  made once, after the fixed point has fully
+                     --  converged, against Here's own final State -- so it
+                     --  is marked Final to always supersede whatever a
+                     --  premature live recording left behind for the same
+                     --  obligation (see FP-031).
+                     case Flow_Initialization
+                            ((if Here = CFG.No_Node then Empty_Flow_State
+                              else States (Here)),
+                             Key)
+                     is
+                        when Bool_True =>
+                           Record_Proved_Safe
+                             (Unit, Node, Proof.Initialization_Check,
+                              Proof.Flow_Analysis,
+                              "object is initialized on every incoming " &
+                                "path",
+                              "initialization => true", Final => True);
+                        when Bool_False =>
+                           Record_Definite_Error
+                             (Unit, Node, Proof.Initialization_Check,
+                              Proof.Flow_Analysis,
+                              "object is uninitialized on every incoming " &
+                                "path",
+                              "initialization => false", Final => True);
+                        when Bool_Unknown =>
+                           Record_Unproved
+                             (Unit, Node, Proof.Initialization_Check,
+                              Proof.Flow_Analysis,
+                              "object initialization is not established",
+                              Imprecision =>
+                                "incoming paths disagree or object is " &
+                                  "external",
+                              Final => True);
+                     end case;
+                  end if;
                end if;
             exception
                when E : others =>

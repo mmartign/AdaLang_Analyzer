@@ -110,6 +110,100 @@ FP-009 back down — see FP-010's full description in
 shapes (bare subtype mark, `Param'Range`) avoid needing any bound
 arithmetic at all.
 
+### Re-run (2026-08-04): interprocedural summaries' effect on `--verify`
+
+The `--verify` scope observation above was recorded on 2026-08-01, one day
+before interprocedural effect summaries shipped (`feat: add interprocedural
+effect summaries`) and three more precision fixes landed (`FP-027`–`FP-030`).
+Tokeneer was re-run from a fresh clone (same 120-file
+`testsuite/gnatprove/tests/tokeneer` from `AdaCore/spark2014`, commit
+`a97467e91a16409c866434fcc7a5f553bbd98b8a`) to quantify the effect.
+
+`--recommended --spark`: 652 violations (was 653 after the four Tokeneer
+fixes above; `Uninitialized_Output` fell from 1 to 0, its last remaining
+finding there being resolved by a later, unrelated precision fix). Every
+other rule's count is unchanged, confirming the corpus and invocation are
+the same modulo that one improvement.
+
+`--verify`: 7938 bounded scalar obligations (was 4687; the growth is mostly
+new obligation kinds added since — precondition, postcondition,
+integer-overflow, division-by-zero, loop-invariant-initialization/
+preservation did not all exist as tracked families in the original run).
+
+| Outcome | Before (2026-08-01) | Right after re-run (2026-08-04) | After the FP-031 fix |
+| --- | --- | --- | --- |
+| `Proved_Safe` | 0 | 1661 | 1538 |
+| `Definite_Error` | 0 | 2 | 1 |
+| `Unproved` | 4643 | 5910 | 6034 |
+| `Unsupported` | 44 | 365 | 365 |
+
+The middle column is what the corpus reported the moment it surfaced
+`FP-031` (see below); the last column is the actual, current state of this
+repository after that fix landed. `initialization-check` specifically,
+after the fix: 1379 `Proved_Safe` (was 1502 right after the re-run, before
+0), 3543 `Unproved`, 196 `Unsupported`, 0 `Definite_Error`, out of 5118
+total for that family — the net of interprocedural effect summaries'
+genuine payoff (this section's original "validated roadmap input") and
+`FP-031`'s correction of the 123 obligations that summaries payoff had
+wrongly counted as `Proved_Safe`. `range-check` improved more modestly (0
+→ 105 `Proved_Safe`, out of 1738, unaffected by `FP-031` since that fix was
+scoped to `initialization-check`), since the other half of the original
+gap — a non-relational abstract domain — is unaffected by interprocedural
+summaries either; `range-check` `Unproved` is still 87% of that family
+(was 98%), and "the current non-relational range domain is inconclusive"
+remains the single largest imprecision reason across the whole run (1505
+occurrences), followed by "incoming paths disagree or object is external"
+and "the fixed-point state did not discharge this obligation" — both
+`initialization-check` reasons, the remaining, not-yet-summarized half of
+the original gap (calls through private-child boundaries and other spots
+interprocedural summaries don't yet reach).
+
+### Confirmed analyzer mistake (fixed): FP-031, and open: FP-032
+
+`Definite_Error` going from 0 to 2 was unexpected on a codebase AdaCore
+describes as fully verified, so both were investigated rather than folded
+into the table above as ordinary progress. Neither is a real bug in
+Tokeneer. `enrolment.adb`'s `pragma Loop_Invariant (CertNo >= 2);` (:239)
+and `msgproc.adb`'s read of `ValFin` after a `for i in 1 .. Arg loop ValFin
+:= ...; end loop;` (:66, `GetStringByPos`) both reduce to the same
+mechanism: `Verify_Subprogram`'s CFG worklist fixed point can visit a
+merge point once *before* a loop's back edge has fed its contribution in,
+record a `Definite_Error` from that intermediate, not-yet-converged state,
+and then never correct it — `Proof_Obligations.Register_At`'s `Replaces`
+function treats `Definite_Error` (like `Proved_Safe`) as terminal once
+recorded for a stable ID, which is sound for two independent analyses
+disagreeing, but not for two visits of the same in-progress fixed point.
+
+`msgproc.adb`'s case (`initialization-check`) is fixed: `Register_At` now
+accepts a `Final` flag that always overwrites a stable ID's current result,
+and `Verify_Subprogram`'s `Finalize_Node` — which walks the whole
+subprogram exactly once, strictly after the fixed point has fully drained
+— now uses it to record initialization-check's Proved_Safe/Definite_Error/
+Unproved outcome against each identifier's own fully-converged state,
+superseding whatever a premature live recording left behind. Re-running
+Tokeneer confirms it: `msgproc.adb`'s `Definite_Error` is gone, and the
+same fix additionally corrected 123 *other* initialization-check
+obligations elsewhere in the corpus that were stuck at a spurious
+`Proved_Safe` from the identical mechanism (1661 → 1538 `Proved_Safe`, all
+123 moving to the honest `Unproved`) — confirming the staleness bug ran in
+both directions, not just the alarming one, exactly as flagged as an open
+risk in this file's previous entry. Full detail, the fix, and its
+regression are in `FP-031` in `quality/known_analysis_issues.tsv`
+(`tests/verification_loop_stale_initialization.adb`, run by
+`run_verification.sh`).
+
+`enrolment.adb`'s case (`assertion`, on a `pragma Loop_Invariant`) is *not*
+fixed by the same change and remains open as `FP-032`: its live recording
+happens in `Interpret_Proof_Pragma`, not the `Ada_Identifier` path
+`Finalize_Node` was extended for, and `Finalize_Node`'s own `Pragma_Node`
+handling only ever falls back to a coarse "Unproved unless unsupported/
+unreachable" default rather than re-deriving Proved_Safe/Definite_Error —
+closing it needs `Finalize_Node` to replay `Interpret_Proof_Pragma` itself
+against the converged state with `Final => True`, plus a decision about
+what replaying a pragma's narrowing side effect means outside the live
+fixed point, which `FP-031`'s simpler read-only case didn't raise. See
+`FP-032` in `quality/known_analysis_issues.tsv`.
+
 ## Simple Components (Dmitry A. Kazakov)
 
 - **Source**: `alire-project/dak_simple_components` on GitHub, a mirror of

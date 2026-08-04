@@ -124,12 +124,22 @@ package Adalang_Analyzer.Proof_Obligations is
       Abstract_State     : String := "";
       Explanation        : String := "";
       Imprecision_Source : String := "";
-      Configuration_Id   : String := "");
+      Configuration_Id   : String := "";
+      Final              : Boolean := False);
    --  Creates and registers an obligation anchored at Node. Repeated
    --  registration of the same status is idempotent. When analysis passes
    --  overlap, the registry preserves the strongest sound outcome:
    --  reachable results supersede Unreachable, Definite_Error supersedes
    --  Unsupported, and Unsupported or Unreachable supersede Proved_Safe.
+   --
+   --  Final marks a recording as authoritative and always overwrites
+   --  whatever is already registered for the same Stable_Id, bypassing the
+   --  above ordering and the contradictory-result check. It exists for
+   --  producers that recompute a result once from a value known to be
+   --  final (e.g. a fixed point that has fully converged), after other,
+   --  non-final recordings may already have registered a provisional
+   --  result for the same obligation from an intermediate, not-yet-settled
+   --  value seen earlier in the same computation.
 
    procedure Reset;
    --  Removes all obligations from the per-run registry.

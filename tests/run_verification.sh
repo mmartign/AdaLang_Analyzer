@@ -28,7 +28,8 @@ loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
 out_forwarding=$(mktemp "${TMPDIR:-/tmp}/adalang-out-forwarding.XXXXXX")
 interprocedural_effects=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-effects.XXXXXX")
 interprocedural_ordinary=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-ordinary.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary"' EXIT HUP INT TERM
+loop_stale_init=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-init.XXXXXX")
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -246,6 +247,17 @@ run_json "$unsupported" tests/verification_unsupported.adb
 grep -F '"status": "unsupported"' "$unsupported" >/dev/null
 if grep -F '"status": "proved-safe"' "$unsupported" >/dev/null; then
    echo "incomplete CFG produced a proved-safe result" >&2
+   exit 1
+fi
+
+run_json "$loop_stale_init" tests/verification_loop_stale_initialization.adb
+grep -F '"kind": "initialization-check", "status": "unproved"' \
+  "$loop_stale_init" >/dev/null
+if grep -F '"kind": "initialization-check", "status": "definite-error"' \
+  "$loop_stale_init" >/dev/null; then
+   echo "a read after a dynamically-bounded for-loop write was stuck at" \
+     "a Definite_Error recorded from the CFG fixed point's intermediate," \
+     "pre-convergence state instead of Verify_Subprogram's final one" >&2
    exit 1
 fi
 

@@ -209,7 +209,8 @@ package body Adalang_Analyzer.Proof_Obligations is
       Abstract_State     : String := "";
       Explanation        : String := "";
       Imprecision_Source : String := "";
-      Configuration_Id   : String := "")
+      Configuration_Id   : String := "";
+      Final              : Boolean := False)
    is
       Operation_Text : constant String :=
         (if Operation = ""
@@ -245,6 +246,15 @@ package body Adalang_Analyzer.Proof_Obligations is
                raise Constraint_Error with
                  "conflicting kind for proof obligation ID: " & Id;
             elsif Item.Status = Status then
+               return;
+            elsif Final then
+               Update_Result
+                 (Stable_Id          => Id,
+                  Status             => Status,
+                  Method             => Method,
+                  Abstract_State     => Abstract_State,
+                  Explanation        => Explanation,
+                  Imprecision_Source => Imprecision_Source);
                return;
             elsif (Item.Status = Proved_Safe and then Status = Definite_Error)
               or else
