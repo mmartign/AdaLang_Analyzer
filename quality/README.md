@@ -165,6 +165,20 @@ and, independently, surfaced a real false positive (`FP-039`, closed) in
 `Global`-aspect handling that the hand-constructed precision corpus had not
 covered.
 
+`benchmarks/cubedos/` applies the same per-obligation methodology to a
+second, structurally different SPARK corpus (cubesatlab/cubedos, a
+message-passing/XDR-marshalling flight-software framework, rather than
+SPARKNaCl's cryptographic arithmetic) — but unlike SPARKNaCl, CubedOS is not
+fully proved, so GNATprove's verdict is a weaker oracle there. The first run
+(`RESULTS_2026-08-04.md`) matched only 2 of 44 AdaLang obligations against a
+GNATprove counterpart, because it independently surfaced a new, currently
+open analyzer limitation (`FP-040`): `--verify` hits a Libadalang
+`Property_Error` on 21 of 49 files, undercounting obligations project-wide.
+Muen (a formally-verified separation kernel) was also attempted as a third
+corpus and found not usable as-is — its kernel sources depend on packages
+generated at build time from an XML system policy that isn't present in the
+core repository; see `external_corpus_findings.md`.
+
 ## Differential corpus
 
 The GNATprove differential gate contains 16 clean and 5 deliberately broken

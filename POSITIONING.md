@@ -144,6 +144,14 @@ consistent with "a much narrower scalar subset" above -- this is evidence
 of precision on the subset AdaLang attempts, not of matching GNATprove's
 coverage.
 
+`benchmarks/cubedos/` repeats this comparison on a second, structurally
+different SPARK corpus (cubesatlab/cubedos). Unlike SPARKNaCl, this corpus
+is not fully proved, and the run itself surfaced a new, open analyzer
+limitation (`FP-040` in `quality/known_analysis_issues.tsv`) that undercounts
+`--verify`'s proof obligations on about two in five of the corpus's files --
+see `benchmarks/cubedos/RESULTS_2026-08-04.md` for the honest, caveat-heavy
+account of what that run does and does not show.
+
 The intended workflow is:
 
 ```text

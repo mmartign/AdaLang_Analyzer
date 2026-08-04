@@ -470,6 +470,42 @@ live re-run of the checkout):
 | Total violations | 41 | 34 |
 | `Uninitialized_Output` | 8 | 1 (genuine stub) |
 
+### `--verify` / GNATprove comparison and a new open issue: FP-040
+
+A later session extended the CubedOS investigation from ordinary findings
+(above) to `--verify`'s bounded scalar proof obligations, run against the
+full `src/cubedos.gpr` (49 files: `check/`, `modules/`, `library/`, unlike
+the narrower `cubedlib.gpr` used above) and compared against GNATprove
+`--mode=prove --level=4`, mirroring `benchmarks/sparknacl/`'s methodology.
+Full detail, including reproduction steps and a caveat-laden results
+write-up, is in `benchmarks/cubedos/README.md` and
+`benchmarks/cubedos/RESULTS_2026-08-04.md`; summary here:
+
+- CubedOS is not a fully-proved corpus (unlike SPARKNaCl): GNATprove itself
+  reports real, unresolved `high`/`medium` findings on unmodified
+  `cubedos.gpr` (tasking data races on shared `Message_Manager.Mailboxes`
+  state, a `Global` aspect omission, uninitialized `out` parameters, and
+  several range/precondition checks the provers could not complete). This
+  makes GNATprove's verdict here a weaker oracle than on SPARKNaCl.
+- The run surfaced a new, currently open analyzer limitation: `--verify`'s
+  proof-obligation finalization pass hits Libadalang's own `Property_Error`
+  ("undetermined CallExpr kind", occasionally "dereferencing a null access")
+  on 21 of the 49 analyzed files, falling back conservatively per file
+  rather than crashing. This is not `FP-029` (a different error signature,
+  and `gnatls` was present throughout this run, ruling out FP-029's known
+  trigger). Recorded as `FP-040` in `known_analysis_issues.tsv`; not yet
+  root-caused. Its practical effect: `--verify`'s reported obligation count
+  (44, project-wide) is a real undercount, dominated by this fallback rather
+  than by genuine bounded-verification scope limits.
+- With only 2 of 44 AdaLang obligations having a matched GNATprove
+  counterpart at this revision (both in the expected "both flag a problem"
+  bucket, zero unsoundness or false positives observed), the comparison is
+  too small a sample to add meaningful confidence beyond SPARKNaCl's own
+  886-pair result — this run's real contribution is `FP-040` itself, caught
+  exactly the way this document's external-corpus validation practice
+  intends: real code the project did not write, surfacing a failure mode no
+  hand-written fixture had exercised.
+
 ## AWS (Ada Web Server, AdaCore/aws)
 
 - **Source**: `AdaCore/aws` on GitHub. The full project (`aws.gpr`) is an
