@@ -744,4 +744,19 @@ then
    exit 1
 fi
 
+if "$analyzer" -checks='Non_Short_Circuit_Condition' \
+     tests/non_short_circuit_chain_findings.adb >"$output" 2>&1
+then
+   echo "expected non_short_circuit_chain_findings.adb to produce a violation" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[Non_Short_Circuit_Condition\]' "$output")" -ne 1 ]; then
+   echo "a chain of plain 'and' operators was reported once per nested" \
+     "operator instead of once, because every nested operator in a" \
+     "left-associative chain shares the same Sloc_Range start position" \
+     "and Report_Rule_Violation had no per-run deduplication" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

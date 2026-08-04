@@ -204,6 +204,25 @@ what replaying a pragma's narrowing side effect means outside the live
 fixed point, which `FP-031`'s simpler read-only case didn't raise. See
 `FP-032` in `quality/known_analysis_issues.tsv`.
 
+### Confirmed analyzer mistake (fixed): FP-038
+
+Auditing FP-031's sibling obligation kinds (FP-033–FP-037) surfaced a
+second, unrelated bug while designing a fix for `Range_Check`:
+`Report.Report_Violation_At` — the ordinary-findings counterpart to
+`Register_At`, behind every `Known_*` verify-mode rule — had no
+deduplication at all, so a real violation could be reported once per CFG
+re-visit of the same node instead of once. Re-running Tokeneer's
+`--recommended --spark` after the fix: 631 violations, down from 652, all
+21 in `Non_Short_Circuit_Condition` — `clock.adb`'s `ConstructTime` has a
+10-term range-guard condition chained with plain `and`, which was reported
+9 times for the identical location (a second, structurally distinct root
+cause: every nested `Bin_Op` in a left-associative chain shares the same
+`Sloc_Range.Start`, unrelated to `--verify`'s CFG fixed point but caught by
+the same general fix). `--verify`'s own proof-obligation counts were
+unaffected (`Register_At` already no-ops an identical repeated recording;
+only the ordinary-findings path lacked that). Full detail in `FP-038` in
+`quality/known_analysis_issues.tsv`.
+
 ## Simple Components (Dmitry A. Kazakov)
 
 - **Source**: `alire-project/dak_simple_components` on GitHub, a mirror of

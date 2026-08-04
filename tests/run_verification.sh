@@ -29,7 +29,8 @@ out_forwarding=$(mktemp "${TMPDIR:-/tmp}/adalang-out-forwarding.XXXXXX")
 interprocedural_effects=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-effects.XXXXXX")
 interprocedural_ordinary=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-ordinary.XXXXXX")
 loop_stale_init=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-init.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init"' EXIT HUP INT TERM
+loop_stale_range=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-range.XXXXXX")
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -258,6 +259,20 @@ if grep -F '"kind": "initialization-check", "status": "definite-error"' \
    echo "a read after a dynamically-bounded for-loop write was stuck at" \
      "a Definite_Error recorded from the CFG fixed point's intermediate," \
      "pre-convergence state instead of Verify_Subprogram's final one" >&2
+   exit 1
+fi
+
+range_status=0
+"$analyzer" --verify tests/verification_loop_stale_range_check.adb \
+  >"$loop_stale_range" 2>&1 || range_status=$?
+if [ "$range_status" -ne 1 ] \
+  || [ "$(grep -c '\[Known_Range_Check_Failure\]' "$loop_stale_range")" -ne 1 ]
+then
+   echo "a range-check violation downstream of a dynamically-bounded" \
+     "for-loop was reported more than once, because Verify_Subprogram's" \
+     "CFG fixed point revisited the same statement while converging and" \
+     "Report_Rule_Violation has no per-run deduplication" >&2
+   cat "$loop_stale_range" >&2
    exit 1
 fi
 

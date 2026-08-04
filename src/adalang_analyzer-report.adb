@@ -987,6 +987,35 @@ package body Adalang_Analyzer.Report is
       end if;
    end Highlight_Width;
 
+   --  True when Findings already holds this exact (location, rule, message)
+   --  triple. A bounded-verification check reachable from Verify_Subprogram's
+   --  live Process_Node processing can call Report_Rule_Violation once per
+   --  CFG re-visit of the same node as its fixed point converges, rather
+   --  than once for the node's final, settled state (the ordinary-findings
+   --  counterpart to the proof-obligation staleness fixed for
+   --  initialization-check in FP-031); without this check, one genuine
+   --  violation is counted once per re-visit instead of once.
+   function Already_Reported
+     (Filename    : String;
+      Line_Number : Natural;
+      Column      : Natural;
+      Rule        : Rules.Rule_Kind;
+      Message     : String) return Boolean
+   is
+   begin
+      for Item of Findings loop
+         if Item.Line_Number = Line_Number
+           and then Item.Column = Column
+           and then Item.Rule = Rule
+           and then To_String (Item.Filename) = Filename
+           and then To_String (Item.Message) = Message
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Already_Reported;
+
    procedure Report_Violation_At
      (Filename    : String;
       Line_Number : Natural;
@@ -1000,81 +1029,88 @@ package body Adalang_Analyzer.Report is
       Rule_Name    : constant String :=
         Ada.Strings.Unbounded.To_String (Rules.Rule_Infos (Rule).Name);
       Source_Text  : constant String := Source_Line (Filename, Line_Number);
-      Fingerprint  : constant String :=
-        Stable_Fingerprint (Filename, Rule_Name, Message, Source_Text);
-      Matches_Base : constant Boolean :=
-        Consume_Baseline_Occurrence (Fingerprint);
    begin
-      if Is_Suppressed (Source_Text, Rule_Name) then
-         Suppressed_Finding_Vectors.Append
-           (Suppressed_Findings,
-            (Filename    => To_Unbounded_String (Filename),
-             Line_Number => Line_Number,
-             Rule        => Rule,
-             Rationale   =>
-               To_Unbounded_String (Extract_Rationale (Source_Text))));
+      if Already_Reported (Filename, Line_Number, Column, Rule, Message) then
          return;
       end if;
 
-      Finding_Vectors.Append
-        (Findings,
-         (Filename     => To_Unbounded_String (Filename),
-          Line_Number  => Line_Number,
-          Column       => Column,
-          Caret_Width  => Caret_Width,
-          Rule         => Rule,
-          Message      => To_Unbounded_String (Message),
-          Explanation  => To_Unbounded_String (Explanation),
-          Evidence     => To_Unbounded_String (Evidence),
-          Source_Text  => To_Unbounded_String (Source_Text),
-          Fingerprint  => To_Unbounded_String (Fingerprint),
-          Matches_Base => Matches_Base));
-
-      if Matches_Base then
-         Baseline_Matches := Baseline_Matches + 1;
-      else
-         Violations := Violations + 1;
-         Rule_Violations (Rule) := Rule_Violations (Rule) + 1;
-      end if;
-
-      if not Matches_Base
-        and then Current_Format = Text_Output
-        and then not Config.Quiet_Mode
-      then
-         Ada.Text_IO.Put_Line (Filename & ":" &
-                   Text_Utils.To_Decimal (Line_Number) & ":" &
-                   Text_Utils.To_Decimal (Column) &
-                   ": warning: " & Message & " [" &
-                   Rule_Name & "]");
-         Ada.Text_IO.Put_Line ("  rule: " &
-                   Ada.Strings.Unbounded.To_String
-                     (Rules.Rule_Infos (Rule).Description));
-         Ada.Text_IO.Put_Line ("  advice: " &
-                   Ada.Strings.Unbounded.To_String
-                     (Rules.Rule_Infos (Rule).Guidance));
-         if Explanation /= "" then
-            Ada.Text_IO.Put_Line ("  why: " & Explanation);
+      declare
+         Fingerprint  : constant String :=
+           Stable_Fingerprint (Filename, Rule_Name, Message, Source_Text);
+         Matches_Base : constant Boolean :=
+           Consume_Baseline_Occurrence (Fingerprint);
+      begin
+         if Is_Suppressed (Source_Text, Rule_Name) then
+            Suppressed_Finding_Vectors.Append
+              (Suppressed_Findings,
+               (Filename    => To_Unbounded_String (Filename),
+                Line_Number => Line_Number,
+                Rule        => Rule,
+                Rationale   =>
+                  To_Unbounded_String (Extract_Rationale (Source_Text))));
+            return;
          end if;
-         if Evidence /= "" then
-            Ada.Text_IO.Put_Line ("  evidence: " & Evidence);
+
+         Finding_Vectors.Append
+           (Findings,
+            (Filename     => To_Unbounded_String (Filename),
+             Line_Number  => Line_Number,
+             Column       => Column,
+             Caret_Width  => Caret_Width,
+             Rule         => Rule,
+             Message      => To_Unbounded_String (Message),
+             Explanation  => To_Unbounded_String (Explanation),
+             Evidence     => To_Unbounded_String (Evidence),
+             Source_Text  => To_Unbounded_String (Source_Text),
+             Fingerprint  => To_Unbounded_String (Fingerprint),
+             Matches_Base => Matches_Base));
+
+         if Matches_Base then
+            Baseline_Matches := Baseline_Matches + 1;
+         else
+            Violations := Violations + 1;
+            Rule_Violations (Rule) := Rule_Violations (Rule) + 1;
          end if;
-         Ada.Text_IO.Put_Line ("  quality: " &
-                   Rules.Quality_Name (Rules.Rule_Infos (Rule).Quality) &
-                   " (" &
-                   Rules.Severity_Name (Rules.Rule_Infos (Rule).Severity) &
-                   ")");
 
-         if Source_Text /= "" then
-            Ada.Text_IO.Put_Line ("  source:");
-            Ada.Text_IO.Put_Line ("    " & Source_Text);
+         if not Matches_Base
+           and then Current_Format = Text_Output
+           and then not Config.Quiet_Mode
+         then
+            Ada.Text_IO.Put_Line (Filename & ":" &
+                      Text_Utils.To_Decimal (Line_Number) & ":" &
+                      Text_Utils.To_Decimal (Column) &
+                      ": warning: " & Message & " [" &
+                      Rule_Name & "]");
+            Ada.Text_IO.Put_Line ("  rule: " &
+                      Ada.Strings.Unbounded.To_String
+                        (Rules.Rule_Infos (Rule).Description));
+            Ada.Text_IO.Put_Line ("  advice: " &
+                      Ada.Strings.Unbounded.To_String
+                        (Rules.Rule_Infos (Rule).Guidance));
+            if Explanation /= "" then
+               Ada.Text_IO.Put_Line ("  why: " & Explanation);
+            end if;
+            if Evidence /= "" then
+               Ada.Text_IO.Put_Line ("  evidence: " & Evidence);
+            end if;
+            Ada.Text_IO.Put_Line ("  quality: " &
+                      Rules.Quality_Name (Rules.Rule_Infos (Rule).Quality) &
+                      " (" &
+                      Rules.Severity_Name (Rules.Rule_Infos (Rule).Severity) &
+                      ")");
 
-            if Column > 0 then
-               Ada.Text_IO.Put_Line
-                 ("    " & Text_Utils.Repeat_Char (' ', Column - 1) &
-                  Text_Utils.Repeat_Char ('^', Caret_Width));
+            if Source_Text /= "" then
+               Ada.Text_IO.Put_Line ("  source:");
+               Ada.Text_IO.Put_Line ("    " & Source_Text);
+
+               if Column > 0 then
+                  Ada.Text_IO.Put_Line
+                    ("    " & Text_Utils.Repeat_Char (' ', Column - 1) &
+                     Text_Utils.Repeat_Char ('^', Caret_Width));
+               end if;
             end if;
          end if;
-      end if;
+      end;
    end Report_Violation_At;
 
    procedure Report_Rule_Violation
