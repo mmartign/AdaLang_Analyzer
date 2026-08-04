@@ -1435,6 +1435,47 @@ package body Adalang_Analyzer.Flow_Interp is
          return Libadalang.Analysis.No_Expr;
    end Assoc_Expression;
 
+   --  Checked separately from Check_Conversion_Or_Index so Verify_Subprogram's
+   --  Finalize_Node can replay the same determination against a CFG node's
+   --  own fully-converged State, marked Final (see FP-035, following
+   --  FP-031/FP-034's Ada_Identifier/Range_Check fixes).
+   procedure Check_Index_Range
+     (Unit        : Libadalang.Analysis.Analysis_Unit;
+      Index_Value : Libadalang.Analysis.Expr'Class;
+      Bounds      : Abstract_Range;
+      State       : Flow_State;
+      Final       : Boolean := False)
+   is
+   begin
+      if Definitely_Outside_Range (Index_Value, Bounds, State) then
+         Record_Definite_Error
+           (Unit, Index_Value, Proof.Index_Check, Proof.Abstract_Interpretation,
+            "index is outside the array index subtype",
+            "index range is outside the array bounds", Final => Final);
+         Report.Report_Rule_Violation
+           (Unit, Index_Value, Rules.Known_Index_Check_Failure,
+            "index is outside the array index subtype",
+            Explanation =>
+              "Abstract interpretation found that every represented " &
+              "index value is outside the array bounds.",
+            Evidence => "index range is outside the array bounds");
+      elsif Config.Verification_Mode
+        and then Definitely_Inside_Range (Index_Value, Bounds, State)
+      then
+         Record_Proved_Safe
+           (Unit, Index_Value, Proof.Index_Check, Proof.Abstract_Interpretation,
+            "index range is contained in the array index bounds",
+            "index bounds are within array bounds", Final => Final);
+      else
+         Record_Unproved
+           (Unit, Index_Value, Proof.Index_Check, Proof.Abstract_Interpretation,
+            "index-check failure is not established, but absence is not " &
+              "proved",
+            Imprecision => "index and bound ranges remain inconclusive",
+            Final => Final);
+      end if;
+   end Check_Index_Range;
+
    procedure Check_Conversion_Or_Index
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Call  : Libadalang.Analysis.Call_Expr;
@@ -1507,45 +1548,8 @@ package body Adalang_Analyzer.Flow_Interp is
                              and then not Libadalang.Analysis.Is_Null
                                (Index_Value)
                            then
-                              if Definitely_Outside_Range
-                                   (Index_Value, Bounds, State)
-                              then
-                                 Record_Definite_Error
-                                   (Unit, Index_Value, Proof.Index_Check,
-                                    Proof.Abstract_Interpretation,
-                                    "index is outside the array index subtype",
-                                    "index range is outside the array bounds");
-                                 Report.Report_Rule_Violation
-                                   (Unit, Index_Value,
-                                    Rules.Known_Index_Check_Failure,
-                                    "index is outside the array index subtype",
-                                    Explanation =>
-                                      "Abstract interpretation found that " &
-                                      "every represented index value is " &
-                                      "outside the array bounds.",
-                                    Evidence =>
-                                      "index range is outside the array " &
-                                      "bounds");
-                              elsif Config.Verification_Mode
-                                and then Definitely_Inside_Range
-                                  (Index_Value, Bounds, State)
-                              then
-                                 Record_Proved_Safe
-                                   (Unit, Index_Value, Proof.Index_Check,
-                                    Proof.Abstract_Interpretation,
-                                    "index range is contained in the array " &
-                                      "index bounds",
-                                    "index bounds are within array bounds");
-                              else
-                                 Record_Unproved
-                                   (Unit, Index_Value, Proof.Index_Check,
-                                    Proof.Abstract_Interpretation,
-                                    "index-check failure is not established, " &
-                                      "but absence is not proved",
-                                    Imprecision =>
-                                      "index and bound ranges remain " &
-                                      "inconclusive");
-                              end if;
+                              Check_Index_Range
+                                (Unit, Index_Value, Bounds, State);
                            end if;
                         end;
                      end loop;
@@ -1562,6 +1566,134 @@ package body Adalang_Analyzer.Flow_Interp is
            ("skipping conversion/index check: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Check_Conversion_Or_Index;
+
+   --  Checked separately from Scan_Expression_For_Flow_Bugs so
+   --  Verify_Subprogram's Finalize_Node can replay the same determination
+   --  against a CFG node's own fully-converged State, marked Final (see
+   --  FP-036, following FP-031/FP-034/FP-035's earlier fixes).
+   procedure Check_Division_By_Zero
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Expr  : Libadalang.Analysis.Bin_Op;
+      State : Flow_State;
+      Final : Boolean := False)
+   is
+      Right       : constant Abstract_Int :=
+        Integer_Value (Expr.F_Right, State);
+      Right_Range : constant Abstract_Range :=
+        Range_Value (Expr.F_Right, State);
+   begin
+      if Expr.F_Op not in Libadalang.Common.Ada_Op_Div
+          | Libadalang.Common.Ada_Op_Mod
+          | Libadalang.Common.Ada_Op_Rem
+      then
+         return;
+      end if;
+
+      if Right.Known and then Right.Value = 0 then
+         Record_Definite_Error
+           (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+            Proof.Abstract_Interpretation,
+            "right operand is zero in the incoming abstract state",
+            "right operand => 0", Final => Final);
+         if not Is_Static_Zero (Expr.F_Right) then
+            Report.Report_Rule_Violation
+              (Unit, Expr.F_Right, Rules.Division_By_Zero,
+               "right operand is zero here based on an earlier assignment",
+               Explanation =>
+                 "Flow analysis propagated the assigned value to this " &
+                 "operation without an intervening write.",
+               Evidence => "right operand => 0");
+         end if;
+      elsif Config.Verification_Mode
+        and then
+          ((Right_Range.Has_High and then Right_Range.High < 0)
+           or else
+           (Right_Range.Has_Low and then Right_Range.Low > 0))
+      then
+         Record_Proved_Safe
+           (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+            Proof.Abstract_Interpretation,
+            "right operand range excludes zero",
+            "right operand is strictly negative or positive",
+            Final => Final);
+      else
+         Record_Unproved
+           (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+            Proof.Abstract_Interpretation,
+            "zero has not been excluded from the divisor",
+            Imprecision => "the divisor range is unknown or contains zero",
+            Final => Final);
+      end if;
+   end Check_Division_By_Zero;
+
+   --  As Check_Division_By_Zero, for Integer_Overflow_Check.
+   procedure Check_Integer_Overflow
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Node  : Libadalang.Analysis.Bin_Op;
+      State : Flow_State;
+      Final : Boolean := False)
+   is
+   begin
+      if Node.F_Op not in
+        Libadalang.Common.Ada_Op_Plus
+          | Libadalang.Common.Ada_Op_Minus
+          | Libadalang.Common.Ada_Op_Mult
+          | Libadalang.Common.Ada_Op_Div
+          | Libadalang.Common.Ada_Op_Pow
+      then
+         return;
+      end if;
+
+      declare
+         Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Node.As_Expr.P_Expression_Type;
+      begin
+         if not Libadalang.Analysis.Is_Null (Expr_Type)
+           and then Expr_Type.P_Is_Int_Type
+         then
+            if Known_Arithmetic_Overflow (Node.As_Expr, State) then
+               Record_Definite_Error
+                 (Unit, Node, Proof.Integer_Overflow_Check,
+                  Proof.Abstract_Interpretation,
+                  "arithmetic result is outside its base type range",
+                  "result range is outside the operation's base type",
+                  Final => Final);
+               Report.Report_Rule_Violation
+                 (Unit, Node, Rules.Known_Overflow_Failure,
+                  "arithmetic result is outside its base type range",
+                  Explanation =>
+                    "Abstract interpretation found that every represented " &
+                    "result is outside the operation's base type.",
+                  Evidence =>
+                    "result range is outside the operation's base type");
+            elsif Config.Verification_Mode
+              and then Arithmetic_Proved_Safe (Node.As_Expr, State)
+            then
+               Record_Proved_Safe
+                 (Unit, Node, Proof.Integer_Overflow_Check,
+                  Proof.Abstract_Interpretation,
+                  "arithmetic result range is inside its base type",
+                  "result bounds are within base-type bounds",
+                  Final => Final);
+            else
+               Record_Unproved
+                 (Unit, Node, Proof.Integer_Overflow_Check,
+                  Proof.Abstract_Interpretation,
+                  "overflow is not established, but absence is not proved",
+                  Imprecision =>
+                    "the current range domain does not certify the result",
+                  Final => Final);
+            end if;
+         end if;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Known_Overflow_Failure",
+               Operation  => "evaluate arithmetic result bounds",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end;
+   end Check_Integer_Overflow;
 
    --  Reports Division_By_Zero for every "/", "mod", or "rem" under Node
    --  whose right operand is only known to be zero once State's earlier
@@ -1637,112 +1769,13 @@ package body Adalang_Analyzer.Flow_Interp is
       if Config.Rule_States (Rules.Division_By_Zero) = Config.Enabled
         and then Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
       then
-         declare
-            Expr        : constant Libadalang.Analysis.Bin_Op :=
-              Node.As_Bin_Op;
-            Right       : constant Abstract_Int :=
-              Integer_Value (Expr.F_Right, State);
-            Right_Range : constant Abstract_Range :=
-              Range_Value (Expr.F_Right, State);
-         begin
-            if Expr.F_Op in Libadalang.Common.Ada_Op_Div
-                | Libadalang.Common.Ada_Op_Mod
-                | Libadalang.Common.Ada_Op_Rem
-            then
-               if Right.Known and then Right.Value = 0 then
-                  Record_Definite_Error
-                    (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
-                     Proof.Abstract_Interpretation,
-                     "right operand is zero in the incoming abstract state",
-                     "right operand => 0");
-                  if not Is_Static_Zero (Expr.F_Right) then
-                     Report.Report_Rule_Violation
-                       (Unit, Expr.F_Right, Rules.Division_By_Zero,
-                        "right operand is zero here based on an earlier " &
-                          "assignment",
-                        Explanation =>
-                          "Flow analysis propagated the assigned value to " &
-                          "this operation without an intervening write.",
-                        Evidence => "right operand => 0");
-                  end if;
-               elsif Config.Verification_Mode
-                 and then
-                   ((Right_Range.Has_High and then Right_Range.High < 0)
-                    or else
-                    (Right_Range.Has_Low and then Right_Range.Low > 0))
-               then
-                  Record_Proved_Safe
-                    (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
-                     Proof.Abstract_Interpretation,
-                     "right operand range excludes zero",
-                     "right operand is strictly negative or positive");
-               else
-                  Record_Unproved
-                    (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
-                     Proof.Abstract_Interpretation,
-                     "zero has not been excluded from the divisor",
-                     Imprecision =>
-                       "the divisor range is unknown or contains zero");
-               end if;
-            end if;
-         end;
+         Check_Division_By_Zero (Unit, Node.As_Bin_Op, State);
       end if;
 
       if Config.Rule_States (Rules.Known_Overflow_Failure) = Config.Enabled
         and then Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
-        and then Node.As_Bin_Op.F_Op in
-          Libadalang.Common.Ada_Op_Plus
-            | Libadalang.Common.Ada_Op_Minus
-            | Libadalang.Common.Ada_Op_Mult
-            | Libadalang.Common.Ada_Op_Div
-            | Libadalang.Common.Ada_Op_Pow
       then
-         declare
-            Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
-              Node.As_Expr.P_Expression_Type;
-         begin
-            if not Libadalang.Analysis.Is_Null (Expr_Type)
-              and then Expr_Type.P_Is_Int_Type
-            then
-               if Known_Arithmetic_Overflow (Node.As_Expr, State) then
-                  Record_Definite_Error
-                    (Unit, Node, Proof.Integer_Overflow_Check,
-                     Proof.Abstract_Interpretation,
-                     "arithmetic result is outside its base type range",
-                     "result range is outside the operation's base type");
-                  Report.Report_Rule_Violation
-                    (Unit, Node, Rules.Known_Overflow_Failure,
-                     "arithmetic result is outside its base type range",
-                     Explanation =>
-                       "Abstract interpretation found that every represented " &
-                       "result is outside the operation's base type.",
-                     Evidence =>
-                       "result range is outside the operation's base type");
-               elsif Config.Verification_Mode
-                 and then Arithmetic_Proved_Safe (Node.As_Expr, State)
-               then
-                  Record_Proved_Safe
-                    (Unit, Node, Proof.Integer_Overflow_Check,
-                     Proof.Abstract_Interpretation,
-                     "arithmetic result range is inside its base type",
-                     "result bounds are within base-type bounds");
-               else
-                  Record_Unproved
-                    (Unit, Node, Proof.Integer_Overflow_Check,
-                     Proof.Abstract_Interpretation,
-                     "overflow is not established, but absence is not proved",
-                     Imprecision =>
-                       "the current range domain does not certify the result");
-               end if;
-            end if;
-         exception
-            when E : others =>
-               Report_Recoverable_Failure_Once
-                 (Rule       => "Known_Overflow_Failure",
-                  Operation  => "evaluate arithmetic result bounds",
-                  Source     => Ada_Text.Safe_Filename (Unit),
-                  Occurrence => E);
-         end;
+         Check_Integer_Overflow (Unit, Node.As_Bin_Op, State);
       end if;
 
       if Node.Kind = Libadalang.Common.Ada_Call_Expr then
@@ -3716,6 +3749,102 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end Finalize_Range_Check;
 
+      --  As Finalize_Range_Check, but for Index_Check via Check_Index_Range
+      --  (see FP-035, the same mechanism applied to array indexing).
+      procedure Finalize_Index_Check
+        (Index_Value : Libadalang.Analysis.Expr'Class;
+         Bounds      : Abstract_Range;
+         Container   : CFG.Node_Id)
+      is
+      begin
+         if not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Index_Value, Proof.Index_Check,
+               "array index safety has not been established");
+         elsif Container /= CFG.No_Node
+           and then not Reachable (Container)
+         then
+            Record_Unreachable
+              (Unit, Index_Value, Proof.Index_Check,
+               "the containing CFG node is unreachable");
+         else
+            Check_Index_Range
+              (Unit, Index_Value, Bounds,
+               (if Container = CFG.No_Node then Empty_Flow_State
+                else States (Container)),
+               Final => True);
+         end if;
+      end Finalize_Index_Check;
+
+      --  As Finalize_Range_Check, for Division_By_Zero_Check via
+      --  Check_Division_By_Zero (see FP-036).
+      procedure Finalize_Division_Check
+        (Expr      : Libadalang.Analysis.Bin_Op;
+         Container : CFG.Node_Id)
+      is
+      begin
+         if Expr.F_Op not in Libadalang.Common.Ada_Op_Div
+             | Libadalang.Common.Ada_Op_Mod
+             | Libadalang.Common.Ada_Op_Rem
+         then
+            return;
+         end if;
+
+         if not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+               "zero has not been excluded from the divisor");
+         elsif Container /= CFG.No_Node
+           and then not Reachable (Container)
+         then
+            Record_Unreachable
+              (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+               "the containing CFG node is unreachable");
+         else
+            Check_Division_By_Zero
+              (Unit, Expr,
+               (if Container = CFG.No_Node then Empty_Flow_State
+                else States (Container)),
+               Final => True);
+         end if;
+      end Finalize_Division_Check;
+
+      --  As Finalize_Division_Check, for Integer_Overflow_Check via
+      --  Check_Integer_Overflow (see FP-037).
+      procedure Finalize_Overflow_Check
+        (Expr      : Libadalang.Analysis.Bin_Op;
+         Container : CFG.Node_Id)
+      is
+      begin
+         if Expr.F_Op not in
+           Libadalang.Common.Ada_Op_Plus
+             | Libadalang.Common.Ada_Op_Minus
+             | Libadalang.Common.Ada_Op_Mult
+             | Libadalang.Common.Ada_Op_Div
+             | Libadalang.Common.Ada_Op_Pow
+         then
+            return;
+         end if;
+
+         if not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Expr, Proof.Integer_Overflow_Check,
+               "overflow safety has not been established");
+         elsif Container /= CFG.No_Node
+           and then not Reachable (Container)
+         then
+            Record_Unreachable
+              (Unit, Expr, Proof.Integer_Overflow_Check,
+               "the containing CFG node is unreachable");
+         else
+            Check_Integer_Overflow
+              (Unit, Expr,
+               (if Container = CFG.No_Node then Empty_Flow_State
+                else States (Container)),
+               Final => True);
+         end if;
+      end Finalize_Overflow_Check;
+
       procedure Finalize_Loop_Invariant
         (Condition : Libadalang.Analysis.Expr;
          Container : CFG.Node_Id)
@@ -3840,25 +3969,8 @@ package body Adalang_Analyzer.Flow_Interp is
             declare
                Expr : constant Libadalang.Analysis.Bin_Op := Node.As_Bin_Op;
             begin
-               if Expr.F_Op in Libadalang.Common.Ada_Op_Div
-                   | Libadalang.Common.Ada_Op_Mod
-                   | Libadalang.Common.Ada_Op_Rem
-               then
-                  Final_Outcome
-                    (Expr.F_Right, Proof.Division_By_Zero_Check, Here,
-                     "zero has not been excluded from the divisor");
-               end if;
-               if Expr.F_Op in
-                 Libadalang.Common.Ada_Op_Plus
-                   | Libadalang.Common.Ada_Op_Minus
-                   | Libadalang.Common.Ada_Op_Mult
-                   | Libadalang.Common.Ada_Op_Div
-                   | Libadalang.Common.Ada_Op_Pow
-               then
-                  Final_Outcome
-                    (Node, Proof.Integer_Overflow_Check, Here,
-                     "overflow safety has not been established");
-               end if;
+               Finalize_Division_Check (Expr, Here);
+               Finalize_Overflow_Check (Expr, Here);
             end;
          elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
             Finalize_Range_Check
@@ -3902,26 +4014,37 @@ package body Adalang_Analyzer.Flow_Interp is
 
                   when Libadalang.Common.Array_Index =>
                      declare
+                        Array_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+                          Call.F_Name.P_Expression_Type;
                         Dimensions : constant Positive :=
                           (if Call.F_Suffix.Kind in Libadalang.Common.Ada_Expr
                            then 1 else Call.F_Suffix.Children_Count);
+                        Here_State : constant Flow_State :=
+                          (if Here = CFG.No_Node then Empty_Flow_State
+                           else States (Here));
                      begin
-                        for Dimension in 1 .. Dimensions loop
-                           declare
-                              Index_Value : constant Libadalang.Analysis.Expr :=
-                                Assoc_Expression
-                                  (Call.F_Suffix, Dimension);
-                           begin
-                              if not Libadalang.Analysis.Is_Null
-                                (Index_Value)
-                              then
-                                 Final_Outcome
-                                   (Index_Value, Proof.Index_Check, Here,
-                                    "array index safety has not been " &
-                                      "established");
-                              end if;
-                           end;
-                        end loop;
+                        if not Libadalang.Analysis.Is_Null (Array_Type)
+                          and then Array_Type.P_Is_Array_Type
+                        then
+                           for Dimension in 1 .. Dimensions loop
+                              declare
+                                 Index_Value : constant
+                                   Libadalang.Analysis.Expr :=
+                                     Assoc_Expression
+                                       (Call.F_Suffix, Dimension);
+                              begin
+                                 if not Libadalang.Analysis.Is_Null
+                                   (Index_Value)
+                                 then
+                                    Finalize_Index_Check
+                                      (Index_Value,
+                                       Array_Index_Range
+                                         (Array_Type, Dimension, Here_State),
+                                       Here);
+                                 end if;
+                              end;
+                           end loop;
+                        end if;
                      end;
 
                   when Libadalang.Common.Call =>

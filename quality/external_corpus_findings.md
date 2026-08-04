@@ -237,8 +237,37 @@ actually converges. Re-running Tokeneer's `--verify`: `range-check`'s
 `Proved_Safe` count fell from 105 to 102, all three moving to `Unproved`
 (none to `Definite_Error`); `Definite_Error` stayed at 1, `FP-032`'s
 still-open, unrelated `enrolment.adb` case. Full detail in `FP-034` in
-`quality/known_analysis_issues.tsv`. `FP-033`, `FP-035`, `FP-036`, and
-`FP-037` remain open, following the same pattern.
+`quality/known_analysis_issues.tsv`.
+
+### Confirmed analyzer mistakes (fixed): FP-035, FP-036, FP-037
+
+The remaining three of the five audited kinds are all pure abstract
+interpretation over `Flow_State`, with no VC solver involved — the same
+shape as `Range_Check`, so the same `Final`-replay fix applied directly to
+each: `Check_Index_Range`/`Finalize_Index_Check` (`Index_Check`),
+`Check_Division_By_Zero`/`Finalize_Division_Check`
+(`Division_By_Zero_Check`), and `Check_Integer_Overflow`/
+`Finalize_Overflow_Check` (`Integer_Overflow_Check`). Each was reproduced
+with a fixture in `FP-034`'s exact shape (a loop-written value read
+immediately after) and confirmed to move from a wrongly `Proved_Safe`
+determination to the correct `Unproved` one.
+
+Re-running Tokeneer's `--verify` afterward: `index-check` and
+`division-by-zero` counts were unchanged — the corpus has no case that
+happens to hit the staleness window for those two, a useful negative data
+point distinct from `Range_Check`'s positive one. `integer-overflow`'s
+`Proved_Safe` count fell from 13 to 6: 3 moved to the honest `Unproved`
+(the same staleness correction), and 4 disappeared entirely — those were
+phantom obligations `Finalize_Node`'s old, unconditional `Final_Outcome`
+call created for `Bin_Op` nodes whose type never resolved to an integer,
+which the live check's own guard (now mirrored exactly in the replay)
+would never have created an obligation for in the first place.
+`Definite_Error` stayed at 1 throughout (`FP-032`'s still-open, unrelated
+`enrolment.adb` case). Full detail in `FP-035`, `FP-036`, and `FP-037` in
+`quality/known_analysis_issues.tsv`. `FP-032` (`Assertion_Check`) and
+`FP-033` (`Precondition_Check`) remain open — both route through the
+VC/symbolic prover, which needs real per-case design rather than a
+mechanical reapplication of this fix.
 
 ## Simple Components (Dmitry A. Kazakov)
 
