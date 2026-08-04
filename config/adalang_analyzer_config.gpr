@@ -7,7 +7,7 @@ with "libadalang.gpr";
 with "prettier_ada.gpr";
 with "templates_parser.gpr";
 abstract project Adalang_Analyzer_Config is
-   Crate_Version := "0.1.0-dev";
+   Crate_Version := "1.0.0-rc1";
    Crate_Name := "adalang_analyzer";
 
    Alire_Host_OS := "macos";

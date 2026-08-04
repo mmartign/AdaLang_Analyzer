@@ -18,7 +18,7 @@ only that enabled checks emitted no finding. `--verify` can prove individual
 supported obligations, but does not prove a subprogram or program free of
 defects.
 
-This document describes the position of the current `0.1.0-dev` codebase. It
+This document describes the position of the current `1.0.0-rc1` codebase. It
 does not promise features that are only proposed in the roadmap.
 
 ## Motivation

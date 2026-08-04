@@ -5,7 +5,7 @@ pragma Style_Checks (Off);
 package Adalang_Analyzer_Config is
    pragma Pure;
 
-   Crate_Version : constant String := "0.1.0-dev";
+   Crate_Version : constant String := "1.0.0-rc1";
    Crate_Name : constant String := "adalang_analyzer";
 
    Alire_Host_OS : constant String := "macos";

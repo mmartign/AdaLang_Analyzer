@@ -2,7 +2,7 @@
 #ifndef ADALANG_ANALYZER_CONFIG_H
 #define ADALANG_ANALYZER_CONFIG_H
 
-#define CRATE_VERSION "0.1.0-dev"
+#define CRATE_VERSION "1.0.0-rc1"
 #define CRATE_NAME "adalang_analyzer"
 
 #define ALIRE_HOST_OS "macos"
