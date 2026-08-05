@@ -64,7 +64,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (37 cases):
+Current coverage (65 cases):
 
 - 12 threshold boundary cases: the six checks with a configurable numeric
   threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
@@ -125,13 +125,42 @@ Current coverage (37 cases):
   enclosing subprogram instead, which is not local to the function and must
   still be flagged (expected `finding`). Each outcome was confirmed against
   the built analyzer, not assumed from reading the check's source.
+- 28 further boundary/negative cases across 14 more no-threshold checks,
+  each a clean/finding pair confirmed against the built analyzer, targeting
+  a specific exclusion in the check's own logic: `Duplicate_Boolean_Operand`
+  (a redundant paren still unwraps to detect `not (not X)`, vs. a single
+  `not X`); `Self_Assignment` (a rename resolves to the same object as its
+  renamed name, e.g. `A_Alias := A;`, vs. two genuinely distinct
+  declarations); `Handler_Order` (a `when others` before a specific handler
+  makes it unreachable, vs. the ordinary specific-then-others order);
+  `Empty_Exception_Handler` vs. `Exception_Swallowed` (the former fires on
+  any empty handler, the latter only on an empty `when others`, cross-tested
+  on both an empty specific handler and an empty `when others`);
+  `Unnecessary_Else_After_Return` (an else is redundant only when the
+  then-branch's last statement actually terminates, vs. one that falls
+  through to a plain assignment); `Empty_If_Body` (an empty then-body is
+  only a no-op when there is no else, since an else makes the statement
+  meaningful); `Identical_Branches` (adjacent-only: a then/else pair with
+  identical text separated by a distinct elsif is not flagged, vs. two truly
+  adjacent identical branches); `Duplicate_Condition` (compares every
+  earlier condition in the chain, not just the adjacent one, unlike
+  `Identical_Branches`); `Constant_Condition` (a statically-true comparison
+  like `5 > 3` vs. one depending on an unconstrained parameter);
+  `Overlapping_Case_Ranges` vs. `Unreachable_Case_Alternative` (a partially
+  overlapping case range trips the former but not the latter, since it
+  remains partly reachable; a fully contained range trips both, cross-tested
+  on the same two fixtures); `Magic_Number` (a literal that is itself a
+  named constant's own initializer vs. the identical literal initializing an
+  ordinary variable); and `No_Multiple_Return` (an outer subprogram's own
+  return count excludes a nested subprogram's returns, vs. an outer
+  subprogram genuinely returning twice itself).
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 
 - More boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
-  being one) — the 16 added so far only cover 10 of the roughly 73 remaining
+  being one) — the 44 added so far only cover 24 of the roughly 59 remaining
   checks.
 - Cross-version stability: re-running the same corpus across analyzer
   releases and tracking whether previously stable results change.
