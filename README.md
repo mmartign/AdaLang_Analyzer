@@ -1,5 +1,7 @@
 # adalang_analyzer
 
+[![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
+
 `adalang_analyzer` is an independent command-line static analysis tool for Ada
 source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
