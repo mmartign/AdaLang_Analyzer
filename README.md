@@ -106,7 +106,7 @@ The analyzer currently provides the following checks:
 | Automotive | `No_Dynamic_Allocation` | Reliability | High | Reports allocators. |
 | Automotive | `Restricted_Access_Type` | Reliability | High | Reports access-to-object type definitions. |
 | Automotive | `No_Explicit_Dereference` | Reliability | High | Reports explicit `.all` dereferences. |
-| Automotive | `No_Unchecked_Deallocation` | Reliability | High | Reports semantic instantiations of `Ada.Unchecked_Deallocation`. |
+| Automotive | `No_Unchecked_Deallocation` | Security | High | Reports semantic instantiations of `Ada.Unchecked_Deallocation`. |
 | Automotive | `No_Tasking` | Reliability | High | Reports task declarations. |
 | Automotive | `No_Rendezvous` | Reliability | High | Reports entry declarations and accept statements. |
 | Automotive | `No_Select` | Reliability | High | Reports selective, timed, conditional, and asynchronous select forms. |
@@ -130,7 +130,7 @@ The analyzer currently provides the following checks:
 | DO-178C support | `Malformed_Requirement_Trace` | Maintainability | Medium | Reports requirement annotations with no identifier. |
 | DO-178C support | `Suppression_Without_Rationale` | Maintainability | High | Reports analyzer suppressions that do not record a reviewable rationale. |
 
-Run `adalang_analyzer -list-checks` to see the authoritative list together
+Run `./bin/adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.
 
 Every check also carries a SonarQube-style classification: a **Software
@@ -411,7 +411,7 @@ and remaining compliance gaps.
 Select a software level with:
 
 ```sh
-./bin/adalang_analyzer --do178c=A -P adalang_analyzer.gpr
+alr exec -- ./bin/adalang_analyzer --do178c=A -P adalang_analyzer.gpr
 ```
 
 Levels A and B enable the strictest source, flow, exception, initialization,
@@ -472,13 +472,13 @@ limitations, and remaining compliance gaps.
 ### Compliance reporting
 
 ```sh
-./bin/adalang_analyzer --do178c=A --compliance-report=do178c \
+alr exec -- ./bin/adalang_analyzer --do178c=A --compliance-report=do178c \
   --compliance-report-output=compliance.md -P adalang_analyzer.gpr
 
-./bin/adalang_analyzer --automotive --compliance-report=iso26262 \
+alr exec -- ./bin/adalang_analyzer --automotive --compliance-report=iso26262 \
   --compliance-report-output=compliance.md -P adalang_analyzer.gpr
 
-./bin/adalang_analyzer --do178c=A --compliance-report=do178c \
+alr exec -- ./bin/adalang_analyzer --do178c=A --compliance-report=do178c \
   --compliance-report-format=json \
   --compliance-report-output=compliance.json -P adalang_analyzer.gpr
 ```
@@ -526,8 +526,7 @@ is verification-support evidence, not a compliance determination.
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
 - optionally, the Alire `gnatprove` package for scalar VC discharge and
   GNATprove differential tests;
-- macOS with the Apple Command Line Tools for the current development
-  configuration;
+- macOS or Linux; CI builds and tests both platforms on every change;
 - the dependencies declared in `alire.toml`, which Alire resolves during the
   build.
 
@@ -599,7 +598,7 @@ override either of those for one invocation, e.g. in a CI matrix that
 analyzes the same project under more than one scenario:
 
 ```sh
-./bin/adalang_analyzer -checks='*' -X BUILD_MODE=release -P adalang_analyzer.gpr
+alr exec -- ./bin/adalang_analyzer -checks='*' -X BUILD_MODE=release -P adalang_analyzer.gpr
 ```
 
 Useful options include:
@@ -658,7 +657,7 @@ existing finding into a new one.
 For routine analysis, start with the recommended preset:
 
 ```sh
-./bin/adalang_analyzer --recommended -P my_project.gpr
+alr exec -- ./bin/adalang_analyzer --recommended -P my_project.gpr
 ```
 
 It enables defect-oriented control-flow, data-flow, handler, duplication,
@@ -762,9 +761,9 @@ safety-critical and high-integrity Ada/SPARK systems.
 - **Cost-effective daily static analysis** — fast, lightweight, and easy to
   integrate into CI pipelines, reducing reliance on expensive proprietary
   tools for routine checks.
-- **Strong safety & certification focus** — designed with ASIL, DO-178C, and
-  EN 50128 workflows in mind. Helps catch issues early that complicate formal
-  verification with GNATprove.
+- **Strong safety & certification focus** — dedicated `--automotive` (ASIL)
+  and `--do178c=<level>` verification-support profiles. Helps catch issues
+  early that complicate formal verification with GNATprove.
 - **SPARK readiness** — checks effective `SPARK_Mode`, `Global` access modes,
   inferred `Depends` relations, definite output initialization, and known
   contract failures before the more expensive proof stage.
