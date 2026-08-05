@@ -1,5 +1,7 @@
 # rule	finding invocation arguments	clean invocation arguments
 No_Goto	tests/bug_findings.adb	tests/clean_findings.adb
+No_Label	tests/automotive_additional_findings.adb	tests/automotive_additional_clean.adb
+No_Multiple_Return	tests/new_checks_findings.adb	tests/new_checks_clean.adb
 No_Abort	tests/automotive_restrictions_findings.adb	tests/automotive_restrictions_clean.adb
 No_Raise	tests/automotive_additional_findings.adb	tests/automotive_additional_clean.adb
 No_Access_To_Subp_Def	tests/automotive_additional_findings.adb	tests/automotive_additional_clean.adb

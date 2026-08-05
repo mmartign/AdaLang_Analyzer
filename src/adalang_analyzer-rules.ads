@@ -163,7 +163,8 @@ package Adalang_Analyzer.Rules is
    --  objective-to-rule mapping must cite exactly the rules --automotive
    --  actually enables, not a second hand-copied list.
    Automotive_Rules : aliased constant Rule_List :=
-     (No_Goto, No_Abort, No_Raise, No_Access_To_Subp_Def,
+     (No_Goto, No_Label, No_Multiple_Return, No_Abort, No_Raise,
+      No_Access_To_Subp_Def,
       No_Unchecked_Conversion, Floating_Equality, Magic_Number,
       Dead_Store, Overwritten_Assignment, Shadowed_Declaration,
       Infinite_Loop, Constant_Condition, Unreachable_Code,

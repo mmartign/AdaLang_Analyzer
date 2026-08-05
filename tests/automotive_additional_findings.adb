@@ -21,4 +21,14 @@ begin
       when others =>
          null;
    end;
+
+   declare
+      Count : Integer := 0;
+   begin
+      <<Retry>>
+      Count := Count + 1;
+      if Count < 2 then
+         goto Retry;
+      end if;
+   end;
 end Automotive_Additional_Findings;

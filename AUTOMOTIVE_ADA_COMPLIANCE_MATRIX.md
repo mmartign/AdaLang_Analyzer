@@ -44,7 +44,7 @@ separately against the licensed text of that standard; this document does not
 attempt it, and a clean `--automotive` run is not evidence toward it.
 
 The authoritative preset is `Enable_Automotive_Preset` in
-`src/adalang_analyzer-cli.adb`. It currently enables 71 checks.
+`src/adalang_analyzer-cli.adb`. It currently enables 73 checks.
 
 ## How to read the matrix
 
@@ -143,6 +143,8 @@ an assessment.
 | 69 | `SPARK_Mode` | Prevent silent, unreviewed departure from the analyzable SPARK subset. | SPARK Reference Manual: the `SPARK_Mode` aspect/pragma is the language-defined switch between the full Ada and SPARK subsets. | SPARK | Detects regions that explicitly set `SPARK_Mode` to `Off`; code that was never brought into `SPARK_Mode => On` in the first place is not reported by this check. |
 | 70 | `Missing_Global_Contract` | Require declared global effects for every subprogram that has them. | SPARK `Global` aspect completeness rule (Bronze level); pairs with `Global_Contract_Mismatch`, which checks consistency once a contract exists. | SPARK | Reports subprograms that access global state without an explicit `Global` contract; subprograms with no global access need no contract and are not reported. |
 | 71 | `Missing_Depends_Contract` | Require declared information-flow contracts for every subprogram that has outputs. | SPARK `Depends` aspect completeness rule (Bronze level); pairs with `Depends_Contract_Mismatch` and `Incomplete_Depends_Contract`, which check consistency and partial omission once a contract exists. | SPARK | Reports subprograms with outputs but no explicit `Depends` contract; it does not validate the relation once one is present. |
+| 72 | `No_Label` | Keep control flow structured and avoid vestigial jump targets. | General coding practice; closely related to `No_Goto` above -- a label is normally only needed to support an unstructured jump, but Annex H and the SPARK Reference Manual have no restriction identifier or legality rule for labels as such. | Practice | Detects Ada label declarations (`<<Name>>`); it does not evaluate whether any particular use is otherwise justified. |
+| 73 | `No_Multiple_Return` | Keep subprogram exit points singular and easy to audit. | General coding practice; relates to the single-entry/single-exit discipline behind structured programming, but neither Annex H nor the SPARK Reference Manual mandates a single return point. | Practice | Counts explicit `return` statements per subprogram body; it does not evaluate whether multiple returns are already well-isolated (e.g. early guard clauses). |
 
 ## Coverage summary
 

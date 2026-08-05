@@ -136,7 +136,8 @@ package body Adalang_Analyzer.Compliance_Mapping is
    --  ISO 26262 Part, clause, or table number.
 
    Restricted_Control_Flow_Rules : aliased constant Rules.Rule_List :=
-     (Rules.No_Goto, Rules.No_Abort, Rules.No_Raise,
+     (Rules.No_Goto, Rules.No_Label, Rules.No_Multiple_Return,
+      Rules.No_Abort, Rules.No_Raise,
       Rules.No_Access_To_Subp_Def, Rules.No_Recursion,
       Rules.Non_Short_Circuit_Condition, Rules.No_Tasking,
       Rules.No_Rendezvous, Rules.No_Select, Rules.No_Requeue,
