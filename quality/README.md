@@ -64,7 +64,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (89 cases):
+Current coverage (91 cases):
 
 - 12 threshold boundary cases: the six checks with a configurable numeric
   threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
@@ -182,13 +182,19 @@ Current coverage (89 cases):
   same object to two `in` formals in one call, vs. the same shape with one
   formal `in out`, since the rule only fires when at least one aliased side
   is written).
+- 2 cases for `Non_Short_Circuit_Condition`, added alongside its FP-041 fix
+  (see `quality/known_analysis_issues.tsv`): a bitwise `and`/`or` on a
+  modular type must no longer be told to use `and then`/`or else`, which RM
+  4.5.7 restricts to Boolean operands (`clean`), paired with the existing
+  chained-Boolean-operand regression fixture confirming genuine Boolean
+  operands are still flagged (`finding`).
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 
 - More boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
-  being one) — the 68 added so far only cover 36 of the roughly 47 remaining
+  being one) — the 70 added so far only cover 37 of the roughly 46 remaining
   checks.
 - Cross-version stability: re-running the same corpus across analyzer
   releases and tracking whether previously stable results change.

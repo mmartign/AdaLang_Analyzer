@@ -99,6 +99,32 @@ package body Adalang_Analyzer.Checks is
       end if;
    end Report_Constant_Condition;
 
+   --  True when Expr's own resolved type is exactly Standard.Boolean.
+   --  Backs Report_Non_Short_Circuit_Operators's operand-type guard: RM
+   --  4.5.7 restricts the short-circuit forms "and then"/"or else" to
+   --  Boolean operands, so a bitwise "and"/"or" on a modular or other
+   --  non-Boolean type must not be told to use a short-circuit form it
+   --  cannot legally use. Mirrors Checks.Expressions.
+   --  Is_Standard_Boolean_Expression. Resolution failure is conservatively
+   --  treated as "not Boolean" rather than risking a false positive.
+   function Is_Standard_Boolean_Operand
+     (Expr : Libadalang.Analysis.Expr'Class) return Boolean
+   is
+      Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+        Expr.P_Expression_Type;
+   begin
+      return not Libadalang.Analysis.Is_Null (Expr_Type)
+        and then Langkit_Support.Text.To_UTF8
+                   (Expr_Type.P_Canonical_Fully_Qualified_Name) =
+                     "standard.boolean";
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping Non_Short_Circuit_Condition operand-type check: " &
+            Ada.Exceptions.Exception_Message (Exc));
+         return False;
+   end Is_Standard_Boolean_Operand;
+
    --  Reports Non_Short_Circuit_Condition for every plain "and"/"or"
    --  operator anywhere within Cond's subtree. Shared by if/elsif/while/
    --  exit-when condition sites, alongside Report_Constant_Condition. Does
@@ -118,7 +144,9 @@ package body Adalang_Analyzer.Checks is
          return;
       end if;
 
-      if Cond.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+      if Cond.Kind in Libadalang.Common.Ada_Bin_Op_Range
+        and then Is_Standard_Boolean_Operand (Cond.As_Bin_Op.F_Left)
+      then
          case Cond.As_Bin_Op.F_Op is
             when Libadalang.Common.Ada_Op_And =>
                Report_Rule_Violation

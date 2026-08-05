@@ -759,4 +759,14 @@ if [ "$(grep -c '\[Non_Short_Circuit_Condition\]' "$output")" -ne 1 ]; then
    exit 1
 fi
 
+if ! "$analyzer" -q -checks='Non_Short_Circuit_Condition' \
+     tests/non_short_circuit_modular_clean.adb
+then
+   echo "non_short_circuit_modular_clean.adb unexpectedly produced a" \
+     "violation (FP-041): a bitwise 'and'/'or' on a modular type was" \
+     "told to use 'and then'/'or else', which is not legal Ada for a" \
+     "non-Boolean operand" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"
