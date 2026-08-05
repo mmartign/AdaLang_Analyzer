@@ -64,7 +64,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (24 cases):
+Current coverage (28 cases):
 
 - 12 threshold boundary cases: the six checks with a configurable numeric
   threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
@@ -85,24 +85,33 @@ Current coverage (24 cases):
   proof-obligation outcome rather than a `Rule_Kind` finding on a
   `tests/*.adb` fixture, and stay prose-only rather than force an uncertain
   mapping into a gate (see the index below for which).
-- 3 boundary/negative cases for checks with no numeric threshold, targeting
+- 7 boundary/negative cases for checks with no numeric threshold, targeting
   constructs the check's own implementation already special-cases:
   `Missing_Overriding_Indicator` on a same-named primitive with a different
   profile (an overload, not an override, so it needs no keyword — expected
   `clean`); `Uninitialized_Read` on a record variable read before its first
-  assignment (only scalar declarations are checked — expected `clean`); and
+  assignment (only scalar declarations are checked — expected `clean`);
   `Wrong_Parameter_Mode` on a parameter used only as an array index inside a
   write destination (writing `Values (Idx)` writes `Values`, not `Idx`, so
-  `Idx` is read-only and must still be flagged — expected `finding`). Each
-  outcome was confirmed against the built analyzer, not assumed from reading
-  the check's source.
+  `Idx` is read-only and must still be flagged — expected `finding`);
+  `Same_Operand` on `X + X` and `X * X` (excluded as routine, intentional
+  identities — expected `clean`) paired with `X - X` at the same
+  repeated-operand shape (still flagged, since `-` stays on the
+  interesting-operator list — expected `finding`); and
+  `Inefficient_String_Concatenation` on an `Unbounded_String` accumulator
+  rebuilt with `&` inside a loop (deliberately excluded, since the fix is
+  "call `Append`", not "switch to `Unbounded_String`" — expected `clean`)
+  paired with the same shape on a fixed-bounds `String` target, which has no
+  cheaper `&` alternative and must still be flagged (expected `finding`).
+  Each outcome was confirmed against the built analyzer, not assumed from
+  reading the check's source.
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 
 - More boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
-  being one) — the 3 added so far only cover 3 of the roughly 80 remaining
+  being one) — the 7 added so far only cover 5 of the roughly 78 remaining
   checks.
 - Cross-version stability: re-running the same corpus across analyzer
   releases and tracking whether previously stable results change.
