@@ -475,24 +475,34 @@ limitations, and remaining compliance gaps.
 
 ./bin/adalang_analyzer --automotive --compliance-report=iso26262 \
   --compliance-report-output=compliance.md -P adalang_analyzer.gpr
+
+./bin/adalang_analyzer --do178c=A --compliance-report=do178c \
+  --compliance-report-format=json \
+  --compliance-report-output=compliance.json -P adalang_analyzer.gpr
 ```
 
-Writes a Markdown, per-objective evidence report to
-`--compliance-report-output` (or standard output if omitted), for either
-`do178c` (paired with a `--do178c=<level>` run) or `iso26262` (paired with an
-`--automotive` run). For each objective it lists the mapped checks, whether
-they were enabled this run, and this run's open and baselined findings
-against them; it also lists every inline suppression recorded this run
-together with its rationale, every finding matched against `--baseline`
-(which currently carries no rationale of its own), and the verification
-activities this analyzer does not automate at all (structural coverage,
-requirements-based or dynamic testing, object-code or run-time-error proof
-beyond the supported subset, tool qualification).
+Writes a per-objective evidence report to `--compliance-report-output` (or
+standard output if omitted), for either `do178c` (paired with a
+`--do178c=<level>` run) or `iso26262` (paired with an `--automotive` run).
+`--compliance-report-format` selects the representation: `markdown`
+(default) or `json`, the same content as a machine-readable document for
+tooling that consumes the report programmatically (CI gates, dashboards).
+SARIF is not offered here — SARIF's result-oriented schema has no natural
+slot for this report's objective/evidence structure; use `--format=sarif`
+for a SARIF rendering of the underlying findings instead. For each objective
+it lists the mapped checks, whether they were enabled this run, and this
+run's open and baselined findings against them; it also lists every inline
+suppression recorded this run together with its rationale, every finding
+matched against `--baseline` (which currently carries no rationale of its
+own), and the verification activities this analyzer does not automate at all
+(structural coverage, requirements-based or dynamic testing, object-code or
+run-time-error proof beyond the supported subset, tool qualification).
 
-An unrecognized standard fails the invocation rather than silently producing
-no report. Objective labels are AdaLang's own paraphrase: for `do178c`, of
-publicly discussed DO-178C Annex A Table A-5 activities; for `iso26262`, of
-the same general safety themes already summarized non-normatively in
+An unrecognized standard or report format fails the invocation rather than
+silently producing no report. Objective labels are AdaLang's own paraphrase:
+for `do178c`, of publicly discussed DO-178C Annex A Table A-5 activities;
+for `iso26262`, of the same general safety themes already summarized
+non-normatively in
 [AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md).
 Neither cites the respective standard's normative text or official
 numbering, and the report states this. Like the profiles above, this report
@@ -603,6 +613,8 @@ Useful options include:
                  Write a per-objective evidence report ('do178c' or 'iso26262')
 --compliance-report-output=<file>
                  Destination for --compliance-report (default: stdout)
+--compliance-report-format=<markdown|json>
+                 Representation for --compliance-report (default: markdown)
 -complexity-threshold=<n>
                  Set the Cyclomatic_Complexity limit (default: 10)
 -nesting-threshold=<n>

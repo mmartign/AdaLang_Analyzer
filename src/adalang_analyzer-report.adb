@@ -348,8 +348,13 @@ package body Adalang_Analyzer.Report is
 
    --  Standard is assumed already validated by the caller (Adalang_Analyzer.
    --  CLI checks it against Compliance_Mapping.Lookup_Standard before ever
-   --  calling this procedure); "do178c" is the only supported value.
-   procedure Write_Compliance_Report (Standard : String; Filename : String) is
+   --  calling this procedure). Format is likewise assumed already
+   --  restricted to Text_Output or JSON_Output by the caller.
+   procedure Write_Compliance_Report
+     (Standard : String;
+      Filename : String;
+      Format   : Output_Format := Text_Output)
+   is
       Found : Boolean;
       Kind  : constant Compliance_Mapping.Standard_Kind :=
         Compliance_Mapping.Lookup_Standard (Standard, Found);
@@ -396,6 +401,28 @@ package body Adalang_Analyzer.Report is
          return False;
       end Contains;
 
+      --  Renders List as a JSON array of check-name strings, e.g.
+      --  ["Dead_Store", "Overwritten_Assignment"]. Used only by the JSON
+      --  branch below; the Markdown branch instead joins the same names
+      --  into a comma-separated table cell.
+      function Rule_Array_JSON (List : Rules.Rule_List) return String is
+         Result : Unbounded_String;
+      begin
+         Append (Result, "[");
+         for Index in List'Range loop
+            if Index /= List'First then
+               Append (Result, ", ");
+            end if;
+            Append
+              (Result,
+               """" &
+               JSON_Escape (To_String (Rules.Rule_Infos (List (Index)).Name)) &
+               """");
+         end loop;
+         Append (Result, "]");
+         return To_String (Result);
+      end Rule_Array_JSON;
+
       Disclaimer : constant String :=
         "This report is verification-support evidence, not a compliance " &
         "determination. A clean result means only that the checks listed " &
@@ -420,120 +447,262 @@ package body Adalang_Analyzer.Report is
          Ada.Text_IO.Create (File, Ada.Text_IO.Out_File, Filename);
       end if;
 
-      Line
-        ("# AdaLang Analyzer -- " & Standard_Text &
-         " compliance evidence report");
-      Line ("");
-      Line ("Tool version: " & Config.Analyzer_Version);
-      Line ("Standard: " & Standard_Text);
-      Line
-        ("Assurance profile: " &
-         (if Config.Active_Assurance_Profile = Config.No_Assurance_Profile
-          then "none selected for this run"
-          else Config.Assurance_Profile_Name));
-      Line ("Files analyzed: " & Text_Utils.To_Decimal (Source_File_Count));
-      Line ("Enabled checks: " & Text_Utils.To_Decimal (Enabled_Rule_Count));
-      Line ("");
-      Line ("> " & Disclaimer);
-      Line ("");
-      Line ("## Objectives");
-      Line ("");
-      Line
-        ("| Objective | Mapped checks | Enabled this run | Open findings" &
-         " | Baselined findings | Manual note |");
-      Line ("|---|---|---|---|---|---|");
+      if Format = JSON_Output then
+         Line ("{");
+         Line ("  ""version"": ""1.0"",");
+         Line ("  ""standard"": """ & JSON_Escape (Standard_Text) & """,");
+         Line
+           ("  ""toolVersion"": """ &
+            JSON_Escape (Config.Analyzer_Version) & """,");
+         Line
+           ("  ""assuranceProfile"": """ &
+            JSON_Escape
+              (if Config.Active_Assurance_Profile =
+                 Config.No_Assurance_Profile
+               then "none selected for this run"
+               else Config.Assurance_Profile_Name) & """,");
+         Line
+           ("  ""filesAnalyzed"": " &
+            Text_Utils.To_Decimal (Source_File_Count) & ",");
+         Line
+           ("  ""enabledChecks"": " &
+            Text_Utils.To_Decimal (Enabled_Rule_Count) & ",");
+         Line ("  ""disclaimer"": """ & JSON_Escape (Disclaimer) & """,");
 
-      for Obj of Objectives loop
+         Line ("  ""objectives"": [");
+         for Obj_Index in Objectives'Range loop
+            declare
+               Obj           : Compliance_Mapping.Objective renames
+                 Objectives (Obj_Index);
+               List          : Rules.Rule_List renames Obj.Mapped_Rules.all;
+               Enabled_Count : Natural := 0;
+               Open_Count    : Natural := 0;
+               Base_Count    : Natural := 0;
+            begin
+               for R of List loop
+                  if Config.Rule_States (R) = Config.Enabled then
+                     Enabled_Count := Enabled_Count + 1;
+                  end if;
+               end loop;
+
+               for F of Findings loop
+                  if Contains (List, F.Rule) then
+                     if F.Matches_Base then
+                        Base_Count := Base_Count + 1;
+                     else
+                        Open_Count := Open_Count + 1;
+                     end if;
+                  end if;
+               end loop;
+
+               Line ("    {");
+               Line
+                 ("      ""id"": """ & JSON_Escape (To_String (Obj.Id)) &
+                  """,");
+               Line
+                 ("      ""description"": """ &
+                  JSON_Escape (To_String (Obj.Description)) & """,");
+               Line
+                 ("      ""mappedChecks"": " & Rule_Array_JSON (List) & ",");
+               Line
+                 ("      ""enabledThisRun"": """ &
+                  (if Enabled_Count = 0 then "no"
+                   elsif Enabled_Count = List'Length then "yes"
+                   else "partial") & """,");
+               Line
+                 ("      ""openFindings"": " &
+                  Text_Utils.To_Decimal (Open_Count) & ",");
+               Line
+                 ("      ""baselinedFindings"": " &
+                  Text_Utils.To_Decimal (Base_Count) & ",");
+               Line
+                 ("      ""manualNote"": """ &
+                  JSON_Escape (To_String (Obj.Manual_Note)) & """");
+               Line
+                 ("    }" &
+                  (if Obj_Index = Objectives'Last then "" else ","));
+            end;
+         end loop;
+         Line ("  ],");
+
+         Line ("  ""suppressionRationaleTrail"": [");
+         for Index in
+           Suppressed_Findings.First_Index .. Suppressed_Findings.Last_Index
+         loop
+            declare
+               Item : Suppressed_Finding renames Suppressed_Findings (Index);
+            begin
+               Line
+                 ("    {""file"": """ &
+                  JSON_Escape (To_String (Item.Filename)) &
+                  """, ""line"": " &
+                  Text_Utils.To_Decimal (Item.Line_Number) &
+                  ", ""check"": """ &
+                  JSON_Escape
+                    (To_String (Rules.Rule_Infos (Item.Rule).Name)) &
+                  """, ""rationale"": """ &
+                  JSON_Escape (To_String (Item.Rationale)) & """}" &
+                  (if Index = Suppressed_Findings.Last_Index then ""
+                   else ","));
+            end;
+         end loop;
+         Line ("  ],");
+
+         Line ("  ""baselineMatchedFindings"": [");
          declare
-            List          : Rules.Rule_List renames Obj.Mapped_Rules.all;
-            Enabled_Count : Natural := 0;
-            Open_Count    : Natural := 0;
-            Base_Count    : Natural := 0;
-            Names         : Unbounded_String;
-            First         : Boolean := True;
+            Base_Total : Natural := 0;
+            Emitted    : Natural := 0;
          begin
-            for R of List loop
-               if not First then
-                  Append (Names, ", ");
-               end if;
-               First := False;
-               Append (Names, Rules.Rule_Infos (R).Name);
-
-               if Config.Rule_States (R) = Config.Enabled then
-                  Enabled_Count := Enabled_Count + 1;
+            for F of Findings loop
+               if F.Matches_Base then
+                  Base_Total := Base_Total + 1;
                end if;
             end loop;
 
             for F of Findings loop
-               if Contains (List, F.Rule) then
-                  if F.Matches_Base then
-                     Base_Count := Base_Count + 1;
-                  else
-                     Open_Count := Open_Count + 1;
-                  end if;
+               if F.Matches_Base then
+                  Emitted := Emitted + 1;
+                  Line
+                    ("    {""file"": """ &
+                     JSON_Escape (To_String (F.Filename)) &
+                     """, ""line"": " &
+                     Text_Utils.To_Decimal (F.Line_Number) &
+                     ", ""check"": """ &
+                     JSON_Escape
+                       (To_String (Rules.Rule_Infos (F.Rule).Name)) &
+                     """}" & (if Emitted = Base_Total then "" else ","));
                end if;
             end loop;
-
-            Line
-              ("| " & To_String (Obj.Id) & " | " & To_String (Names) &
-               " | " &
-               (if Enabled_Count = 0 then "no"
-                elsif Enabled_Count = List'Length then "yes"
-                else "partial") &
-               " | " & Text_Utils.To_Decimal (Open_Count) & " | " &
-               Text_Utils.To_Decimal (Base_Count) & " | " &
-               To_String (Obj.Manual_Note) & " |");
          end;
-      end loop;
+         Line ("  ],");
 
-      Line ("");
-      Line ("## Suppression rationale trail");
-      Line ("");
-      Line
-        ("Every inline `adalang-analyzer: ignore` suppression recorded " &
-         "during this run, not limited to the objectives above:");
-      Line ("");
-      Line ("| File | Line | Check | Rationale |");
-      Line ("|---|---|---|---|");
-      for Item of Suppressed_Findings loop
+         Line ("  ""unsupportedObjectives"": [");
+         for Index in Unsupported'Range loop
+            Line
+              ("    {""name"": """ &
+               JSON_Escape (To_String (Unsupported (Index).Name)) &
+               """, ""note"": """ &
+               JSON_Escape (To_String (Unsupported (Index).Note)) &
+               """}" & (if Index = Unsupported'Last then "" else ","));
+         end loop;
+         Line ("  ]");
+         Line ("}");
+      else
          Line
-           ("| " & To_String (Item.Filename) & " | " &
-            Text_Utils.To_Decimal (Item.Line_Number) & " | " &
-            To_String (Rules.Rule_Infos (Item.Rule).Name) & " | " &
-            (if Length (Item.Rationale) = 0
-             then "*(none recorded)*" else To_String (Item.Rationale)) &
-            " |");
-      end loop;
+           ("# AdaLang Analyzer -- " & Standard_Text &
+            " compliance evidence report");
+         Line ("");
+         Line ("Tool version: " & Config.Analyzer_Version);
+         Line ("Standard: " & Standard_Text);
+         Line
+           ("Assurance profile: " &
+            (if Config.Active_Assurance_Profile = Config.No_Assurance_Profile
+             then "none selected for this run"
+             else Config.Assurance_Profile_Name));
+         Line ("Files analyzed: " & Text_Utils.To_Decimal (Source_File_Count));
+         Line ("Enabled checks: " & Text_Utils.To_Decimal (Enabled_Rule_Count));
+         Line ("");
+         Line ("> " & Disclaimer);
+         Line ("");
+         Line ("## Objectives");
+         Line ("");
+         Line
+           ("| Objective | Mapped checks | Enabled this run | Open findings" &
+            " | Baselined findings | Manual note |");
+         Line ("|---|---|---|---|---|---|");
 
-      Line ("");
-      Line ("## Baseline-matched findings");
-      Line ("");
-      Line
-        ("Findings matching a `--baseline` entry are excluded from the " &
-         "open-finding counts above. Baseline entries carry no rationale " &
-         "metadata, unlike the inline suppressions above:");
-      Line ("");
-      Line ("| File | Line | Check |");
-      Line ("|---|---|---|");
-      for Item of Findings loop
-         if Item.Matches_Base then
+         for Obj of Objectives loop
+            declare
+               List          : Rules.Rule_List renames Obj.Mapped_Rules.all;
+               Enabled_Count : Natural := 0;
+               Open_Count    : Natural := 0;
+               Base_Count    : Natural := 0;
+               Names         : Unbounded_String;
+               First         : Boolean := True;
+            begin
+               for R of List loop
+                  if not First then
+                     Append (Names, ", ");
+                  end if;
+                  First := False;
+                  Append (Names, Rules.Rule_Infos (R).Name);
+
+                  if Config.Rule_States (R) = Config.Enabled then
+                     Enabled_Count := Enabled_Count + 1;
+                  end if;
+               end loop;
+
+               for F of Findings loop
+                  if Contains (List, F.Rule) then
+                     if F.Matches_Base then
+                        Base_Count := Base_Count + 1;
+                     else
+                        Open_Count := Open_Count + 1;
+                     end if;
+                  end if;
+               end loop;
+
+               Line
+                 ("| " & To_String (Obj.Id) & " | " & To_String (Names) &
+                  " | " &
+                  (if Enabled_Count = 0 then "no"
+                   elsif Enabled_Count = List'Length then "yes"
+                   else "partial") &
+                  " | " & Text_Utils.To_Decimal (Open_Count) & " | " &
+                  Text_Utils.To_Decimal (Base_Count) & " | " &
+                  To_String (Obj.Manual_Note) & " |");
+            end;
+         end loop;
+
+         Line ("");
+         Line ("## Suppression rationale trail");
+         Line ("");
+         Line
+           ("Every inline `adalang-analyzer: ignore` suppression recorded " &
+            "during this run, not limited to the objectives above:");
+         Line ("");
+         Line ("| File | Line | Check | Rationale |");
+         Line ("|---|---|---|---|");
+         for Item of Suppressed_Findings loop
             Line
               ("| " & To_String (Item.Filename) & " | " &
                Text_Utils.To_Decimal (Item.Line_Number) & " | " &
-               To_String (Rules.Rule_Infos (Item.Rule).Name) & " |");
-         end if;
-      end loop;
+               To_String (Rules.Rule_Infos (Item.Rule).Name) & " | " &
+               (if Length (Item.Rationale) = 0
+                then "*(none recorded)*" else To_String (Item.Rationale)) &
+               " |");
+         end loop;
 
-      Line ("");
-      Line ("## Objectives with no automated support");
-      Line ("");
-      for Item of Unsupported loop
-         Line ("- **" & To_String (Item.Name) & "**: " &
-               To_String (Item.Note));
-      end loop;
+         Line ("");
+         Line ("## Baseline-matched findings");
+         Line ("");
+         Line
+           ("Findings matching a `--baseline` entry are excluded from the " &
+            "open-finding counts above. Baseline entries carry no rationale " &
+            "metadata, unlike the inline suppressions above:");
+         Line ("");
+         Line ("| File | Line | Check |");
+         Line ("|---|---|---|");
+         for Item of Findings loop
+            if Item.Matches_Base then
+               Line
+                 ("| " & To_String (Item.Filename) & " | " &
+                  Text_Utils.To_Decimal (Item.Line_Number) & " | " &
+                  To_String (Rules.Rule_Infos (Item.Rule).Name) & " |");
+            end if;
+         end loop;
 
-      Line ("");
-      Line ("> " & Disclaimer);
+         Line ("");
+         Line ("## Objectives with no automated support");
+         Line ("");
+         for Item of Unsupported loop
+            Line ("- **" & To_String (Item.Name) & "**: " &
+                  To_String (Item.Note));
+         end loop;
+
+         Line ("");
+         Line ("> " & Disclaimer);
+      end if;
 
       if To_File then
          Ada.Text_IO.Close (File);

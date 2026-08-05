@@ -76,4 +76,79 @@ then
 fi
 grep -F "unsupported compliance standard 'bogus'" "$work/invalid" >/dev/null
 
+#  --compliance-report-format=json: same evidence as the Markdown report
+#  (objectives, suppression trail, baseline table, unsupported objectives,
+#  disclaimer), as a machine-readable document instead.
+json_report="$work/report.json"
+"$analyzer" -q --do178c=A --compliance-report=do178c \
+  --compliance-report-format=json \
+  --compliance-report-output="$json_report" tests/do178c_findings.adb || true
+
+grep -F '"version": "1.0"' "$json_report" >/dev/null
+grep -F '"standard": "DO-178C"' "$json_report" >/dev/null
+grep -F '"objectives": [' "$json_report" >/dev/null
+grep -F '"id": "Traceability"' "$json_report" >/dev/null
+grep -F '"mappedChecks": [' "$json_report" >/dev/null
+grep -F '"suppressionRationaleTrail": [' "$json_report" >/dev/null
+grep -F '"baselineMatchedFindings": [' "$json_report" >/dev/null
+grep -F '"unsupportedObjectives": [' "$json_report" >/dev/null
+grep -F '"name": "Tool qualification"' "$json_report" >/dev/null
+grep -F 'not a compliance determination' "$json_report" >/dev/null
+
+#  A JSON report is well-formed: every open brace/bracket has a matching
+#  close, so a truncated or malformed emission does not slip through the
+#  substring checks above unnoticed.
+opens=$(grep -o '[{[]' "$json_report" | wc -l | tr -d ' ')
+closes=$(grep -o '[]}]' "$json_report" | wc -l | tr -d ' ')
+if [ "$opens" != "$closes" ]; then
+   echo "malformed compliance JSON: $opens opening vs $closes closing brackets" >&2
+   cat "$json_report" >&2
+   exit 1
+fi
+
+#  The inline suppression rationale trail carries through to JSON, verbatim
+#  and under the same check name as the Markdown rendering.
+json_suppressed="$work/suppressed.json"
+"$analyzer" -q --do178c=A --compliance-report=do178c \
+  --compliance-report-format=json \
+  --compliance-report-output="$json_suppressed" \
+  tests/compliance_report_suppressed.adb || true
+grep -F '"rationale": "fixture self-assignment"' "$json_suppressed" >/dev/null
+grep -F '"check": "Self_Assignment"' "$json_suppressed" >/dev/null
+
+#  Baseline-matched findings appear in JSON too, distinct from the
+#  suppression trail.
+json_baseline_report="$work/baseline_report.json"
+"$analyzer" -q --do178c=A --baseline="$baseline_file" \
+  --compliance-report=do178c --compliance-report-format=json \
+  --compliance-report-output="$json_baseline_report" \
+  tests/do178c_findings.adb
+awk '/"baselineMatchedFindings": \[/{flag=1; next}
+     /"unsupportedObjectives": \[/{flag=0}
+     flag' "$json_baseline_report" | \
+  grep -F '"check": "Missing_Requirement_Trace"' >/dev/null
+
+#  ISO 26262 JSON shares the same shape, driven by --automotive.
+json_iso_report="$work/iso26262.json"
+"$analyzer" -q --automotive --compliance-report=iso26262 \
+  --compliance-report-format=json \
+  --compliance-report-output="$json_iso_report" \
+  tests/automotive_restrictions_findings.adb || true
+grep -F '"standard": "ISO 26262"' "$json_iso_report" >/dev/null
+grep -F '"id": "Restricted control flow"' "$json_iso_report" >/dev/null
+grep -F '"id": "Deviation control"' "$json_iso_report" >/dev/null
+
+#  An unsupported compliance report format fails loudly rather than
+#  silently falling back to Markdown. SARIF is explicitly rejected: it has
+#  no natural slot for this report's objective/evidence structure.
+if "$analyzer" --do178c=A --compliance-report=do178c \
+     --compliance-report-format=sarif \
+     tests/do178c_clean.adb >"$work/invalid_format" 2>&1
+then
+   echo "unsupported compliance report format was accepted" >&2
+   exit 1
+fi
+grep -F "invalid compliance report format 'sarif'" "$work/invalid_format" \
+  >/dev/null
+
 echo "compliance report tests passed"

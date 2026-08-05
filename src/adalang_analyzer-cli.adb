@@ -58,6 +58,7 @@ package body Adalang_Analyzer.CLI is
    Report_Format    : Output_Format := Text_Output;
    Compliance_Report_Standard : Unbounded_String;
    Compliance_Report_Output  : Unbounded_String;
+   Compliance_Report_Format  : Output_Format := Text_Output;
 
    function Normalized_File_Name (Name : String) return String is
    begin
@@ -135,6 +136,9 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line
         ("  --compliance-report-output=<file>  Destination for " &
          "--compliance-report (default: stdout)");
+      Ada.Text_IO.Put_Line
+        ("  --compliance-report-format=<markdown|json>  Representation " &
+         "for --compliance-report (default: markdown)");
       Ada.Text_IO.Put_Line
         ("  -complexity-threshold=<n>  Set complexity limit (default: 10)");
       Ada.Text_IO.Put_Line
@@ -217,6 +221,28 @@ package body Adalang_Analyzer.CLI is
          Invalid_Options := True;
       end if;
    end Set_Compliance_Report_Standard;
+
+   --  Validates a --compliance-report-format value. SARIF is deliberately
+   --  not offered here: SARIF's result-oriented schema has no natural slot
+   --  for the objective/evidence structure this report is built around --
+   --  use --format=sarif for a SARIF rendering of the underlying findings
+   --  instead.
+   procedure Set_Compliance_Report_Format (Name : String) is
+      Value : constant String :=
+        Ada.Characters.Handling.To_Lower
+          (Ada.Strings.Fixed.Trim (Name, Ada.Strings.Both));
+   begin
+      if Value = "markdown" then
+         Compliance_Report_Format := Text_Output;
+      elsif Value = "json" then
+         Compliance_Report_Format := JSON_Output;
+      else
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid compliance report format '" & Name &
+            "' (expected 'markdown' or 'json')");
+         Invalid_Options := True;
+      end if;
+   end Set_Compliance_Report_Format;
 
    --  Applies a GCC-style "+R<check>" / "-R<check>" switch, enabling or
    --  disabling exactly the named check.
@@ -957,6 +983,23 @@ package body Adalang_Analyzer.CLI is
                then
                   Compliance_Report_Output :=
                     To_Unbounded_String (Arg (Arg'First + 27 .. Arg'Last));
+               elsif Arg = "--compliance-report-format" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for " &
+                        "--compliance-report-format");
+                     Invalid_Options := True;
+                  else
+                     Set_Compliance_Report_Format
+                       (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > 27
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, "--compliance-report-format=") = Arg'First
+               then
+                  Set_Compliance_Report_Format
+                    (Arg (Arg'First + 27 .. Arg'Last));
                elsif Arg = "-q" or else Arg = "-quiet" then
                   Quiet_Mode := True;
                elsif Arg = "-v" or else Arg = "-verbose" then
@@ -1329,7 +1372,8 @@ package body Adalang_Analyzer.CLI is
       if Compliance_Report_Standard /= Null_Unbounded_String then
          Write_Compliance_Report
            (To_String (Compliance_Report_Standard),
-            To_String (Compliance_Report_Output));
+            To_String (Compliance_Report_Output),
+            Compliance_Report_Format);
       end if;
 
       if Selected_Output_Format = Text_Output and then not Quiet_Mode then
