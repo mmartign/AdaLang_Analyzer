@@ -32,10 +32,28 @@ jobs:
       # runs only need to rebuild adalang_analyzer itself.
       - uses: actions/cache@v4
         with:
-          path: ~/.cache/alire
+          path: |
+            ~/.cache/alire
+            ~/.alire
           key: alire-${{ runner.os }}-${{ hashFiles('alire.lock') }}
           restore-keys: |
             alire-${{ runner.os }}-
+
+      # Alire's index maps the gnatcoll_gmp dependency to the "libgmp-dev"
+      # apt package on Debian/Ubuntu, but the auto-install path has been
+      # observed requesting a plain "gmp" package instead, which apt does
+      # not have. Preinstalling it directly sidesteps that: Alire skips its
+      # own system-package install once the dependency is already satisfied.
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgmp-dev
+
+      # --verify's SMT backend needs cvc5 and z3 on PATH or under Alire's
+      # standard GNATprove installation prefix (~/.alire/libexec/spark/bin);
+      # without them, tests/run_verification.sh's external-prover checks
+      # fail silently under `set -eu`.
+      - name: Install SPARK solvers
+        run: alr -n install gnatprove
 
       - name: Build
         run: alr build
