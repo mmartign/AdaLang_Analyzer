@@ -64,7 +64,12 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (91 cases):
+Current coverage (168 cases; the tally below itemizes the threshold and
+no-threshold boundary/negative campaigns explicitly, and folds in only the
+first 9 of the many regression-negative/positive rows added alongside
+individual false-positive fixes since — the rest of those rows are cataloged
+against their own fix in the "Precision regression index" table below
+instead of being re-itemized here):
 
 - 12 threshold boundary cases: the six checks with a configurable numeric
   threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
@@ -188,14 +193,52 @@ Current coverage (91 cases):
   4.5.7 restricts to Boolean operands (`clean`), paired with the existing
   chained-Boolean-operand regression fixture confirming genuine Boolean
   operands are still flagged (`finding`).
+- 32 further cases across 16 more no-threshold checks that previously had no
+  dedicated fixture at all, each confirmed against the built analyzer:
+  `Naming_Convention` (a one-character for-loop index or enumeration literal
+  is excluded by name, vs. an ordinary one-character object declaration);
+  `Address_Clause` vs. `Representation_Clause_Policy` (an attribute-definition
+  clause naming `Address` specifically trips the former, but any
+  attribute-definition or record-representation clause -- e.g. `for
+  Byte'Size use 8;` -- trips the latter, cross-tested on the same fixture,
+  plus a clean case with no representation clause at all);
+  `No_Unchecked_Conversion` vs. `No_Unchecked_Deallocation` (instantiating
+  one of `Ada.Unchecked_Conversion`/`Ada.Unchecked_Deallocation` must not be
+  misreported as the other); `No_Controlled_Type` (a type deriving from
+  `Ada.Finalization.Controlled`, vs. an ordinary tagged type that does not);
+  `Complete_Initialization` (an object declaration with no explicit
+  initializer, vs. one with one); `Unused_Variable` (a local never
+  referenced anywhere, vs. one referenced only inside a nested subprogram's
+  own body, the same up-level-reference shape already covered for
+  `Unused_Parameter`); `Missing_Loop_Variant` (a loop with a `Loop_Invariant`
+  pragma but no `Loop_Variant` pragma, vs. one with both); `Infinite_Loop`
+  (`while True loop` with no exit/return/raise/goto in its body, vs. a
+  while-condition that depends on a parameter and so is not statically
+  decidable as always-true, regardless of whether the loop can actually
+  terminate at runtime); `Empty_Loop` (a loop body containing only a null
+  statement, vs. one with a real assignment); `Exception_Propagation` (a call
+  to a subprogram that unconditionally raises with no enclosing handler, vs.
+  the same call wrapped in its own `exception when ... =>` handler);
+  `No_Recursion` (a subprogram calling itself directly, vs. mutual recursion
+  through a second subprogram -- `Is_Direct_Recursive_Call` only compares a
+  call's target against its own immediately enclosing subprogram, so neither
+  side of an A-calls-B-calls-A cycle is a direct self-call); `SPARK_Mode`
+  (`pragma SPARK_Mode (Off);`, vs. `(On)`); and `Missing_Requirement_Trace`
+  vs. `Malformed_Requirement_Trace` (no `do-178c: req` comment at all trips
+  only the former; a `do-178c: req` comment with no identifier after it
+  trips both, cross-tested on the same fixture; a comment with a real
+  identifier trips neither).
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 
 - More boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
-  being one) — the 70 added so far only cover 37 of the roughly 46 remaining
-  checks.
+  being one) — 68 of the 99 `Rule_Kind` values now have at least one
+  dedicated fixture, leaving 31 remaining (mostly simple presence-only
+  prohibitions such as `No_Goto` or `No_Tasking`, plus the `Known_*_Failure`
+  family, which needs a `--verify` proof-obligation fixture rather than a
+  plain `Rule_Kind` boundary).
 - Cross-version stability: re-running the same corpus across analyzer
   releases and tracking whether previously stable results change.
 
