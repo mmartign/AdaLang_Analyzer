@@ -10,6 +10,7 @@ environment:C_INCLUDE_PATH=/opt/homebrew/include:/Library/Developer/CommandLineT
 environment:LIBRARY_PATH=gnat_native_15.1.2_60748c54/lib:/opt/homebrew/lib:/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
 environment:MACOSX_DEPLOYMENT_TARGET=26.0
 external:ADALANG_ANALYZER_LIBRARY_TYPE=default
+external:ADALANG_ANALYZER_OS=macos
 external:LIBRARY_TYPE=default
 profile:adalang_analyzer=DEVELOPMENT
 switches:adalang_analyzer=-Og,-fdata-sections,-ffunction-sections,-g,-gnatVa,-gnatW8,-gnatw.X,-gnatwa,-gnaty-d,-gnaty3,-gnatyA,-gnatyB,-gnatyI,-gnatyO,-gnatyS,-gnatya,-gnatyb,-gnatyc,-gnatye,-gnatyf,-gnatyh,-gnatyi,-gnatyk,-gnatyl,-gnatym,-gnatyn,-gnatyp,-gnatyr,-gnatyt,-gnatyu,-gnatyx

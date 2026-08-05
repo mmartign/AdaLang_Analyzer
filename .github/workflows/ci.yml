@@ -6,17 +6,18 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Cancel superseded runs on the same branch/PR to save macOS runner minutes.
+# Cancel superseded runs on the same branch/PR to save runner minutes.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-and-test:
-    # adalang_analyzer.gpr hardcodes macOS Command Line Tools SDK paths in its
-    # Linker package, so it currently only builds on macOS. Revisit this once
-    # that project file is made portable.
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
 
     steps:

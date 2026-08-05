@@ -30,18 +30,27 @@ project-files = ["adalang_analyzer.gpr"]
 
 executables = ["adalang_analyzer"]
 
-[environment]
-[environment.MACOSX_DEPLOYMENT_TARGET]
+[environment.'case(os)'.macos.MACOSX_DEPLOYMENT_TARGET]
 set = "26.0"
 
-[environment.C_INCLUDE_PATH]
+[environment.'case(os)'.macos.C_INCLUDE_PATH]
 append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
 
-[environment.CPLUS_INCLUDE_PATH]
+[environment.'case(os)'.macos.CPLUS_INCLUDE_PATH]
 append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
 
-[environment.LIBRARY_PATH]
+[environment.'case(os)'.macos.LIBRARY_PATH]
 append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
+
+[gpr-externals]
+ADALANG_ANALYZER_OS = ["linux", "macos", "windows"]
+
+[gpr-set-externals.'case(os)'.linux]
+ADALANG_ANALYZER_OS = "linux"
+[gpr-set-externals.'case(os)'.macos]
+ADALANG_ANALYZER_OS = "macos"
+[gpr-set-externals.'case(os)'.windows]
+ADALANG_ANALYZER_OS = "windows"
 
 [[depends-on]]
 libadalang = "^26.0.0"
