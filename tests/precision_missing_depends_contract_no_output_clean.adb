@@ -1,0 +1,10 @@
+procedure Precision_Missing_Depends_Contract_No_Output_Clean is
+   function Compute (X : Integer) return Integer is
+   begin
+      return X + 1;
+   end Compute;
+
+   Result : Integer;
+begin
+   Result := Compute (5);
+end Precision_Missing_Depends_Contract_No_Output_Clean;

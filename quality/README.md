@@ -64,7 +64,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (65 cases):
+Current coverage (89 cases):
 
 - 12 threshold boundary cases: the six checks with a configurable numeric
   threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
@@ -154,13 +154,41 @@ Current coverage (65 cases):
   ordinary variable); and `No_Multiple_Return` (an outer subprogram's own
   return count excludes a nested subprogram's returns, vs. an outer
   subprogram genuinely returning twice itself).
+- 24 further boundary/negative cases across 12 more no-threshold checks,
+  each a clean/finding pair confirmed against the built analyzer:
+  `Contradictory_Condition` (a redundant paren still unwraps to detect
+  `Done and not (Done)`, vs. two distinct operands); `Reversed_Range` (a
+  strictly-decreasing static range like `5 .. 1`, vs. equal bounds like
+  `5 .. 5`, which is a single-element range, not reversed);
+  `Floating_Equality` (a direct `=` on `Float` operands, vs. `Integer`
+  operands); `Redundant_Type_Conversion` (converting a value to its own
+  exact type, vs. converting to a different subtype of the same base type,
+  e.g. `Integer` to `Positive`, which resolves to a different declaration
+  despite compatible representation); `Unreachable_Code` (an ordinary
+  statement right after a `return`, vs. a label at that position, which is a
+  possible entry point and makes everything after it reachable again);
+  `Identical_Case_Alternative` (adjacent-only, mirroring
+  `Identical_Branches`: two adjacent alternatives with identical bodies, vs.
+  a non-adjacent repeat separated by a distinct alternative);
+  `Unused_Parameter` (a parameter never referenced, vs. one referenced only
+  inside a nested subprogram's own body, an up-level reference that still
+  counts as used); `Missing_Global_Contract` and `Missing_Depends_Contract`
+  (both only fire when the subprogram actually has something to declare — a
+  real global access, or a real output — not merely for lacking the
+  contract); `Volatile_Atomic_Consistency` (`Volatile` paired with `Atomic`
+  on the same aspect list, vs. `Volatile` alone); `Suppression_Without_
+  Rationale` (an `adalang-analyzer: ignore` comment with `rationale:` on the
+  same line, vs. without it); and `Aliasing_Between_Parameters` (passing the
+  same object to two `in` formals in one call, vs. the same shape with one
+  formal `in out`, since the rule only fires when at least one aliased side
+  is written).
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 
 - More boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
-  being one) — the 44 added so far only cover 24 of the roughly 59 remaining
+  being one) — the 68 added so far only cover 36 of the roughly 47 remaining
   checks.
 - Cross-version stability: re-running the same corpus across analyzer
   releases and tracking whether previously stable results change.
