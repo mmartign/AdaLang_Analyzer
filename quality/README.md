@@ -64,7 +64,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (34 cases):
+Current coverage (37 cases):
 
 - 12 threshold boundary cases: the six checks with a configurable numeric
   threshold — `Cyclomatic_Complexity`, `Deep_Nesting`, `Too_Many_Parameters`,
@@ -85,7 +85,7 @@ Current coverage (34 cases):
   proof-obligation outcome rather than a `Rule_Kind` finding on a
   `tests/*.adb` fixture, and stay prose-only rather than force an uncertain
   mapping into a gate (see the index below for which).
-- 13 boundary/negative cases for checks with no numeric threshold, targeting
+- 16 boundary/negative cases for checks with no numeric threshold, targeting
   constructs the check's own implementation already special-cases:
   `Missing_Overriding_Indicator` on a same-named primitive with a different
   profile (an overload, not an override, so it needs no keyword — expected
@@ -114,15 +114,24 @@ Current coverage (34 cases):
   case at all), while `X * 0` is Constant_Result_Operation's absorbing case
   and not Ineffective_Operation's (whose `Mult` case only fires on a
   literal-one operand), each confirmed clean on the other rule and a finding
-  on its own. Each outcome was confirmed against the built analyzer, not
-  assumed from reading the check's source.
+  on its own; `Missing_Overriding_Indicator`'s previously-untested positive
+  side, a tagged-type primitive that genuinely overrides an inherited
+  operation of the same profile without the `overriding` keyword (expected
+  `finding`, at the same same-named-primitive shape the existing
+  negative-overload case already covers); and `Function_Side_Effect` on a
+  function assigning to its own local variable (excluded by
+  `Is_Local_To_Subprogram` — expected `clean`) paired with the same
+  in-function-body assignment shape targeting a variable declared in the
+  enclosing subprogram instead, which is not local to the function and must
+  still be flagged (expected `finding`). Each outcome was confirmed against
+  the built analyzer, not assumed from reading the check's source.
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 
 - More boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
-  being one) — the 13 added so far only cover 8 of the roughly 75 remaining
+  being one) — the 16 added so far only cover 10 of the roughly 73 remaining
   checks.
 - Cross-version stability: re-running the same corpus across analyzer
   releases and tracking whether previously stable results change.
