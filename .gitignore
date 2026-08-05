@@ -1,3 +1,10 @@
 /bin/
 /obj/
 /benchmark-results/
+
+# alr regenerates this per machine. It pins "system" origins (e.g. libgmp)
+# to the resolving platform's package manager and name, which does not
+# carry over between macOS and Linux -- see the CI workflow's git history
+# for the Ubuntu breakage this caused when it was committed.
+/alire/alire.lock
+/alire/alire.lock.prev

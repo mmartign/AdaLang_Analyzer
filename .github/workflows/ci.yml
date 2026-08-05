@@ -39,19 +39,16 @@ jobs:
           restore-keys: |
             alire-${{ runner.os }}-
 
-      # gnatcoll_gmp depends on the system "gmp" library. On this runner
-      # alr's package-manager auto-install tries to apt-get a package named
-      # plain "gmp", which does not exist on Ubuntu (forcing an explicit
-      # distribution.override made no difference, so this isn't ordinary
-      # distro misdetection). Installing libgmp-dev ourselves and disabling
-      # alr's distribution detection sidesteps its system-package logic
-      # entirely: alr then trusts the already-installed library instead of
-      # trying (and failing) to install one itself.
+      # gnatcoll_gmp depends on the system "gmp" library. alr resolves this
+      # correctly per-platform on its own (confirmed: a fresh `alr get
+      # libgmp` on Ubuntu finds "libgmp-dev" via apt without help); the
+      # actual failures here came from a committed alire/alire.lock that had
+      # frozen this as the macOS-resolved "system:gmp", which does not exist
+      # as an apt package. That lockfile is no longer committed (see
+      # .gitignore), so this step is just a speed/determinism nicety.
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update && sudo apt-get install -y libgmp-dev
-          alr settings --global --set distribution.disable_detection true
+        run: sudo apt-get update && sudo apt-get install -y libgmp-dev
 
       # --verify's SMT backend needs cvc5 and z3 on PATH or under Alire's
       # standard GNATprove installation prefix (~/.alire/libexec/spark/bin);
