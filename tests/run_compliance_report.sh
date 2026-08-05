@@ -151,4 +151,37 @@ fi
 grep -F "invalid compliance report format 'sarif'" "$work/invalid_format" \
   >/dev/null
 
+#  A --compliance-report requested with no preset/assurance level selected
+#  (e.g. --do178c=<level> or --automotive omitted or mistyped) would
+#  otherwise silently produce a report showing "0 open findings" on every
+#  objective, indistinguishable from a genuine clean run. Both the stderr
+#  warning and an inline banner inside the report itself must call this out
+#  loudly, in Markdown and in JSON, so the empty report cannot pass as
+#  evidence unnoticed.
+empty_report="$work/empty.md"
+"$analyzer" -q --compliance-report=do178c \
+  --compliance-report-output="$empty_report" \
+  tests/do178c_findings.adb 2>"$work/empty_stderr"
+grep -F 'was written with no checks enabled' "$work/empty_stderr" >/dev/null
+grep -F '**WARNING:**' "$empty_report" >/dev/null
+grep -F 'Enabled checks: 0' "$empty_report" >/dev/null
+
+#  The same run with an assurance level selected must not carry either
+#  warning -- this is a false-positive guard on the check above.
+if grep -F '**WARNING:**' "$report" >/dev/null
+then
+   echo "unexpected empty-checks warning in a report with checks enabled" >&2
+   exit 1
+fi
+
+empty_json="$work/empty.json"
+"$analyzer" -q --compliance-report=do178c \
+  --compliance-report-format=json \
+  --compliance-report-output="$empty_json" \
+  tests/do178c_findings.adb 2>/dev/null || true
+grep -F '"warning": "No checks are enabled for this run.' "$empty_json" \
+  >/dev/null
+grep -F '"enabledChecks": 0' "$empty_json" >/dev/null
+grep -F '"warning": "",' "$json_report" >/dev/null
+
 echo "compliance report tests passed"

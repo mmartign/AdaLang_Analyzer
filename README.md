@@ -499,7 +499,14 @@ own), and the verification activities this analyzer does not automate at all
 run-time-error proof beyond the supported subset, tool qualification).
 
 An unrecognized standard or report format fails the invocation rather than
-silently producing no report. Objective labels are AdaLang's own paraphrase:
+silently producing no report. If the run has no checks enabled at all --
+typically a `--compliance-report` invocation missing its paired
+`--do178c=<level>` or `--automotive` -- every objective would otherwise show
+"0 open findings" indistinguishable from a genuine clean run; a warning is
+printed to stderr and a matching `**WARNING:**` banner (or a non-empty
+`warning` field in JSON) is written into the report itself, so the empty
+report cannot pass as evidence unnoticed. Objective labels are AdaLang's own
+paraphrase:
 for `do178c`, of publicly discussed DO-178C Annex A Table A-5 activities;
 for `iso26262`, of the same general safety themes already summarized
 non-normatively in

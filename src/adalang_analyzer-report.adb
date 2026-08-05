@@ -436,12 +436,41 @@ package body Adalang_Analyzer.Report is
         " and your certification or functional-safety review process.";
 
       Enabled_Rule_Count : Natural := 0;
+
+      --  "" when at least one check is enabled; otherwise the banner shown
+      --  both inline (so the report file is self-diagnosing even if stderr
+      --  went unseen, e.g. piped into CI log storage nobody reads) and on
+      --  stderr (so an interactive run notices immediately). A report with
+      --  zero enabled checks shows every objective at "0 open findings",
+      --  which reads exactly like a clean pass unless this is called out --
+      --  the usual cause is a --compliance-report invocation missing the
+      --  paired --do178c=<level> or --automotive that selects its checks.
+      function No_Checks_Warning return String is
+      begin
+         if Enabled_Rule_Count > 0 then
+            return "";
+         end if;
+         return
+           "No checks are enabled for this run. Every objective below " &
+           "shows zero open findings only because nothing was checked, " &
+           "not because the source is clean. Pass --do178c=<level> (for " &
+           "a do178c report) or --automotive (for an iso26262 report) to " &
+           "select the checks this report is meant to evidence.";
+      end No_Checks_Warning;
    begin
       for Rule in Rules.Rule_Kind loop
          if Config.Rule_States (Rule) = Config.Enabled then
             Enabled_Rule_Count := Enabled_Rule_Count + 1;
          end if;
       end loop;
+
+      if Enabled_Rule_Count = 0 then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: warning: --compliance-report=" & Standard &
+            " was written with no checks enabled; it has no analytical " &
+            "content (see the warning inside the report itself)");
+      end if;
 
       if To_File then
          Ada.Text_IO.Create (File, Ada.Text_IO.Out_File, Filename);
@@ -468,6 +497,8 @@ package body Adalang_Analyzer.Report is
            ("  ""enabledChecks"": " &
             Text_Utils.To_Decimal (Enabled_Rule_Count) & ",");
          Line ("  ""disclaimer"": """ & JSON_Escape (Disclaimer) & """,");
+         Line
+           ("  ""warning"": """ & JSON_Escape (No_Checks_Warning) & """,");
 
          Line ("  ""objectives"": [");
          for Obj_Index in Objectives'Range loop
@@ -602,6 +633,10 @@ package body Adalang_Analyzer.Report is
          Line ("Files analyzed: " & Text_Utils.To_Decimal (Source_File_Count));
          Line ("Enabled checks: " & Text_Utils.To_Decimal (Enabled_Rule_Count));
          Line ("");
+         if Enabled_Rule_Count = 0 then
+            Line ("> **WARNING:** " & No_Checks_Warning);
+            Line ("");
+         end if;
          Line ("> " & Disclaimer);
          Line ("");
          Line ("## Objectives");
