@@ -8,3 +8,5 @@
 # for the Ubuntu breakage this caused when it was committed.
 /alire/alire.lock
 /alire/alire.lock.prev
+
+/CLAUDE.md
