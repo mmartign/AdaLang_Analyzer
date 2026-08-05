@@ -22,6 +22,7 @@ version = "1.0.0-rc1"
 
 authors = ["Maurizio Martignano"]
 maintainers = ["Maurizio Martignano <Maurizio.Martignano@spazioit.com>"]
+maintainers-logins = ["mmartign"]
 licenses = "GPL-3.0-or-later"
 website = "https://spazioit.com/"
 tags = ["ada", "analysis", "libadalang", "static-analysis"]
