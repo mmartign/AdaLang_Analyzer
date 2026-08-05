@@ -6,6 +6,9 @@ with "../adalang_analyzer.gpr";
 
 project Control_Flow_Graph_Model is
 
+   type OS_Kind is ("linux", "macos", "windows");
+   Host_OS : OS_Kind := external ("ADALANG_ANALYZER_OS", "linux");
+
    for Source_Dirs use (".");
    for Object_Dir use "../obj/control-flow-graph-model-test";
    for Create_Missing_Dirs use "True";
@@ -18,10 +21,16 @@ project Control_Flow_Graph_Model is
    end Compiler;
 
    package Linker is
-      for Switches ("Ada") use
-        ("-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
-         "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
-         "-lgnarl");
+      case Host_OS is
+         when "macos" =>
+            for Switches ("Ada") use (
+               "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
+               "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+               "-lgnarl"
+            );
+         when others =>
+            for Switches ("Ada") use ("-lgnarl");
+      end case;
    end Linker;
 
 end Control_Flow_Graph_Model;
