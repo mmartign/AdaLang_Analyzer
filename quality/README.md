@@ -329,6 +329,7 @@ Each precision correction has an executable regression:
 | The same pre-convergence staleness as `FP-032`, for a call's precondition (`Check_Call_Precondition`) instead of a pragma condition; recorded under two distinct stable IDs per call (the whole call, and just the callee name), both needing their own replay | `verification_loop_stale_precondition.adb`, run by `run_verification.sh`; see `FP-033` in `known_analysis_issues.tsv` (`Finalize_Precondition_Check`) |
 | Every nested `Bin_Op` in a left-associative chain of plain `and`/`or` operators shares the same `Sloc_Range.Start` (the leftmost operand's position), so a chain of N operators must still report once, not N-1 times | `non_short_circuit_chain_findings.adb`, run by `run_bug_findings.sh` (not folded: the fixture's expected count is 1, not a `precision_corpus.tsv`-expressible clean/finding boundary); also fixed by `FP-038`'s `Already_Reported` deduplication, independent root cause |
 | A scalar named only in a nested subprogram declaration's `Global` aspect (a contract, never executed at that textual position) is not a read of the outer object, even though `Finalize_Node`'s whole-body walk shared one CFG position -- positioned before the object's real initializing assignment -- for the entire declaration, aspect included | `verification_global_aspect_reference_clean.adb`/`_guard.adb`, run by `run_verification.sh` (not folded: a bounded `--verify` proof-obligation outcome, not a `Rule_Kind` finding); see `FP-039` in `known_analysis_issues.tsv` (`Finalize_Node`'s new `Ada_Aspect_Spec` exclusion) |
+| A "limited with" imposes no "elaborate before" requirement and is Ada's own sanctioned way for two units to reference each other's types without a real circular elaboration dependency, so it must not contribute a `Circular_Package_Dependency` graph edge the way an ordinary/private with does | `circular_dependency_limited_with_a.ads`/`_b.ads`, run by `run_circular_dependencies.sh` (not folded into `precision_corpus.tsv`: `Circular_Package_Dependency` is a whole-program check that needs both cycle members on one command line, the same reason its original findings/clean fixtures are not folded either); see `FP-042` in `known_analysis_issues.tsv` (edges are now built by walking `Compilation_Unit.F_Prelude`'s own `With_Clause` nodes and skipping any with `F_Has_Limited`, instead of the aggregated `P_Withed_Units`, which does not distinguish limited from ordinary) |
 
 When another precision bug is fixed, add or extend a fixture and add its row
 here in the same change.
@@ -378,6 +379,27 @@ kernel) was also attempted as a third corpus and found not usable as-is —
 its kernel sources depend on packages generated at build time from an XML
 system policy that isn't present in the core repository; see
 `external_corpus_findings.md`.
+
+`benchmarks/ada_drivers_library/` is a different kind of external corpus:
+not a GNATprove oracle comparison (bare-metal register-level drivers are not
+a natural SPARK proof target), but real-code validation for the
+`--automotive`-only concurrency-prohibition checks (`No_Tasking`,
+`No_Rendezvous`, `No_Select`, `No_Requeue`, `No_Asynchronous_Transfer`,
+`Potentially_Blocking_Operation`) — none of the SPARK/AWS corpora above use
+tasking at all, and until this benchmark these six checks had only ever run
+against the hand-constructed `quality/precision_corpus.tsv` fixtures added
+alongside them. A pinned subset of AdaCore/Ada_Drivers_Library
+(`arch/ARM/STM32/drivers/`, 90 files of interrupt-driven STM32 peripheral
+drivers) confirmed `No_Rendezvous` firing on every real `entry` declaration
+in the corpus and the other five correctly staying silent on code with
+nothing for them to catch (see `RESULTS_2026-08-05.md` for the reasoning
+behind why each zero is a true negative, not an untested check). The same
+run independently surfaced a real false positive (`FP-042`, closed):
+`Circular_Package_Dependency` built its with-graph from
+`P_Withed_Units`, which does not distinguish a `limited with` from an
+ordinary one, so two units using Ada's own sanctioned idiom for avoiding a
+real circular dependency (one direction ordinary, the other `limited`) were
+misreported as circular.
 
 ## Differential corpus
 

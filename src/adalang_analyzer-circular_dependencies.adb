@@ -175,15 +175,50 @@ package body Adalang_Analyzer.Circular_Dependencies is
             if not Libadalang.Analysis.Is_Null (CU) then
                Nodes (I).Anchor := Report_Anchor (CU);
 
-               for Withed of CU.P_Withed_Units loop
-                  declare
-                     Target : constant Natural :=
-                       Index_Of (Nodes, Withed.Unit.Get_Filename);
-                  begin
-                     if Target /= 0 and then Target /= I then
-                        Index_Vectors.Append (Nodes (I).Edges, Target);
-                     end if;
-                  end;
+               --  Built from ordinary/private with clauses only, not
+               --  P_Withed_Units (which does not distinguish a "limited
+               --  with" from an ordinary one). A limited-with'd unit is
+               --  visible only through its incomplete view and imposes no
+               --  "elaborate before" requirement -- it is Ada's own
+               --  sanctioned way to let two units name each other's types
+               --  without a real circular elaboration dependency, so it
+               --  must not contribute a graph edge here (see FP-042).
+               for Item of CU.F_Prelude loop
+                  if Item.Kind = Libadalang.Common.Ada_With_Clause then
+                     declare
+                        Clause : constant Libadalang.Analysis.With_Clause :=
+                          Item.As_With_Clause;
+                     begin
+                        if not Clause.F_Has_Limited then
+                           for Pkg_Name of Clause.F_Packages loop
+                              declare
+                                 Decl : constant
+                                   Libadalang.Analysis.Basic_Decl :=
+                                     Pkg_Name.P_Referenced_Decl
+                                       (Imprecise_Fallback => True);
+                              begin
+                                 if not Libadalang.Analysis.Is_Null (Decl)
+                                 then
+                                    declare
+                                       Target : constant Natural :=
+                                         Index_Of
+                                           (Nodes, Decl.Unit.Get_Filename);
+                                    begin
+                                       if Target /= 0 and then Target /= I
+                                       then
+                                          Index_Vectors.Append
+                                            (Nodes (I).Edges, Target);
+                                       end if;
+                                    end;
+                                 end if;
+                              exception
+                                 when others =>
+                                    null;
+                              end;
+                           end loop;
+                        end if;
+                     end;
+                  end if;
                end loop;
             end if;
          exception

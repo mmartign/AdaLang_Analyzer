@@ -47,4 +47,17 @@ then
    exit 1
 fi
 
+#  A "limited with" gives only an incomplete view and imposes no
+#  "elaborate before" requirement, so two units that reference each other
+#  through one ordinary with and one limited with (Ada's own sanctioned way
+#  to let mutually-referential units avoid a real circular dependency) must
+#  not be flagged (FP-042).
+if ! "$analyzer" -q -checks='Circular_Package_Dependency' \
+     tests/circular_dependency_limited_with_a.ads \
+     tests/circular_dependency_limited_with_b.ads
+then
+   echo "limited-with pair unexpectedly produced a violation" >&2
+   exit 1
+fi
+
 echo "circular-dependency tests passed"
