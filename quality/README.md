@@ -64,7 +64,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (168 cases; the tally below itemizes the threshold and
+Current coverage (214 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
@@ -228,17 +228,63 @@ instead of being re-itemized here):
   only the former; a `do-178c: req` comment with no identifier after it
   trips both, cross-tested on the same fixture; a comment with a real
   identifier trips neither).
+- 46 further cases across the 23 remaining no-threshold checks that
+  previously had no dedicated fixture at all (the "mostly simple
+  presence-only prohibitions" the note below used to point at), each
+  confirmed against the built analyzer: `No_Goto` vs. `No_Label` (a `goto
+  Label;` statement is an `Ada_Goto_Stmt`, and its `<<Label>>` target is a
+  separate `Ada_Label` node; a named loop's `Outer :`/`exit Outer` is
+  neither, cross-tested on the same two fixtures); `No_Abort`, `No_Raise`,
+  `No_Exit`, and `No_Requeue` (each real statement kind, vs. an ordinary
+  call to a procedure merely *named* `Abort_Operation`/`Raise_Alert`/
+  `Exit_Now`/`Requeue_Handler`); `Null_Statement` (a `null;` statement is an
+  `Ada_Null_Stmt`, vs. `procedure No_Op is null;`, an `Ada_Null_Subp_Decl`
+  declaration that is elaborated, not executed); `No_Access_To_Subp_Def` vs.
+  `Restricted_Access_Type` (`access procedure(...)` is an
+  `Ada_Access_To_Subp_Def`; `access Integer` is an `Ada_Type_Access_Def`;
+  cross-tested on the same two fixtures so each rule's clean case is the
+  other's finding); `No_Dynamic_Allocation` (`new Integer'(...)`, vs. a call
+  to a function merely named `New_Value`); `No_Explicit_Dereference` (`P.all
+  := ...` is an `Ada_Explicit_Deref`, vs. `P.Value := ...`, which reaches the
+  same component through prefixed-notation implicit dereference with no
+  `.all` token); `No_Classwide_Type` (`Root'Class`, vs. `Root'Size` at the
+  same `Attribute_Ref` shape); `No_Tasking` vs. `No_Rendezvous` (a task
+  type's entry declaration and its `accept` statement, vs. a protected
+  type's ordinary procedure at the same declare-an-operation-in-a-
+  concurrent-type shape); `No_Select` vs. `No_Asynchronous_Transfer` (both
+  fire on a `select ... then abort ...` statement, but only an ordinary
+  `select accept ...; or delay ...;` timed entry call trips `No_Select` and
+  not `No_Asynchronous_Transfer`, since it has no `Ada_Then_Abort_Part`,
+  cross-tested on the same two fixtures); `Potentially_Blocking_Operation`
+  (a `delay` inside a protected operation body, vs. the same statement
+  inside an ordinary procedure, since `Check_Potentially_Blocking` only
+  scans bodies where `Is_Protected_Operation_Body` is true);
+  `No_Dispatching_Call` (calling an overridden primitive through a
+  `Root'Class` view, vs. through a specifically-typed object, at the same
+  tagged-hierarchy shape); `Division_By_Zero` (`Y / 0`, a statically zero
+  divisor, vs. `Y / 1`); `Unreachable_Branch` (`if False then`, vs. a
+  condition depending on a parameter); `No_Runtime_Check_Suppression`
+  (`pragma Suppress (All_Checks);`, vs. `pragma Check_Policy (Assertion,
+  On);`, whose policy argument is `On` rather than `Off`/`Ignore`);
+  `No_Pragma` (any pragma, vs. a file with none at all); and
+  `Trailing_Whitespace` (a line ending in spaces, vs. a genuinely empty
+  line, which the `Line'Length > 0` guard excludes even though both look
+  blank).
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 
 - More boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
-  being one) — 68 of the 99 `Rule_Kind` values now have at least one
-  dedicated fixture, leaving 31 remaining (mostly simple presence-only
-  prohibitions such as `No_Goto` or `No_Tasking`, plus the `Known_*_Failure`
-  family, which needs a `--verify` proof-obligation fixture rather than a
-  plain `Rule_Kind` boundary).
+  being one) — 91 of the 99 `Rule_Kind` values now have at least one
+  dedicated fixture, leaving 8 remaining: the seven `Known_*_Failure` checks,
+  which only fire under `--verify` and so need a bounded proof-obligation
+  fixture rather than a plain `Rule_Kind` boundary (see the "Precision
+  regression index" below for how their mechanism is instead covered by
+  `run_verification.sh` fixtures); and `Circular_Package_Dependency`, a
+  whole-program check that only fires across a `with`-cycle spanning two or
+  more files and so cannot be expressed as this manifest's single-fixture
+  row (covered instead by `run_circular_dependencies.sh`).
 - Cross-version stability: re-running the same corpus across analyzer
   releases and tracking whether previously stable results change.
 
