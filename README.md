@@ -499,7 +499,11 @@ own), and the verification activities this analyzer does not automate at all
 run-time-error proof beyond the supported subset, tool qualification).
 
 An unrecognized standard or report format fails the invocation rather than
-silently producing no report. If the run has no checks enabled at all --
+silently producing no report. Likewise, `--compliance-report-output` or
+`--compliance-report-format` given without the `--compliance-report=<standard>`
+that makes them meaningful fails fast, before any file is analyzed, instead
+of quietly analyzing the source and never writing (or explaining why it
+never wrote) a report. If the run has no checks enabled at all --
 typically a `--compliance-report` invocation missing its paired
 `--do178c=<level>` or `--automotive` -- every objective would otherwise show
 "0 open findings" indistinguishable from a genuine clean run; a warning is

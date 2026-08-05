@@ -184,4 +184,36 @@ grep -F '"warning": "No checks are enabled for this run.' "$empty_json" \
 grep -F '"enabledChecks": 0' "$empty_json" >/dev/null
 grep -F '"warning": "",' "$json_report" >/dev/null
 
+#  --compliance-report-output and --compliance-report-format only mean
+#  anything paired with --compliance-report=<standard>; given without it,
+#  they used to be silently ignored -- the run analyzed normally and no
+#  report, and no diagnostic about the missing report, ever appeared. Both
+#  must now fail the invocation instead, before any file is analyzed.
+orphan_output="$work/orphan_output.txt"
+if "$analyzer" --automotive --compliance-report-output="$orphan_output" \
+     tests/automotive_restrictions_findings.adb \
+     >"$work/orphan_output_stderr" 2>&1
+then
+   echo "--compliance-report-output without --compliance-report was accepted" >&2
+   exit 1
+fi
+grep -F -e \
+  "--compliance-report-output was given without --compliance-report=<standard>" \
+  "$work/orphan_output_stderr" >/dev/null
+if [ -e "$orphan_output" ]; then
+   echo "--compliance-report-output without --compliance-report wrote a file" >&2
+   exit 1
+fi
+
+if "$analyzer" --automotive --compliance-report-format=json \
+     tests/automotive_restrictions_findings.adb \
+     >"$work/orphan_format_stderr" 2>&1
+then
+   echo "--compliance-report-format without --compliance-report was accepted" >&2
+   exit 1
+fi
+grep -F -e \
+  "--compliance-report-format was given without --compliance-report=<standard>" \
+  "$work/orphan_format_stderr" >/dev/null
+
 echo "compliance report tests passed"

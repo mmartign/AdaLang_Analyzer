@@ -59,6 +59,12 @@ package body Adalang_Analyzer.CLI is
    Compliance_Report_Standard : Unbounded_String;
    Compliance_Report_Output  : Unbounded_String;
    Compliance_Report_Format  : Output_Format := Text_Output;
+   Compliance_Report_Format_Set : Boolean := False;
+   --  Whether --compliance-report-format was actually given, since its
+   --  value alone can't distinguish "explicitly markdown" from "never
+   --  touched" (both are Text_Output). Needed to catch
+   --  --compliance-report-format/--compliance-report-output given without
+   --  the --compliance-report=<standard> that makes them meaningful.
 
    function Normalized_File_Name (Name : String) return String is
    begin
@@ -232,6 +238,7 @@ package body Adalang_Analyzer.CLI is
         Ada.Characters.Handling.To_Lower
           (Ada.Strings.Fixed.Trim (Name, Ada.Strings.Both));
    begin
+      Compliance_Report_Format_Set := True;
       if Value = "markdown" then
          Compliance_Report_Format := Text_Output;
       elsif Value = "json" then
@@ -1160,6 +1167,27 @@ package body Adalang_Analyzer.CLI is
          end;
          Current_Arg := Current_Arg + 1;  --  adalang-analyzer: ignore Dead_Store
       end loop;
+
+      --  --compliance-report-output and --compliance-report-format only do
+      --  anything paired with --compliance-report=<standard>; given alone,
+      --  they would otherwise be silently ignored -- the run analyzes the
+      --  source normally and no compliance report, and no diagnostic about
+      --  one, ever appears.
+      if Compliance_Report_Standard = Null_Unbounded_String then
+         if Compliance_Report_Output /= Null_Unbounded_String then
+            Ada.Text_IO.Put_Line
+              ("adalang-analyzer: --compliance-report-output was given " &
+               "without --compliance-report=<standard>; no compliance " &
+               "report would be written");
+            Invalid_Options := True;
+         elsif Compliance_Report_Format_Set then
+            Ada.Text_IO.Put_Line
+              ("adalang-analyzer: --compliance-report-format was given " &
+               "without --compliance-report=<standard>; no compliance " &
+               "report would be written");
+            Invalid_Options := True;
+         end if;
+      end if;
 
       if Show_Help_Flag then
          Show_Help;
