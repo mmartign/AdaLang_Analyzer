@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/mmartign/AdaLang_Analyzer/security/advisories/new
+    about: Please report suspected security vulnerabilities privately, per SECURITY.md, instead of filing a public issue.
+  - name: Commercial support / consulting
+    url: mailto:info@spazioit.com
+    about: For enterprise support, custom rule development, or certification consulting, contact Spazio IT directly.

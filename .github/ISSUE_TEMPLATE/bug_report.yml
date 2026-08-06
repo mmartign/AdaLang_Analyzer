@@ -1,0 +1,68 @@
+name: Bug report
+description: Report incorrect analyzer behavior, a false positive/negative, or a crash.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please avoid filing
+        security vulnerabilities here — see [SECURITY.md](../../SECURITY.md)
+        instead.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the incorrect behavior, including what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal Ada input
+      description: The smallest Ada source snippet that reproduces the issue.
+      render: ada
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Command line
+      description: The exact `adalang_analyzer` invocation used.
+      placeholder: adalang_analyzer --checks=all path/to/file.adb
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output
+      description: The relevant analyzer output (findings, error, or crash trace).
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Analyzer version
+      description: Output of `adalang_analyzer --version`.
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Host platform
+      placeholder: e.g. macOS 15 / Ubuntu 24.04, GNAT version
+    validations:
+      required: true

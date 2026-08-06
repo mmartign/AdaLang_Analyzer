@@ -1,6 +1,9 @@
 # adalang_analyzer
 
 [![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 `adalang_analyzer` is an independent command-line static analysis tool for Ada
 source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
@@ -794,8 +797,11 @@ pilot project, or consultation.
 
 ## Contributing
 
-Bug reports and focused pull requests are welcome. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the basic contribution workflow.
+Bug reports, precision feedback, and focused pull requests are welcome,
+including from outside contributors. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for the basic contribution workflow and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+for community expectations. Suspected security vulnerabilities should be
+reported per [SECURITY.md](SECURITY.md) rather than as a public issue.
 
 ## License
 

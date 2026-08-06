@@ -1,6 +1,13 @@
 # Contributing to adalang_analyzer
 
-Thank you for helping improve `adalang_analyzer`.
+Thank you for helping improve `adalang_analyzer`. External bug reports,
+precision feedback (false positives/negatives), and focused pull requests are
+all welcome — this project is used in safety-critical contexts, so reviews
+from outside contributors with Ada/SPARK or static-analysis experience are
+especially valuable.
+
+By participating, you are expected to uphold our
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 Before opening a pull request:
 
@@ -15,9 +22,11 @@ Before opening a pull request:
 5. Keep commits small and explain observable behavior changes in the pull
    request.
 
-Please use GitHub issues for reproducible bug reports and feature proposals.
-Include the analyzer version, host platform, command line, a minimal Ada input,
-and the actual and expected output whenever possible.
+Please use GitHub issues for reproducible bug reports and feature proposals;
+the issue forms prompt for the analyzer version, host platform, command line,
+a minimal Ada input, and the actual and expected output. Found a security
+vulnerability instead? Please follow [SECURITY.md](SECURITY.md) rather than
+filing a public issue.
 
 By contributing, you agree that your contribution is distributed under the
 repository's GNU General Public License, version 3 or any later version.

@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose a new check, CLI option, or other enhancement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the gap or pain point this feature would address.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: >
+        What would you like to see? If proposing a new check, include the
+        Software Quality category, an example of code that should be
+        flagged, and code that should not be.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, references, or relevant standards (e.g. MISRA Ada, DO-178C, ISO 26262) if applicable.
+    validations:
+      required: false
