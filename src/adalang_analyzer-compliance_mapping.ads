@@ -2,8 +2,7 @@
 --
 --  Copyright (C) 2026, Spazio IT
 --
---  AdaLang Analyzer is developed and supported by Spazio IT.
---  This project is not endorsed or sponsored by AdaCore.
+--  Developed, validated, and maintained by Spazio IT.
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
