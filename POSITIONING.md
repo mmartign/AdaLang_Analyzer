@@ -166,6 +166,24 @@ project's own GNATprove switches (an unavailable prover, a step budget tuned
 for that prover, and a report level the project never set), documented in
 `benchmarks/saatana/README.md`.
 
+`benchmarks/libkeccak/` repeats the comparison again on a fourth,
+independently-authored corpus (damaki/libkeccak, SPARK silver level --
+proved free of run-time errors, not functional correctness): across 212
+proof obligations both tools could evaluate at the same location, again
+zero possible unsoundness and zero false positives -- see
+`benchmarks/libkeccak/RESULTS_2026-08-07.md`. This corpus's heavy use of
+generic instantiation (the same permutation and sponge cores instantiated
+once per supported state size and round count) means most obligations
+land in a count-mismatch bucket instead of a 1:1 match, since GNATprove
+reports one message per instantiation site while AdaLang analyzes the
+generic source once; the results document treats this as an expected
+property of the matching design meeting this corpus's coding style, not a
+soundness concern. A candidate corpus considered first,
+Componolit/libsparkcrypto, was set aside after hitting a genuine
+`gnat2why` internal crash on this benchmark suite's GNATprove version,
+blocking most of its hash-related units -- not usable as a same-toolchain
+oracle comparison, and not pursued further.
+
 The intended workflow is:
 
 ```text
