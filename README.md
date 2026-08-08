@@ -712,6 +712,12 @@ For CI systems that consume SARIF:
   --output=adalang.sarif --baseline=adalang.baseline src/*.adb
 ```
 
+SonarQube users can consume these results directly through
+[SonarAdaPlugin](https://github.com/mmartign/SonarAdaPlugin), a SonarQube
+Server extension for Ada that runs AdaLang Analyzer (or imports its JSON
+report) and publishes findings as SonarQube issues alongside AdaControl and
+GNATtest results.
+
 JSON and SARIF reports include an `analysisConfiguration` manifest containing
 the analyzer version, selected preset, exact enabled-rule set, configurable
 thresholds, project and scenario inputs, config and baseline paths, analyzed
