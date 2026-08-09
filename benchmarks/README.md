@@ -169,7 +169,11 @@ can prove. It's also fast (`--verify` on coap_spark: 7.0 s vs. GNATprove's
 it runs on ordinary, non-SPARK Ada: the AWS benchmark shows GNATprove
 couldn't even get past project preprocessing on a real 348-file codebase,
 while AdaLang analyzed it directly and found two real initialization bugs
-in the process.
+in the process. gnatcoll-core repeats the same pattern in a third,
+unrelated domain (a general-purpose utility library, not a web server or
+crypto primitive): GNATprove hard-stops on a SPARK-illegal aspect 41 units
+into the project, while AdaLang completed a full pass and, in the process,
+found and fixed two more real false positives (`FP-043`, `FP-045`).
 
 **Where the tradeoff bites.** AdaLang rarely proves anything independently
 on harder code shapes — on coap_spark it left 835 of 846 comparable
