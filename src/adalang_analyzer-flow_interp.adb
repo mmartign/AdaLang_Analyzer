@@ -33,6 +33,7 @@ with Adalang_Analyzer.VC_Prover;
 package body Adalang_Analyzer.Flow_Interp is
 
    use type Libadalang.Analysis.Ada_Node;
+   use type Libadalang.Analysis.Basic_Decl;
    use type Libadalang.Common.Ada_Node_Kind_Type;
    use type Libadalang.Common.Call_Expr_Kind;
    use type Rules.Rule_Kind;
@@ -403,6 +404,25 @@ package body Adalang_Analyzer.Flow_Interp is
                and then Libadalang.Analysis.Ada_Node
                  (Parent.As_Dotted_Name.F_Prefix) = Current)
               or else
+                --  The suffix climbs exactly like the prefix: naming a
+                --  Dotted_Name's suffix is no more a read of its value
+                --  than naming the prefix is, and judgment defers to the
+                --  Dotted_Name's own outer context either way. Harmless
+                --  for an ordinary "R.Field" (Field resolves to a
+                --  Component_Decl, never Tracked below, so this arm
+                --  never changes the outcome), but required for
+                --  "Subp_Name.Param := ...;" inside "procedure Subp_Name
+                --  (Param : out ...)" (RM 8.3 unit-name qualification,
+                --  the same shape FP-011 fixed for
+                --  SPARK_Readiness.Same_Parameter): without this arm,
+                --  Param -- the suffix -- had no climbable case at all
+                --  and fell straight to "return True" below, misreading
+                --  its own qualified write as a read of an
+                --  uninitialized out parameter (FP-046).
+                (Parent.Kind = Libadalang.Common.Ada_Dotted_Name
+                 and then Libadalang.Analysis.Ada_Node
+                   (Parent.As_Dotted_Name.F_Suffix) = Current)
+              or else
                 (Parent.Kind = Libadalang.Common.Ada_Call_Expr
                  and then Libadalang.Analysis.Ada_Node
                    (Parent.As_Call_Expr.F_Name) = Current)
@@ -422,9 +442,77 @@ package body Adalang_Analyzer.Flow_Interp is
          return True;
    end Initialization_Read_Required;
 
+   --  The nearest enclosing Subp_Body containing Node, i.e. the
+   --  subprogram whose own defining name a nested statement can use to
+   --  prefix-qualify one of its own formal parameters (Ada's general
+   --  unit-name qualification, RM 8.3), typically to reach a parameter
+   --  that a same-named component of an enclosing protected or task
+   --  object would otherwise shadow for simple-name visibility.
+   --  No_Basic_Decl if Node isn't nested in one. Entry_Body is
+   --  deliberately not recognized here, unlike SPARK_Readiness's own
+   --  Enclosing_Subprogram_Or_Entry: Interpret_Subprogram_Flow (the only
+   --  caller reaching this, transitively, through Flow_Assigned_Name)
+   --  only ever descends into Subp_Body, so an entry can never be Node's
+   --  innermost enclosing construct here.
+   function Enclosing_Subp_Body_Decl
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is
+      Current : Libadalang.Analysis.Ada_Node := Libadalang.Analysis.Ada_Node
+        (Node);
+   begin
+      loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Libadalang.Analysis.No_Basic_Decl;
+         elsif Current.Kind = Libadalang.Common.Ada_Subp_Body then
+            return Current.As_Basic_Decl;
+         end if;
+         Current := Current.Parent;
+      end loop;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Enclosing_Subp_Body_Decl;
+
+   --  The Defining_Name of Subprogram's own formal parameter named
+   --  Suffix_Name, or No_Ada_Node if it has none by that name. This is
+   --  the very same Defining_Name node Seed_Parameters uses as the
+   --  parameter's Flow_State key, so returning it here lets a write
+   --  through an own-name-qualified reference update the same binding a
+   --  plain reference to the parameter would.
+   function Matching_Formal_Name
+     (Subprogram  : Libadalang.Analysis.Basic_Decl;
+      Suffix_Name : String) return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      for Param of Subprogram.As_Subp_Body.F_Subp_Spec.P_Params loop
+         for Id of Param.F_Ids loop
+            if Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Id)) =
+              Suffix_Name
+            then
+               return Libadalang.Analysis.Ada_Node (Id);
+            end if;
+         end loop;
+      end loop;
+      return Libadalang.Analysis.No_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Matching_Formal_Name;
+
    --  The defining name written by an assignment whose destination is a
    --  plain identifier, or No_Ada_Node for anything else (a more complex
-   --  destination such as an array or record component).
+   --  destination such as an array or record component) -- except for
+   --  "Subp_Name.Param := ...;" inside "procedure Subp_Name (Param : out
+   --  ...)", where Subp_Name is the enclosing subprogram's own name used
+   --  to qualify Param (RM 8.3), typically to disambiguate it from a
+   --  same-named component of an enclosing protected/task object that
+   --  would otherwise shadow Param for simple-name visibility.
+   --  SPARK_Readiness.Same_Parameter already recognizes this shape for
+   --  the --recommended/Uninitialized_Output path (FP-011); this mirrors
+   --  it for --verify's own, separate initialization tracking, which had
+   --  never received the equivalent fix and so still reported a false
+   --  Definite_Error on writes of this shape (FP-046).
    function Flow_Assigned_Name
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Ada_Node
@@ -432,13 +520,46 @@ package body Adalang_Analyzer.Flow_Interp is
    begin
       if Libadalang.Analysis.Is_Null (Node)
         or else Node.Kind /= Libadalang.Common.Ada_Assign_Stmt
-        or else Node.As_Assign_Stmt.F_Dest.Kind /=
-          Libadalang.Common.Ada_Identifier
       then
          return Libadalang.Analysis.No_Ada_Node;
       end if;
 
-      return Flow_Referenced_Name (Node.As_Assign_Stmt.F_Dest);
+      declare
+         Dest : constant Libadalang.Analysis.Name :=
+           Node.As_Assign_Stmt.F_Dest;
+      begin
+         if Dest.Kind = Libadalang.Common.Ada_Identifier then
+            return Flow_Referenced_Name (Dest);
+         end if;
+
+         if Dest.Kind = Libadalang.Common.Ada_Dotted_Name
+           and then Dest.As_Dotted_Name.F_Suffix.Kind =
+             Libadalang.Common.Ada_Identifier
+         then
+            declare
+               Prefix_Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Dest.As_Dotted_Name.F_Prefix.P_Referenced_Decl
+                   (Imprecise_Fallback => True);
+               Enclosing   : constant Libadalang.Analysis.Basic_Decl :=
+                 Enclosing_Subp_Body_Decl (Node);
+            begin
+               if not Libadalang.Analysis.Is_Null (Enclosing)
+                 and then Prefix_Decl = Enclosing
+               then
+                  return Matching_Formal_Name
+                    (Enclosing,
+                     Text_Utils.Normalize_Rule_Name
+                       (Ada_Text.Node_Text
+                          (Dest.As_Dotted_Name.F_Suffix)));
+               end if;
+            end;
+         end if;
+      end;
+
+      return Libadalang.Analysis.No_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
    end Flow_Assigned_Name;
 
    function Normalized_Text

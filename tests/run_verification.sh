@@ -39,9 +39,10 @@ loop_stale_assert=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-assert.XXXXXX")
 loop_stale_precondition=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-precondition.XXXXXX")
 global_aspect_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-clean.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
+own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -383,6 +384,25 @@ run_json "$global_aspect_guard" \
   tests/verification_global_aspect_reference_guard.adb
 grep -F '"kind": "initialization-check", "status": "definite-error"' \
   "$global_aspect_guard" | grep -F '"operation": "Y"' >/dev/null
+
+#  FP-046: "Subp_Name.Param := ...;" inside "procedure Subp_Name (Param :
+#  out ...)" -- Ada's general unit-name qualification (RM 8.3), typically
+#  used to reach a formal that a same-named component of an enclosing
+#  protected/task object would otherwise shadow for simple-name
+#  visibility -- was misread by Flow_Interp's own initialization
+#  tracking as a read of the (still-uninitialized) parameter rather than
+#  a write to it. SPARK_Readiness.Same_Parameter already recognized this
+#  shape for --recommended/Uninitialized_Output (FP-011); --verify's own,
+#  separate tracking had never received the equivalent fix.
+run_json "$own_name_qualifier" tests/verification_own_name_qualifier.adb
+if grep -F '"kind": "initialization-check", "status": "definite-error"' \
+  "$own_name_qualifier" >/dev/null; then
+   echo "an out parameter written through its own subprogram's" \
+     "name-qualified form was misread as an uninitialized read (FP-046)" \
+     >&2
+   cat "$own_name_qualifier" >&2
+   exit 1
+fi
 
 #  FP-040: a call whose callee is declared in a separate, with'd GNAT
 #  project can make Libadalang's own CallExpr.P_Kind raise Property_Error
