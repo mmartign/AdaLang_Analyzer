@@ -758,6 +758,31 @@ package body Adalang_Analyzer.SPARK_Readiness is
    --  themselves, and bodies are only considered at all when no spec
    --  anywhere in scope has a matching arity (i.e. every visible candidate
    --  is a body acting as its own declaration).
+   --
+   --  P_All_Env_Elements is called with Seq => False. With the default
+   --  Seq => True, Libadalang filters out elements lexically declared
+   --  after the call, relative to the call's own position -- but a call
+   --  made from inside one overload's body to a sibling overload declared
+   --  later in the same package spec is exactly this shape, and the
+   --  sibling is fully visible there regardless of declaration order (the
+   --  whole spec is visible to every one of its own bodies). Confirmed via
+   --  FP-044: with Seq => True (the previous behavior), this returns only
+   --  the single, wrong (enclosing) candidate for such a call, silently
+   --  starving this whole fallback of the one candidate it exists to find.
+   function Total_Formal_Count
+     (Spec : Libadalang.Analysis.Base_Subp_Spec) return Natural
+   is
+      Count : Natural := 0;
+   begin
+      if Libadalang.Analysis.Is_Null (Spec) then
+         return 0;
+      end if;
+      for Formal of Spec.P_Params loop
+         Count := Count + Formal.F_Ids.Children_Count;
+      end loop;
+      return Count;
+   end Total_Formal_Count;
+
    function Callee_Candidate_By_Arity
      (Call : Libadalang.Analysis.Call_Expr'Class)
       return Libadalang.Analysis.Base_Subp_Spec
@@ -770,7 +795,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
          Result : Libadalang.Analysis.Base_Subp_Spec :=
            Libadalang.Analysis.No_Base_Subp_Spec;
       begin
-         for Candidate of Call.F_Name.P_All_Env_Elements loop
+         for Candidate of
+           Call.F_Name.P_All_Env_Elements (Seq => False)
+         loop
             if not Libadalang.Analysis.Is_Null (Candidate)
               and then Candidate.Kind in Libadalang.Common.Ada_Basic_Decl
               and then
@@ -779,22 +806,18 @@ package body Adalang_Analyzer.SPARK_Readiness is
                    Libadalang.Common.Ada_Subp_Body)
             then
                declare
-                  Spec  : constant Libadalang.Analysis.Base_Subp_Spec :=
+                  Spec : constant Libadalang.Analysis.Base_Subp_Spec :=
                     Candidate.As_Basic_Decl.P_Subp_Spec_Or_Null;
-                  Count : Natural := 0;
                begin
-                  if not Libadalang.Analysis.Is_Null (Spec) then
-                     for Formal of Spec.P_Params loop
-                        Count := Count + Formal.F_Ids.Children_Count;
-                     end loop;
-                     if Count = Actual_Count then
-                        if not Libadalang.Analysis.Is_Null (Result) then
-                           --  More than one same-arity candidate of this
-                           --  kind: really ambiguous.
-                           return Libadalang.Analysis.No_Base_Subp_Spec;
-                        end if;
-                        Result := Spec;
+                  if not Libadalang.Analysis.Is_Null (Spec)
+                    and then Total_Formal_Count (Spec) = Actual_Count
+                  then
+                     if not Libadalang.Analysis.Is_Null (Result) then
+                        --  More than one same-arity candidate of this
+                        --  kind: really ambiguous.
+                        return Libadalang.Analysis.No_Base_Subp_Spec;
                      end if;
+                     Result := Spec;
                   end if;
                end;
             end if;
@@ -879,10 +902,27 @@ package body Adalang_Analyzer.SPARK_Readiness is
    --  candidate, and Callee_Candidate_By_Arity is retried instead. A
    --  further instance of the general resolution fragility already worked
    --  around for FP-008/FP-012/FP-018.
+   --
+   --  The same wrong-overload resolution can also land on a candidate
+   --  that DOES have a formal at Position, purely because that candidate
+   --  happens to have at least Position formals of its own -- Formal_At
+   --  then returns a plausible-looking but wrong-identity Defining_Name
+   --  instead of Null, silently skipping the Callee_Candidate_By_Arity
+   --  retry that exists precisely to catch this (FP-044). Guarded by
+   --  rejecting the primary resolution when the call has more actuals
+   --  than it has formals -- impossible for a legal call, and therefore
+   --  proof Callee is the wrong same-named overload. Deliberately not the
+   --  stricter "formal counts must match exactly": a correctly-resolved
+   --  callee can legally have more formals than the call has actuals
+   --  when trailing ones default, an ordinary and common shape (observed
+   --  live on GNATCOLL's own Full_Parse calls) that an exact-equality
+   --  gate would otherwise wrongly distrust.
    function Callee_Formal_At_Position
      (Call     : Libadalang.Analysis.Call_Expr'Class;
       Position : Positive) return Libadalang.Analysis.Defining_Name
    is
+      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
 
@@ -906,11 +946,30 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Defining_Name;
       end Formal_At;
 
+      Primary_Spec : Libadalang.Analysis.Base_Subp_Spec :=
+        Libadalang.Analysis.No_Base_Subp_Spec;
+
       Result : Libadalang.Analysis.Defining_Name :=
         Libadalang.Analysis.No_Defining_Name;
    begin
       if not Libadalang.Analysis.Is_Null (Callee) then
-         Result := Formal_At (Callee.P_Subp_Spec_Or_Null);
+         Primary_Spec := Callee.P_Subp_Spec_Or_Null;
+
+         --  Trust the primary (name-only) resolution only when it has
+         --  enough formals to legally accept this call -- Actual_Count
+         --  formals with defaults omitted is fine (a call with fewer
+         --  actuals than a correctly-resolved callee's own formal count
+         --  is ordinary and common; requiring exact equality here broke
+         --  it, observed live on GNATCOLL's own Full_Parse calls, which
+         --  omit trailing defaulted actuals), but Actual_Count exceeding
+         --  the resolved spec's own formal count is impossible for a
+         --  legal call and proves Callee is the wrong same-named
+         --  overload (see FP-044).
+         if not Libadalang.Analysis.Is_Null (Primary_Spec)
+           and then Actual_Count <= Total_Formal_Count (Primary_Spec)
+         then
+            Result := Formal_At (Primary_Spec);
+         end if;
          if Libadalang.Analysis.Is_Null (Result) then
             Result := Formal_At (Access_To_Subprogram_Profile (Callee));
          end if;
@@ -933,11 +992,15 @@ package body Adalang_Analyzer.SPARK_Readiness is
    --  Callee_Formal_At_Position cannot help with either, since that one
    --  only applies to purely positional actuals. Falls back to
    --  Callee_Candidate_By_Arity on the same "resolved to a same-named
-   --  sibling with no such formal" condition as Callee_Formal_At_Position.
+   --  sibling with no such formal" condition as Callee_Formal_At_Position,
+   --  and guarded by the same arity check against a wrong-identity formal
+   --  that happens to share Designator_Name's spelling (FP-044).
    function Callee_Formal_By_Name
      (Call            : Libadalang.Analysis.Call_Expr'Class;
       Designator_Name : String) return Libadalang.Analysis.Defining_Name
    is
+      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
 
@@ -959,11 +1022,24 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Defining_Name;
       end Formal_Named;
 
+      Primary_Spec : Libadalang.Analysis.Base_Subp_Spec :=
+        Libadalang.Analysis.No_Base_Subp_Spec;
+
       Result : Libadalang.Analysis.Defining_Name :=
         Libadalang.Analysis.No_Defining_Name;
    begin
       if not Libadalang.Analysis.Is_Null (Callee) then
-         Result := Formal_Named (Callee.P_Subp_Spec_Or_Null);
+         Primary_Spec := Callee.P_Subp_Spec_Or_Null;
+
+         --  Same relaxed arity gate as Callee_Formal_At_Position, and for
+         --  the same reason (FP-044): reject the primary resolution only
+         --  when it provably cannot accept this call, not merely when its
+         --  formal count differs (defaulted trailing actuals are normal).
+         if not Libadalang.Analysis.Is_Null (Primary_Spec)
+           and then Actual_Count <= Total_Formal_Count (Primary_Spec)
+         then
+            Result := Formal_Named (Primary_Spec);
+         end if;
          if Libadalang.Analysis.Is_Null (Result) then
             Result := Formal_Named (Access_To_Subprogram_Profile (Callee));
          end if;

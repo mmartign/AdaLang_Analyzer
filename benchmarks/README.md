@@ -123,13 +123,16 @@ there.
   walk missing a guard `Checks.Data_Flow`'s separate walk already had) and
   `FP-045` (all 18 of `--recommended`'s `Reversed_Range` findings: Ada's own
   `Low .. Low - 1` empty-array idiom flagged as a swapped-bounds mistake).
-  Root-caused but left open as `FP-044`: a deeper gap in the overload-arity
-  fallback `FP-021` added, found on 2 residual `Uninitialized_Output`
-  findings.
+  Also root-caused and fixed at the mechanism level, `FP-044`: a deeper gap
+  in the overload-arity fallback `FP-021` added, found on 2 residual
+  `Uninitialized_Output` findings; the two findings that found it persist
+  regardless, since they sit behind a separate, still-open Property_Error
+  (the same general class as `FP-029`) that keeps the fixed code path from
+  ever being reached for them in this environment.
 
 ## What these benchmarks have found, in total
 
-Seven real analyzer bugs, all discovered by running against independently
+Eight real analyzer bugs, all discovered by running against independently
 authored code no one on this project wrote or reviewed for analyzer
 blind spots — the value external-corpus validation is meant to deliver
 (`quality/external_corpus_findings.md`), each fixed with a regression test:
@@ -142,11 +145,15 @@ blind spots — the value external-corpus validation is meant to deliver
 | `FP-040` | cubedos | A Libadalang property failure escaped its containing function, aborting whole-file analysis |
 | `FP-042` | ada_drivers_library | `limited with` misread as an ordinary circular-dependency edge |
 | `FP-043` | gnatcoll | A `pragma Unreferenced` argument misread as a value read, in a second initialization walk `Checks.Data_Flow`'s own guard didn't cover |
+| `FP-044` | gnatcoll | A gap in the overload-arity fallback `FP-021` added: a wrong same-named-overload resolution could still be trusted when it coincidentally had a formal at the queried position |
 | `FP-045` | gnatcoll | Ada's `Low .. Low - 1` empty-array idiom flagged as a reversed range |
 
-One further false positive, `FP-044` (a gap in the overload-arity fallback
-`FP-021` added, found on gnatcoll), was root-caused but left open — see
-`quality/known_analysis_issues.tsv` for the full trace.
+`FP-044`'s own two originating findings (gnatcoll-buffer.adb's
+`Current_Text_Position`) persist despite the fix, unlike every other row
+above: they sit behind a separate, still-open Property_Error (`FP-029`'s
+general class) that keeps the fixed code path from ever being reached for
+them in this environment — see `quality/known_analysis_issues.tsv` for the
+full trace.
 
 Every fix is closed, regression-tested, and confirmed not to blunt genuine
 detection nearby (each `RESULTS_*.md` above documents the specific
