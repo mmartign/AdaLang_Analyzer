@@ -37,9 +37,19 @@ the derived, single-body-excluded flow experiment described below.
 `run.sh` verifies both revisions, derives the configured target directory from
 the active Alire compiler, and runs:
 
-- AdaLang `--recommended`, `--spark`, and `--verify` against `src/src.gpr`;
+- AdaLang `--recommended`, `--spark`, `--verify`, and `--automotive` against
+  `src/src.gpr`;
 - GNATprove `--mode=flow` and `--mode=prove --level=0` against the same project;
 - machine-readable JSON summaries and POSIX timing files.
+
+The `--automotive` lane exists to exercise the concurrency-prohibition
+checks (`No_Select`, `No_Requeue`, `No_Abort`, `No_Rendezvous`,
+`No_Asynchronous_Transfer`) against real full-tasking code: unlike the
+Ravenscar-restricted embedded corpora here (`ada_drivers_library`), AWS's
+own core server code (`aws-server.adb`, `aws-net-acceptors.adb`,
+`aws-session.adb`, `aws-server-push.adb`, and others) genuinely uses
+`select`, `requeue`, and `abort`, so this is the corpus that confirms those
+checks' true-positive behavior on unmodified, independently authored code.
 
 The AWS build configuration is static, debug, standard sockets, XML/Ada
 enabled, Libadalang-based AWS tools disabled, and LDAP disabled. The root

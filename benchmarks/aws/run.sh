@@ -72,9 +72,10 @@ run_adalang () {
 run_adalang recommended --recommended
 run_adalang spark --spark
 run_adalang verify --verify
+run_adalang automotive --automotive
 
 if command -v jq >/dev/null 2>&1; then
-   for lane in recommended spark verify; do
+   for lane in recommended spark verify automotive; do
       jq '{
         analyzedFiles: (.analysisConfiguration.analyzedFiles | length),
         findings: (.findings | length),

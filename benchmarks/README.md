@@ -91,8 +91,8 @@ there.
 
 | Corpus | Author | Domain | Purpose |
 | --- | --- | --- | --- |
-| [aws](aws/) | AdaCore | Ada Web Server, ordinary (non-SPARK) Ada | Breadth on a large real project; GNATprove never got past project preprocessing |
-| [ada_drivers_library](ada_drivers_library/) | AdaCore | STM32 bare-metal hardware drivers | Real tasking/protected-object code for the `--automotive` concurrency-prohibition checks |
+| [aws](aws/) | AdaCore | Ada Web Server, ordinary (non-SPARK) Ada | Breadth on a large real project; GNATprove never got past project preprocessing; also the corpus with genuine unrestricted `select`/`requeue`/`abort` for the `--automotive` concurrency-prohibition checks |
+| [ada_drivers_library](ada_drivers_library/) | AdaCore | STM32 bare-metal hardware drivers | Real Ravenscar `protected`-object code for the `--automotive` concurrency-prohibition checks (no `select`/`requeue`/`abort` — see aws) |
 | [gnatcoll](gnatcoll/) | AdaCore | GNAT Components Collection core (JSON, VFS, strings, email, OS/process), ordinary (non-SPARK) Ada | A third breadth corpus in a new domain (general-purpose utility library); GNATprove hard-stops on a SPARK-illegal aspect 41 units in |
 
 - **[aws](aws/RESULTS_2026-08-02.md)** (2026-08-02) — 348 files of ordinary
@@ -108,11 +108,23 @@ there.
   (2026-08-05) — 90 STM32 driver files, almost none SPARK-annotated. Exists
   specifically to test the six `--automotive`-only concurrency-prohibition
   checks against real interrupt-driven `protected` code (this corpus has no
-  `task`/`select`/`requeue` to exercise, so those three checks' true-positive
-  behavior is still unconfirmed): `No_Rendezvous` correctly fired on all 5
-  real `entry` declarations, the rest correctly stayed silent. Found and
-  fixed `FP-042`: `limited with` was being treated as an ordinary
-  circular-dependency edge.
+  `task`/`select`/`requeue` to exercise, so three of those checks'
+  true-positive behavior was left unconfirmed here): `No_Rendezvous`
+  correctly fired on all 5 real `entry` declarations, the rest correctly
+  stayed silent. Found and fixed `FP-042`: `limited with` was being treated
+  as an ordinary circular-dependency edge.
+- **[aws](aws/RESULTS_2026-08-09.md)** (2026-08-09) — a re-run of the same
+  348-file AWS corpus, this time also under `--automotive`, closing the gap
+  `ada_drivers_library` left open: AWS's own core server code (not its
+  regression tests) genuinely uses `select`/`requeue`/`abort` in ordinary,
+  unrestricted tasking (`aws-net-acceptors.adb`, `aws-server.adb`,
+  `aws-session.adb`, `aws-server-push.adb`, `aws-smtp-server.adb`, and
+  others), and `No_Select` (9), `No_Requeue` (4), `No_Abort` (1), and
+  `No_Rendezvous` (34) all fired correctly on it, spot-checked against the
+  real source. Also surfaced one new, not-yet-fixed `--verify`
+  initialization false positive distinct from the already-fixed `FP-011`
+  (same self-qualified-out-parameter shape, but in `--verify`'s own,
+  separate initialization-tracking engine, which never got `FP-011`'s fix).
 - **[gnatcoll](gnatcoll/RESULTS_2026-08-09.md)** (2026-08-09) — a third
   breadth corpus, in a new domain again (general-purpose utility library:
   JSON, VFS, string builders, email parsing, OS/process wrappers), and the
