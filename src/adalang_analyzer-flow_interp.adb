@@ -348,6 +348,41 @@ package body Adalang_Analyzer.Flow_Interp is
          return True;
       end if;
 
+      --  A pragma argument naming an entity ("Status" in "pragma
+      --  Unreferenced (Status);") is never read at runtime: it merely
+      --  names the declaration without inspecting its value, the same
+      --  reasoning Checks.Data_Flow's Uninitialized_Read walk already
+      --  applies to this exact node shape. Without this guard, the
+      --  climbing loop below falls through its assignment-target/prefix
+      --  cases to "return True", misreading the pragma argument as a
+      --  definite read before the object's real first assignment.
+      --  Observed in the wild (gnatcoll-core's GNATCOLL.OS.FS.Close and
+      --  GNATCOLL.Plugins.Unload): "Status : int; pragma Unreferenced
+      --  (Status); begin Status := C_Close (FD); end;" flagged as a
+      --  definite initialization error at the pragma, two statements
+      --  before the assignment that actually initializes Status.
+      if Current.Parent.Kind = Libadalang.Common.Ada_Pragma_Argument_Assoc
+        and then not Libadalang.Analysis.Is_Null (Current.Parent.Parent)
+        and then not Libadalang.Analysis.Is_Null
+          (Current.Parent.Parent.Parent)
+        and then Current.Parent.Parent.Parent.Kind =
+          Libadalang.Common.Ada_Pragma_Node
+      then
+         declare
+            Pragma_Name : constant String :=
+              Text_Utils.Normalize_Rule_Name
+                (Ada_Text.Node_Text
+                   (Current.Parent.Parent.Parent.As_Pragma_Node.F_Id));
+         begin
+            if Pragma_Name = "unreferenced"
+              or else Pragma_Name = "unmodified"
+              or else Pragma_Name = "warnings"
+            then
+               return False;
+            end if;
+         end;
+      end if;
+
       loop
          if Is_Nonvalue_Attribute (Current) then
             return False;

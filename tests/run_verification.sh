@@ -10,6 +10,7 @@ many=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-many.XXXXXX")
 initialization=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-init.XXXXXX")
 initialization_defaults=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-init-defaults.XXXXXX")
 initialization_rename=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-init-rename.XXXXXX")
+initialization_pragma_unreferenced=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-init-pragma-unref.XXXXXX")
 exception_model=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-exception.XXXXXX")
 vc_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-clean.XXXXXX")
 vc_error=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-error.XXXXXX")
@@ -40,7 +41,7 @@ global_aspect_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-clean.XXXXXX
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -145,6 +146,14 @@ run_json "$initialization_rename" \
   tests/verification_initialization_rename_error.adb
 grep -F '"kind": "initialization-check", "status": "definite-error"' \
   "$initialization_rename" >/dev/null
+
+run_json "$initialization_pragma_unreferenced" \
+  tests/verification_initialization_pragma_unreferenced_clean.adb
+if grep -F '"kind": "initialization-check", "status": "definite-error"' \
+  "$initialization_pragma_unreferenced" >/dev/null; then
+   echo "pragma Unreferenced argument was classified as a definite read" >&2
+   exit 1
+fi
 
 run_json "$exception_model" tests/verification_exception_model.adb
 grep -F '"kind": "division-by-zero", "status": "unproved"' \

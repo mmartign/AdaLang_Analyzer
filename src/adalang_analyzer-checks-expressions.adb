@@ -222,6 +222,20 @@ package body Adalang_Analyzer.Checks.Expressions is
         and then Left_Int.Known
         and then Right_Int.Known
         and then Left_Int.Value > Right_Int.Value
+
+        --  "Low .. Low - 1" (canonically "1 .. 0") is Ada's own idiom for a
+        --  statically empty range/array -- "return (1 .. 0 => <>);" for an
+        --  empty-array function result, or "Empty : constant T (1 .. 0) :=
+        --  (others => <>);" for an empty-array constant -- not a swapped-
+        --  bounds mistake. Only a wider gap between the bounds still counts
+        --  as reversed, since a real typo (e.g. "10 .. 1" meant to be
+        --  "1 .. 10") virtually never happens to land exactly one short of
+        --  empty. Found while validating against gnatcoll-core
+        --  (AdaCore/gnatcoll-core, see benchmarks/gnatcoll/): all 18
+        --  Reversed_Range findings in that corpus were this exact idiom,
+        --  every one spelled "1 .. 0" -- a 100% false-positive rate for
+        --  the rule as it stood (FP-045).
+        and then Left_Int.Value /= Right_Int.Value + 1
       then
          Report_Rule_Violation
            (Unit, Expr, Reversed_Range,

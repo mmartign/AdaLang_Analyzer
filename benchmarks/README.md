@@ -93,6 +93,7 @@ there.
 | --- | --- | --- | --- |
 | [aws](aws/) | AdaCore | Ada Web Server, ordinary (non-SPARK) Ada | Breadth on a large real project; GNATprove never got past project preprocessing |
 | [ada_drivers_library](ada_drivers_library/) | AdaCore | STM32 bare-metal hardware drivers | Real tasking/protected-object code for the `--automotive` concurrency-prohibition checks |
+| [gnatcoll](gnatcoll/) | AdaCore | GNAT Components Collection core (JSON, VFS, strings, email, OS/process), ordinary (non-SPARK) Ada | A third breadth corpus in a new domain (general-purpose utility library); GNATprove hard-stops on a SPARK-illegal aspect 41 units in |
 
 - **[aws](aws/RESULTS_2026-08-02.md)** (2026-08-02) — 348 files of ordinary
   Ada. GNATprove couldn't run at all (legality errors, then a boundary
@@ -112,10 +113,23 @@ there.
   real `entry` declarations, the rest correctly stayed silent. Found and
   fixed `FP-042`: `limited with` was being treated as an ordinary
   circular-dependency edge.
+- **[gnatcoll](gnatcoll/RESULTS_2026-08-09.md)** (2026-08-09) — a third
+  breadth corpus, in a new domain again (general-purpose utility library:
+  JSON, VFS, string builders, email parsing, OS/process wrappers), and the
+  first to turn up a false positive in a plain `--recommended` rule rather
+  than the bounded verifier or a cross-cutting dependency check. Found and
+  fixed `FP-043` (both of `--verify`'s `Definite_Error` outcomes: a
+  `pragma Unreferenced` argument misread as a value read, one initialization
+  walk missing a guard `Checks.Data_Flow`'s separate walk already had) and
+  `FP-045` (all 18 of `--recommended`'s `Reversed_Range` findings: Ada's own
+  `Low .. Low - 1` empty-array idiom flagged as a swapped-bounds mistake).
+  Root-caused but left open as `FP-044`: a deeper gap in the overload-arity
+  fallback `FP-021` added, found on 2 residual `Uninitialized_Output`
+  findings.
 
 ## What these benchmarks have found, in total
 
-Five real analyzer bugs, all discovered by running against independently
+Seven real analyzer bugs, all discovered by running against independently
 authored code no one on this project wrote or reviewed for analyzer
 blind spots — the value external-corpus validation is meant to deliver
 (`quality/external_corpus_findings.md`), each fixed with a regression test:
@@ -127,6 +141,12 @@ blind spots — the value external-corpus validation is meant to deliver
 | `FP-039` | sparknacl | A `Global` aspect's own text misread as an executable read |
 | `FP-040` | cubedos | A Libadalang property failure escaped its containing function, aborting whole-file analysis |
 | `FP-042` | ada_drivers_library | `limited with` misread as an ordinary circular-dependency edge |
+| `FP-043` | gnatcoll | A `pragma Unreferenced` argument misread as a value read, in a second initialization walk `Checks.Data_Flow`'s own guard didn't cover |
+| `FP-045` | gnatcoll | Ada's `Low .. Low - 1` empty-array idiom flagged as a reversed range |
+
+One further false positive, `FP-044` (a gap in the overload-arity fallback
+`FP-021` added, found on gnatcoll), was root-caused but left open — see
+`quality/known_analysis_issues.tsv` for the full trace.
 
 Every fix is closed, regression-tested, and confirmed not to blunt genuine
 detection nearby (each `RESULTS_*.md` above documents the specific
