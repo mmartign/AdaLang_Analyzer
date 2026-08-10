@@ -2,12 +2,15 @@
 /obj/
 /benchmark-results/
 
-# alr regenerates this per machine. It pins "system" origins (e.g. libgmp)
-# to the resolving platform's package manager and name, which does not
-# carry over between macOS and Linux -- see the CI workflow's git history
-# for the Ubuntu breakage this caused when it was committed.
-/alire/alire.lock
-/alire/alire.lock.prev
+# alr's private working-state cache, not source: alire.lock pins "system"
+# origins (e.g. libgmp) to the resolving platform's package manager and
+# name, which does not carry over between macOS and Linux -- see the CI
+# workflow's git history for the Ubuntu breakage this caused when it was
+# committed. build_hash_inputs/settings.toml/flags/ are per-machine build
+# state, and alire.toml.prev has even been caught holding a stale manifest
+# from an unrelated crate. None of it belongs in version control; the real
+# manifest is the top-level alire.toml, outside this directory.
+/alire/
 
 # Same reasoning: these are alr-generated config mirrors (host OS/arch/distro
 # baked in at resolve time) written to both the project root and config/.
