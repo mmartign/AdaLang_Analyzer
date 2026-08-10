@@ -16,6 +16,7 @@ with Ada.Characters.Latin_1;
 with Ada.Characters.Handling;
 with Ada.Command_Line;
 with Ada.Directories;
+with Ada.Environment_Variables;
 with Ada.Exceptions;
 with Ada.Strings;
 with Ada.Strings.Fixed;
@@ -734,6 +735,181 @@ package body Adalang_Analyzer.CLI is
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    end Process_File;
 
+   --  Best-effort fallback for the "gnatls" lookup below: when it is not on
+   --  PATH, an Alire-managed toolchain may still be present locally (e.g.
+   --  the binary was built with "alr build" but is now being run directly
+   --  instead of via "alr exec --"). Reads Alire's own global settings to
+   --  find the selected gnat toolchain and locates its bin/ directory under
+   --  Alire's toolchain cache, without requiring "alr exec" to be used for
+   --  every invocation. Returns "" if nothing can be found; the caller then
+   --  falls back to the pre-existing warning, so a wrong guess here (e.g.
+   --  the Windows paths, which are unverified) never regresses behavior.
+   function Locate_Alire_Gnatls_Dir return String is
+      function Env (Name : String) return String is
+        (Ada.Environment_Variables.Value (Name, ""));
+
+      --  Alire keeps its global settings under the XDG config directory
+      --  (also the macOS default: confirmed against a live "alr" install),
+      --  with an unverified best-effort guess at the Windows equivalent.
+      function Settings_Path return String is
+         Xdg  : constant String := Env ("XDG_CONFIG_HOME");
+         Home : constant String := Env ("HOME");
+         Ad   : constant String := Env ("APPDATA");
+      begin
+         if Xdg /= ""
+           and then Ada.Directories.Exists (Xdg & "/alire/settings.toml")
+         then
+            return Xdg & "/alire/settings.toml";
+         elsif Home /= ""
+           and then Ada.Directories.Exists
+                      (Home & "/.config/alire/settings.toml")
+         then
+            return Home & "/.config/alire/settings.toml";
+         elsif Ad /= ""
+           and then Ada.Directories.Exists (Ad & "\alire\settings.toml")
+         then
+            return Ad & "\alire\settings.toml";
+         else
+            return "";
+         end if;
+      end Settings_Path;
+
+      function Toolchains_Dir return String is
+         Xdg   : constant String := Env ("XDG_DATA_HOME");
+         Home  : constant String := Env ("HOME");
+         Local : constant String := Env ("LOCALAPPDATA");
+      begin
+         if Xdg /= ""
+           and then Ada.Directories.Exists (Xdg & "/alire/toolchains")
+         then
+            return Xdg & "/alire/toolchains";
+         elsif Home /= ""
+           and then Ada.Directories.Exists
+                      (Home & "/.local/share/alire/toolchains")
+         then
+            return Home & "/.local/share/alire/toolchains";
+         elsif Local /= ""
+           and then Ada.Directories.Exists (Local & "\alire\toolchains")
+         then
+            return Local & "\alire\toolchains";
+         else
+            return "";
+         end if;
+      end Toolchains_Dir;
+
+      --  Parses the TOML "[toolchain.use]" section's "gnat = " entry (e.g.
+      --  gnat = "gnat_native=16.1.0") into the directory-name prefix Alire
+      --  uses for that toolchain's cache entry, e.g. "gnat_native_16.1.0_"
+      --  (the trailing content-hash segment varies per machine, so only
+      --  the prefix is matched).
+      function Selected_Toolchain_Prefix return String is
+         Path    : constant String := Settings_Path;
+         File    : Ada.Text_IO.File_Type;
+         Section : Ada.Strings.Unbounded.Unbounded_String;
+      begin
+         if Path = "" then
+            return "";
+         end if;
+
+         Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Path);
+         while not Ada.Text_IO.End_Of_File (File) loop
+            declare
+               Line : constant String :=
+                 Ada.Strings.Fixed.Trim
+                   (Ada.Text_IO.Get_Line (File), Ada.Strings.Both);
+            begin
+               if Line'Length >= 2
+                 and then Line (Line'First) = '['
+                 and then Line (Line'Last) = ']'
+               then
+                  Section :=
+                    Ada.Strings.Unbounded.To_Unbounded_String
+                      (Line (Line'First + 1 .. Line'Last - 1));
+               elsif Ada.Strings.Unbounded.To_String (Section) =
+                       "toolchain.use"
+               then
+                  declare
+                     Eq : constant Natural :=
+                       Ada.Strings.Fixed.Index (Line, "=");
+                  begin
+                     if Eq > 0
+                       and then Ada.Strings.Fixed.Trim
+                                  (Line (Line'First .. Eq - 1),
+                                   Ada.Strings.Both) =
+                                "gnat"
+                     then
+                        declare
+                           Raw : constant String :=
+                             Ada.Strings.Fixed.Trim
+                               (Line (Eq + 1 .. Line'Last),
+                                Ada.Strings.Both);
+                           Value : constant String :=
+                             (if Raw'Length >= 2
+                                and then Raw (Raw'First) = '"'
+                                and then Raw (Raw'Last) = '"'
+                              then Raw (Raw'First + 1 .. Raw'Last - 1)
+                              else Raw);
+                           Inner_Eq : constant Natural :=
+                             Ada.Strings.Fixed.Index (Value, "=");
+                        begin
+                           if Inner_Eq > 0 then
+                              Ada.Text_IO.Close (File);
+                              return
+                                Value (Value'First .. Inner_Eq - 1) & "_" &
+                                Value (Inner_Eq + 1 .. Value'Last) & "_";
+                           end if;
+                        end;
+                     end if;
+                  end;
+               end if;
+            end;
+         end loop;
+         Ada.Text_IO.Close (File);
+         return "";
+      end Selected_Toolchain_Prefix;
+
+      Prefix : constant String := Selected_Toolchain_Prefix;
+      Base   : constant String := Toolchains_Dir;
+      Exe    : constant String :=
+        (if Env ("OS") = "Windows_NT" then "gnatls.exe" else "gnatls");
+      Search : Ada.Directories.Search_Type;
+      Item   : Ada.Directories.Directory_Entry_Type;
+   begin
+      if Prefix = "" or else Base = "" then
+         return "";
+      end if;
+
+      Ada.Directories.Start_Search
+        (Search, Base, "",
+         (Ada.Directories.Directory => True, others => False));
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Item);
+         declare
+            Name : constant String := Ada.Directories.Simple_Name (Item);
+         begin
+            if Name'Length > Prefix'Length
+              and then Name (Name'First .. Name'First + Prefix'Length - 1) =
+                         Prefix
+            then
+               declare
+                  Bin_Dir : constant String :=
+                    Ada.Directories.Full_Name (Item) & "/bin";
+               begin
+                  if Ada.Directories.Exists (Bin_Dir & "/" & Exe) then
+                     Ada.Directories.End_Search (Search);
+                     return Bin_Dir;
+                  end if;
+               end;
+            end if;
+         end;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      return "";
+   exception
+      when others =>
+         return "";
+   end Locate_Alire_Gnatls_Dir;
+
    procedure Run is
       Files_To_Process   : File_Name_Vectors.Vector;
       Project_Gpr_Files  : File_Name_Vectors.Vector;
@@ -1258,6 +1434,20 @@ package body Adalang_Analyzer.CLI is
          Gnatls : GNAT.OS_Lib.String_Access :=
            GNAT.OS_Lib.Locate_Exec_On_Path ("gnatls");
       begin
+         if Gnatls = null then
+            declare
+               Alire_Bin : constant String := Locate_Alire_Gnatls_Dir;
+            begin
+               if Alire_Bin /= "" then
+                  Ada.Environment_Variables.Set
+                    ("PATH",
+                     Alire_Bin & GNAT.OS_Lib.Path_Separator &
+                     Ada.Environment_Variables.Value ("PATH", ""));
+                  Gnatls := GNAT.OS_Lib.Locate_Exec_On_Path ("gnatls");
+               end if;
+            end;
+         end if;
+
          if Gnatls = null then
             Ada.Text_IO.Put_Line
               (Ada.Text_IO.Standard_Error,
