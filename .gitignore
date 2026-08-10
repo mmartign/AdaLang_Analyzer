@@ -9,4 +9,15 @@
 /alire/alire.lock
 /alire/alire.lock.prev
 
+# Same reasoning: these are alr-generated config mirrors (host OS/arch/distro
+# baked in at resolve time) written to both the project root and config/.
+# Committing them caused the exact cross-platform breakage described above,
+# this time for Alire_Host_OS/Arch/Distro on a Linux deployment.
+/adalang_analyzer_config.gpr
+/adalang_analyzer_config.ads
+/adalang_analyzer_config.h
+/config/adalang_analyzer_config.gpr
+/config/adalang_analyzer_config.ads
+/config/adalang_analyzer_config.h
+
 /CLAUDE.md
