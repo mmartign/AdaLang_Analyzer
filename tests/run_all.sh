@@ -19,6 +19,7 @@ for test_script in \
   tests/run_precision_corpus.sh \
   tests/run_circular_dependencies.sh \
   tests/run_cli_robustness.sh \
+  tests/run_cli_parameter_effects.sh \
   tests/run_config_file.sh \
   tests/run_reporting.sh \
   tests/run_recommended.sh \
