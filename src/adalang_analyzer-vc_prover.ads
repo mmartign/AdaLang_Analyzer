@@ -61,6 +61,27 @@ package Adalang_Analyzer.VC_Prover is
       State     : Adalang_Analyzer.Flow_Domain.Flow_State;
       Symbols   : Symbolic_State) return VC_Result;
 
+   function Decide_Bounds
+     (Value   : Libadalang.Analysis.Expr'Class;
+      Bounds  : Adalang_Analyzer.Flow_Domain.Abstract_Range;
+      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Result;
+   --  As Decide, but for a containment goal (Bounds.Low <= Value and/or
+   --  Value <= Bounds.High, whichever side Bounds supplies) synthesized
+   --  from Value's own translated term instead of a literal source
+   --  condition. This is the query shape a range, index, or overflow check
+   --  needs: none of them have a source Expr spelling out their own
+   --  in-bounds condition the way an Assert or Loop_Invariant does.
+   --  VC_Unsupported when Bounds carries neither side.
+
+   function Decide_Nonzero
+     (Value   : Libadalang.Analysis.Expr'Class;
+      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Result;
+   --  As Decide_Bounds, for Division_By_Zero_Check's "divisor /= 0" goal,
+   --  which Abstract_Range cannot express (a single excluded point, not a
+   --  bound).
+
    function Evidence return String;
 
 private

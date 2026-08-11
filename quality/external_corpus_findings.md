@@ -1514,3 +1514,83 @@ findings; GNATprove's whole-project, fully-elaborated model does not, and
 an 8-year-old embedded project needs real toolchain-currency work before
 GNATprove can even start, independent of anything about the SPARK content
 of the flight-control code itself.
+
+## Relational fallback for `--verify`: shadow-query measurement (2026-08-11)
+
+The Tokeneer section above quantifies "the current non-relational range
+domain is inconclusive" as the single largest imprecision reason across that
+corpus (1505 occurrences), and `POSITIONING.md` names "validation and
+careful expansion of that [verify] boundary" as this project's own stated
+strategic direction. The natural candidate is extending `VC_Prover`'s
+existing dual-solver (CVC5/Z3, UNSAT-agreement-gated) bridge — already used
+for `Assert`/`Loop_Invariant`/precondition/postcondition obligations — to
+also decide range-check, index-check, division-by-zero, and
+integer-overflow obligations the interval domain (`Flow_Domain`) leaves
+`Unproved`. Rather than build and ship that fallback speculatively, its
+payoff and cost were measured first with throwaway shadow instrumentation:
+two new `VC_Prover` entry points, `Decide_Bounds` (a containment goal
+synthesized from an `Abstract_Range` instead of a literal source condition)
+and `Decide_Nonzero` (an excluded-point goal for the divisor case), sharing
+the same `Decide_Goal` solver core the existing `Decide` was refactored to
+use. These two functions are kept in `VC_Prover` (unused by any caller) as
+the one part of this exercise worth keeping regardless of the outcome below.
+
+The measurement itself lived entirely in `Flow_Interp`, gated behind an
+`ADALANG_VERIFY_SHADOW_BOUNDS` environment variable, wired into
+`Check_Value_Range`/`Check_Index_Range`/`Check_Division_By_Zero`/
+`Check_Integer_Overflow`'s own `Unproved` branches, and restricted to the
+`Final => True` replay pass only (never the live CFG-worklist scan) — the
+same boundary the `FP-031`/`FP-034`–`037` fixes established as the only
+place a new determination may safely be made. It never called any `Record_*`
+procedure; it only logged `kind`, `VC_Result`, elapsed milliseconds, and
+`file:line` to stderr. This wiring has since been reverted from
+`Flow_Interp` (it was diagnostic scaffolding, not a shipped feature); only
+the `VC_Prover` additions survive.
+
+Run against two corpora: Tokeneer (same pinned commit `a97467e9` and
+`test.gpr` invocation as the section above) and `project_bias` (pinned
+commit `bb835653`, 16 files) — a second, much smaller, structurally
+different corpus chosen for contrast, not as a fully-proved oracle (see its
+own entry above).
+
+| Kind | Corpus | Shadow queries | Proved/Refuted | Unknown | Unsupported (never reached the solver) |
+| --- | --- | --- | --- | --- | --- |
+| range-check | Tokeneer | 1522 | 66 (4.3%) | 31 (2.0%) | 1425 (93.6%) |
+| index-check | Tokeneer | 201 | 14 (7.0%) | 50 (24.9%) | 137 (68.2%) |
+| integer-overflow | Tokeneer | 191 | 6 (3.1%) | 23 (12.0%) | 162 (84.8%) |
+| division-by-zero | Tokeneer | 17 | 0 (0%) | 0 (0%) | 17 (100%) |
+| range-check | project_bias | 261 | 14 (5.4%) | 20 (7.7%) | 227 (87.0%) |
+| index-check | project_bias | 56 | 2 (3.6%) | 12 (21.4%) | 42 (75.0%) |
+| integer-overflow | project_bias | 77 | 0 (0%) | 12 (15.6%) | 65 (84.4%) |
+| division-by-zero | project_bias | 11 | 0 (0%) | 0 (0%) | 11 (100%) |
+
+Every "Proved/Refuted" result was `VC_Proved`: **zero `VC_Refuted` across
+2,266 combined shadow queries on both corpora**, so this fallback would not
+have introduced a false `Definite_Error` on either documented-clean
+codebase — the soundness half of the question is clean. `VC_Unavailable`
+also never occurred; both solvers were located via the existing Alire-SPARK
+fallback path in `Solver_Path` for every run.
+
+Cost, measured from the same shadow log: on Tokeneer, 190 of the 1931
+queries actually reached a solver (the rest returned `VC_Unsupported`
+before `Query` was ever called), totaling 4.26s of solver time; a full
+`--verify` run's wall-clock time went from 4.96s to 9.33s with the shadow
+path enabled (~+88%). `project_bias` (63 real solver calls) added 1.31s.
+
+**Conclusion**: not worth building as scoped. Payoff tops out at 7% of the
+`Unproved` obligations for any single kind, and division-by-zero saw zero
+benefit in 28 combined queries across both corpora. The dominant reason is
+not solver weakness — of the minority of queries that reached a solver,
+`VC_Unknown` competed with or exceeded `VC_Proved` (index-check: 24.9%/25%
+Unknown vs. 7.0%/3.6% Proved on the two corpora) — it is that 68-94% of
+queries never reached the solver at all, because `VC_Prover.Symbolic_State`
+had already discarded the relevant term before the shadow query was even
+built. This is exactly the join-point collapse risk anticipated before this
+measurement was run ("conflicting assignments receive a fresh unconstrained
+merge symbol" at every CFG join with disagreement), now confirmed as the
+actual bottleneck rather than a secondary concern: the real leverage is in
+improving `Symbolic_State`'s own join precision so more terms survive to a
+query, not in adding more consumers of the join as it stands today. No
+action taken beyond recording this and keeping `Decide_Bounds`/
+`Decide_Nonzero` dormant in `VC_Prover` for whenever that join-precision
+work is undertaken.

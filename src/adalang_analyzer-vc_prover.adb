@@ -1340,32 +1340,17 @@ package body Adalang_Analyzer.VC_Prover is
          return Solver_Unknown;
    end Query;
 
-   function Decide
-     (Condition : Libadalang.Analysis.Expr;
-      State     : Domain.Flow_State) return VC_Result
+   --  Shared solver core for Decide/Decide_Bounds/Decide_Nonzero: each only
+   --  differs in how Goal is built (a translated source condition, or a
+   --  synthesized containment/nonzero formula), never in how it is decided.
+   function Decide_Goal
+     (Goal    : Unbounded_String;
+      Context : Translation_Context) return VC_Result
    is
-   begin
-      return Decide (Condition, State, Empty_Symbolic_State);
-   end Decide;
-
-   function Decide
-     (Condition : Libadalang.Analysis.Expr;
-      State     : Domain.Flow_State;
-      Symbols   : Symbolic_State) return VC_Result
-   is
-      Context : Translation_Context :=
-        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
-         Depth => 0);
-      Goal    : constant Unbounded_String :=
-        Boolean_Term (Condition, Context);
       Formula : Unbounded_String;
       Negated : Solver_Answer;
       Direct  : Solver_Answer;
    begin
-      if not Context.Supported or else Length (Goal) = 0 then
-         return VC_Unsupported;
-      end if;
-
       Formula := Constraints (Context);
       Append
         (Formula,
@@ -1385,10 +1370,97 @@ package body Adalang_Analyzer.VC_Prover is
       else
          return VC_Unknown;
       end if;
+   end Decide_Goal;
+
+   function Decide
+     (Condition : Libadalang.Analysis.Expr;
+      State     : Domain.Flow_State) return VC_Result
+   is
+   begin
+      return Decide (Condition, State, Empty_Symbolic_State);
+   end Decide;
+
+   function Decide
+     (Condition : Libadalang.Analysis.Expr;
+      State     : Domain.Flow_State;
+      Symbols   : Symbolic_State) return VC_Result
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Depth => 0);
+      Goal    : constant Unbounded_String :=
+        Boolean_Term (Condition, Context);
+   begin
+      if not Context.Supported or else Length (Goal) = 0 then
+         return VC_Unsupported;
+      end if;
+      return Decide_Goal (Goal, Context);
    exception
       when others =>
          return VC_Unknown;
    end Decide;
+
+   function Decide_Bounds
+     (Value   : Libadalang.Analysis.Expr'Class;
+      Bounds  : Domain.Abstract_Range;
+      State   : Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Result
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Depth => 0);
+      Term : constant Unbounded_String := Integer_Term (Value, Context);
+      Goal : Unbounded_String;
+   begin
+      if not Context.Supported or else Length (Term) = 0
+        or else (not Bounds.Has_Low and then not Bounds.Has_High)
+      then
+         return VC_Unsupported;
+      end if;
+
+      if Bounds.Has_Low then
+         Goal := To_Unbounded_String
+           ("(<= " & SMT_Integer (Bounds.Low) & " " & To_String (Term) & ")");
+      end if;
+      if Bounds.Has_High then
+         declare
+            High_Term : constant String :=
+              "(<= " & To_String (Term) & " " & SMT_Integer (Bounds.High) &
+                ")";
+         begin
+            Goal :=
+              (if Length (Goal) = 0 then To_Unbounded_String (High_Term)
+               else To_Unbounded_String
+                 ("(and " & To_String (Goal) & " " & High_Term & ")"));
+         end;
+      end if;
+
+      return Decide_Goal (Goal, Context);
+   exception
+      when others =>
+         return VC_Unknown;
+   end Decide_Bounds;
+
+   function Decide_Nonzero
+     (Value   : Libadalang.Analysis.Expr'Class;
+      State   : Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Result
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Depth => 0);
+      Term : constant Unbounded_String := Integer_Term (Value, Context);
+   begin
+      if not Context.Supported or else Length (Term) = 0 then
+         return VC_Unsupported;
+      end if;
+      return Decide_Goal
+        (To_Unbounded_String ("(not (= " & To_String (Term) & " 0))"),
+         Context);
+   exception
+      when others =>
+         return VC_Unknown;
+   end Decide_Nonzero;
 
    function Evidence return String is
      ("SMT-LIB scalar VC; CVC5 and Z3 agreement required");
