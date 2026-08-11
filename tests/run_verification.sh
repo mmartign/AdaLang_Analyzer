@@ -18,6 +18,9 @@ vc_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-unsupported.XXXXXX")
 vc_unavailable=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-unavailable.XXXXXX")
 vc_guarded=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-guarded.XXXXXX")
 vc_contracts=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-contracts.XXXXXX")
+vc_division=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-division.XXXXXX")
+vc_division_refuted=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-division-refuted.XXXXXX")
+vc_division_zero_possible=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-division-zero.XXXXXX")
 symbolic_assignment=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-assignment.XXXXXX")
 symbolic_branch=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-branch.XXXXXX")
 symbolic_join=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-join.XXXXXX")
@@ -42,7 +45,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -191,6 +194,28 @@ grep -F '"kind": "precondition", "status": "proved-safe", "method": "external-pr
   "$vc_contracts" >/dev/null
 grep -F '"kind": "postcondition", "status": "proved-safe", "method": "external-prover"' \
   "$vc_contracts" >/dev/null
+
+run_json "$vc_division" tests/verification_vc_division.adb
+grep -F '"operation": "X mod Y >= 0"' "$vc_division" |
+  grep -F '"status": "proved-safe", "method": "external-prover"' >/dev/null
+grep -F '"operation": "X mod Y < Y"' "$vc_division" |
+  grep -F '"status": "proved-safe", "method": "external-prover"' >/dev/null
+grep -F '"operation": "X rem Y >= 0"' "$vc_division" |
+  grep -F '"status": "proved-safe", "method": "external-prover"' >/dev/null
+
+run_json "$vc_division_refuted" tests/verification_vc_division_refuted.adb
+grep -F '"kind": "assertion", "status": "definite-error", "method": "external-prover"' \
+  "$vc_division_refuted" >/dev/null
+
+run_json "$vc_division_zero_possible" \
+  tests/verification_vc_division_zero_possible.adb
+grep -F '"kind": "assertion", "status": "unproved"' \
+  "$vc_division_zero_possible" >/dev/null
+if grep -F '"kind": "assertion", "status": "proved-safe"' \
+  "$vc_division_zero_possible" >/dev/null; then
+   echo "a divisor range spanning zero was treated as provably nonzero" >&2
+   exit 1
+fi
 
 run_json "$symbolic_assignment" tests/verification_symbolic_assignment.adb
 grep -F '"kind": "assertion", "status": "proved-safe", "method": "external-prover"' \

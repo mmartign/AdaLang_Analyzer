@@ -2069,7 +2069,17 @@ package body Adalang_Analyzer.Flow_Interp is
           Libadalang.Common.Ada_Op_Plus
             | Libadalang.Common.Ada_Op_Minus
             | Libadalang.Common.Ada_Op_Mult
+            | Libadalang.Common.Ada_Op_Div
       then
+         --  "/" joins "+"/"-"/"*" here for the same reason: its SMT
+         --  translation is unbounded-integer arithmetic, so a refutation
+         --  could be an artifact of ignoring machine-width overflow (e.g.
+         --  Integer'First / -1) rather than a genuine Ada assertion
+         --  failure. "mod"/"rem" are deliberately excluded: their result
+         --  magnitude never exceeds the (already provably nonzero, see
+         --  Divisor_Provably_Nonzero in vc_prover.adb) divisor, so they
+         --  carry no such overflow risk and a refutation on them alone is
+         --  trustworthy.
          return True;
       elsif Node.Kind = Libadalang.Common.Ada_Un_Op
         and then Node.As_Un_Op.F_Op in

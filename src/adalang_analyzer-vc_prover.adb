@@ -56,6 +56,9 @@ package body Adalang_Analyzer.VC_Prover is
    function Natural_Image (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
+   function Abs_Of (Term : String) return String is
+     ("(ite (>= " & Term & " 0) " & Term & " (- " & Term & "))");
+
    function Root_Name
      (Key    : Libadalang.Analysis.Ada_Node;
       Prefix : String := "b") return String
@@ -151,6 +154,57 @@ package body Adalang_Analyzer.VC_Prover is
          return Libadalang.Analysis.No_Ada_Node;
    end Referenced_Key;
 
+   --  True only when Node can be shown, from this expression alone, never
+   --  to be zero: a nonzero integer literal, or an identifier whose known
+   --  flow range excludes zero. Anything else (an unconstrained variable,
+   --  a range straddling zero, an arbitrary subexpression) returns False,
+   --  the same conservative answer Context.Supported := False already
+   --  gives for every other unhandled shape in this file -- division/mod/
+   --  rem are only translated to SMT when this holds, so a wrong guess
+   --  here can only cost precision (falling back to Unsupported), never
+   --  soundness.
+   function Divisor_Provably_Nonzero
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Domain.Flow_State) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Paren_Expr =>
+            return Divisor_Provably_Nonzero
+              (Node.As_Paren_Expr.F_Expr, State);
+
+         when Libadalang.Common.Ada_Int_Literal =>
+            declare
+               Value : constant Domain.Abstract_Int :=
+                 Eval.Integer_Value (Node);
+            begin
+               return Value.Known and then Value.Value /= 0;
+            end;
+
+         when Libadalang.Common.Ada_Identifier =>
+            declare
+               Key         : constant Libadalang.Analysis.Ada_Node :=
+                 Referenced_Key (Node);
+               Range_Value : constant Domain.Abstract_Range :=
+                 Domain.Flow_Range_Lookup (State, Key);
+            begin
+               return (Range_Value.Has_Low and then Range_Value.Low > 0)
+                 or else
+                   (Range_Value.Has_High and then Range_Value.High < 0);
+            end;
+
+         when others =>
+            return False;
+      end case;
+   exception
+      when others =>
+         return False;
+   end Divisor_Provably_Nonzero;
+
    function Integer_Term
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String;
@@ -230,9 +284,7 @@ package body Adalang_Analyzer.VC_Prover is
                   when Libadalang.Common.Ada_Op_Minus =>
                      return To_Unbounded_String ("(- " & To_String (Item) & ")");
                   when Libadalang.Common.Ada_Op_Abs =>
-                     return To_Unbounded_String
-                       ("(ite (>= " & To_String (Item) & " 0) " &
-                          To_String (Item) & " (- " & To_String (Item) & "))");
+                     return To_Unbounded_String (Abs_Of (To_String (Item)));
                   when others =>
                      Context.Supported := False;
                      return Null_Unbounded_String;
@@ -254,10 +306,76 @@ package body Adalang_Analyzer.VC_Prover is
                      return Binary ("-", Left, Right);
                   when Libadalang.Common.Ada_Op_Mult =>
                      return Binary ("*", Left, Right);
+
+                  when Libadalang.Common.Ada_Op_Div
+                     | Libadalang.Common.Ada_Op_Mod
+                     | Libadalang.Common.Ada_Op_Rem =>
+                     --  Only translated once the divisor is provably
+                     --  nonzero (see Divisor_Provably_Nonzero) -- SMT-LIB's
+                     --  native div/mod are Euclidean (remainder always in
+                     --  [0, |divisor|)), which is neither Ada's truncating
+                     --  "/" nor Ada's floored "mod" in general, so both are
+                     --  rebuilt from the Euclidean primitives via sign
+                     --  correction rather than mapped 1:1.
+                     if not Divisor_Provably_Nonzero
+                       (Expr.F_Right, Context.State)
+                     then
+                        Context.Supported := False;
+                        return Null_Unbounded_String;
+                     end if;
+
+                     declare
+                        L : constant String := To_String (Left);
+                        R : constant String := To_String (Right);
+
+                        --  Euclidean division of absolute values coincides
+                        --  with truncating division when both operands are
+                        --  non-negative; reapplying the operands' combined
+                        --  sign then gives Ada's truncating "/".
+                        Mag       : constant String :=
+                          "(div " & Abs_Of (L) & " " & Abs_Of (R) & ")";
+                        Same_Sign : constant String :=
+                          "(= (>= " & L & " 0) (>= " & R & " 0))";
+                        Tdiv      : constant String :=
+                          "(ite " & Same_Sign & " " & Mag &
+                            " (- " & Mag & "))";
+                     begin
+                        case Expr.F_Op is
+                           when Libadalang.Common.Ada_Op_Div =>
+                              return To_Unbounded_String (Tdiv);
+
+                           when Libadalang.Common.Ada_Op_Rem =>
+                              --  Ada "rem" truncates toward zero and
+                              --  follows the dividend's sign, by
+                              --  definition a - b * (a / b).
+                              return To_Unbounded_String
+                                ("(- " & L & " (* " & R & " " & Tdiv & "))");
+
+                           when others =>
+                              --  Ada "mod" floors and follows the
+                              --  divisor's sign. SMT-LIB's Euclidean
+                              --  "mod" already matches when the divisor
+                              --  is positive; when it is negative and
+                              --  the (nonzero) Euclidean remainder needs
+                              --  to fall below zero, shift down by the
+                              --  divisor's own magnitude (i.e. add it,
+                              --  since it is negative).
+                              declare
+                                 Er : constant String :=
+                                   "(mod " & L & " " & R & ")";
+                              begin
+                                 return To_Unbounded_String
+                                   ("(ite (and (< " & R & " 0) (not (= " &
+                                      Er & " 0))) (+ " & Er & " " & R &
+                                      ") " & Er & ")");
+                              end;
+                        end case;
+                     end;
+
                   when others =>
-                     --  Ada division/remainder and exponentiation are not
-                     --  mapped to SMT until their exact language semantics
-                     --  and run-time checks are encoded.
+                     --  Ada exponentiation needs a bounded case-split over
+                     --  the exponent's range to map onto SMT and is not
+                     --  yet encoded.
                      Context.Supported := False;
                      return Null_Unbounded_String;
                end case;
