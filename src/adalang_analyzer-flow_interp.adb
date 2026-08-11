@@ -1249,98 +1249,12 @@ package body Adalang_Analyzer.Flow_Interp is
       end loop;
    end Havoc_Effects_In;
 
-   --  Best-effort integer bounds for a resolved discrete subtype. Bounds are
-   --  expressions in Libadalang, so the same abstract state used for program
-   --  expressions can also resolve named static bounds.
-   function Type_Range
-     (Typ   : Libadalang.Analysis.Base_Type_Decl;
-      State : Flow_State) return Abstract_Range
-   is
-      Result : Abstract_Range := Unknown_Range;
-   begin
-      if Libadalang.Analysis.Is_Null (Typ)
-        or else not Typ.P_Is_Int_Type
-      then
-         return Result;
-      end if;
-
-      declare
-         Bounds : constant Libadalang.Analysis.Discrete_Range :=
-           Typ.P_Discrete_Range;
-         Low    : constant Abstract_Int :=
-           Integer_Value (Libadalang.Analysis.Low_Bound (Bounds), State);
-         High   : constant Abstract_Int :=
-           Integer_Value (Libadalang.Analysis.High_Bound (Bounds), State);
-      begin
-         if Low.Known then
-            Result.Has_Low := True;
-            Result.Low := Low.Value;
-         end if;
-         if High.Known then
-            Result.Has_High := True;
-            Result.High := High.Value;
-         end if;
-      end;
-      return Result;
-   exception
-      when others =>
-         return Unknown_Range;
-   end Type_Range;
-
-   function Array_Index_Range
-     (Array_Type : Libadalang.Analysis.Base_Type_Decl;
-      Dimension  : Positive;
-      State      : Flow_State) return Abstract_Range
-   is
-   begin
-      if not Libadalang.Analysis.Is_Null (Array_Type)
-        and then Array_Type.Kind in Libadalang.Common.Ada_Type_Decl
-      then
-         declare
-            Definition : constant Libadalang.Analysis.Type_Def :=
-              Array_Type.As_Type_Decl.F_Type_Def;
-         begin
-            if Definition.Kind = Libadalang.Common.Ada_Array_Type_Def then
-               declare
-                  Indices : constant Libadalang.Analysis.Array_Indices :=
-                    Definition.As_Array_Type_Def.F_Indices;
-               begin
-                  if Indices.Kind in
-                    Libadalang.Common.Ada_Constrained_Array_Indices_Range
-                    and then Indices.As_Constrained_Array_Indices.F_List
-                      .Children_Count >= Dimension
-                  then
-                     declare
-                        Constraint : constant Libadalang.Analysis.Ada_Node :=
-                          Indices.As_Constrained_Array_Indices.F_List
-                            .Child (Dimension);
-                        Interval : constant Static_Interval :=
-                          Choice_Interval (Constraint, State);
-                     begin
-                        if Interval.Known then
-                           return
-                             (Has_Low => True, Low => Interval.Low,
-                              Has_High => True, High => Interval.High);
-                        elsif Constraint.Kind in
-                          Libadalang.Common.Ada_Subtype_Indication_Range
-                        then
-                           return Type_Range
-                             (Constraint.As_Subtype_Indication
-                                .P_Designated_Type_Decl,
-                              State);
-                        end if;
-                     end;
-                  end if;
-               end;
-            end if;
-         end;
-      end if;
-
-      return Type_Range (Array_Type.P_Index_Type (Dimension - 1), State);
-   exception
-      when others =>
-         return Unknown_Range;
-   end Array_Index_Range;
+   --  Type_Range and Array_Index_Range moved to Adalang_Analyzer.Flow_Eval
+   --  (still visible here unqualified via this unit's own "use
+   --  Adalang_Analyzer.Flow_Eval") so Adalang_Analyzer.VC_Prover, which sits
+   --  below this unit and cannot import it, can resolve subtype-mark and
+   --  array-attribute bounds too -- see VC_Prover's Ada_Membership_Expr and
+   --  Ada_Attribute_Ref support.
 
    function Definitely_Outside_Range
      (Value        : Libadalang.Analysis.Expr'Class;

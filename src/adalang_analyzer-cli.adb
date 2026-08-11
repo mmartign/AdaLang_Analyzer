@@ -43,6 +43,7 @@ with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;         use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Text_Utils;    use Adalang_Analyzer.Text_Utils;
+with Adalang_Analyzer.VC_Prover;
 with Adalang_Analyzer.Unit_Provider;
 
 package body Adalang_Analyzer.CLI is
@@ -1751,6 +1752,8 @@ package body Adalang_Analyzer.CLI is
       if Violations > 0 then
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       end if;
+
+      Adalang_Analyzer.VC_Prover.Dump_Symbolic_Diagnostics;
 
    exception
       when E : others =>

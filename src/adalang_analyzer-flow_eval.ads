@@ -130,6 +130,21 @@ package Adalang_Analyzer.Flow_Eval is
    --  a plain expression, or the statically evaluated bounds of a ".."
    --  range choice. Known is False when either bound can't be evaluated.
 
+   function Type_Range
+     (Typ   : Libadalang.Analysis.Base_Type_Decl;
+      State : Flow_State) return Abstract_Range;
+   --  Best-effort integer bounds for a resolved discrete subtype. Bounds
+   --  are expressions in Libadalang, so the same abstract state used for
+   --  program expressions can also resolve named static bounds.
+
+   function Array_Index_Range
+     (Array_Type : Libadalang.Analysis.Base_Type_Decl;
+      Dimension  : Positive;
+      State      : Flow_State) return Abstract_Range;
+   --  The index range of Array_Type's Dimension-th index, from its own
+   --  constrained index constraint when present, otherwise from its index
+   --  subtype's Type_Range.
+
    function Safe_Add
      (Left : Long_Long_Integer; Right : Long_Long_Integer) return Abstract_Int;
 

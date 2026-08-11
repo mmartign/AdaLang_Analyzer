@@ -1079,4 +1079,94 @@ package body Adalang_Analyzer.Flow_Eval is
       return (Known => False, Low => 0, High => 0);
    end Choice_Interval;
 
+   function Type_Range
+     (Typ   : Libadalang.Analysis.Base_Type_Decl;
+      State : Flow_State) return Abstract_Range
+   is
+      Result : Abstract_Range := Unknown_Range;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ)
+        or else not Typ.P_Is_Int_Type
+      then
+         return Result;
+      end if;
+
+      declare
+         Bounds : constant Libadalang.Analysis.Discrete_Range :=
+           Typ.P_Discrete_Range;
+         Low    : constant Abstract_Int :=
+           Integer_Value (Libadalang.Analysis.Low_Bound (Bounds), State);
+         High   : constant Abstract_Int :=
+           Integer_Value (Libadalang.Analysis.High_Bound (Bounds), State);
+      begin
+         if Low.Known then
+            Result.Has_Low := True;
+            Result.Low := Low.Value;
+         end if;
+         if High.Known then
+            Result.Has_High := True;
+            Result.High := High.Value;
+         end if;
+      end;
+      return Result;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Type_Range;
+
+   function Array_Index_Range
+     (Array_Type : Libadalang.Analysis.Base_Type_Decl;
+      Dimension  : Positive;
+      State      : Flow_State) return Abstract_Range
+   is
+   begin
+      if not Libadalang.Analysis.Is_Null (Array_Type)
+        and then Array_Type.Kind in Libadalang.Common.Ada_Type_Decl
+      then
+         declare
+            Definition : constant Libadalang.Analysis.Type_Def :=
+              Array_Type.As_Type_Decl.F_Type_Def;
+         begin
+            if Definition.Kind = Libadalang.Common.Ada_Array_Type_Def then
+               declare
+                  Indices : constant Libadalang.Analysis.Array_Indices :=
+                    Definition.As_Array_Type_Def.F_Indices;
+               begin
+                  if Indices.Kind in
+                    Libadalang.Common.Ada_Constrained_Array_Indices_Range
+                    and then Indices.As_Constrained_Array_Indices.F_List
+                      .Children_Count >= Dimension
+                  then
+                     declare
+                        Constraint : constant Libadalang.Analysis.Ada_Node :=
+                          Indices.As_Constrained_Array_Indices.F_List
+                            .Child (Dimension);
+                        Interval : constant Static_Interval :=
+                          Choice_Interval (Constraint, State);
+                     begin
+                        if Interval.Known then
+                           return
+                             (Has_Low => True, Low => Interval.Low,
+                              Has_High => True, High => Interval.High);
+                        elsif Constraint.Kind in
+                          Libadalang.Common.Ada_Subtype_Indication_Range
+                        then
+                           return Type_Range
+                             (Constraint.As_Subtype_Indication
+                                .P_Designated_Type_Decl,
+                              State);
+                        end if;
+                     end;
+                  end if;
+               end;
+            end if;
+         end;
+      end if;
+
+      return Type_Range (Array_Type.P_Index_Type (Dimension - 1), State);
+   exception
+      when others =>
+         return Unknown_Range;
+   end Array_Index_Range;
+
 end Adalang_Analyzer.Flow_Eval;

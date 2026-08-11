@@ -1594,3 +1594,165 @@ query, not in adding more consumers of the join as it stands today. No
 action taken beyond recording this and keeping `Decide_Bounds`/
 `Decide_Nonzero` dormant in `VC_Prover` for whenever that join-precision
 work is undertaken.
+
+## Symbolic-state discard mechanism: instrumented measurement (2026-08-11)
+
+The section above named "join-point collapse" as the suspected mechanism
+behind `Symbolic_State`'s precision loss, based on the existing code comment
+("conflicting assignments receive a fresh unconstrained merge symbol").
+Before redesigning `Join` on that basis, the actual mechanism was measured:
+a new `VC_Prover.Dump_Symbolic_Diagnostics` (gated by
+`ADALANG_VERIFY_SYMBOLIC_DIAGNOSTICS`, called once at the end of a run from
+`Adalang_Analyzer.CLI.Run`, kept in the tree rather than reverted since it
+is cheap when unset and useful for validating future fixes) tallies why
+`Assign`, `Assume`, `Join`, and `Include_Root` each discard a fact, broken
+down by the AST kind of the untranslatable node where cheap to derive.
+
+Run on the same two corpora as the section above:
+
+| Mechanism | Tokeneer | project_bias |
+| --- | --- | --- |
+| `Join` whole-state Havoc (`not Left.Supported or else not Right.Supported`) | 0 | 0 |
+| `Include_Root` Sort/Key-conflict poison | 0 | 0 |
+| `Join` merge — survived (both sides agreed) | 164 | 62 |
+| `Join` merge — fresh unconstrained symbol | 1208 (88%) | 248 (80%) |
+| Total `Assign` translation failures | 5874 | 452 |
+| Total `Assume` translation failures | 2174 | 614 |
+
+Two of the four hypothesized mechanisms never fire in either corpus:
+`Join`'s own whole-state discard and `Include_Root`'s poisoning are not the
+problem. The dominant cause is that `Assign`/`Assume` fail to produce a
+binding in the first place — 8048 failures on Tokeneer against only 1372
+total merge attempts, meaning most CFG-join candidates already have nothing
+comparable to merge before `Join` is even reached. The high
+"merge — fresh symbol" rate is a downstream symptom of this, not an
+independent defect in `Join`'s own algorithm; redesigning `Join` first
+would have targeted the wrong mechanism.
+
+The by-AST-kind breakdown of `Assign`-havoc on Tokeneer: `Ada_Dotted_Name`
+(record-component access) 2295 (39%), `Ada_Identifier` (source variable not
+provably initialized) 1543 (26%), `Ada_Call_Expr` (ordinary calls, indexing,
+non-signed-integer conversions) 1073 (18%), the remainder split across
+aggregates, attributes, and string/character literals. `project_bias`'s
+`Assume`-havoc is dominated by a single kind: `Ada_Membership_Expr`
+(`X in ...`), 308 of 614 (50%) — `Boolean_Term` had no case for membership
+tests at all before this measurement.
+
+### `Ada_Membership_Expr` support added to `Boolean_Term`
+
+Implemented and shipped (not scaffolding): `Boolean_Term` now translates
+`X in <range>` / `X in <value>` / `X not in ...`, combining multiple
+alternatives with `or` and negating for `not in`, mirroring
+`Flow_Eval`'s own existing `Ada_Membership_Expr` case for the abstract
+interpreter. Any single alternative this bridge cannot translate (see
+below) fails the whole expression rather than silently under-approximating
+the membership set — the same fail-fast-on-any-unhandled-shape discipline
+every other case in this file already follows. Confirmed working
+end-to-end on a synthetic case exercising the *production* path (no shadow
+scaffolding involved): `Y := X; if Y in 0 .. 100 then pragma Assert
+(X in 0 .. 100); end if;` — previously `Unproved` (the interval domain is
+non-relational; neither the `Assume` nor the `Assert` could be translated
+at all), now `Proved_Safe` via `method: external-prover`. Full repository
+test suite (`tests/run_all.sh`, including the 217-case precision corpus and
+the GNATprove differential gate) passes. One self-inflicted issue caught
+and fixed along the way: the diagnostic tally inside `Join` (a function)
+originally assigned directly to package-level state, which this project's
+own `Function_Side_Effect` check correctly flagged against `--recommended`
+self-analysis; moved the increment into a small `Bump` procedure so the
+function itself contains no direct assignment to outside state.
+
+**Real-world payoff on the two measured corpora: zero, for a specific,
+disclosed reason.** Re-running the same diagnostic after the fix produced
+byte-identical tallies on both corpora — `Ada_Membership_Expr` is still 10
+(Tokeneer) / 308 (project_bias) `Assume`-havoc occurrences. Grepping both
+corpora's actual membership-test shapes explains why: Tokeneer's dominant
+shape is a single subtype-mark alternative (`TheAdmin.RolePresent in
+PrivTypes.AdminPrivilegeT`), and `project_bias`'s is attribute-bounded
+ranges (`Idx in Rnd_Buffer'First .. Rnd_Buffer'Last`). Neither is a literal
+range or literal value — a subtype mark isn't a value-yielding expression
+`Integer_Term` can translate at all (it falls through the same
+`Ada_Identifier` path a real variable would, and correctly fails there for
+the wrong-but-safe reason of looking like an uninitialized read), and
+`'First`/`'Last` are `Ada_Attribute_Ref` nodes, a kind `Integer_Term` has no
+case for at all (and is itself independently the second-largest `Assign`-
+havoc bucket, 105-144 occurrences). This was a disclosed limitation from
+the start (see this addition's own code comment, "a subtype-mark choice,
+e.g."), not a bug — the fix is correct and real, it simply isn't yet the
+blocker for either corpus's actual code shapes.
+
+**Conclusion**: the membership-expr addition is complete, tested, and
+correctly scoped, but the two concrete next blockers it exposed —
+subtype-mark alternatives (needs the same static-range resolution
+`Type_Range` already performs elsewhere in `Flow_Interp`, applied to a
+membership alternative instead of a target subtype) and `Ada_Attribute_Ref`
+support in `Integer_Term`/`Boolean_Term` (`'First`/`'Last`/`'Range`/
+`'Length` at minimum) — are where the next payoff on these two corpora
+actually is. Not yet built; recorded here as the validated next step rather
+than acted on speculatively, consistent with this file's own methodology.
+
+### Both blockers implemented and measured
+
+Built both. `Type_Range` and `Array_Index_Range` were promoted from
+`Flow_Interp` (private) to `Flow_Eval` (shared) unchanged, since
+`VC_Prover` sits below `Flow_Interp` in the dependency graph and cannot
+import it; `Flow_Interp`'s own nine call sites resolve to the moved
+versions automatically via its existing `use Adalang_Analyzer.Flow_Eval`,
+zero other changes needed there. `Boolean_Term`'s membership-alternative
+handling now resolves a subtype-mark choice to its own `Type_Range` instead
+of trying to translate it as a value. `Integer_Term` gained an
+`Ada_Attribute_Ref` case for `'First`/`'Last`/`'Length` on the default
+dimension, resolving through `Type_Range` (a subtype-mark prefix) or
+`Array_Index_Range` (an array-object prefix); `'Length` correctly floors at
+0 for an empty range rather than going negative. Both confirmed
+end-to-end on synthetic cases exercising the production path (an assertion
+moving from `Unproved` to `Proved_Safe` via `external-prover` in each
+case), and confirmed *conservative* on a deliberately-dynamic-bounds
+fixture (`Arr : String`, an unconstrained parameter — correctly stays
+`Unproved`, since `Arr'First`/`'Last` genuinely aren't static there). Full
+test suite green on the first build after both additions, including the
+217-case precision corpus and the GNATprove differential gate.
+
+Re-measured with `Dump_Symbolic_Diagnostics` on the same two corpora:
+
+| | Tokeneer | project_bias |
+| --- | --- | --- |
+| `provedSafe` (of 6697 / 2342 total obligations) | 1623 → **1741** (+118, +7.3%) | 383 → 383 (unchanged) |
+| `Assign`-havoc, `Ada_Attribute_Ref` | 105 → **35** (-67%) | 144 → 144 (unchanged) |
+| `Assume`-havoc, `Ada_Membership_Expr` | 10 → 10 (unchanged) | 308 → 308 (unchanged) |
+
+**Tokeneer moved for real** — `Ada_Attribute_Ref` support alone recovered
+two-thirds of that bucket and lifted `provedSafe` by 118 obligations (a
+7.3% increase over the entire run, not just the affected family), the
+first payoff either measurement round produced. Its `Ada_Membership_Expr`
+count didn't move because Tokeneer's dominant shape
+(`TheAdmin.RolePresent in PrivTypes.AdminPrivilegeT`) tests membership in
+an *enumeration* subtype (`AdminPrivilegeT`), and this bridge has no enum
+sort at all — `Integer_Sort`/`Boolean_Sort` are its only two, a scope limit
+present since `VC_Prover` was first built, not something either blocker fix
+touches.
+
+**project_bias moved for a genuine, disclosed reason: zero.** Its arrays
+(`Rnd_Buffer : BUFFER_RNG (0 .. BUFFER_RNG_LENGTH_expr)`, from `type
+BUFFER_RNG is array (BUFFER_RNG_LENGTH range <>) of UCHAR`) are locally
+declared with a per-object constraint on an otherwise-unconstrained array
+type — `Array_Index_Range` resolves bounds from a *type* declaration, and
+Libadalang's `P_Expression_Type` on the object reference surfaces the
+unconstrained base type, not the object's own constraint, so this falls
+through to the same conservative path an actually-unconstrained parameter
+would take (matching the `Arr : String` fixture above). This is a
+pre-existing limitation of `Array_Index_Range` shared with the *already-
+shipped* index-check machinery that has used the identical
+`P_Expression_Type`-based resolution since before this session (see
+`Check_Conversion_Or_Index` in `Flow_Interp`) — not a regression, and not
+fully fixable by resolving it either: `BUFFER_RNG_LENGTH`'s own bound in
+this corpus is a runtime-computed expression, not a literal, so even
+perfect object-constraint resolution would still leave it `Unproved`.
+
+**Conclusion**: both blockers were real and worth building — Tokeneer
+proves it — but "the next blocker" keeps being corpus-specific once you
+follow it far enough (enum sorts, object- vs. type-level array
+constraints), consistent with this file's running theme that a single
+fix's real-world payoff has to be measured per corpus, not assumed from
+the shape of the fix. No further action taken on the enum-sort or
+object-constraint gaps here; recorded as further validated-but-deferred
+input alongside the rest of this section.

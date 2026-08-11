@@ -6,6 +6,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
 with Ada.Environment_Variables;
 with Ada.Strings.Fixed;
@@ -33,6 +34,45 @@ package body Adalang_Analyzer.VC_Prover is
 
    package Domain renames Adalang_Analyzer.Flow_Domain;
    package Eval renames Adalang_Analyzer.Flow_Eval;
+
+   --  Phase 0 v2 measurement scaffolding (diagnostic only, see
+   --  Dump_Symbolic_Diagnostics): tallies of why Assign/Assume/Join/
+   --  Include_Root discarded a symbolic fact, kept only for the lifetime of
+   --  one process. Reading Symbolic_Diagnostics_Enabled costs a hash
+   --  lookup; every increment site is gated by it so the counters (and the
+   --  Value.Kind'Image call feeding the by-kind maps) cost nothing when
+   --  unset.
+   function Symbolic_Diagnostics_Enabled return Boolean is
+     (Ada.Environment_Variables.Exists
+        ("ADALANG_VERIFY_SYMBOLIC_DIAGNOSTICS"));
+
+   package Kind_Tally_Maps is new Ada.Containers.Indefinite_Ordered_Maps
+     (Key_Type => String, Element_Type => Natural);
+
+   Assign_Havoc_By_Kind      : Kind_Tally_Maps.Map;
+   Assume_Havoc_By_Kind      : Kind_Tally_Maps.Map;
+   Join_Havoc_Count          : Natural := 0;
+   Join_Merge_Survived_Count : Natural := 0;
+   Join_Merge_Fresh_Count    : Natural := 0;
+   Include_Root_Poison_Count : Natural := 0;
+
+   procedure Tally (Map : in out Kind_Tally_Maps.Map; Key : String) is
+      Cursor : constant Kind_Tally_Maps.Cursor := Map.Find (Key);
+   begin
+      if Kind_Tally_Maps.Has_Element (Cursor) then
+         Map.Replace_Element (Cursor, Kind_Tally_Maps.Element (Cursor) + 1);
+      else
+         Map.Insert (Key, 1);
+      end if;
+   end Tally;
+
+   --  Join is a function, so its own Join_Havoc_Count increment must go
+   --  through a procedure call rather than a direct assignment statement,
+   --  or it trips this project's own Function_Side_Effect check.
+   procedure Bump (Counter : in out Natural) is
+   begin
+      Counter := Counter + 1;
+   end Bump;
 
    type Translation_Context is record
       State     : Domain.Flow_State;
@@ -566,6 +606,86 @@ package body Adalang_Analyzer.VC_Prover is
                end case;
             end;
 
+         when Libadalang.Common.Ada_Attribute_Ref =>
+            declare
+               Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                 Node.As_Attribute_Ref;
+               Name : constant String :=
+                 Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                   (Adalang_Analyzer.Ada_Text.Node_Text (Attr.F_Attribute));
+            begin
+               --  'First/'Last/'Length only, on the default (first)
+               --  dimension: no explicit dimension argument, and no
+               --  attempt at 'Range (not itself integer-valued) or any
+               --  other attribute. A wrong guess here only costs
+               --  Unsupported, never an incorrect bound.
+               if Attr.F_Args.Children_Count > 0
+                 or else Name not in "first" | "last" | "length"
+               then
+                  Context.Supported := False;
+                  return Null_Unbounded_String;
+               end if;
+
+               declare
+                  Prefix_Decl : Libadalang.Analysis.Basic_Decl :=
+                    Libadalang.Analysis.No_Basic_Decl;
+                  Bounds      : Domain.Abstract_Range := Domain.Unknown_Range;
+               begin
+                  if Attr.F_Prefix.Kind in Libadalang.Common.Ada_Name then
+                     Prefix_Decl := Attr.F_Prefix.As_Name.P_Referenced_Decl;
+                  end if;
+
+                  if not Libadalang.Analysis.Is_Null (Prefix_Decl)
+                    and then Prefix_Decl.Kind in
+                      Libadalang.Common.Ada_Base_Type_Decl
+                  then
+                     --  X'First/'Last/'Length where X is itself a discrete
+                     --  subtype mark (e.g. Some_Subtype'Last).
+                     Bounds := Eval.Type_Range
+                       (Prefix_Decl.As_Base_Type_Decl, Context.State);
+                  else
+                     declare
+                        Prefix_Type : constant
+                          Libadalang.Analysis.Base_Type_Decl :=
+                            Attr.F_Prefix.P_Expression_Type;
+                     begin
+                        --  X'First/'Last/'Length where X is an array
+                        --  object; only the default first dimension.
+                        if not Libadalang.Analysis.Is_Null (Prefix_Type)
+                          and then Prefix_Type.P_Is_Array_Type
+                        then
+                           Bounds := Eval.Array_Index_Range
+                             (Prefix_Type, 1, Context.State);
+                        end if;
+                     end;
+                  end if;
+
+                  if Name = "first" then
+                     if not Bounds.Has_Low then
+                        Context.Supported := False;
+                        return Null_Unbounded_String;
+                     end if;
+                     return To_Unbounded_String (SMT_Integer (Bounds.Low));
+                  elsif Name = "last" then
+                     if not Bounds.Has_High then
+                        Context.Supported := False;
+                        return Null_Unbounded_String;
+                     end if;
+                     return To_Unbounded_String (SMT_Integer (Bounds.High));
+                  else
+                     if not Bounds.Has_Low or else not Bounds.Has_High then
+                        Context.Supported := False;
+                        return Null_Unbounded_String;
+                     elsif Bounds.Low > Bounds.High then
+                        return To_Unbounded_String ("0");
+                     else
+                        return To_Unbounded_String
+                          (SMT_Integer (Bounds.High - Bounds.Low + 1));
+                     end if;
+                  end if;
+               end;
+            end;
+
          when others =>
             Context.Supported := False;
             return Null_Unbounded_String;
@@ -769,6 +889,121 @@ package body Adalang_Analyzer.VC_Prover is
                   return Null_Unbounded_String;
             end case;
          end;
+      elsif Node.Kind = Libadalang.Common.Ada_Membership_Expr then
+         --  Mirrors Flow_Eval's own Ada_Membership_Expr case: each
+         --  alternative is either a range (Low .. High) or a single value,
+         --  combined with "or", negated for "not in". Any one alternative
+         --  this bridge cannot translate (a subtype-mark choice, e.g.) fails
+         --  the whole expression rather than silently under-approximating
+         --  the membership set, the same fail-fast-on-any-unhandled-shape
+         --  discipline every other case in this file already follows.
+         declare
+            Expr    : constant Libadalang.Analysis.Membership_Expr :=
+              Node.As_Membership_Expr;
+            Subject : constant Unbounded_String :=
+              Integer_Term (Expr.F_Expr, Context);
+            Goal    : Unbounded_String;
+         begin
+            if not Context.Supported or else Length (Subject) = 0 then
+               Context.Supported := False;
+               return Null_Unbounded_String;
+            end if;
+
+            for I in 1 .. Expr.F_Membership_Exprs.Children_Count loop
+               declare
+                  Alternative : constant Libadalang.Analysis.Ada_Node :=
+                    Expr.F_Membership_Exprs.Child (I);
+                  Term        : Unbounded_String;
+               begin
+                  if Alternative.Kind in Libadalang.Common.Ada_Bin_Op_Range
+                    and then Alternative.As_Bin_Op.F_Op =
+                      Libadalang.Common.Ada_Op_Double_Dot
+                  then
+                     declare
+                        Low  : constant Unbounded_String :=
+                          Integer_Term
+                            (Alternative.As_Bin_Op.F_Left, Context);
+                        High : constant Unbounded_String :=
+                          Integer_Term
+                            (Alternative.As_Bin_Op.F_Right, Context);
+                     begin
+                        if not Context.Supported then
+                           return Null_Unbounded_String;
+                        end if;
+                        Term := To_Unbounded_String
+                          ("(and (<= " & To_String (Low) & " " &
+                             To_String (Subject) & ") (<= " &
+                             To_String (Subject) & " " & To_String (High) &
+                             "))");
+                     end;
+                  else
+                     declare
+                        --  A subtype-mark choice (e.g. "X in Some_Subtype")
+                        --  is syntactically a Name but isn't a value-
+                        --  yielding expression; resolve it to its own
+                        --  static range instead of trying to translate it
+                        --  as one, mirroring the "and (<= Low Subject)
+                        --  (<= Subject High)" range shape above.
+                        Type_Decl : Libadalang.Analysis.Basic_Decl :=
+                          Libadalang.Analysis.No_Basic_Decl;
+                     begin
+                        if Alternative.Kind in Libadalang.Common.Ada_Name then
+                           Type_Decl := Alternative.As_Name.P_Referenced_Decl;
+                        end if;
+
+                        if not Libadalang.Analysis.Is_Null (Type_Decl)
+                          and then Type_Decl.Kind in
+                            Libadalang.Common.Ada_Base_Type_Decl
+                        then
+                           declare
+                              Bounds : constant Domain.Abstract_Range :=
+                                Eval.Type_Range
+                                  (Type_Decl.As_Base_Type_Decl,
+                                   Context.State);
+                           begin
+                              if not Bounds.Has_Low
+                                or else not Bounds.Has_High
+                              then
+                                 Context.Supported := False;
+                                 return Null_Unbounded_String;
+                              end if;
+                              Term := To_Unbounded_String
+                                ("(and (<= " & SMT_Integer (Bounds.Low) &
+                                   " " & To_String (Subject) & ") (<= " &
+                                   To_String (Subject) & " " &
+                                   SMT_Integer (Bounds.High) & "))");
+                           end;
+                        else
+                           declare
+                              Value : constant Unbounded_String :=
+                                Integer_Term (Alternative, Context);
+                           begin
+                              if not Context.Supported then
+                                 return Null_Unbounded_String;
+                              end if;
+                              Term := Binary ("=", Subject, Value);
+                           end;
+                        end if;
+                     end;
+                  end if;
+
+                  Goal :=
+                    (if Length (Goal) = 0 then Term
+                     else To_Unbounded_String
+                       ("(or " & To_String (Goal) & " " & To_String (Term) &
+                          ")"));
+               end;
+            end loop;
+
+            if Length (Goal) = 0 then
+               Context.Supported := False;
+               return Null_Unbounded_String;
+            elsif Expr.F_Op = Libadalang.Common.Ada_Op_In then
+               return Goal;
+            else
+               return To_Unbounded_String ("(not " & To_String (Goal) & ")");
+            end if;
+         end;
       end if;
 
       Context.Supported := False;
@@ -902,6 +1137,9 @@ package body Adalang_Analyzer.VC_Prover is
       if Libadalang.Analysis.Is_Null (Destination)
         or else Libadalang.Analysis.Is_Null (Value)
       then
+         if Symbolic_Diagnostics_Enabled then
+            Tally (Assign_Havoc_By_Kind, "null-node");
+         end if;
          return Havoc;
       elsif Boolean_Context.Supported and then Length (Boolean_Value) > 0 then
          Set_Binding
@@ -919,6 +1157,9 @@ package body Adalang_Analyzer.VC_Prover is
       begin
          if not Integer_Context.Supported or else Length (Integer_Value) = 0
          then
+            if Symbolic_Diagnostics_Enabled then
+               Tally (Assign_Havoc_By_Kind, Value.Kind'Image);
+            end if;
             return Havoc;
          end if;
          Set_Binding
@@ -928,6 +1169,9 @@ package body Adalang_Analyzer.VC_Prover is
       end;
    exception
       when others =>
+         if Symbolic_Diagnostics_Enabled then
+            Tally (Assign_Havoc_By_Kind, "exception");
+         end if;
          return Havoc;
    end Assign;
 
@@ -943,6 +1187,9 @@ package body Adalang_Analyzer.VC_Prover is
       Term : constant Unbounded_String := Boolean_Term (Condition, Context);
    begin
       if not Context.Supported or else Length (Term) = 0 then
+         if Symbolic_Diagnostics_Enabled then
+            Tally (Assume_Havoc_By_Kind, Condition.Kind'Image);
+         end if;
          return Havoc;
       end if;
       declare
@@ -964,6 +1211,9 @@ package body Adalang_Analyzer.VC_Prover is
       return Context.Symbols;
    exception
       when others =>
+         if Symbolic_Diagnostics_Enabled then
+            Tally (Assume_Havoc_By_Kind, "exception");
+         end if;
          return Havoc;
    end Assume;
 
@@ -980,6 +1230,9 @@ package body Adalang_Analyzer.VC_Prover is
             Current : Symbol_Root := State.Roots.Element (Index);
          begin
             if Current.Key /= Item.Key or else Current.Sort /= Item.Sort then
+               if Symbolic_Diagnostics_Enabled then
+                  Include_Root_Poison_Count := Include_Root_Poison_Count + 1;
+               end if;
                State.Supported := False;
                return;
             end if;
@@ -1020,8 +1273,14 @@ package body Adalang_Analyzer.VC_Prover is
            and then Right.Bindings.Element (Other_Index).Sort = Item.Sort
            and then Right.Bindings.Element (Other_Index).Term = Item.Term
          then
+            if Symbolic_Diagnostics_Enabled then
+               Join_Merge_Survived_Count := Join_Merge_Survived_Count + 1;
+            end if;
             Set_Binding (Result, Item);
          else
+            if Symbolic_Diagnostics_Enabled then
+               Join_Merge_Fresh_Count := Join_Merge_Fresh_Count + 1;
+            end if;
             declare
                Name : constant String :=
                  Root_Name (Item.Key, "j" & Natural_Image (Merge_Tag) & "_");
@@ -1037,6 +1296,9 @@ package body Adalang_Analyzer.VC_Prover is
       end Merge_Binding;
    begin
       if not Left.Supported or else not Right.Supported then
+         if Symbolic_Diagnostics_Enabled then
+            Bump (Join_Havoc_Count);
+         end if;
          return Havoc;
       end if;
 
@@ -1464,5 +1726,48 @@ package body Adalang_Analyzer.VC_Prover is
 
    function Evidence return String is
      ("SMT-LIB scalar VC; CVC5 and Z3 agreement required");
+
+   procedure Dump_Symbolic_Diagnostics is
+      use Ada.Text_IO;
+
+      function Natural_Text (Value : Natural) return String is
+        (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
+   begin
+      if not Symbolic_Diagnostics_Enabled then
+         return;
+      end if;
+
+      Put_Line
+        (Standard_Error,
+         "symbolic-diagnostics join-havoc=" &
+           Natural_Text (Join_Havoc_Count));
+      Put_Line
+        (Standard_Error,
+         "symbolic-diagnostics join-merge-survived=" &
+           Natural_Text (Join_Merge_Survived_Count));
+      Put_Line
+        (Standard_Error,
+         "symbolic-diagnostics join-merge-fresh=" &
+           Natural_Text (Join_Merge_Fresh_Count));
+      Put_Line
+        (Standard_Error,
+         "symbolic-diagnostics include-root-poison=" &
+           Natural_Text (Include_Root_Poison_Count));
+
+      for Cursor in Assign_Havoc_By_Kind.Iterate loop
+         Put_Line
+           (Standard_Error,
+            "symbolic-diagnostics assign-havoc kind=" &
+              Kind_Tally_Maps.Key (Cursor) & " count=" &
+              Natural_Text (Kind_Tally_Maps.Element (Cursor)));
+      end loop;
+      for Cursor in Assume_Havoc_By_Kind.Iterate loop
+         Put_Line
+           (Standard_Error,
+            "symbolic-diagnostics assume-havoc kind=" &
+              Kind_Tally_Maps.Key (Cursor) & " count=" &
+              Natural_Text (Kind_Tally_Maps.Element (Cursor)));
+      end loop;
+   end Dump_Symbolic_Diagnostics;
 
 end Adalang_Analyzer.VC_Prover;
