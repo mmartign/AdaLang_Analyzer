@@ -62,6 +62,7 @@ function gp_kind(msg) {
 
 BEGIN {
    FS = ""  # unused; parsing is done with match()/split() per line, not $n
+   if (corpus_label == "") corpus_label = "SPARKNaCl"
 }
 
 # --- Pass over file 1: AdaLang's proofObligations JSON, one object/line ---
@@ -166,8 +167,10 @@ END {
       }
    }
 
-   print "SPARKNaCl / GNATprove agreement report"
-   print "======================================="
+   heading = corpus_label " / GNATprove agreement report"
+   print heading
+   for (i = 1; i <= length(heading); i++) printf "="
+   print ""
    print ""
    printf "AdaLang proof obligations parsed:      %d\n", a_total
    printf "GNATprove prove-mode messages parsed:  %d\n", g_total

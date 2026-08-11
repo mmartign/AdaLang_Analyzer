@@ -113,6 +113,7 @@ there.
 | [aws](aws/) | AdaCore | Ada Web Server, ordinary (non-SPARK) Ada | Breadth on a large real project; GNATprove never got past project preprocessing; also the corpus with genuine unrestricted `select`/`requeue`/`abort` for the `--automotive` concurrency-prohibition checks |
 | [ada_drivers_library](ada_drivers_library/) | AdaCore | STM32 bare-metal hardware drivers | Real Ravenscar `protected`-object code for the `--automotive` concurrency-prohibition checks (no `select`/`requeue`/`abort` — see aws) |
 | [gnatcoll](gnatcoll/) | AdaCore | GNAT Components Collection core (JSON, VFS, strings, email, OS/process), ordinary (non-SPARK) Ada | A third breadth corpus in a new domain (general-purpose utility library); GNATprove hard-stops on a SPARK-illegal aspect 41 units in |
+| [project_bias](project_bias/) | EliAvila10 | Bias-free cryptographic random streams | Small SPARK corpus emphasizing floating-point contracts, quantified array predicates, OS/C bindings, and entropy-buffer clearing; GNATprove reports one flow error, so it is not a fully-proved oracle |
 
 - **[aws](aws/RESULTS_2026-08-02.md)** (2026-08-02) — 348 files of ordinary
   Ada. GNATprove couldn't run at all (legality errors, then a boundary
@@ -160,6 +161,18 @@ there.
   regardless, since they sit behind a separate, still-open Property_Error
   (the same general class as `FP-029`) that keeps the fixed code path from
   ever being reached for them in this environment.
+- **[project_bias](project_bias/RESULTS_2026-08-11.md)** (2026-08-11) — a
+  compact SPARK cryptographic-random-stream corpus with code shapes not
+  otherwise prominent in the suite: floating-point functional contracts,
+  quantified predicates, OS entropy bindings, and explicit buffer clearing.
+  AdaLang completed all three preset lanes and conservatively recovered from
+  one Libadalang `CallExpr` property failure. GNATprove proved 925 checks or
+  flow properties but also reported three resource-limited checks and one
+  missing-`Global` flow error, so this revision belongs in real-code
+  validation rather than the independent-oracle totals. Its first run also
+  identified focused review targets around package constants, contract-only
+  parameter reads, and security-motivated dead stores; none is recorded as a
+  confirmed analyzer defect without manual adjudication.
 - **[aws](aws/RESULTS_2026-08-11.md)** (2026-08-11) — a third re-run of the
   same 348-file corpus, part of a sweep validating `FP-047` (new `/`,
   `mod`, `rem` SMT support). `--recommended`/`--spark`/`--automotive` and
