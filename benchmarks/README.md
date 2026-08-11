@@ -247,6 +247,17 @@ results mean "no information," not "probably fine." It's also young
 pairs; CubedOS: 7) are small enough samples to corroborate the pattern
 rather than establish it independently.
 
+**Not every real-code run finds something new.** project_bias (17 files,
+floating-point entropy contracts, quantified array predicates, C/Windows
+entropy bindings) completed all three preset lanes cleanly, with zero
+confirmed analyzer mistakes — a useful negative data point against reading
+the eight-bug table above as evidence that every corpus run turns up a
+defect. Its own 27 GNATprove-matched pairs also showed zero disagreement,
+but the corpus isn't a fully-proved oracle (GNATprove itself leaves three
+step-limited checks and one flow error unresolved there), so that sample is
+both too small and too weak an oracle to add to the 2,045-obligation total
+above; it corroborates without counting.
+
 **Net:** use it for what static analysis on ordinary Ada is for — catching
 real defects fast, on code that will never be SPARK, or as an immediate
 first pass before a full GNATprove run on code that will be — and don't
