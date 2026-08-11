@@ -2942,6 +2942,45 @@ package body Adalang_Analyzer.Flow_Interp is
       Work : Work_Vectors.Vector;
       Head : Positive := 1;
 
+      --  True when Node (a quantified expression) is reachable from its
+      --  nearest enclosing Pre/Post aspect or Assert/Assert_And_Cut/
+      --  Loop_Invariant pragma without first passing through an ordinary
+      --  statement -- the only positions a quantified expression is ever
+      --  evaluated directly (Boolean_Value/VC.Decide), bypassing the
+      --  general CFG-based flow-tracking machinery that genuinely cannot
+      --  model a quantifier's effect on program state. Used only to
+      --  narrow Contains_Unsupported_Semantics's own blacklist entry for
+      --  Ada_Quantified_Expr below; a quantified expression used as an
+      --  ordinary value elsewhere (an if-condition, an assignment RHS)
+      --  must keep disqualifying the whole subprogram, so this is an
+      --  explicit allowlist, not a blanket relaxation.
+      function In_Assertion_Position
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+         Current : Libadalang.Analysis.Ada_Node := Node.Parent;
+      begin
+         while not Libadalang.Analysis.Is_Null (Current) loop
+            if Current.Kind = Libadalang.Common.Ada_Aspect_Assoc
+              and then Normalized_Text (Current.As_Aspect_Assoc.F_Id) in
+                "pre" | "post"
+            then
+               return True;
+            elsif Current.Kind = Libadalang.Common.Ada_Pragma_Node
+              and then Normalized_Text (Current.As_Pragma_Node.F_Id) in
+                "assert" | "assert_and_cut" | "loop_invariant"
+            then
+               return True;
+            elsif Current.Kind in Libadalang.Common.Ada_Stmt then
+               return False;
+            end if;
+            Current := Current.Parent;
+         end loop;
+         return False;
+      exception
+         when others =>
+            return False;
+      end In_Assertion_Position;
+
       function Contains_Unsupported_Semantics
         (Node : Libadalang.Analysis.Ada_Node'Class;
          Root : Boolean := True) return Boolean
@@ -2953,17 +2992,19 @@ package body Adalang_Analyzer.Flow_Interp is
            and then Node.Kind = Libadalang.Common.Ada_Subp_Body
          then
             return False;
-         elsif Node.Kind in
-           Libadalang.Common.Ada_Allocator
-             | Libadalang.Common.Ada_Explicit_Deref
-             | Libadalang.Common.Ada_Real_Literal
-             | Libadalang.Common.Ada_Floating_Point_Def
-             | Libadalang.Common.Ada_Quantified_Expr
-             | Libadalang.Common.Ada_Delta_Aggregate
-             | Libadalang.Common.Ada_Generic_Subp_Instantiation
+         elsif
+           (Node.Kind in
+              Libadalang.Common.Ada_Allocator
+                | Libadalang.Common.Ada_Explicit_Deref
+                | Libadalang.Common.Ada_Real_Literal
+                | Libadalang.Common.Ada_Floating_Point_Def
+                | Libadalang.Common.Ada_Delta_Aggregate
+                | Libadalang.Common.Ada_Generic_Subp_Instantiation
+                | Libadalang.Common.Ada_Access_Def)
+           or else
+             (Node.Kind = Libadalang.Common.Ada_Quantified_Expr
+              and then not In_Assertion_Position (Node))
          then
-            return True;
-         elsif Node.Kind in Libadalang.Common.Ada_Access_Def then
             return True;
          elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
             begin

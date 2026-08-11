@@ -25,6 +25,7 @@ package body Adalang_Analyzer.VC_Prover is
 
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Libadalang.Common.Call_Expr_Kind;
    use type Adalang_Analyzer.Flow_Domain.Abstract_Bool;
    use type Ada.Containers.Count_Type;
    use type GNAT.OS_Lib.File_Descriptor;
@@ -37,7 +38,15 @@ package body Adalang_Analyzer.VC_Prover is
       State     : Domain.Flow_State;
       Symbols   : Symbolic_State := Empty_Symbolic_State;
       Supported : Boolean := True;
+      Depth     : Natural := 0;
+      --  How many expression-function inlinings or quantifier scopes deep
+      --  the current translation is, scoped per call-tree branch (see
+      --  Inlined_Call_Term and the Ada_Quantified_Expr case in
+      --  Boolean_Term) -- never propagated back to a parent context, only
+      --  used to bound how deep a single recursive translation may go.
    end record;
+
+   Max_Inline_Depth : constant := 4;
 
    function Trimmed_Image (Value : Long_Long_Integer) return String is
      (Ada.Strings.Fixed.Trim
@@ -205,6 +214,126 @@ package body Adalang_Analyzer.VC_Prover is
          return False;
    end Divisor_Provably_Nonzero;
 
+   --  A single positional call/conversion actual is represented directly as
+   --  an expression by Libadalang, not wrapped in an association list --
+   --  mirrors Adalang_Analyzer.Flow_Interp.Assoc_Expression (private to
+   --  that unit's body, so not reusable directly) for the one-actual case
+   --  a type conversion always has.
+   function Single_Actual_Expr
+     (Suffix : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Expr
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Suffix) then
+         return Libadalang.Analysis.No_Expr;
+      elsif Suffix.Kind in Libadalang.Common.Ada_Expr then
+         return Suffix.As_Expr;
+      elsif Suffix.Children_Count < 1 then
+         return Libadalang.Analysis.No_Expr;
+      elsif Suffix.Child (1).Kind = Libadalang.Common.Ada_Param_Assoc then
+         return Suffix.Child (1).As_Param_Assoc.F_R_Expr;
+      elsif Suffix.Child (1).Kind in Libadalang.Common.Ada_Base_Assoc then
+         return Suffix.Child (1).As_Base_Assoc.P_Assoc_Expr;
+      else
+         return Libadalang.Analysis.No_Expr;
+      end if;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Single_Actual_Expr;
+
+   --  True only for a conversion whose target is a plain signed integer
+   --  type -- a modular target needs "mod 2**N" wraparound semantics, not
+   --  the identity translation this file gives every other conversion, so
+   --  it is deliberately excluded rather than translated incorrectly.
+   function Signed_Integer_Target
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is
+   begin
+      if Decl.Kind not in Libadalang.Common.Ada_Base_Type_Decl then
+         return False;
+      end if;
+
+      declare
+         Typ  : constant Libadalang.Analysis.Base_Type_Decl :=
+           Decl.As_Base_Type_Decl;
+         Root : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         if not Typ.P_Is_Int_Type then
+            return False;
+         end if;
+
+         Root := Typ.P_Root_Type;
+         return not
+           (Root.Kind in Libadalang.Common.Ada_Type_Decl
+            and then Root.As_Type_Decl.F_Type_Def.Kind =
+              Libadalang.Common.Ada_Mod_Int_Type_Def);
+      end;
+   exception
+      when others =>
+         return False;
+   end Signed_Integer_Target;
+
+   --  As Adalang_Analyzer.Flow_Interp.Formal_Mode (private to that unit's
+   --  body): walks up from a formal's own defining name to its enclosing
+   --  Param_Spec to read its mode.
+   function Enclosing_Param_Spec
+     (Formal : Libadalang.Analysis.Defining_Name'Class)
+      return Libadalang.Analysis.Param_Spec
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Formal);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_Param_Spec then
+            return Current.As_Param_Spec;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return Libadalang.Analysis.No_Param_Spec;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Param_Spec;
+   end Enclosing_Param_Spec;
+
+   function Formal_Is_Writable
+     (Formal : Libadalang.Analysis.Defining_Name'Class) return Boolean
+   is
+      Spec : constant Libadalang.Analysis.Param_Spec :=
+        Enclosing_Param_Spec (Formal);
+   begin
+      return not Libadalang.Analysis.Is_Null (Spec)
+        and then Spec.F_Mode in
+          Libadalang.Common.Ada_Mode_Out
+            | Libadalang.Common.Ada_Mode_In_Out;
+   end Formal_Is_Writable;
+
+   --  A formal's SMT sort, guessed from its type mark's own text rather
+   --  than full type resolution (mirroring the lightweight text-based
+   --  checks already used throughout this file, e.g. Boolean_Term's own
+   --  "true"/"false" literal check) -- Integer_Sort by default, since
+   --  every scalar type this bridge otherwise supports is integer-sorted;
+   --  a wrong guess only costs a Sort mismatch in Symbol_For's binding
+   --  lookup (Context.Supported := False), never an incorrect result.
+   function Formal_Sort
+     (Formal : Libadalang.Analysis.Defining_Name'Class) return Scalar_Sort
+   is
+      Spec : constant Libadalang.Analysis.Param_Spec :=
+        Enclosing_Param_Spec (Formal);
+   begin
+      if not Libadalang.Analysis.Is_Null (Spec)
+        and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+          (Adalang_Analyzer.Ada_Text.Node_Text (Spec.F_Type_Expr)) =
+          "boolean"
+      then
+         return Boolean_Sort;
+      end if;
+      return Integer_Sort;
+   exception
+      when others =>
+         return Integer_Sort;
+   end Formal_Sort;
+
    function Integer_Term
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String;
@@ -212,6 +341,30 @@ package body Adalang_Analyzer.VC_Prover is
    function Boolean_Term
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String;
+
+   procedure Set_Binding
+     (State : in out Symbolic_State;
+      Item  : Symbolic_Binding);
+
+   --  Inlines a call that resolves to a plain Ada expression function (a
+   --  single-expression body, "is (...)") by substitution: each actual is
+   --  translated once under the caller's own Context, bound to the
+   --  callee's formal via Set_Binding in a fresh child context, and the
+   --  callee's own return expression is then translated under that child
+   --  context. Anything else (a statement-bodied subprogram, a dispatching
+   --  or unresolved call, an out/in out formal, nesting past
+   --  Max_Inline_Depth) falls back to Context.Supported := False -- the
+   --  same conservative-fallback philosophy as every other unhandled shape
+   --  in this file. This single "callee must be an Expr_Function" gate is
+   --  also the purity guard: inlining only ever recurses into further
+   --  Expr_Function bodies, and anything else Integer_Term/Boolean_Term
+   --  encounter falls to their own exhaustive "others => Unsupported", so
+   --  no assignment statement or side-effecting call can ever be reached
+   --  through this path.
+   function Inlined_Call_Term
+     (Call    : Libadalang.Analysis.Call_Expr;
+      Context : in out Translation_Context;
+      Sort    : Scalar_Sort) return Unbounded_String;
 
    function Binary
      (Operator : String;
@@ -264,6 +417,38 @@ package body Adalang_Analyzer.VC_Prover is
                   return To_Unbounded_String
                     (Symbol_For (Context, Key, Integer_Sort));
                end if;
+            end;
+
+         when Libadalang.Common.Ada_Call_Expr =>
+            declare
+               Call : constant Libadalang.Analysis.Call_Expr :=
+                 Node.As_Call_Expr;
+            begin
+               case Call.P_Kind is
+                  when Libadalang.Common.Type_Conversion =>
+                     declare
+                        Target : constant Libadalang.Analysis.Basic_Decl :=
+                          Call.F_Name.P_Referenced_Decl;
+                        Actual : constant Libadalang.Analysis.Expr :=
+                          Single_Actual_Expr (Call.F_Suffix);
+                     begin
+                        if Libadalang.Analysis.Is_Null (Target)
+                          or else Libadalang.Analysis.Is_Null (Actual)
+                          or else not Signed_Integer_Target (Target)
+                        then
+                           Context.Supported := False;
+                           return Null_Unbounded_String;
+                        end if;
+                        return Integer_Term (Actual, Context);
+                     end;
+
+                  when Libadalang.Common.Call =>
+                     return Inlined_Call_Term (Call, Context, Integer_Sort);
+
+                  when others =>
+                     Context.Supported := False;
+                     return Null_Unbounded_String;
+               end case;
             end;
 
          when Libadalang.Common.Ada_Paren_Expr =>
@@ -435,6 +620,77 @@ package body Adalang_Analyzer.VC_Prover is
          end;
       elsif Node.Kind = Libadalang.Common.Ada_Paren_Expr then
          return Boolean_Term (Node.As_Paren_Expr.F_Expr, Context);
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
+         declare
+            Call : constant Libadalang.Analysis.Call_Expr := Node.As_Call_Expr;
+         begin
+            if Call.P_Kind = Libadalang.Common.Call then
+               return Inlined_Call_Term (Call, Context, Boolean_Sort);
+            end if;
+            Context.Supported := False;
+            return Null_Unbounded_String;
+         end;
+      elsif Node.Kind = Libadalang.Common.Ada_Quantified_Expr then
+         declare
+            Quant     : constant Libadalang.Analysis.Quantified_Expr :=
+              Node.As_Quantified_Expr;
+            Spec      : constant Libadalang.Analysis.For_Loop_Spec :=
+              Quant.F_Loop_Spec;
+            Iter_Expr : constant Libadalang.Analysis.Ada_Node :=
+              Spec.F_Iter_Expr;
+         begin
+            if Spec.F_Loop_Type /= Libadalang.Common.Ada_Iter_Type_In
+              or else not Libadalang.Analysis.Is_Null (Spec.F_Iter_Filter)
+              or else Iter_Expr.Kind /= Libadalang.Common.Ada_Bin_Op
+              or else Iter_Expr.As_Bin_Op.F_Op /=
+                Libadalang.Common.Ada_Op_Double_Dot
+            then
+               Context.Supported := False;
+               return Null_Unbounded_String;
+            end if;
+
+            declare
+               Low        : constant Unbounded_String :=
+                 Integer_Term (Iter_Expr.As_Bin_Op.F_Left, Context);
+               High       : constant Unbounded_String :=
+                 Integer_Term (Iter_Expr.As_Bin_Op.F_Right, Context);
+               Bound_Key  : constant Libadalang.Analysis.Ada_Node :=
+                 Libadalang.Analysis.Ada_Node (Spec.F_Var_Decl.F_Id);
+               Bound_Name : constant String := Root_Name (Bound_Key, "q");
+               Child      : Translation_Context := Context;
+            begin
+               Child.Depth := Context.Depth + 1;
+               Domain.Flow_Set_Initialized
+                 (Child.State, Bound_Key, Domain.Bool_True);
+               Set_Binding
+                 (Child.Symbols,
+                  (Key  => Bound_Key,
+                   Sort => Integer_Sort,
+                   Term => To_Unbounded_String (Bound_Name)));
+
+               declare
+                  Body_Term : constant Unbounded_String :=
+                    Boolean_Term (Quant.F_Expr, Child);
+                  Range_Hyp : constant String :=
+                    "(and (<= " & To_String (Low) & " " & Bound_Name &
+                      ") (<= " & Bound_Name & " " & To_String (High) & "))";
+               begin
+                  Context.Supported := Child.Supported;
+                  Context.Symbols.Roots := Child.Symbols.Roots;
+
+                  case Quant.F_Quantifier is
+                     when Libadalang.Common.Ada_Quantifier_All =>
+                        return To_Unbounded_String
+                          ("(forall ((" & Bound_Name & " Int)) (=> " &
+                             Range_Hyp & " " & To_String (Body_Term) & "))");
+                     when Libadalang.Common.Ada_Quantifier_Some =>
+                        return To_Unbounded_String
+                          ("(exists ((" & Bound_Name & " Int)) (and " &
+                             Range_Hyp & " " & To_String (Body_Term) & "))");
+                  end case;
+               end;
+            end;
+         end;
       elsif Node.Kind = Libadalang.Common.Ada_Un_Op then
          declare
             Expr : constant Libadalang.Analysis.Un_Op := Node.As_Un_Op;
@@ -523,6 +779,101 @@ package body Adalang_Analyzer.VC_Prover is
          return Null_Unbounded_String;
    end Boolean_Term;
 
+   function Inlined_Call_Term
+     (Call    : Libadalang.Analysis.Call_Expr;
+      Context : in out Translation_Context;
+      Sort    : Scalar_Sort) return Unbounded_String
+   is
+      Decl : Libadalang.Analysis.Basic_Decl := Call.F_Name.P_Referenced_Decl;
+   begin
+      if Context.Depth >= Max_Inline_Depth
+        or else Libadalang.Analysis.Is_Null (Decl)
+        or else Call.F_Name.P_Is_Dispatching_Call
+      then
+         Context.Supported := False;
+         return Null_Unbounded_String;
+      end if;
+
+      if Decl.Kind = Libadalang.Common.Ada_Subp_Decl then
+         Decl := Libadalang.Analysis.Basic_Decl
+           (Decl.As_Subp_Decl.P_Body_Part (Imprecise_Fallback => True));
+      end if;
+
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else Decl.Kind /= Libadalang.Common.Ada_Expr_Function
+      then
+         Context.Supported := False;
+         return Null_Unbounded_String;
+      end if;
+
+      declare
+         Callee : Translation_Context := Context;
+      begin
+         Callee.Depth := Context.Depth + 1;
+
+         for Pair of Call.F_Name.P_Call_Params loop
+            declare
+               Formal : constant Libadalang.Analysis.Defining_Name'Class :=
+                 Libadalang.Analysis.Param (Pair);
+               Actual : constant Libadalang.Analysis.Expr'Class :=
+                 Libadalang.Analysis.Actual (Pair);
+               Formal_Sort_Value : constant Scalar_Sort :=
+                 Formal_Sort (Formal);
+               Term : Unbounded_String;
+            begin
+               if Formal_Is_Writable (Formal) then
+                  Context.Supported := False;
+                  return Null_Unbounded_String;
+               end if;
+
+               case Formal_Sort_Value is
+                  when Integer_Sort =>
+                     Term := Integer_Term (Actual, Context);
+                  when Boolean_Sort =>
+                     Term := Boolean_Term (Actual, Context);
+               end case;
+
+               if not Context.Supported then
+                  return Null_Unbounded_String;
+               end if;
+
+               --  Integer_Term/Boolean_Term's own Ada_Identifier case
+               --  checks Domain.Flow_Initialization before ever consulting
+               --  Symbol_For's binding table, so a callee's formal --
+               --  never itself flow-tracked -- must be marked
+               --  initialized in the callee's own scratch State, the same
+               --  way Flow_Interp.Seed_Formal_Values does for
+               --  Check_Call_Precondition's own substitution.
+               Domain.Flow_Set_Initialized
+                 (Callee.State, Libadalang.Analysis.Ada_Node (Formal),
+                  Domain.Bool_True);
+               Set_Binding
+                 (Callee.Symbols,
+                  (Key  => Libadalang.Analysis.Ada_Node (Formal),
+                   Sort => Formal_Sort_Value,
+                   Term => Term));
+            end;
+         end loop;
+
+         declare
+            Body_Expr : constant Libadalang.Analysis.Expr :=
+              Decl.As_Expr_Function.F_Expr;
+            Result    : Unbounded_String;
+         begin
+            case Sort is
+               when Integer_Sort =>
+                  Result := Integer_Term (Body_Expr, Callee);
+               when Boolean_Sort =>
+                  Result := Boolean_Term (Body_Expr, Callee);
+            end case;
+
+            Context.Supported := Callee.Supported;
+            Context.Symbols.Roots := Callee.Symbols.Roots;
+            return Result;
+         end;
+      end;
+   end Inlined_Call_Term;
+
    procedure Set_Binding
      (State : in out Symbolic_State;
       Item  : Symbolic_Binding)
@@ -543,7 +894,8 @@ package body Adalang_Analyzer.VC_Prover is
       Flow        : Domain.Flow_State) return Symbolic_State
    is
       Boolean_Context : Translation_Context :=
-        (State => Flow, Symbols => State, Supported => State.Supported);
+        (State => Flow, Symbols => State, Supported => State.Supported,
+         Depth => 0);
       Boolean_Value : constant Unbounded_String :=
         Boolean_Term (Value, Boolean_Context);
    begin
@@ -560,7 +912,8 @@ package body Adalang_Analyzer.VC_Prover is
 
       declare
          Integer_Context : Translation_Context :=
-           (State => Flow, Symbols => State, Supported => State.Supported);
+           (State => Flow, Symbols => State, Supported => State.Supported,
+         Depth => 0);
          Integer_Value : constant Unbounded_String :=
            Integer_Term (Value, Integer_Context);
       begin
@@ -585,7 +938,8 @@ package body Adalang_Analyzer.VC_Prover is
       Flow      : Domain.Flow_State) return Symbolic_State
    is
       Context : Translation_Context :=
-        (State => Flow, Symbols => State, Supported => State.Supported);
+        (State => Flow, Symbols => State, Supported => State.Supported,
+         Depth => 0);
       Term : constant Unbounded_String := Boolean_Term (Condition, Context);
    begin
       if not Context.Supported or else Length (Term) = 0 then
@@ -1000,7 +1354,8 @@ package body Adalang_Analyzer.VC_Prover is
       Symbols   : Symbolic_State) return VC_Result
    is
       Context : Translation_Context :=
-        (State => State, Symbols => Symbols, Supported => Symbols.Supported);
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Depth => 0);
       Goal    : constant Unbounded_String :=
         Boolean_Term (Condition, Context);
       Formula : Unbounded_String;
