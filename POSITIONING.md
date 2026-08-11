@@ -97,6 +97,7 @@ position, not equivalence of check names or raw check counts.
 | GNATcheck | Enforce syntactic and semantic Ada coding rules, including custom LKQL rules | Closest direct overlap. AdaLang has curated built-in policies and some deeper flow-sensitive checks, but does not match GNATcheck's maturity or rule extensibility. |
 | GNATtest | Generate AUnit test skeletons, harnesses, and drivers | Complementary. AdaLang neither generates nor executes tests. |
 | GNATprove | Check SPARK legality, analyze information flow, and prove selected run-time and contract properties | Downstream verification tool. AdaLang can discharge some bounded scalar obligations and identify readiness issues, but is not a substitute for GNATprove. |
+| CodePeer / GNAT SAS | Whole-program Ada defect and vulnerability analysis via abstract interpretation and symbolic execution, with qualification credit for specific checks under DO-178B and EN 50128 SIL 4 | The closest commercial analog to AdaLang's core "find defects in ordinary Ada via flow analysis" purpose. Commercial and license-gated, and its whole-program model needs a fully closed, compilable project the same way GNATprove does; AdaLang is free, its checks are directly inspectable, and it tolerates partial or scoped file sets a whole-program tool cannot analyze at all. |
 | Polyspace Bug Finder | Find probable C/C++ defects and coding-rule violations without exhaustive proof | Closest conceptual product category, but it serves a different language and is substantially more mature and broad. |
 | Polyspace Code Prover | Classify supported C/C++ operations by exhaustive run-time-error analysis | An aspirational model for obligation reporting, not a current competitor. |
 | Polyspace Client/Server for Ada | Use abstract interpretation to verify selected Ada run-time properties | The relevant Polyspace comparison for Ada. AdaLang does not currently offer an equivalent absence-of-error guarantee. |
@@ -105,6 +106,7 @@ Official descriptions of these tools are available in the
 [GNATcheck Reference Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/getting_started.html),
 [GNATtest User's Guide](https://docs.adacore.com/gnatcoverage-docs/html/gnattest/gnattest_part.html),
 [SPARK User's Guide](https://docs.adacore.com/spark2014-docs/html/ug/en/source/how_to_run_gnatprove.html),
+[GNAT Static Analysis Suite](https://www.adacore.com/static-analysis-suite),
 [Polyspace Bug Finder and Code Prover comparison](https://www.mathworks.com/help/bugfinder/gs/use-bug-finder-and-code-prover.html),
 and [Polyspace Products for Ada](https://www.mathworks.com/products/polyspace-ada.html).
 
@@ -225,6 +227,43 @@ GNATprove
   - contract proof
 ```
 
+### CodePeer / GNAT SAS
+
+CodePeer -- rebranded GNAT Static Analysis Suite (GNAT SAS) -- is AdaCore's
+own commercial flow-sensitive defect and vulnerability finder for Ada, and
+the closest analog to AdaLang's core purpose: finding likely and definite
+defects in ordinary Ada through flow analysis, not enforcing a fixed rule
+set. It performs whole-program abstract interpretation and symbolic
+execution across procedure and module boundaries, detects overlapping
+defect classes (uninitialized values, range and overflow errors, null
+dereference) plus broader taint-based security analysis, and specific
+checks within it hold real qualification credit -- DO-178B (avionics:
+overflow, range, index, division-by-zero, and uninitialized-variable
+detection) and CENELEC EN 50128:2011 SIL 4 (rail: boundary-value,
+control-flow, and data-flow analysis) -- a claim AdaLang must not make (see
+"Approved claim vocabulary").
+
+Two gaps are structural, not just maturity. First, licensing and
+inspectability: GNAT SAS is commercial and license-gated; AdaLang is free
+and its checks are directly inspectable, the same "transparent
+implementation" distinction already claimed against GNATcheck. Second,
+project completeness: like GNATprove, GNAT SAS's whole-program model needs
+a fully closed, compilable dependency graph before analysis can begin --
+the same boundary this project's own benchmarks (AWS, Ada_Drivers_Library,
+Certyflie) repeatedly hit with GNATprove itself, and repeatedly worked
+around by scoping AdaLang to a self-contained file subset instead.
+AdaLang's Libadalang foundation tolerates an incomplete or partially
+out-of-date project enough to still produce scoped, useful findings; a
+whole-program tool's cross-procedure precision requires the opposite.
+
+AdaLang should not claim equivalent defect-finding depth, cross-procedure
+precision, or qualification credit -- GNAT SAS's whole-program analysis and
+its established qualifications are real, substantial advantages this
+project has not attempted to replicate. AdaLang's defensible distinction
+here is the same shape as GNATcheck's: open, inspectable, no-setup analysis
+reaching code a whole-program, license-gated tool cannot, not a claim of
+matching its depth or certification standing.
+
 ### Polyspace products
 
 Polyspace Bug Finder and Code Prover primarily target C/C++. The direct Ada
@@ -247,6 +286,9 @@ AdaLang should compete on:
   from project and certification evidence.
 - Extensibility through normal Ada development and professional rule
   implementation.
+- Free, license-free operation on projects a commercial whole-program tool
+  cannot yet reach: partial checkouts, unbuilt dependencies, or a codebase
+  without an AdaCore toolchain license at all.
 
 AdaLang should not compete on:
 

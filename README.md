@@ -779,6 +779,12 @@ safety-critical and high-integrity Ada/SPARK systems.
 - **Customizable & transparent** — fully open source (GPL), with clear rule
   classifications and remediation guidance. Easy to extend or integrate into
   your toolchain.
+- **SonarQube integration** — findings are also consumable inside SonarQube
+  Server through [SonarAdaPlugin](https://github.com/mmartign/SonarAdaPlugin),
+  a companion Ada extension that reports AdaLang Analyzer results (alongside
+  AdaControl and GNATtest coverage) as ordinary SonarQube issues, so teams
+  already standardized on SonarQube get this analysis in the dashboard they
+  already use, with no separate report to review.
 
 ### Professional Services from Spazio IT
 
