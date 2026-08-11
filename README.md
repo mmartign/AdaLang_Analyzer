@@ -10,11 +10,74 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
+At a glance: 99 checks spanning coding policy, data/control-flow defects, and
+SPARK readiness; a bounded `--verify` mode that classifies individual scalar
+proof obligations as proved safe, definite error, unproved, unreachable, or
+unsupported; `--automotive` and `--do178c=<level>` verification-support
+profiles; and text, JSON, and SARIF output for CI. Built on Libadalang, it is
+deliberately conservative — findings are predictable, and a result never
+speculates past what an analysis boundary can support.
+
 The project's current competitive scope and permitted product claims are
 defined in [POSITIONING.md](POSITIONING.md). The meaning and limitations of
 analysis results, including the boundary between ordinary findings and bounded
 proof statuses, are defined in
 [ASSURANCE_MODEL.md](ASSURANCE_MODEL.md).
+
+## Quick Links
+
+- [POSITIONING.md](POSITIONING.md) — competitive scope and permitted product
+  claims
+- [ASSURANCE_MODEL.md](ASSURANCE_MODEL.md) — what a finding and a proof status
+  do and do not mean
+- [AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md) —
+  `--automotive` rule-by-rule mapping to Ada/SPARK high-integrity guidance
+- [DO178C_COMPLIANCE_MATRIX.md](DO178C_COMPLIANCE_MATRIX.md) — `--do178c`
+  rule-by-rule mapping to DO-178C Annex A Table A-5
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution workflow
+
+## Why AdaLang Analyzer Exists
+
+> AdaLang Analyzer is a lightweight quality and safety analyzer for ordinary
+> Ada that helps teams find defects, enforce project policies, and prepare
+> selected code for stronger verification.
+>
+> — [POSITIONING.md](POSITIONING.md)
+
+Most Ada code is not, and may never be, in the SPARK subset. AdaLang fills the
+space between routine coding-standard enforcement and full formal
+verification: it catches defects and readiness gaps early, on ordinary code,
+before the cost of a GNATprove pass — and hands off the code that genuinely
+needs stronger guarantees rather than trying to replace that step.
+
+## Design Principles
+
+- **Predictability** — conservative, intraprocedural analysis with documented
+  boundaries (see [ASSURANCE_MODEL.md](ASSURANCE_MODEL.md)); a finding means
+  the same thing on every run, and an unsupported case is reported as
+  `Unsupported`, never guessed at as safe.
+- **Transparency** — every check ships its own rule guidance, `why:`/
+  `evidence:` detail where a check supplies it, and a JSON/SARIF configuration
+  manifest recording exactly what ran.
+- **Interoperability** — text, JSON, and SARIF output for CI; a SonarQube
+  channel via [SonarAdaPlugin](https://github.com/mmartign/SonarAdaPlugin);
+  and a documented handoff to GNATprove for the code that needs full formal
+  proof (see [POSITIONING.md](POSITIONING.md)).
+
+## What AdaLang Analyzer Does Not Claim
+
+AdaLang Analyzer does not prove a subprogram or program free of defects, does
+not exhaustively check every execution path, and does not guarantee zero
+false negatives. It is not equivalent to GNATprove or a comparable commercial
+verification/bug-finding tool, and it is not a qualified verification tool.
+`--verify`'s `Proved_Safe` applies only to the one reported obligation, under
+the reported assumptions — never to a whole subprogram. The `--automotive`
+and `--do178c=<level>` profiles are verification *support*: they do not by
+themselves determine or certify MISRA, AUTOSAR, ISO 26262, or DO-178C
+compliance, which also requires planning, requirements, testing, and
+lifecycle evidence this tool does not produce. The complete, binding list of
+claims this project will and will not make is
+[POSITIONING.md](POSITIONING.md)'s "Approved claim vocabulary".
 
 ## Relationship to Libadalang and AdaCore
 
@@ -28,6 +91,22 @@ proof statuses, are defined in
   “Libadalang” and “AdaCore” are trademarks of AdaCore.
 
 ## Checks
+
+AdaLang Analyzer's 99 checks fall into five broad groups:
+
+- **Defect detection** — control-flow, data-flow, expression, case/
+  conditional, exception-handling, arithmetic, assignment, and complexity
+  checks that flag likely or definite runtime and logic defects.
+- **SPARK readiness** — `Global`/`Depends` contract checks and known
+  precondition/postcondition/assertion/range/index/overflow/discriminant
+  failures that anticipate what a later GNATprove pass will need.
+- **Bounded verification** — `--verify`'s scalar proof-obligation
+  classification (a mode, not a rule in the table below; see the following
+  sections).
+- **Safety profiles** — the `Automotive` and `DO-178C support` checks behind
+  `--automotive` and `--do178c=<level>`.
+- **Style & maintainability** — restricted-construct policies, style, and
+  naming checks.
 
 The analyzer currently provides the following checks:
 
@@ -556,6 +635,12 @@ is installed and reports an explicit skip otherwise.
 
 ## Usage
 
+Quick start — analyze a project with the recommended, low-noise preset:
+
+```sh
+alr exec -- ./bin/adalang_analyzer --recommended -P my_project.gpr
+```
+
 Enable every check for one or more Ada source files:
 
 ```sh
@@ -704,6 +789,17 @@ Use `--config=<file>` to load a specific file instead of relying on
 auto-discovery (an explicit path that does not exist is a hard error), or
 `--no-config` to skip auto-discovery entirely and fall back to whatever the
 real command line alone specifies.
+
+### Output formats
+
+`--format=<name>` selects `text` (default, human-readable), `json`, or
+`sarif`. JSON and SARIF carry the same underlying data — ordinary findings,
+`--verify` proof obligations and their summary, and an
+`analysisConfiguration` manifest recording exactly what ran (version,
+preset, enabled rules, thresholds, analyzed files) — while SARIF additionally
+follows the schema CI code-scanning integrations expect. Only JSON/SARIF, or
+plain text run with `-v`, include full per-obligation proof detail; plain
+text without `-v` prints only the aggregate summary.
 
 For CI systems that consume SARIF:
 
