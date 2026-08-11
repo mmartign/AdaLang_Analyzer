@@ -881,6 +881,14 @@ safety-critical and high-integrity Ada/SPARK systems.
   AdaControl and GNATtest coverage) as ordinary SonarQube issues, so teams
   already standardized on SonarQube get this analysis in the dashboard they
   already use, with no separate report to review.
+- **Available as a ready-to-run platform** — AdaLang Analyzer and
+  SonarAdaPlugin also ship together, pre-integrated with SonarQube, as part
+  of Spazio IT's
+  [SAFe Toolset](https://spazioit.com/pages_en/sol_inf_en/code_quality_en/safe-toolset-en/),
+  a packaged static-analysis environment covering C, C++, and Ada for
+  aerospace, defense, automotive, railway, and industrial safety-critical
+  development — for teams that want a working environment rather than
+  assembling and version-matching the pieces themselves.
 
 ### Professional Services from Spazio IT
 
