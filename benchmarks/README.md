@@ -86,6 +86,25 @@ there.
   GNATprove hard-errored on a genuine SPARK legality violation in its
   interrupt-handling code — a real defect in that project, not a tooling
   gap.
+- **All five re-run 2026-08-11** to validate `FP-047` (new `/`, `mod`,
+  `rem` support in `Adalang_Analyzer.VC_Prover`'s SMT bridge, added after
+  investigating why `coap_spark`'s own "both safe" rate was so low). Every
+  matched-pair bucket and both risk buckets (possible unsoundness, false
+  positive) came back bit-identical to each corpus's prior baseline on all
+  five — **[sparknacl](sparknacl/RESULTS_2026-08-11.md)**,
+  **[saatana](saatana/RESULTS_2026-08-04.md)** (re-run, identical, no new
+  dated file), **[libkeccak](libkeccak/RESULTS_2026-08-07.md)** (re-run,
+  negligible noise-level wobble, no new dated file),
+  **[cubedos](cubedos/RESULTS_2026-08-11.md)**, and
+  **[coap_spark](coap_spark/RESULTS_2026-08-11.md)** itself, whose "both
+  safe" rate stayed exactly 1/846 ≈ 0.1% — `FP-047` targeted `/`/`mod`/
+  `rem`, but `coap_spark`'s actual stuck shape (`RFLX_Types.Fits_Into`'s
+  `Value < 2 ** Size` precondition) needs exponentiation, deliberately left
+  out of that fix's scope. `sparknacl` and `cubedos` each show a small,
+  unmatched-pool obligation-count drop versus their prior baseline, traced
+  (confirmed for `aws`, plausible but not independently re-confirmed for
+  `sparknacl`/`cubedos`) to `FP-046`, an unrelated fix that landed in this
+  same window — not to `FP-047`.
 
 ## Real-code validation (no GNATprove oracle)
 
@@ -141,6 +160,17 @@ there.
   regardless, since they sit behind a separate, still-open Property_Error
   (the same general class as `FP-029`) that keeps the fixed code path from
   ever being reached for them in this environment.
+- **[aws](aws/RESULTS_2026-08-11.md)** (2026-08-11) — a third re-run of the
+  same 348-file corpus, part of a sweep validating `FP-047` (new `/`,
+  `mod`, `rem` SMT support). `--recommended`/`--spark`/`--automotive` and
+  every `--automotive` concurrency-check count came back bit-identical to
+  2026-08-09; `--verify`'s `Proved_Safe` count is also bit-identical
+  (5,702), so `FP-047` was a clean no-op on this corpus. The four
+  `Definite_Error` false positives 2026-08-09 had flagged as "newly found,
+  not yet fixed" are gone, confirming the separately-landed `FP-046` fix
+  closed them (also confirmed and re-run: **[gnatcoll](gnatcoll/RESULTS_2026-08-09.md)**
+  and **[ada_drivers_library](ada_drivers_library/RESULTS_2026-08-05.md)**,
+  both bit-identical to their prior baseline, no new dated files needed).
 
 ## What these benchmarks have found, in total
 
