@@ -358,7 +358,11 @@ that GNATprove could not prove, and zero cases of AdaLang calling something a
 definite error that GNATprove proved safe, across 886 matched obligations —
 and, independently, surfaced a real false positive (`FP-039`, closed) in
 `Global`-aspect handling that the hand-constructed precision corpus had not
-covered.
+covered. A 2026-08-11 re-run, after `Ada_Membership_Expr`/
+`Ada_Attribute_Ref` support landed in `VC_Prover`, moved this to 890
+matched obligations (37 "both safe", up from 32) with the same zero
+unsoundness/false-positive result — see
+`benchmarks/sparknacl/RESULTS_2026-08-11.md`'s own re-run section.
 
 `benchmarks/cubedos/` applies the same per-obligation methodology to a
 second, structurally different SPARK corpus (cubesatlab/cubedos, a
@@ -435,7 +439,14 @@ possible unsoundness and zero false positives, though the "both safe"
 share is the lowest of the five oracle corpora (1/846) — RecordFlux's
 generated contracts and session-state logic are the hardest code shape yet
 for AdaLang's bounded verifier to independently prove, even though it
-never gets one wrong there. Getting a comparable run required substituting
+never gets one wrong there. A 2026-08-11 re-run, after
+`Ada_Membership_Expr`/`Ada_Attribute_Ref` support landed in `VC_Prover`,
+moved this to 853 matched obligations (still 1 "both safe") and, more
+substantially, lifted overall `Proved_Safe` by 283 obligations outside the
+matched set — the largest single-corpus movement any fix has produced in
+this benchmark suite, still with zero unsoundness or false positives; see
+`benchmarks/coap_spark/RESULTS_2026-08-11.md`'s own re-run section. Getting
+a comparable run required substituting
 a version-matched SPARKlib for the one the project's own Alire manifest
 pins. A candidate corpus, jgrivera67/HiRTOS, was set aside after GNATprove
 hard-errored on a genuine SPARK legality violation in its own

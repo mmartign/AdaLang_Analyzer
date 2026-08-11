@@ -26,14 +26,18 @@ overwriting the old one, is how this directory is meant to grow.
 
 | Corpus | Author | Domain | Matched pairs | Unsoundness | False positives |
 | --- | --- | --- | ---: | ---: | ---: |
-| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 886 | 0 | 0 |
+| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 890 | 0 | 0 |
 | [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 101 | 0 | 0 |
 | [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 212 | 0 | 0 |
-| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 846 | 0 | 0 |
+| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 853 | 0 | 0 |
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 7 | 0 | 0 |
 
+(Matched-pair counts as of each corpus's latest re-run — see the dated
+`RESULTS_*.md` files below; several moved after `Ada_Membership_Expr`/
+`Ada_Attribute_Ref` support landed in `VC_Prover` on 2026-08-11.)
+
 **Across four independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark) — 2,045 proof obligations both tools could
+Saatana, libkeccak, coap_spark) — 2,056 proof obligations both tools could
 independently evaluate at the same location, spanning four different
 authors and four structurally different domains — AdaLang has never once
 called something safe that GNATprove could not prove, and never once called
@@ -46,11 +50,18 @@ What this table doesn't show: AdaLang answers "I don't know"
 consistent with `POSITIONING.md`'s framing of `--verify` as "a much
 narrower scalar subset," not a competitor to full SMT-backed proof. The
 "both safe" share of each corpus's matched pairs varies a lot by code
-style: SPARKNaCl 32/886 (~4%), libkeccak 50/212 (~24%), coap_spark 1/846
+style: SPARKNaCl 37/890 (~4%), libkeccak 50/212 (~24%), coap_spark 1/853
 (~0.1%) — coap_spark's RecordFlux-generated protocol contracts and
 session-state logic are the hardest code shape yet for AdaLang's bounded
 verifier to independently prove, even though it never gets one *wrong*
-there.
+there. coap_spark's `Proved_Safe` count did jump substantially in the
+2026-08-11 re-run (+283, the largest single-corpus movement any fix has
+produced in this directory) — almost entirely outside the strict
+matched-pair set, since it resolves obligation shapes (buffer-length-bounded
+loops, protocol-field membership tests) that often don't have a directly
+comparable GNATprove message at the same location; see
+`coap_spark/RESULTS_2026-08-11.md`'s own re-run section for the full
+breakdown.
 
 - **[sparknacl](sparknacl/RESULTS_2026-08-04.md)** (2026-08-04) — the first
   and largest oracle comparison. Found and fixed `FP-039`: a nested
@@ -221,7 +232,7 @@ it's actually positioned as (`POSITIONING.md`): a fast, no-setup-required
 first pass.
 
 **Where the evidence is strong.** Zero false positives and zero possible
-unsoundness across 2,045 matched proof obligations spanning four
+unsoundness across 2,056 matched proof obligations spanning four
 independently-authored, fully-proved SPARK corpora — a hash family, two
 crypto primitives, a protocol parser — is the property that matters most
 for trusting a tool's output, and it held up even on code (coap_spark)
@@ -238,7 +249,7 @@ into the project, while AdaLang completed a full pass and, in the process,
 found and fixed two more real false positives (`FP-043`, `FP-045`).
 
 **Where the tradeoff bites.** AdaLang rarely proves anything independently
-on harder code shapes — on coap_spark it left 835 of 846 comparable
+on harder code shapes — on coap_spark it left 842 of 853 comparable
 obligations `Unproved`/`Unsupported` and matched GNATprove's own proof on
 only 1, so its `Proved_Safe` verdicts are a bonus on top of GNATprove where
 both are available, not a substitute, and its `Unproved`/`Unsupported`
@@ -255,7 +266,7 @@ the eight-bug table above as evidence that every corpus run turns up a
 defect. Its own 27 GNATprove-matched pairs also showed zero disagreement,
 but the corpus isn't a fully-proved oracle (GNATprove itself leaves three
 step-limited checks and one flow error unresolved there), so that sample is
-both too small and too weak an oracle to add to the 2,045-obligation total
+both too small and too weak an oracle to add to the 2,056-obligation total
 above; it corroborates without counting.
 
 **Net:** use it for what static analysis on ordinary Ada is for — catching
