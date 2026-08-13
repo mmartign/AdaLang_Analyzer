@@ -1847,3 +1847,106 @@ through it) and therefore a materially larger-blast-radius fix than
 anything in this file so far -- deliberately not attempted in this same
 change, consistent with keeping each measured step to one mechanism. Not
 yet built; recorded here as the validated next step.
+
+### `Ada_Dotted_Name` (record-component) support: built, safe, near-zero corpus payoff (2026-08-13)
+
+The other named prerequisite for Tokeneer's dominant `Ada_Membership_Expr`
+shape (`TheAdmin.RolePresent in PrivTypes.AdminPrivilegeT`) -- and
+separately the single largest `Assign`-havoc bucket on Tokeneer (39%,
+`Ada_Dotted_Name`) -- was built: `Integer_Term` gained a case for ordinary
+record-component reads like `TheAdmin.RolePresent`, which previously fell
+straight to `Unsupported` (no case for that node kind existed at all).
+
+**Design.** `VC_Prover`'s `Symbol_Root`/`Symbolic_Binding` were keyed by a
+single `Ada_Node` (a defining name), which is fine for a plain variable but
+cannot soundly represent "one component of one object" -- a component's
+own declaration is shared by every object of the record type, so keying
+only on it would conflate `TheAdmin.RolePresent` with
+`SomeOtherAdmin.RolePresent`. Fixed by replacing the key with a new
+`Symbol_Key` record (`Object`, `Component`, the latter `No_Ada_Node` for
+every ordinary object -- the common case, unchanged), private to
+`VC_Prover` and touching no other unit. The new `Ada_Dotted_Name` case
+resolves `Object` from the prefix (`Referenced_Key`, the same helper
+ordinary identifiers already use) and `Component` from the suffix's own
+referenced declaration, checks it is a genuine `Ada_Component_Decl` (not
+GNAT's RM 8.3 own-name-qualification shape, `Flow_Assigned_Name`'s already-
+handled special case, and not a package-qualified name), and -- the
+critical safety gate -- requires the *prefix object* to be
+`Flow_Initialization`-true before treating the component as a legitimate,
+if unknown, value. This is a real limitation, not a new one: no per-
+component tracking exists anywhere in this codebase's abstract interpreter
+(`Flow_Assigned_Name` itself only recognizes the RM 8.3 shape, never a
+general `Object.Component := ...`), so there is no way to verify the
+*specific field* was written, only that the object entered the analysis
+considered initialized -- the same level of trust already placed in an
+`in`/`in out` parameter's own `Flow_Initialization`, not a new category of
+risk.
+
+**Confirmed correct on five synthetic cases**, all via the production path:
+equality and range-membership against a record field, both proving;
+crucially, **two different objects' same-named field resolve to distinct
+symbols** (`First.RolePresent = Admin and then Second.RolePresent = Guest`
+correctly proves `First.RolePresent /= Second.RolePresent`, ruling out the
+conflation risk the `Symbol_Key` design exists to prevent); a truly
+uninitialized object's field correctly stays `Unproved` (the safety gate
+firing as intended); and the pre-existing RM 8.3 own-name-qualification
+shape (`Subp_Name.Param := ...`) is unaffected, whether written or read
+back through the same qualified form. Full test suite green throughout.
+
+**Corpus payoff: real but tiny at the mechanism level, zero at the
+provedSafe level, on all three corpora re-measured.** Re-run via a real
+before/after binary comparison (this repository's own `benchmarks/`
+harness) on Tokeneer, `project_bias`, and -- given record-component
+support touches every existing comparison's data path, unlike the
+self-contained enum-literal case -- also SPARKNaCl, as a soundness spot-
+check on a fully-proved oracle:
+
+| | SPARKNaCl | project_bias | Tokeneer |
+| --- | --- | --- | --- |
+| `provedSafe` | 3,469 → **3,469** (0) | 383 → **383** (0) | 1,741 → **1,741** (0) |
+| Matched-pair bucket split | identical | identical | identical |
+| Possible unsoundness | 0 → **0** | 0 → **0** | 0 → **0** |
+| False positives | 0 → **0** | 0 → **0** | 0 → **0** |
+
+Every single number in every `compare.awk` report -- matched pairs, all
+five buckets, count-mismatches -- came back byte-identical on all three
+corpora. `Assign`-havoc `Ada_Dotted_Name` on Tokeneer did move, just barely:
+2,295 → 2,269 (-26, ~1%), confirming the new case does fire on real code,
+just rarely enough to leave zero trace in the final proof-obligation
+verdicts.
+
+**Why the payoff is this small**, from inspecting the shape of Tokeneer's
+own dotted-name usage rather than assuming: a rough count found roughly
+960 two-dot (`X.Y.Z`) selected-component occurrences in the corpus's
+`.adb` files alongside single-dot ones. Two concrete gaps explain most of
+the gap between "2,295 candidates" and "26 newly handled":
+
+1. **Nested selectors** (`A.B.C`) aren't handled at all -- the new case
+   only resolves a prefix that is a *plain identifier*
+   (`Referenced_Key (Dotted.F_Prefix)`); a prefix that is itself a
+   `Dotted_Name` (e.g. `AuditLog.State.LogFileState`, a shape visibly
+   common in Tokeneer's own package-qualified global state, per the many
+   `constituent of "State"` messages in this file's own GNATprove output)
+   falls through to `Referenced_Key`'s generic `P_Referenced_Defining_Name`
+   resolution, which has no defined, safe meaning for a compound prefix
+   here and was not specifically designed for or tested against.
+2. **Non-local prefixes never reach `Flow_Initialization = True` at all.**
+   The interpreter's flow state is scoped to the current subprogram's own
+   locals and parameters; a package-level global referenced through a
+   `with`'d package (again, Tokeneer's own `State` constituents) was never
+   seeded into that subprogram's `Flow_State` in the first place, so the
+   safety gate this addition depends on can never pass for it -- correctly
+   conservative, but it rules out a large share of exactly the shape
+   Tokeneer uses most.
+
+**Conclusion**: shipped as real, tested, sound (confirmed against a fully-
+proved oracle, not just the two already-imprecise corpora), and correctly
+scoped to what it says -- a single-level, locally-scoped record-component
+read. Both blockers above are legitimate further work, not defects, and
+both are corpus-specific discoveries in the same sense this file's earlier
+sections describe: the object-scope limitation in particular would need
+either promoting global/package-level seeding into the interpreter's own
+`Flow_State` (a change to `Flow_Interp`, well outside `VC_Prover`) or a
+different, weaker safety argument for non-local prefixes -- neither
+attempted here. Recorded as further validated-but-deferred input,
+consistent with this file's own methodology.

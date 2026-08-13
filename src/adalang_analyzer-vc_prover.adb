@@ -108,16 +108,33 @@ package body Adalang_Analyzer.VC_Prover is
    function Abs_Of (Term : String) return String is
      ("(ite (>= " & Term & " 0) " & Term & " (- " & Term & "))");
 
+   --  A plain object's name is derived from its own defining name's source
+   --  location, as before. A record-component key (Key.Component set)
+   --  additionally suffixes the component's own name text, since the
+   --  component's declaration -- shared by every object of the record
+   --  type -- has no location of its own that would distinguish
+   --  "TheAdmin.RolePresent" from "SomeOtherAdmin.RolePresent"; the
+   --  object part of the name already does that.
    function Root_Name
-     (Key    : Libadalang.Analysis.Ada_Node;
+     (Key    : Symbol_Key;
       Prefix : String := "b") return String
    is
-     (Prefix & Natural_Image (Natural (Key.Sloc_Range.Start_Line)) & "_" &
-        Natural_Image (Natural (Key.Sloc_Range.Start_Column)));
+      Object_Name : constant String :=
+        Prefix &
+        Natural_Image (Natural (Key.Object.Sloc_Range.Start_Line)) & "_" &
+        Natural_Image (Natural (Key.Object.Sloc_Range.Start_Column));
+   begin
+      if Libadalang.Analysis.Is_Null (Key.Component) then
+         return Object_Name;
+      end if;
+      return Object_Name & "_" &
+        Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+          (Adalang_Analyzer.Ada_Text.Node_Text (Key.Component));
+   end Root_Name;
 
    function Binding_Index
      (State : Symbolic_State;
-      Key   : Libadalang.Analysis.Ada_Node) return Natural
+      Key   : Symbol_Key) return Natural
    is
    begin
       for Index in 1 .. Natural (State.Bindings.Length) loop
@@ -144,17 +161,22 @@ package body Adalang_Analyzer.VC_Prover is
    procedure Add_Root
      (State       : in out Symbolic_State;
       Name        : String;
-      Key         : Libadalang.Analysis.Ada_Node;
+      Key         : Symbol_Key;
       Sort        : Scalar_Sort;
       Flow        : Domain.Flow_State;
       Enum_Bounds : Domain.Abstract_Range := Domain.Unknown_Range)
    is
       --  The scalar interval domain (Flow_Range_Lookup) never tracks
-      --  enum-typed objects -- Enum_Sort roots get their bounds from the
-      --  enum type's own literal count instead, supplied by the caller.
+      --  enum-typed objects, nor any record component -- Enum_Sort roots
+      --  get their bounds from the enum type's own literal count instead
+      --  (supplied by the caller), and a record-component root gets no
+      --  declared bounds at all (Flow_Range_Lookup has no notion of
+      --  "Key.Object.Key.Component" to look up).
       Range_Value : constant Domain.Abstract_Range :=
         (if Sort = Enum_Sort then Enum_Bounds
-         else Domain.Flow_Range_Lookup (Flow, Key));
+         elsif not Libadalang.Analysis.Is_Null (Key.Component)
+           then Domain.Unknown_Range
+         else Domain.Flow_Range_Lookup (Flow, Key.Object));
    begin
       if Root_Index (State, Name) /= 0 then
          return;
@@ -174,13 +196,13 @@ package body Adalang_Analyzer.VC_Prover is
 
    function Symbol_For
      (Context     : in out Translation_Context;
-      Key         : Libadalang.Analysis.Ada_Node;
+      Key         : Symbol_Key;
       Sort        : Scalar_Sort;
       Enum_Bounds : Domain.Abstract_Range := Domain.Unknown_Range) return String
    is
       Binding : constant Natural := Binding_Index (Context.Symbols, Key);
    begin
-      if Libadalang.Analysis.Is_Null (Key) then
+      if Libadalang.Analysis.Is_Null (Key.Object) then
          Context.Supported := False;
          return "";
       elsif Binding /= 0 then
@@ -211,6 +233,14 @@ package body Adalang_Analyzer.VC_Prover is
       when others =>
          return Libadalang.Analysis.No_Ada_Node;
    end Referenced_Key;
+
+   --  An ordinary (non-component) Symbol_Key for Node, the common case
+   --  every plain-identifier/formal/quantifier-bound-variable call site
+   --  uses.
+   function Plain_Key
+     (Node : Libadalang.Analysis.Ada_Node) return Symbol_Key
+   is
+     (Object => Node, Component => Libadalang.Analysis.No_Ada_Node);
 
    --  True only when Node can be shown, from this expression alone, never
    --  to be zero: a nonzero integer literal, or an identifier whose known
@@ -603,10 +633,12 @@ package body Adalang_Analyzer.VC_Prover is
                   begin
                      if Enum_Bounds.Has_Low or else Enum_Bounds.Has_High then
                         return To_Unbounded_String
-                          (Symbol_For (Context, Key, Enum_Sort, Enum_Bounds));
+                          (Symbol_For
+                             (Context, Plain_Key (Key), Enum_Sort,
+                              Enum_Bounds));
                      end if;
                      return To_Unbounded_String
-                       (Symbol_For (Context, Key, Integer_Sort));
+                       (Symbol_For (Context, Plain_Key (Key), Integer_Sort));
                   end;
                end if;
             end;
@@ -838,6 +870,67 @@ package body Adalang_Analyzer.VC_Prover is
                end;
             end;
 
+         when Libadalang.Common.Ada_Dotted_Name =>
+            --  An ordinary record-component read, e.g.
+            --  "TheAdmin.RolePresent" -- never GNAT's own RM 8.3
+            --  own-name-qualification shape ("Subp_Name.Param" inside
+            --  "procedure Subp_Name (Param : ...)", Flow_Assigned_Name's
+            --  own special case in Flow_Interp), nor a package-qualified
+            --  name ("Some_Package.Some_Constant"): both are excluded by
+            --  the same two checks below (the resolved declaration must
+            --  be a genuine Ada_Component_Decl, and the prefix must be a
+            --  flow-initialized object -- a subprogram's or package's own
+            --  defining name is neither).
+            declare
+               Dotted     : constant Libadalang.Analysis.Dotted_Name :=
+                 Node.As_Dotted_Name;
+               Object_Key : constant Libadalang.Analysis.Ada_Node :=
+                 Referenced_Key (Dotted.F_Prefix);
+               Field_Name : Libadalang.Analysis.Ada_Node :=
+                 Libadalang.Analysis.No_Ada_Node;
+            begin
+               if Dotted.F_Suffix.Kind = Libadalang.Common.Ada_Identifier then
+                  Field_Name := Referenced_Key (Dotted.F_Suffix);
+               end if;
+
+               if Libadalang.Analysis.Is_Null (Object_Key)
+                 or else Libadalang.Analysis.Is_Null (Field_Name)
+                 or else Field_Name.Kind /= Libadalang.Common.Ada_Defining_Name
+                 or else Field_Name.As_Defining_Name.P_Basic_Decl.Kind /=
+                   Libadalang.Common.Ada_Component_Decl
+                 or else Domain.Flow_Initialization
+                   (Context.State, Object_Key) /= Domain.Bool_True
+               then
+                  Context.Supported := False;
+                  return Null_Unbounded_String;
+               end if;
+
+               declare
+                  --  No per-component tracking exists anywhere in this
+                  --  codebase's abstract interpreter (Flow_Domain never
+                  --  models "Object.Component" writes at all -- only the
+                  --  RM 8.3 shape excluded above), so there is no way to
+                  --  verify this specific field was itself written, only
+                  --  that its enclosing object was. This is the same
+                  --  level of trust the interpreter already places at
+                  --  every subprogram boundary (an "in"/"in out"
+                  --  parameter's own Flow_Initialization is asserted, not
+                  --  proven, from Ada's calling-convention discipline),
+                  --  not a new category of risk this addition introduces.
+                  Key         : constant Symbol_Key :=
+                    (Object => Object_Key, Component => Field_Name);
+                  Enum_Bounds : constant Domain.Abstract_Range :=
+                    Enum_Variable_Bounds (Node);
+               begin
+                  if Enum_Bounds.Has_Low or else Enum_Bounds.Has_High then
+                     return To_Unbounded_String
+                       (Symbol_For (Context, Key, Enum_Sort, Enum_Bounds));
+                  end if;
+                  return To_Unbounded_String
+                    (Symbol_For (Context, Key, Integer_Sort));
+               end;
+            end;
+
          when others =>
             Context.Supported := False;
             return Null_Unbounded_String;
@@ -887,7 +980,7 @@ package body Adalang_Analyzer.VC_Prover is
                return To_Unbounded_String ("false");
             else
                return To_Unbounded_String
-                 (Symbol_For (Context, Key, Boolean_Sort));
+                 (Symbol_For (Context, Plain_Key (Key), Boolean_Sort));
             end if;
          end;
       elsif Node.Kind = Libadalang.Common.Ada_Paren_Expr then
@@ -928,7 +1021,8 @@ package body Adalang_Analyzer.VC_Prover is
                  Integer_Term (Iter_Expr.As_Bin_Op.F_Right, Context);
                Bound_Key  : constant Libadalang.Analysis.Ada_Node :=
                  Libadalang.Analysis.Ada_Node (Spec.F_Var_Decl.F_Id);
-               Bound_Name : constant String := Root_Name (Bound_Key, "q");
+               Bound_Name : constant String :=
+                 Root_Name (Plain_Key (Bound_Key), "q");
                Child      : Translation_Context := Context;
             begin
                Child.Depth := Context.Depth + 1;
@@ -936,7 +1030,7 @@ package body Adalang_Analyzer.VC_Prover is
                  (Child.State, Bound_Key, Domain.Bool_True);
                Set_Binding
                  (Child.Symbols,
-                  (Key  => Bound_Key,
+                  (Key  => Plain_Key (Bound_Key),
                    Sort => Integer_Sort,
                    Term => To_Unbounded_String (Bound_Name)));
 
@@ -1254,7 +1348,7 @@ package body Adalang_Analyzer.VC_Prover is
                   Domain.Bool_True);
                Set_Binding
                  (Callee.Symbols,
-                  (Key  => Libadalang.Analysis.Ada_Node (Formal),
+                  (Key  => Plain_Key (Libadalang.Analysis.Ada_Node (Formal)),
                    Sort => Formal_Sort_Value,
                    Term => Term));
             end;
@@ -1324,7 +1418,8 @@ package body Adalang_Analyzer.VC_Prover is
       elsif Boolean_Context.Supported and then Length (Boolean_Value) > 0 then
          Set_Binding
            (Boolean_Context.Symbols,
-            (Key => Destination, Sort => Boolean_Sort, Term => Boolean_Value));
+            (Key => Plain_Key (Destination), Sort => Boolean_Sort,
+             Term => Boolean_Value));
          return Boolean_Context.Symbols;
       end if;
 
@@ -1344,7 +1439,8 @@ package body Adalang_Analyzer.VC_Prover is
          end if;
          Set_Binding
            (Integer_Context.Symbols,
-            (Key => Destination, Sort => Integer_Sort, Term => Integer_Value));
+            (Key => Plain_Key (Destination), Sort => Integer_Sort,
+             Term => Integer_Value));
          return Integer_Context.Symbols;
       end;
    exception
@@ -1441,7 +1537,7 @@ package body Adalang_Analyzer.VC_Prover is
       Result : Symbolic_State := Empty_Symbolic_State;
 
       function Right_Binding
-        (Key : Libadalang.Analysis.Ada_Node) return Natural is
+        (Key : Symbol_Key) return Natural is
         (Binding_Index (Right, Key));
 
       procedure Merge_Binding

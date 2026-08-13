@@ -104,10 +104,24 @@ private
    --  membership-test translation only: no ordering, 'Succ/'Pred, or
    --  'Pos/'Val attribute support yet.
 
+   --  Identifies what a root/binding stands for: an ordinary object
+   --  (Component = No_Ada_Node), or one record component of one object
+   --  (Object.Component, e.g. "TheAdmin.RolePresent") -- Component alone
+   --  is shared by every object of the record type (it is the component's
+   --  own declaration inside the type, not a per-object identity), so
+   --  Object is what actually distinguishes one object's field from
+   --  another's. Ordinary record-equality comparison (both fields'
+   --  Ada_Node "=") is exactly the identity check every use site needs.
+   type Symbol_Key is record
+      Object    : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Component : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+   end record;
+
    type Symbol_Root is record
       Name       : Ada.Strings.Unbounded.Unbounded_String;
-      Key        : Libadalang.Analysis.Ada_Node :=
-        Libadalang.Analysis.No_Ada_Node;
+      Key        : Symbol_Key;
       Sort       : Scalar_Sort := Integer_Sort;
       Has_Low    : Boolean := False;
       Low        : Long_Long_Integer := 0;
@@ -119,8 +133,7 @@ private
      (Index_Type => Positive, Element_Type => Symbol_Root);
 
    type Symbolic_Binding is record
-      Key  : Libadalang.Analysis.Ada_Node :=
-        Libadalang.Analysis.No_Ada_Node;
+      Key  : Symbol_Key;
       Sort : Scalar_Sort := Integer_Sort;
       Term : Ada.Strings.Unbounded.Unbounded_String;
    end record;
