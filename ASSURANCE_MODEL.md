@@ -340,9 +340,9 @@ The excluded or explicitly unsupported set includes:
   encoded exactly.
 - Conflicting symbolic values at joins, exceptional edges, and calls without
   relational postconditions.
-- Loop invariants placed after executable statements, preservation paths with
-  branches, nested loops, calls, or unsupported transfers, and loop
-  termination/variant VCs.
+- Loop invariants or variants placed after executable statements, multiple
+  variants on one loop, and preservation/progress paths with branches, nested
+  loops, calls, or unsupported transfers.
 
 The supported subset must be defined semantically and tested by construct. A
 source-level profile name alone is not enough.
@@ -359,9 +359,9 @@ subprogram postcondition and a deliberately unpreserved invariant that must
 leave the postcondition unproved.
 `tests/run_gnatprove_differential.sh` also runs a compatible corpus through
 GNATprove when GNATprove is installed and explicitly reports a skip when it is
-not. The clean differential corpus currently contains 17 units, including
+not. The clean differential corpus currently contains 18 units, including
 dedicated arithmetic, conditional, modular-call, array, loop, and relational
-run-time-check cases. An eight-unit broken corpus provides the opposite oracle:
+run-time-check cases. A nine-unit broken corpus provides the opposite oracle:
 GNATprove must retain at least one failed check and may not skip any unit. The
 differential gate requires GNATprove to analyze every clean-corpus unit and
 prove every generated check, and rejects an AdaLang `Definite_Error` or
@@ -371,7 +371,7 @@ provers succeed. `tests/run_verification_mutations.sh` independently guards
 all 12 enumerated obligation families with seeded defects or conservative
 boundary cases; none may become `Proved_Safe` unexpectedly.
 `tests/run_proof_path_evidence.sh` separately inventories every source-level
-`Record_Proved_Safe` producer and checks 21 method-specific routes. Each route
+`Record_Proved_Safe` producer and checks 22 method-specific routes. Each route
 has positive and adversarial evidence, while solver-dependent routes also
 exercise unsupported translation and unavailable solvers. The gate compares
 the manifest with stable `proof-path` source tags, so a new unreviewed proof

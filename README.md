@@ -379,10 +379,14 @@ non-back-edge input and preservation for one generic iteration. Only when both
 VCs succeed does a second CFG pass replace the loop fixed point with an
 invariant summary, cut the back edge, and use the invariant plus the negated
 loop condition for post-loop and subprogram-postcondition proofs. Failed
-preservation never feeds downstream proofs. Invariants after executable loop
-statements, branched loop bodies, nested-loop preservation, variants, and
-termination VCs remain `Unproved`. These fallbacks trade precision for
-soundness and never create a speculative proof.
+preservation never feeds downstream proofs. A single leading `Loop_Variant`
+with `Increases` or `Decreases` is also checked across that generic iteration:
+the value must move strictly in the declared direction and remain within its
+static scalar bounds; decreasing variants must additionally be nonnegative at
+the iteration entry. Invariants after executable loop statements, multiple or
+non-leading variants, and branched, nested, call-containing, or otherwise
+unsupported iteration paths remain `Unproved`. These fallbacks trade precision
+for soundness and never create a speculative proof.
 
 Effective `SPARK_Mode` inherited through a declaration is respected by these
 contract checks. The SPARK-readiness pass separately compares semantic global
@@ -646,11 +650,11 @@ sh tests/run_all.sh
 
 The gate builds the current sources and runs all regression, reporting,
 quality, model, performance, and verification suites. Its differential stage
-runs 17 clean and 8 deliberately broken units through GNATprove when that tool
+runs 18 clean and 9 deliberately broken units through GNATprove when that tool
 is installed and reports an explicit skip otherwise. A separate seeded
 mutation campaign guards all 12 enumerated obligation families against
-false-safe regressions. A proof-path evidence gate maps 21 abstract, flow,
-contract-transfer, and external-prover routes to every one of the 16 current
+false-safe regressions. A proof-path evidence gate maps 22 abstract, flow,
+contract-transfer, and external-prover routes to every one of the 17 current
 `Proved_Safe` producer sites, including adversarial and solver-boundary cases.
 
 ## Usage

@@ -3072,6 +3072,23 @@ package body Adalang_Analyzer.Flow_Interp is
       package Loop_Invariant_Vectors is new Ada.Containers.Vectors
         (Index_Type => Positive, Element_Type => Loop_Invariant_Info);
 
+      type Loop_Variant_Info is record
+         Pragma_Node : Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.No_Ada_Node;
+         Expression  : Libadalang.Analysis.Expr :=
+           Libadalang.Analysis.No_Expr;
+         Header      : CFG.Node_Id := CFG.No_Node;
+         Leading     : Boolean := False;
+         Direction   : VC.Loop_Variant_Direction := VC.Decreases;
+         Direction_Supported : Boolean := False;
+         Progress    : Loop_VC_Status := Not_Seen;
+         Progress_By : Proof.Analysis_Method := Proof.External_Prover;
+         Progress_Outcome : VC.VC_Outcome := VC.Unknown_Outcome;
+      end record;
+
+      package Loop_Variant_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Loop_Variant_Info);
+
       States : State_Array (1 .. CFG.Node_Count (Graph)) :=
         (others => Empty_Flow_State);
       Symbolic_States : Symbolic_State_Array (States'Range) :=
@@ -3079,6 +3096,7 @@ package body Adalang_Analyzer.Flow_Interp is
       Reachable : Boolean_Array (States'Range) := (others => False);
       Updates   : Natural_Array (States'Range) := (others => 0);
       Loop_Invariants : Loop_Invariant_Vectors.Vector;
+      Loop_Variants   : Loop_Variant_Vectors.Vector;
       Summary_Mode : Boolean := False;
 
       package Work_Vectors is new Ada.Containers.Vectors
@@ -3340,6 +3358,34 @@ package body Adalang_Analyzer.Flow_Interp is
             return False;
       end Is_Leading_Invariant;
 
+      function Is_Leading_Loop_Proof_Pragma
+        (Loop_Node   : Libadalang.Analysis.Ada_Node;
+         Pragma_Node : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+         Stmts : constant Libadalang.Analysis.Stmt_List :=
+           Loop_Node.As_Base_Loop_Stmt.F_Stmts;
+      begin
+         for Index in 1 .. Stmts.Children_Count loop
+            declare
+               Item : constant Libadalang.Analysis.Ada_Node :=
+                 Stmts.Child (Index);
+            begin
+               if Item = Pragma_Node then
+                  return True;
+               elsif Item.Kind /= Libadalang.Common.Ada_Pragma_Node
+                 or else Normalized_Text (Item.As_Pragma_Node.F_Id) not in
+                   "loop-invariant" | "loop-variant"
+               then
+                  return False;
+               end if;
+            end;
+         end loop;
+         return False;
+      exception
+         when others =>
+            return False;
+      end Is_Leading_Loop_Proof_Pragma;
+
       procedure Collect_Loop_Invariants
         (Node : Libadalang.Analysis.Ada_Node'Class)
       is
@@ -3374,6 +3420,57 @@ package body Adalang_Analyzer.Flow_Interp is
                           (Loop_Node,
                            Libadalang.Analysis.Ada_Node (Pragma_Node)),
                       others            => <>));
+               end if;
+            end;
+         elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node
+           and then Normalized_Text (Node.As_Pragma_Node.F_Id) =
+             "loop-variant"
+         then
+            declare
+               Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
+                 Node.As_Pragma_Node;
+               Expression  : constant Libadalang.Analysis.Expr :=
+                 Verification_Pragma_Condition (Pragma_Node);
+               Loop_Node   : constant Libadalang.Analysis.Ada_Node :=
+                 Enclosing_Loop (Node);
+               Header      : constant CFG.Node_Id := Header_For (Loop_Node);
+               Count       : constant Natural :=
+                 Pragma_Node.F_Args.Children_Count;
+               Direction   : VC.Loop_Variant_Direction := VC.Decreases;
+               Direction_Supported : Boolean := False;
+            begin
+               if Count = 1 then
+                  declare
+                     Assoc : constant
+                       Libadalang.Analysis.Pragma_Argument_Assoc :=
+                         Pragma_Node.F_Args.Child (1)
+                           .As_Pragma_Argument_Assoc;
+                     Name : constant String := Normalized_Text (Assoc.F_Name);
+                  begin
+                     if Name = "decreases" then
+                        Direction := VC.Decreases;
+                        Direction_Supported := True;
+                     elsif Name = "increases" then
+                        Direction := VC.Increases;
+                        Direction_Supported := True;
+                     end if;
+                  end;
+               end if;
+
+               if not Libadalang.Analysis.Is_Null (Expression) then
+                  Loop_Variants.Append
+                    ((Pragma_Node =>
+                        Libadalang.Analysis.Ada_Node (Pragma_Node),
+                      Expression => Expression,
+                      Header => Header,
+                      Leading =>
+                        Header /= CFG.No_Node
+                        and then Is_Leading_Loop_Proof_Pragma
+                          (Loop_Node,
+                           Libadalang.Analysis.Ada_Node (Pragma_Node)),
+                      Direction => Direction,
+                      Direction_Supported => Direction_Supported,
+                      others => <>));
                end if;
             end;
          end if;
@@ -3516,6 +3613,22 @@ package body Adalang_Analyzer.Flow_Interp is
          end loop;
          return Found;
       end Invariants_Discharged;
+
+      function Invariants_Usable_For_Variant
+        (Header : CFG.Node_Id) return Boolean
+      is
+      begin
+         for Item of Loop_Invariants loop
+            if Item.Header = Header and then Item.Leading
+              and then
+                (Item.Initialization /= VC_Discharged
+                 or else Item.Preservation /= VC_Discharged)
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Invariants_Usable_For_Variant;
 
       procedure Havoc_Loop_Writes
         (Loop_Node : Libadalang.Analysis.Ada_Node;
@@ -3939,9 +4052,75 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
          end Mark_Preservation;
 
+         procedure Mark_Variant_Progress
+           (Header         : CFG.Node_Id;
+            Before_State   : Flow_State;
+            Before_Symbols : VC.Symbolic_State;
+            After_State    : Flow_State;
+            After_Symbols  : VC.Symbolic_State;
+            Path_Supported : Boolean)
+         is
+         begin
+            for Index in 1 .. Natural (Loop_Variants.Length) loop
+               declare
+                  Item : Loop_Variant_Info :=
+                    Loop_Variants.Element (Index);
+               begin
+                  if Item.Header = Header and then Item.Leading then
+                     if not Path_Supported
+                       or else not Item.Direction_Supported
+                       or else not Invariants_Usable_For_Variant (Header)
+                     then
+                        Item.Progress := VC_Not_Discharged;
+                     else
+                        declare
+                           Expr_Type : constant
+                             Libadalang.Analysis.Base_Type_Decl :=
+                               Item.Expression.P_Expression_Type;
+                           Bounds : Abstract_Range := Unknown_Range;
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Expr_Type)
+                             and then Expr_Type.P_Is_Int_Type
+                           then
+                              Bounds := Type_Range
+                                (Expr_Type.P_Base_Type (Item.Expression),
+                                 Before_State);
+                              if not Bounds.Has_Low
+                                and then not Bounds.Has_High
+                              then
+                                 Bounds := Type_Range
+                                   (Expr_Type, Before_State);
+                              end if;
+                           end if;
+
+                           Item.Progress_Outcome :=
+                             VC.Decide_Variant_Progress
+                               (Item.Expression, Item.Direction, Bounds,
+                                Before_State, Before_Symbols,
+                                After_State, After_Symbols);
+                           if Item.Progress_Outcome.Result = VC.VC_Proved then
+                              Item.Progress := VC_Discharged;
+                              Item.Progress_By := Proof.External_Prover;
+                           else
+                              Item.Progress := VC_Not_Discharged;
+                           end if;
+                        end;
+                     end if;
+                     Loop_Variants.Replace_Element (Index, Item);
+                  end if;
+               exception
+                  when others =>
+                     Item.Progress := VC_Not_Discharged;
+                     Loop_Variants.Replace_Element (Index, Item);
+               end;
+            end loop;
+         end Mark_Variant_Progress;
+
          procedure Prove_Header (Header : CFG.Node_Id) is
             State     : Flow_State := States (Header);
             Symbols   : VC.Symbolic_State := VC.Havoc;
+            Before_State   : Flow_State := Empty_Flow_State;
+            Before_Symbols : VC.Symbolic_State := VC.Havoc;
             Current   : CFG.Node_Id := Header;
             Supported : Boolean := Reachable (Header);
             Steps     : Natural := 0;
@@ -3985,6 +4164,9 @@ package body Adalang_Analyzer.Flow_Interp is
                end if;
             end;
 
+            Before_State := State;
+            Before_Symbols := Symbols;
+
             loop
                Steps := Steps + 1;
                if Steps > CFG.Node_Count (Graph) then
@@ -4017,6 +4199,9 @@ package body Adalang_Analyzer.Flow_Interp is
                            then
                               Mark_Preservation
                                 (Header, State, Symbols, Supported);
+                              Mark_Variant_Progress
+                                (Header, Before_State, Before_Symbols,
+                                 State, Symbols, Supported);
                               return;
                            else
                               Candidates := Candidates + 1;
@@ -4074,9 +4259,21 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
 
             Mark_Preservation (Header, State, Symbols, False);
+            Mark_Variant_Progress
+              (Header, Before_State, Before_Symbols,
+               State, Symbols, False);
          end Prove_Header;
       begin
          for Item of Loop_Invariants loop
+            if Item.Leading
+              and then Item.Header /= CFG.No_Node
+              and then not Checked (Item.Header)
+            then
+               Checked (Item.Header) := True;
+               Prove_Header (Item.Header);
+            end if;
+         end loop;
+         for Item of Loop_Variants loop
             if Item.Leading
               and then Item.Header /= CFG.No_Node
               and then not Checked (Item.Header)
@@ -4440,6 +4637,77 @@ package body Adalang_Analyzer.Flow_Interp is
             "loop invariant preservation is not discharged");
       end Finalize_Loop_Invariant;
 
+      procedure Finalize_Loop_Variant
+        (Expression : Libadalang.Analysis.Expr;
+         Container  : CFG.Node_Id)
+      is
+      begin
+         for Item of Loop_Variants loop
+            if Libadalang.Analysis.Ada_Node (Item.Expression) =
+              Libadalang.Analysis.Ada_Node (Expression)
+            then
+               if not Boundary_Supported then
+                  Record_Unsupported
+                    (Unit, Expression, Proof.Loop_Variant_Check,
+                     "loop-variant progress is outside the bounded " &
+                       "verification subset");
+               elsif not Item.Leading then
+                  Record_Unproved
+                    (Unit, Expression, Proof.Loop_Variant_Check,
+                     Proof.No_Analysis,
+                     "only a leading loop variant currently generates a " &
+                       "termination verification condition",
+                     Imprecision =>
+                       "the variant is not at the loop-head cut point");
+               elsif not Item.Direction_Supported then
+                  Record_Unproved
+                    (Unit, Expression, Proof.Loop_Variant_Check,
+                     Proof.No_Analysis,
+                     "the loop-variant direction is unsupported",
+                     Imprecision =>
+                       "exactly one Increases or Decreases component is " &
+                         "required");
+               elsif Item.Progress = VC_Discharged then
+                  --  proof-path: loop-variant-progress
+                  Record_Proved_Safe
+                    (Unit, Expression, Proof.Loop_Variant_Check,
+                     Item.Progress_By,
+                     "one arbitrary represented iteration makes strict, " &
+                       "bounded progress",
+                     VC.Evidence);
+               elsif Item.Progress = Not_Seen
+                 or else
+                   (Item.Header /= CFG.No_Node
+                    and then not Reachable (Item.Header))
+               then
+                  Record_Unreachable
+                    (Unit, Expression, Proof.Loop_Variant_Check,
+                     "no represented loop iteration is reachable");
+               elsif Item.Progress_Outcome.Result = VC.VC_Refuted then
+                  Record_Definite_Error
+                    (Unit, Expression, Proof.Loop_Variant_Check,
+                     Proof.External_Prover,
+                     "the loop variant does not make the declared bounded " &
+                       "progress",
+                     VC.Evidence);
+               else
+                  Record_VC_Unproved
+                    (Unit, Expression, Proof.Loop_Variant_Check,
+                     Proof.Abstract_Interpretation,
+                     "loop-variant progress is not discharged",
+                     "the bounded generic-iteration VC did not establish " &
+                       "strict progress",
+                     Item.Progress_Outcome);
+               end if;
+               return;
+            end if;
+         end loop;
+
+         Final_Outcome
+           (Expression, Proof.Loop_Variant_Check, Container,
+            "loop-variant progress is not discharged");
+      end Finalize_Loop_Variant;
+
       procedure Finalize_Node
         (Node      : Libadalang.Analysis.Ada_Node'Class;
          Container : CFG.Node_Id := CFG.No_Node)
@@ -4592,13 +4860,13 @@ package body Adalang_Analyzer.Flow_Interp is
                   if not Libadalang.Analysis.Is_Null (Cond)
                     and then Name /= "assume"
                   then
-                     Finalize_Assertion_Check (Cond, Here);
+                     if Name /= "loop-variant" then
+                        Finalize_Assertion_Check (Cond, Here);
+                     end if;
                      if Name = "loop-invariant" then
                         Finalize_Loop_Invariant (Cond, Here);
                      elsif Name = "loop-variant" then
-                        Final_Outcome
-                          (Cond, Proof.Loop_Variant_Check, Here,
-                           "loop variant decrease is not discharged");
+                        Finalize_Loop_Variant (Cond, Here);
                      end if;
                   end if;
                end;

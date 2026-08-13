@@ -507,14 +507,15 @@ yet entries in `known_analysis_issues.tsv`. See
 
 ## Differential corpus
 
-The GNATprove differential gate contains 16 clean and 5 deliberately broken
-units. Five clean units are added for the current development release:
+The GNATprove differential gate contains 18 clean and 9 deliberately broken
+units. The clean corpus includes:
 
 - Bounded arithmetic and assignment chaining.
 - Conditional range refinement.
 - Modular contract transfer.
 - Indexed array access.
 - Relational loop invariants.
+- Increasing loop variants.
 
 The modular-call case now exercises direct forwarding from an outer `out`
 parameter to a nested `out` parameter. It is the regression for closed issue
@@ -522,5 +523,5 @@ parameter to a nested `out` parameter. It is the regression for closed issue
 
 Run it with `sh tests/run_gnatprove_differential.sh`. The script rejects
 `Definite_Error` or `Unsupported` AdaLang results on the clean corpus and
-requires GNATprove to prove all 16 clean units. It also requires GNATprove to
+requires GNATprove to prove all 18 clean units. It also requires GNATprove to
 find failures in every unit of the broken corpus.

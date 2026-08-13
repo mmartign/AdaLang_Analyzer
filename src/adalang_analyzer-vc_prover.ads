@@ -128,6 +128,22 @@ package Adalang_Analyzer.VC_Prover is
    --  which Abstract_Range cannot express (a single excluded point, not a
    --  bound).
 
+   type Loop_Variant_Direction is (Decreases, Increases);
+
+   function Decide_Variant_Progress
+     (Value          : Libadalang.Analysis.Expr'Class;
+      Direction      : Loop_Variant_Direction;
+      Bounds         : Adalang_Analyzer.Flow_Domain.Abstract_Range;
+      Before_State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Before_Symbols : Symbolic_State;
+      After_State    : Adalang_Analyzer.Flow_Domain.Flow_State;
+      After_Symbols  : Symbolic_State) return VC_Outcome;
+   --  Proves a single loop-variant component across one generic iteration.
+   --  Both evaluations must fit Bounds. A decreasing variant must be
+   --  nonnegative before the iteration and strictly decrease; an increasing
+   --  variant must strictly increase. Bounds make the mathematical-integer
+   --  translation conservative with respect to Ada overflow.
+
    procedure Dump_Symbolic_Diagnostics;
    --  Phase 0 v2 measurement scaffolding (diagnostic only): when
    --  ADALANG_VERIFY_SYMBOLIC_DIAGNOSTICS is set, prints tallies of why

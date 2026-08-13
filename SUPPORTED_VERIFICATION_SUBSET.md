@@ -39,7 +39,7 @@ interpreted as proof of safety.
 | Postcondition | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions |
 | Loop invariant initialization | Entry-edge abstract/symbolic state | Leading invariants on supported loops |
 | Loop invariant preservation | Generic one-iteration abstract/symbolic VC | Straight-line scalar body without nested loops, calls, branches, or unsupported transfers |
-| Loop variant | Enumeration and reachability only | Decrease/termination is not currently discharged; never yields `Proved_Safe` |
+| Loop variant progress | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant on the same straight-line iteration subset as invariant preservation; usable leading invariants must first discharge |
 
 ## Scalar VC language
 
@@ -61,6 +61,13 @@ straight-line scalar substitutions, sound relational postcondition transfer,
 and identical symbolic facts preserved at every incoming join. Conflicting
 join values, exceptional flow, and calls without sound relational summaries
 drop facts rather than assuming them.
+
+For a supported loop variant, the expression is translated in both the state
+before the generic iteration and the state after its back edge. `Decreases`
+requires a nonnegative entry value and a strictly smaller exit value;
+`Increases` requires a strictly larger exit value. Both values must remain
+within the expression base type's static bounds, which supplies the finite
+lower or upper bound needed for the corresponding termination argument.
 
 An external result is accepted only when both configured CVC5 and Z3 runs
 agree by returning `unsat` for the negated goal. Solver absence or disagreement

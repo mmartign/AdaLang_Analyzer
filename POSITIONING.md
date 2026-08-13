@@ -67,7 +67,8 @@ The analyzer currently provides:
 - Conservative symbolic propagation for scalar assignments, relational
   preconditions, and branch-local path predicates.
 - Bounded loop VCs for initialization and one-iteration preservation of
-  leading scalar invariants, with proved invariants summarized at loop exits.
+  leading scalar invariants, with proved invariants summarized at loop exits,
+  plus strict bounded progress for single-component scalar loop variants.
 - SPARK-readiness analysis for `SPARK_Mode`, `Global`, `Depends`, output
   initialization, aliasing, loop variants, and selected blocking operations.
 - Automotive and DO-178C verification-support profiles with explicit

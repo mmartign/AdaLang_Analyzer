@@ -2254,6 +2254,139 @@ package body Adalang_Analyzer.VC_Prover is
          return Unknown_Outcome;
    end Decide_Nonzero;
 
+   function Decide_Variant_Progress
+     (Value          : Libadalang.Analysis.Expr'Class;
+      Direction      : Loop_Variant_Direction;
+      Bounds         : Domain.Abstract_Range;
+      Before_State   : Domain.Flow_State;
+      Before_Symbols : Symbolic_State;
+      After_State    : Domain.Flow_State;
+      After_Symbols  : Symbolic_State) return VC_Outcome
+   is
+      Before_Context : Translation_Context :=
+        (State => Before_State, Symbols => Before_Symbols,
+         Supported => Before_Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
+      After_Context : Translation_Context :=
+        (State => After_State, Symbols => After_Symbols,
+         Supported => After_Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
+      Before_Term : Unbounded_String;
+      After_Term  : Unbounded_String;
+      Goal        : Unbounded_String;
+
+      procedure Add_Bound_Goals
+        (Term : Unbounded_String;
+         Into : in out Unbounded_String)
+      is
+         procedure Add (Clause : String) is
+         begin
+            Into :=
+              (if Length (Into) = 0 then To_Unbounded_String (Clause)
+               else To_Unbounded_String
+                 ("(and " & To_String (Into) & " " & Clause & ")"));
+         end Add;
+      begin
+         if Bounds.Has_Low then
+            Add
+              ("(<= " & SMT_Integer (Bounds.Low) & " " &
+                 To_String (Term) & ")");
+         end if;
+         if Bounds.Has_High then
+            Add
+              ("(<= " & To_String (Term) & " " &
+                 SMT_Integer (Bounds.High) & ")");
+         end if;
+      end Add_Bound_Goals;
+
+      procedure Add_Goal (Clause : String) is
+      begin
+         Goal :=
+           (if Length (Goal) = 0 then To_Unbounded_String (Clause)
+            else To_Unbounded_String
+              ("(and " & To_String (Goal) & " " & Clause & ")"));
+      end Add_Goal;
+   begin
+      if not Bounds.Has_Low or else not Bounds.Has_High then
+         Mark_Unsupported (Before_Context, Value, Missing_Static_Bounds);
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For
+              (Before_Context, Value));
+      end if;
+
+      Before_Term := Integer_Term (Value, Before_Context);
+      if not Before_Context.Supported or else Length (Before_Term) = 0 then
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For
+              (Before_Context, Value));
+      end if;
+
+      After_Term := Integer_Term (Value, After_Context);
+      if not After_Context.Supported or else Length (After_Term) = 0 then
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For
+              (After_Context, Value));
+      end if;
+
+      --  After_Symbols is normally derived from Before_Symbols and already
+      --  contains these roots and assumptions. Merge explicitly so this
+      --  query remains correct if a future transfer creates either term's
+      --  first root only while translating it here.
+      for Root of Before_Context.Symbols.Roots loop
+         Include_Root (After_Context.Symbols, Root);
+      end loop;
+      for Assumption of Before_Context.Symbols.Assumptions loop
+         declare
+            Present : Boolean := False;
+         begin
+            for Existing of After_Context.Symbols.Assumptions loop
+               if Existing = Assumption then
+                  Present := True;
+                  exit;
+               end if;
+            end loop;
+            if not Present then
+               After_Context.Symbols.Assumptions.Append (Assumption);
+            end if;
+         end;
+      end loop;
+      if not After_Context.Symbols.Supported then
+         Mark_Unsupported (After_Context, Value, Sort_Mismatch);
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For
+              (After_Context, Value));
+      end if;
+
+      Add_Bound_Goals (Before_Term, Goal);
+      Add_Bound_Goals (After_Term, Goal);
+      case Direction is
+         when Decreases =>
+            Add_Goal ("(>= " & To_String (Before_Term) & " 0)");
+            Add_Goal
+              ("(< " & To_String (After_Term) & " " &
+                 To_String (Before_Term) & ")");
+         when Increases =>
+            Add_Goal
+              ("(> " & To_String (After_Term) & " " &
+                 To_String (Before_Term) & ")");
+      end case;
+
+      return Decide_Goal (Goal, After_Context);
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Variant_Progress;
+
    function Evidence return String is
      ("SMT-LIB scalar VC; CVC5 and Z3 agreement required");
 

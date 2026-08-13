@@ -10,4 +10,4 @@ initialization-read	tests/verification_initialization_error.adb	initialization-c
 discriminant-excluded	tests/discriminant_check_findings.adb	discriminant-check	R.Float_Val	definite-error	Selected variant excludes the referenced component.
 loop-invariant-initialization	tests/verification_mutation_loop_initialization.adb	loop-invariant-initialization	I = 0	unproved	False entry invariant must not be proved-safe.
 loop-invariant-preservation	tests/verification_loop_vc_broken.adb	loop-invariant-preservation	I >= 0 and then I <= 3 and then Y = X + I	unproved	Broken induction step must not be proved-safe.
-loop-variant-undischarged	tests/verification_loop_clean.adb	loop-variant	3 - I	unproved	Termination is enumerated but outside the proved subset.
+loop-variant-wrong-direction	tests/verification_loop_variant_wrong_direction.adb	loop-variant	I	definite-error	A declared decreasing variant actually increases.
