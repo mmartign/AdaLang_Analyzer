@@ -250,21 +250,29 @@ package body Adalang_Analyzer.VC_Prover is
    end Root_Index;
 
    procedure Add_Root
-     (State       : in out Symbolic_State;
-      Name        : String;
-      Key         : Symbol_Key;
-      Sort        : Scalar_Sort;
-      Flow        : Domain.Flow_State;
-      Enum_Bounds : Domain.Abstract_Range := Domain.Unknown_Range)
+     (State           : in out Symbolic_State;
+      Name            : String;
+      Key             : Symbol_Key;
+      Sort            : Scalar_Sort;
+      Flow            : Domain.Flow_State;
+      Enum_Bounds     : Domain.Abstract_Range := Domain.Unknown_Range;
+      Explicit_Bounds : Domain.Abstract_Range := Domain.Unknown_Range)
    is
       --  The scalar interval domain (Flow_Range_Lookup) never tracks
       --  enum-typed objects, nor any record component -- Enum_Sort roots
       --  get their bounds from the enum type's own literal count instead
       --  (supplied by the caller), and a record-component root gets no
       --  declared bounds at all (Flow_Range_Lookup has no notion of
-      --  "Key.Object.Key.Component" to look up).
+      --  "Key.Object.Key.Component" to look up). Explicit_Bounds is the
+      --  same idea generalized to a non-enum root the caller already knows
+      --  a sound bound for from the language itself rather than from flow
+      --  tracking -- e.g. an unconstrained array's 'Length, which is
+      --  always >= 0 regardless of what Flow_Range_Lookup could ever infer
+      --  about the array object itself.
       Range_Value : constant Domain.Abstract_Range :=
         (if Sort = Enum_Sort then Enum_Bounds
+         elsif Explicit_Bounds.Has_Low or else Explicit_Bounds.Has_High
+           then Explicit_Bounds
          elsif not Libadalang.Analysis.Is_Null (Key.Component)
            then Domain.Unknown_Range
          else Domain.Flow_Range_Lookup (Flow, Key.Object));
@@ -286,10 +294,12 @@ package body Adalang_Analyzer.VC_Prover is
    end Add_Root;
 
    function Symbol_For
-     (Context     : in out Translation_Context;
-      Key         : Symbol_Key;
-      Sort        : Scalar_Sort;
-      Enum_Bounds : Domain.Abstract_Range := Domain.Unknown_Range) return String
+     (Context         : in out Translation_Context;
+      Key             : Symbol_Key;
+      Sort            : Scalar_Sort;
+      Enum_Bounds     : Domain.Abstract_Range := Domain.Unknown_Range;
+      Explicit_Bounds : Domain.Abstract_Range := Domain.Unknown_Range)
+      return String
    is
       Binding : constant Natural := Binding_Index (Context.Symbols, Key);
    begin
@@ -308,7 +318,8 @@ package body Adalang_Analyzer.VC_Prover is
          Name : constant String := Root_Name (Key);
       begin
          Add_Root
-           (Context.Symbols, Name, Key, Sort, Context.State, Enum_Bounds);
+           (Context.Symbols, Name, Key, Sort, Context.State, Enum_Bounds,
+            Explicit_Bounds);
          return Name;
       end;
    end Symbol_For;
@@ -1072,16 +1083,50 @@ package body Adalang_Analyzer.VC_Prover is
                      end if;
                      return To_Unbounded_String (SMT_Integer (Bounds.High));
                   else
-                     if not Bounds.Has_Low or else not Bounds.Has_High then
-                        Mark_Unsupported
-                          (Context, Node, Missing_Static_Bounds);
-                        return Null_Unbounded_String;
-                     elsif Bounds.Low > Bounds.High then
-                        return To_Unbounded_String ("0");
-                     else
+                     if Bounds.Has_Low and then Bounds.Has_High then
+                        if Bounds.Low > Bounds.High then
+                           return To_Unbounded_String ("0");
+                        end if;
                         return To_Unbounded_String
                           (SMT_Integer (Bounds.High - Bounds.Low + 1));
                      end if;
+
+                     --  The object's own bounds aren't statically known
+                     --  (an unconstrained array parameter, e.g. `Chain :
+                     --  in out Alphanumeric_Mixed` where `Alphanumeric_
+                     --  Mixed is String`), so there is no literal to
+                     --  substitute. Unlike a scalar value, whose actual
+                     --  content genuinely could be anything the SMT
+                     --  translation must stay silent about, an array's
+                     --  'Length is always >= 0 by the language itself --
+                     --  a fact true regardless of what Flow_Range_Lookup
+                     --  could ever learn about the object -- so this is a
+                     --  sound, if imprecise, root, not a guess: represent
+                     --  it as a fresh symbol lower-bounded at 0, the same
+                     --  way an ordinary unconstrained scalar formal
+                     --  becomes a symbol via Symbol_For elsewhere,
+                     --  instead of refusing the whole obligation.
+                     declare
+                        Object_Key : constant Libadalang.Analysis.Ada_Node :=
+                          Object_Identity
+                            (Context, Referenced_Key (Attr.F_Prefix));
+                     begin
+                        if Libadalang.Analysis.Is_Null (Object_Key) then
+                           Mark_Unsupported
+                             (Context, Node, Missing_Static_Bounds);
+                           return Null_Unbounded_String;
+                        end if;
+                        return To_Unbounded_String
+                          (Symbol_For
+                             (Context,
+                              (Object => Object_Key,
+                               Component =>
+                                 Libadalang.Analysis.Ada_Node
+                                   (Attr.F_Attribute)),
+                              Integer_Sort,
+                              Explicit_Bounds => (Has_Low => True, Low => 0,
+                                                   others  => <>)));
+                     end;
                   end if;
                end;
             end;

@@ -47,6 +47,8 @@ loop_branch_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-broken.XXXXXX")
 loop_branch_elsif=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif.XXXXXX")
 loop_array_write=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-array-write.XXXXXX")
 loop_record_write=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-record-write.XXXXXX")
+loop_length_symbolic=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-length-symbolic.XXXXXX")
+length_attribute_unsound=$(mktemp "${TMPDIR:-/tmp}/adalang-length-attribute-unsound.XXXXXX")
 loop_variant_increases=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-increases.XXXXXX")
 loop_variant_wrong=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-wrong.XXXXXX")
 loop_variant_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-unsupported.XXXXXX")
@@ -67,7 +69,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_array_write" "$loop_record_write" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -510,6 +512,29 @@ grep -F '"kind": "loop-variant", "status": "unproved"' \
 if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
   "$loop_record_write" >/dev/null; then
    echo "a record-component write escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
+
+#  An unconstrained array parameter's 'Length has no literal value to
+#  substitute, but it's always >= 0 by the language itself -- represent it
+#  as a fresh symbol lower-bounded at 0 rather than refusing the whole
+#  obligation, the same way an ordinary unconstrained scalar formal becomes
+#  a symbol elsewhere.
+run_json "$loop_length_symbolic" \
+  tests/verification_loop_length_symbolic_clean.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_length_symbolic" >/dev/null
+
+#  The fresh 'Length symbol must carry only the bound the language actually
+#  guarantees (>= 0), never an unwarranted tighter one -- an empty array is
+#  legal, so 'Length >= 1 must stay unproved.
+run_json "$length_attribute_unsound" \
+  tests/verification_length_attribute_unsound.adb
+grep -F '"kind": "assertion", "status": "proved-safe"' \
+  "$length_attribute_unsound" | grep -F "Chain'Length >= 0" >/dev/null
+if grep -F '"kind": "assertion", "status": "proved-safe"' \
+  "$length_attribute_unsound" | grep -F "Chain'Length >= 1" >/dev/null; then
+   echo "an unconstrained array's 'Length was given an unwarranted lower bound" >&2
    exit 1
 fi
 

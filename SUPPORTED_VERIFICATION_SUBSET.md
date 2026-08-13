@@ -59,6 +59,16 @@ positions. Unsupported scalar types and inconsistent bindings stop translation
 with explicit `sort-mismatch` provenance rather than being inferred from the
 absence of interval facts.
 
+`X'First`, `X'Last`, and `X'Length` (default dimension only, no explicit
+dimension argument) translate to a literal constant when `X`'s bounds are
+statically known. When `X` is an unconstrained array object (a formal
+parameter, most commonly) and only `'Length` is referenced, translation
+falls back to a fresh symbol lower-bounded at `0` -- the one fact the
+language itself guarantees regardless of the actual (unknown) bounds --
+rather than stopping translation outright. `'First`/`'Last` on an
+unconstrained array object, and any attribute reference with an explicit
+dimension argument, remain unsupported.
+
 Machine-width safety is a separate overflow obligation. A solver refutation
 of an assertion containing potentially overflowing arithmetic is not promoted
 to `Definite_Error` merely from mathematical-integer semantics. The base
