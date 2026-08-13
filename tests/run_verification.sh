@@ -226,6 +226,11 @@ fi
 run_json "$vc_call_inlined" tests/verification_vc_call_inlined.adb
 grep -F '"kind": "assertion", "status": "proved-safe", "method": "external-prover"' \
   "$vc_call_inlined" >/dev/null
+if [ "$(grep -F -c '"kind": "assertion", "status": "proved-safe", "method": "external-prover"' \
+  "$vc_call_inlined")" -ne 2 ]; then
+   echo "an inlined record formal did not preserve the actual object's identity" >&2
+   exit 1
+fi
 
 run_json "$vc_call_statement_body" tests/verification_vc_call_statement_body.adb
 grep -F '"kind": "assertion", "status": "unproved"' \

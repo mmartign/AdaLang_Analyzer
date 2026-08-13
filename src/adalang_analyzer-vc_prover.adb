@@ -74,11 +74,24 @@ package body Adalang_Analyzer.VC_Prover is
       Counter := Counter + 1;
    end Bump;
 
+   --  Scalar formals are substituted with SMT terms. Composite objects
+   --  need a different kind of substitution: record-component symbols are
+   --  keyed by the enclosing object's defining name, so retain the actual
+   --  object's identity for dotted-name translation in an inlined callee.
+   type Object_Binding is record
+      Formal : Libadalang.Analysis.Ada_Node;
+      Actual : Libadalang.Analysis.Ada_Node;
+   end record;
+
+   package Object_Binding_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Object_Binding);
+
    type Translation_Context is record
-      State     : Domain.Flow_State;
-      Symbols   : Symbolic_State := Empty_Symbolic_State;
-      Supported : Boolean := True;
-      Depth     : Natural := 0;
+      State           : Domain.Flow_State;
+      Symbols         : Symbolic_State := Empty_Symbolic_State;
+      Object_Bindings : Object_Binding_Vectors.Vector;
+      Supported       : Boolean := True;
+      Depth           : Natural := 0;
       --  How many expression-function inlinings or quantifier scopes deep
       --  the current translation is, scoped per call-tree branch (see
       --  Inlined_Call_Term and the Ada_Quantified_Expr case in
@@ -387,6 +400,72 @@ package body Adalang_Analyzer.VC_Prover is
             | Libadalang.Common.Ada_Mode_In_Out;
    end Formal_Is_Writable;
 
+   function Formal_Is_Record
+     (Formal : Libadalang.Analysis.Defining_Name'Class) return Boolean
+   is
+      Spec : constant Libadalang.Analysis.Param_Spec :=
+        Enclosing_Param_Spec (Formal);
+   begin
+      if Libadalang.Analysis.Is_Null (Spec)
+        or else Libadalang.Analysis.Is_Null (Spec.F_Type_Expr)
+      then
+         return False;
+      end if;
+
+      declare
+         Typ  : constant Libadalang.Analysis.Base_Type_Decl :=
+           Spec.F_Type_Expr.P_Designated_Type_Decl;
+         Root : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Typ) then
+            return False;
+         end if;
+         Root := Typ.P_Root_Type;
+         return Root.Kind in Libadalang.Common.Ada_Type_Decl
+           and then Root.As_Type_Decl.F_Type_Def.Kind =
+             Libadalang.Common.Ada_Record_Type_Def;
+      end;
+   exception
+      when others =>
+         return False;
+   end Formal_Is_Record;
+
+   procedure Set_Object_Binding
+     (Context : in out Translation_Context;
+      Formal  : Libadalang.Analysis.Ada_Node;
+      Actual  : Libadalang.Analysis.Ada_Node)
+   is
+   begin
+      for Index in 1 .. Natural (Context.Object_Bindings.Length) loop
+         if Context.Object_Bindings.Element (Index).Formal = Formal then
+            Context.Object_Bindings.Replace_Element
+              (Index, (Formal => Formal, Actual => Actual));
+            return;
+         end if;
+      end loop;
+      Context.Object_Bindings.Append ((Formal => Formal, Actual => Actual));
+   end Set_Object_Binding;
+
+   function Object_Identity
+     (Context : Translation_Context;
+      Object  : Libadalang.Analysis.Ada_Node)
+      return Libadalang.Analysis.Ada_Node
+   is
+      Result : Libadalang.Analysis.Ada_Node := Object;
+   begin
+      --  Following the chain matters for F (R) calling G (R): G's formal
+      --  must still resolve to the original caller object, not F's formal.
+      for Step in 1 .. Natural (Context.Object_Bindings.Length) loop
+         for Binding of Context.Object_Bindings loop
+            if Binding.Formal = Result then
+               Result := Binding.Actual;
+               exit;
+            end if;
+         end loop;
+      end loop;
+      return Result;
+   end Object_Identity;
+
    --  A formal's SMT sort, guessed from its type mark's own text rather
    --  than full type resolution (mirroring the lightweight text-based
    --  checks already used throughout this file, e.g. Boolean_Term's own
@@ -538,11 +617,12 @@ package body Adalang_Analyzer.VC_Prover is
       Item  : Symbolic_Binding);
 
    --  Inlines a call that resolves to a plain Ada expression function (a
-   --  single-expression body, "is (...)") by substitution: each actual is
-   --  translated once under the caller's own Context, bound to the
-   --  callee's formal via Set_Binding in a fresh child context, and the
-   --  callee's own return expression is then translated under that child
-   --  context. Anything else (a statement-bodied subprogram, a dispatching
+   --  single-expression body, "is (...)") by substitution: each scalar
+   --  actual is translated once under the caller's own Context and bound as
+   --  an SMT term; a record formal with a plain-object actual is instead
+   --  bound to that object's identity. The callee's return expression is
+   --  then translated under the fresh child context. Anything else (a
+   --  statement-bodied subprogram, a dispatching
    --  or unresolved call, an out/in out formal, nesting past
    --  Max_Inline_Depth) falls back to Context.Supported := False -- the
    --  same conservative-fallback philosophy as every other unhandled shape
@@ -885,7 +965,8 @@ package body Adalang_Analyzer.VC_Prover is
                Dotted     : constant Libadalang.Analysis.Dotted_Name :=
                  Node.As_Dotted_Name;
                Object_Key : constant Libadalang.Analysis.Ada_Node :=
-                 Referenced_Key (Dotted.F_Prefix);
+                 Object_Identity
+                   (Context, Referenced_Key (Dotted.F_Prefix));
                Field_Name : Libadalang.Analysis.Ada_Node :=
                  Libadalang.Analysis.No_Ada_Node;
             begin
@@ -1309,48 +1390,75 @@ package body Adalang_Analyzer.VC_Prover is
                  Libadalang.Analysis.Param (Pair);
                Actual : constant Libadalang.Analysis.Expr'Class :=
                  Libadalang.Analysis.Actual (Pair);
-               Formal_Sort_Value : constant Scalar_Sort :=
-                 Formal_Sort (Formal);
-               Term : Unbounded_String;
             begin
                if Formal_Is_Writable (Formal) then
                   Context.Supported := False;
                   return Null_Unbounded_String;
                end if;
 
-               case Formal_Sort_Value is
-                  when Integer_Sort =>
-                     Term := Integer_Term (Actual, Context);
-                  when Boolean_Sort =>
-                     Term := Boolean_Term (Actual, Context);
-                  when Enum_Sort =>
-                     --  Formal_Sort never returns Enum_Sort (its type-mark
-                     --  text check only distinguishes Boolean from
-                     --  everything else); kept exhaustive for Scalar_Sort's
-                     --  sake, not a reachable case today.
+               if Formal_Is_Record (Formal) then
+                  --  A record has no scalar SMT term of its own. For the
+                  --  deliberately narrow supported shape, retain the plain
+                  --  actual object's identity so Formal.Field builds the
+                  --  same Symbol_Key as Actual.Field in the caller.
+                  if Actual.Kind /= Libadalang.Common.Ada_Identifier then
                      Context.Supported := False;
-                     Term := Null_Unbounded_String;
-               end case;
+                     return Null_Unbounded_String;
+                  end if;
+                  declare
+                     Actual_Key : constant Libadalang.Analysis.Ada_Node :=
+                       Object_Identity (Context, Referenced_Key (Actual));
+                  begin
+                     if Libadalang.Analysis.Is_Null (Actual_Key)
+                       or else Domain.Flow_Initialization
+                         (Context.State, Actual_Key) /= Domain.Bool_True
+                     then
+                        Context.Supported := False;
+                        return Null_Unbounded_String;
+                     end if;
+                     Set_Object_Binding
+                       (Callee, Libadalang.Analysis.Ada_Node (Formal),
+                        Actual_Key);
+                  end;
+               else
+                  declare
+                     Formal_Sort_Value : constant Scalar_Sort :=
+                       Formal_Sort (Formal);
+                     Term : Unbounded_String;
+                  begin
+                     case Formal_Sort_Value is
+                        when Integer_Sort =>
+                           Term := Integer_Term (Actual, Context);
+                        when Boolean_Sort =>
+                           Term := Boolean_Term (Actual, Context);
+                        when Enum_Sort =>
+                           --  Formal_Sort never returns Enum_Sort (its
+                           --  type-mark text check only distinguishes
+                           --  Boolean from everything else); kept
+                           --  exhaustive for Scalar_Sort's sake.
+                           Context.Supported := False;
+                           Term := Null_Unbounded_String;
+                     end case;
 
-               if not Context.Supported then
-                  return Null_Unbounded_String;
+                     if not Context.Supported then
+                        return Null_Unbounded_String;
+                     end if;
+
+                     Set_Binding
+                       (Callee.Symbols,
+                        (Key  => Plain_Key
+                           (Libadalang.Analysis.Ada_Node (Formal)),
+                         Sort => Formal_Sort_Value,
+                         Term => Term));
+                  end;
                end if;
 
-               --  Integer_Term/Boolean_Term's own Ada_Identifier case
-               --  checks Domain.Flow_Initialization before ever consulting
-               --  Symbol_For's binding table, so a callee's formal --
-               --  never itself flow-tracked -- must be marked
-               --  initialized in the callee's own scratch State, the same
-               --  way Flow_Interp.Seed_Formal_Values does for
-               --  Check_Call_Precondition's own substitution.
+               --  Scalar identifier translation and record dotted-name
+               --  translation both require the formal to be initialized in
+               --  the callee's scratch flow state.
                Domain.Flow_Set_Initialized
                  (Callee.State, Libadalang.Analysis.Ada_Node (Formal),
                   Domain.Bool_True);
-               Set_Binding
-                 (Callee.Symbols,
-                  (Key  => Plain_Key (Libadalang.Analysis.Ada_Node (Formal)),
-                   Sort => Formal_Sort_Value,
-                   Term => Term));
             end;
          end loop;
 
@@ -1404,7 +1512,7 @@ package body Adalang_Analyzer.VC_Prover is
    is
       Boolean_Context : Translation_Context :=
         (State => Flow, Symbols => State, Supported => State.Supported,
-         Depth => 0);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
       Boolean_Value : constant Unbounded_String :=
         Boolean_Term (Value, Boolean_Context);
    begin
@@ -1426,7 +1534,8 @@ package body Adalang_Analyzer.VC_Prover is
       declare
          Integer_Context : Translation_Context :=
            (State => Flow, Symbols => State, Supported => State.Supported,
-         Depth => 0);
+            Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+            Depth => 0);
          Integer_Value : constant Unbounded_String :=
            Integer_Term (Value, Integer_Context);
       begin
@@ -1459,7 +1568,7 @@ package body Adalang_Analyzer.VC_Prover is
    is
       Context : Translation_Context :=
         (State => Flow, Symbols => State, Supported => State.Supported,
-         Depth => 0);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
       Term : constant Unbounded_String := Boolean_Term (Condition, Context);
    begin
       if not Context.Supported or else Length (Term) = 0 then
@@ -1925,7 +2034,7 @@ package body Adalang_Analyzer.VC_Prover is
    is
       Context : Translation_Context :=
         (State => State, Symbols => Symbols, Supported => Symbols.Supported,
-         Depth => 0);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
       Goal    : constant Unbounded_String :=
         Boolean_Term (Condition, Context);
    begin
@@ -1946,7 +2055,7 @@ package body Adalang_Analyzer.VC_Prover is
    is
       Context : Translation_Context :=
         (State => State, Symbols => Symbols, Supported => Symbols.Supported,
-         Depth => 0);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
       Term : constant Unbounded_String := Integer_Term (Value, Context);
       Goal : Unbounded_String;
    begin
@@ -1986,7 +2095,7 @@ package body Adalang_Analyzer.VC_Prover is
    is
       Context : Translation_Context :=
         (State => State, Symbols => Symbols, Supported => Symbols.Supported,
-         Depth => 0);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
       Term : constant Unbounded_String := Integer_Term (Value, Context);
    begin
       if not Context.Supported or else Length (Term) = 0 then
