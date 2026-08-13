@@ -38,8 +38,8 @@ interpreted as proof of safety.
 | Precondition | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts |
 | Postcondition | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions |
 | Loop invariant initialization | Entry-edge abstract/symbolic state | Leading invariants on supported loops |
-| Loop invariant preservation | Generic one-iteration abstract/symbolic VC | Straight-line scalar body without nested loops, calls, branches, or unsupported transfers |
-| Loop variant progress | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant on the same straight-line iteration subset as invariant preservation; usable leading invariants must first discharge |
+| Loop invariant preservation | Generic one-iteration abstract/symbolic VC | Straight-line scalar body, or a straight-line scalar body containing exactly one non-nested `if`/`else` (the `else` may be omitted) whose two branches each independently reach the loop's back edge, joined with the same merge machinery used at ordinary CFG merge points; `elsif` chains, `case` statements, a second sequential conditional, nested branches, nested loops, calls, or unsupported transfers remain outside this subset |
+| Loop variant progress | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant on the same iteration subset as invariant preservation (straight-line, or with exactly one non-nested `if`/`else`); usable leading invariants must first discharge |
 
 ## Scalar VC language
 

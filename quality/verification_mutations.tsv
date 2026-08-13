@@ -11,3 +11,4 @@ discriminant-excluded	tests/discriminant_check_findings.adb	discriminant-check	R
 loop-invariant-initialization	tests/verification_mutation_loop_initialization.adb	loop-invariant-initialization	I = 0	unproved	False entry invariant must not be proved-safe.
 loop-invariant-preservation	tests/verification_loop_vc_broken.adb	loop-invariant-preservation	I >= 0 and then I <= 3 and then Y = X + I	unproved	Broken induction step must not be proved-safe.
 loop-variant-wrong-direction	tests/verification_loop_variant_wrong_direction.adb	loop-variant	I	definite-error	A declared decreasing variant actually increases.
+loop-invariant-preservation-branch	tests/verification_loop_branch_vc_broken.adb	loop-invariant-preservation	I >= 0 and then I <= 3 and then Y = X + I and then Extra >= 0	unproved	Branch-disagreement on Extra must not be proved-safe.

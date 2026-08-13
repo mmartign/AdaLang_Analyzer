@@ -4124,11 +4124,197 @@ package body Adalang_Analyzer.Flow_Interp is
             Symbols   : VC.Symbolic_State := VC.Havoc;
             Before_State   : Flow_State := Empty_Flow_State;
             Before_Symbols : VC.Symbolic_State := VC.Havoc;
-            Current   : CFG.Node_Id := Header;
-            Supported : Boolean := Reachable (Header);
             Steps     : Natural := 0;
+
+            --  Single-steps the CFG from Start under the same restricted
+            --  rules Prove_Header has always enforced (exactly one
+            --  non-exceptional outgoing edge per node; assign/pragma/
+            --  merge only). The one addition: at a Condition_Node with
+            --  Allow_Branch, fork into both arms (each walked with
+            --  Allow_Branch => False, so a second sequential or nested
+            --  branch is rejected the same way an unsupported node kind
+            --  always was) and, if both independently reach the loop's
+            --  own back edge, join their final states with the same
+            --  Flow_Join/VC.Join machinery Merge_Into already relies on
+            --  at ordinary CFG merge points. Reached_Back is True exactly
+            --  when the walk (directly, or via a successful fork-and-join)
+            --  reached the loop back edge; every successful return sets
+            --  it, so it never disagrees with the function result.
+            function Advance
+              (Start        : CFG.Node_Id;
+               Allow_Branch : Boolean;
+               State        : in out Flow_State;
+               Symbols      : in out VC.Symbolic_State;
+               Steps        : in out Natural;
+               Reached_Back : out Boolean) return Boolean
+            is
+               Current : CFG.Node_Id := Start;
+               First   : Boolean := True;
+            begin
+               Reached_Back := False;
+               loop
+                  if not (First and then Current = Header) then
+                     declare
+                        Node_Info : constant CFG.CFG_Node :=
+                          CFG.Node_At (Graph, Current);
+                        Source : constant Libadalang.Analysis.Ada_Node :=
+                          Node_Info.Source;
+                     begin
+                        if Node_Info.Kind = CFG.Statement_Node
+                          and then Source.Kind =
+                            Libadalang.Common.Ada_Assign_Stmt
+                        then
+                           declare
+                              Key : constant Libadalang.Analysis.Ada_Node :=
+                                Flow_Assigned_Name (Source);
+                           begin
+                              if Libadalang.Analysis.Is_Null (Key) then
+                                 return False;
+                              end if;
+                              Symbols :=
+                                VC.Assign
+                                  (Symbols, Key,
+                                   Source.As_Assign_Stmt.F_Expr, State);
+                              State :=
+                                Interpret_Statement
+                                  (Unit, Source, State).State;
+                           end;
+                        elsif Node_Info.Kind in
+                          CFG.Statement_Node | CFG.Merge_Node
+                        then
+                           null;
+                        elsif Node_Info.Kind = CFG.Condition_Node then
+                           if not Allow_Branch then
+                              return False;
+                           end if;
+
+                           declare
+                              True_Target  : CFG.Node_Id := CFG.No_Node;
+                              False_Target : CFG.Node_Id := CFG.No_Node;
+                              Other        : Natural := 0;
+                           begin
+                              for Edge_Index in
+                                1 .. CFG.Edge_Count (Graph)
+                              loop
+                                 declare
+                                    Edge : constant CFG.CFG_Edge :=
+                                      CFG.Edge_At (Graph, Edge_Index);
+                                 begin
+                                    if Edge.From = Current then
+                                       case Edge.Kind is
+                                          when CFG.True_Edge =>
+                                             True_Target := Edge.To;
+                                          when CFG.False_Edge =>
+                                             False_Target := Edge.To;
+                                          when CFG.Exceptional_Edge
+                                             | CFG.Raise_Edge =>
+                                             null;
+                                          when others =>
+                                             Other := Other + 1;
+                                       end case;
+                                    end if;
+                                 end;
+                              end loop;
+
+                              if Other > 0
+                                or else True_Target = CFG.No_Node
+                                or else False_Target = CFG.No_Node
+                              then
+                                 return False;
+                              end if;
+
+                              declare
+                                 True_State   : Flow_State := State;
+                                 True_Symbols : VC.Symbolic_State := Symbols;
+                                 True_Steps   : Natural := Steps;
+                                 True_Back    : Boolean;
+                                 True_OK      : constant Boolean :=
+                                   Advance
+                                     (True_Target, False, True_State,
+                                      True_Symbols, True_Steps, True_Back);
+
+                                 False_State   : Flow_State := State;
+                                 False_Symbols : VC.Symbolic_State :=
+                                   Symbols;
+                                 False_Steps   : Natural := Steps;
+                                 False_Back    : Boolean;
+                                 False_OK      : constant Boolean :=
+                                   Advance
+                                     (False_Target, False, False_State,
+                                      False_Symbols, False_Steps,
+                                      False_Back);
+                              begin
+                                 if not True_OK or else not False_OK
+                                   or else not True_Back
+                                   or else not False_Back
+                                 then
+                                    return False;
+                                 end if;
+
+                                 State :=
+                                   Flow_Join (True_State, False_State);
+                                 Symbols :=
+                                   VC.Join
+                                     (True_Symbols, False_Symbols, State,
+                                      Merge_Tag => Positive (Current));
+                                 Reached_Back := True;
+                                 return True;
+                              end;
+                           end;
+                        else
+                           return False;
+                        end if;
+                     end;
+                  end if;
+                  First := False;
+
+                  Steps := Steps + 1;
+                  if Steps > CFG.Node_Count (Graph) then
+                     return False;
+                  end if;
+
+                  declare
+                     Next       : CFG.Node_Id := CFG.No_Node;
+                     Candidates : Natural := 0;
+                  begin
+                     for Edge_Index in 1 .. CFG.Edge_Count (Graph) loop
+                        declare
+                           Edge : constant CFG.CFG_Edge :=
+                             CFG.Edge_At (Graph, Edge_Index);
+                        begin
+                           if Edge.From = Current
+                             and then Edge.Kind not in
+                               CFG.Exceptional_Edge
+                                 | CFG.Raise_Edge
+                                 | CFG.Loop_Exit_Edge
+                           then
+                              if Current = Header
+                                and then Edge.Kind not in
+                                  CFG.True_Edge | CFG.Normal_Edge
+                              then
+                                 null;
+                              elsif Edge.Kind = CFG.Loop_Back_Edge
+                                and then Edge.To = Header
+                              then
+                                 Reached_Back := True;
+                                 return True;
+                              else
+                                 Candidates := Candidates + 1;
+                                 Next := Edge.To;
+                              end if;
+                           end if;
+                        end;
+                     end loop;
+
+                     if Candidates /= 1 or else Next = CFG.No_Node then
+                        return False;
+                     end if;
+                     Current := Next;
+                  end;
+               end loop;
+            end Advance;
          begin
-            if not Supported then
+            if not Reachable (Header) then
                return;
             end if;
 
@@ -4170,101 +4356,20 @@ package body Adalang_Analyzer.Flow_Interp is
             Before_State := State;
             Before_Symbols := Symbols;
 
-            loop
-               Steps := Steps + 1;
-               if Steps > CFG.Node_Count (Graph) then
-                  Supported := False;
-                  exit;
-               end if;
-
-               declare
-                  Next       : CFG.Node_Id := CFG.No_Node;
-                  Candidates : Natural := 0;
-               begin
-                  for Edge_Index in 1 .. CFG.Edge_Count (Graph) loop
-                     declare
-                        Edge : constant CFG.CFG_Edge :=
-                          CFG.Edge_At (Graph, Edge_Index);
-                     begin
-                        if Edge.From = Current
-                          and then Edge.Kind not in
-                            CFG.Exceptional_Edge
-                              | CFG.Raise_Edge
-                              | CFG.Loop_Exit_Edge
-                        then
-                           if Current = Header
-                             and then Edge.Kind not in
-                               CFG.True_Edge | CFG.Normal_Edge
-                           then
-                              null;
-                           elsif Edge.Kind = CFG.Loop_Back_Edge
-                             and then Edge.To = Header
-                           then
-                              Mark_Preservation
-                                (Header, State, Symbols, Supported);
-                              Mark_Variant_Progress
-                                (Header, Before_State, Before_Symbols,
-                                 State, Symbols, Supported);
-                              return;
-                           else
-                              Candidates := Candidates + 1;
-                              Next := Edge.To;
-                           end if;
-                        end if;
-                     end;
-                  end loop;
-
-                  if Candidates /= 1 or else Next = CFG.No_Node then
-                     Supported := False;
-                     exit;
-                  end if;
-                  Current := Next;
-               end;
-
-               declare
-                  Node_Info : constant CFG.CFG_Node :=
-                    CFG.Node_At (Graph, Current);
-                  Source : constant Libadalang.Analysis.Ada_Node :=
-                    Node_Info.Source;
-               begin
-                  if Node_Info.Kind = CFG.Statement_Node
-                    and then Source.Kind =
-                      Libadalang.Common.Ada_Assign_Stmt
-                  then
-                     declare
-                        Key : constant Libadalang.Analysis.Ada_Node :=
-                          Flow_Assigned_Name (Source);
-                     begin
-                        if Libadalang.Analysis.Is_Null (Key) then
-                           Supported := False;
-                           exit;
-                        end if;
-                        Symbols :=
-                          VC.Assign
-                            (Symbols, Key,
-                             Source.As_Assign_Stmt.F_Expr, State);
-                        State :=
-                          Interpret_Statement
-                            (Unit, Source, State).State;
-                     end;
-                  elsif Node_Info.Kind = CFG.Statement_Node
-                    and then Source.Kind =
-                      Libadalang.Common.Ada_Pragma_Node
-                  then
-                     null;
-                  elsif Node_Info.Kind not in
-                    CFG.Merge_Node | CFG.Statement_Node
-                  then
-                     Supported := False;
-                     exit;
-                  end if;
-               end;
-            end loop;
-
-            Mark_Preservation (Header, State, Symbols, False);
-            Mark_Variant_Progress
-              (Header, Before_State, Before_Symbols,
-               State, Symbols, False);
+            declare
+               Reached_Back : Boolean;
+               OK           : constant Boolean :=
+                 Advance
+                   (Header, Allow_Branch => True, State => State,
+                    Symbols => Symbols, Steps => Steps,
+                    Reached_Back => Reached_Back);
+               Path_OK      : constant Boolean := OK and then Reached_Back;
+            begin
+               Mark_Preservation (Header, State, Symbols, Path_OK);
+               Mark_Variant_Progress
+                 (Header, Before_State, Before_Symbols, State, Symbols,
+                  Path_OK);
+            end;
          end Prove_Header;
       begin
          for Item of Loop_Invariants loop

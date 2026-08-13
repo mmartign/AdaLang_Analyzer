@@ -42,6 +42,9 @@ symbolic_prepost=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-prepost.XXXXXX")
 symbolic_loop=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-loop.XXXXXX")
 loop_vc_relational=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-relational.XXXXXX")
 loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
+loop_branch_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-clean.XXXXXX")
+loop_branch_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-broken.XXXXXX")
+loop_branch_elsif=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif.XXXXXX")
 loop_variant_increases=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-increases.XXXXXX")
 loop_variant_wrong=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-wrong.XXXXXX")
 loop_variant_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-unsupported.XXXXXX")
@@ -62,7 +65,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -436,6 +439,47 @@ if grep -F '"kind": "postcondition", "status": "proved-safe"' \
    echo "an unpreserved invariant escaped into the postcondition proof" >&2
    exit 1
 fi
+
+#  A loop body containing exactly one non-nested if/else, both arms
+#  reconverging on the loop back edge, is a supported subset of loop
+#  invariant preservation / variant progress (see the branch-merge design in
+#  SUPPORTED_VERIFICATION_SUBSET.md). Extra is touched only inside the
+#  branch and no obligation depends on it, so both arms' merged symbolic
+#  state should still let the invariant/variant/postcondition discharge.
+run_json "$loop_branch_clean" tests/verification_loop_branch_clean.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_clean" >/dev/null
+grep -F '"kind": "loop-variant", "status": "proved-safe", "method": "external-prover"' \
+  "$loop_branch_clean" >/dev/null
+grep -F '"kind": "postcondition", "status": "proved-safe"' \
+  "$loop_branch_clean" >/dev/null
+
+#  Same one-level if/else shape, but the invariant also constrains Extra,
+#  and the two arms genuinely disagree on it (one increments, the other
+#  decrements) -- a real defect, not just analyzer imprecision. The merged
+#  symbolic state must stay conservative: preservation (and, as a knock-on
+#  consequence of variant progress being gated on a discharged leading
+#  invariant, the variant too) must never become proved-safe.
+run_json "$loop_branch_broken" tests/verification_loop_branch_vc_broken.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_branch_broken" >/dev/null
+grep -F '"kind": "loop-variant", "status": "unproved"' \
+  "$loop_branch_broken" >/dev/null
+if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_broken" >/dev/null; then
+   echo "branches disagreeing on Extra escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
+
+#  elsif/case chains remain outside the supported subset -- only a single
+#  non-nested if/else reconverging on the loop back edge is handled. This
+#  documents that boundary rather than silently regressing it.
+run_json "$loop_branch_elsif" \
+  tests/verification_loop_branch_elsif_unsupported.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_branch_elsif" >/dev/null
+grep -F '"kind": "loop-variant", "status": "unproved"' \
+  "$loop_branch_elsif" >/dev/null
 
 run_json "$loop_variant_increases" \
   tests/verification_loop_variant_increases.adb
