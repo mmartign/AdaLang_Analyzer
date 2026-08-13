@@ -1848,6 +1848,24 @@ anything in this file so far -- deliberately not attempted in this same
 change, consistent with keeping each measured step to one mechanism. Not
 yet built; recorded here as the validated next step.
 
+### Declaration-resolved scalar sorts: built and regression-covered (2026-08-13)
+
+The validated blocker above is now implemented. `VC_Prover` resolves scalar
+sorts from Libadalang's semantic expression/type declarations: precisely
+`Standard.Boolean` maps to SMT `Bool`, signed integers map to `Int`, and other
+enumerations map to `Enum_Sort` using their declaration-order positions.
+`Assign` selects its translator from that result and stores the same sort in
+the symbolic binding, instead of trying `Boolean_Term` first and treating an
+enum without interval facts as Boolean. Formal substitution and identifier or
+record-component translation use the same resolution rule.
+
+The regression set covers enum-literal assignment, enum-variable copying,
+membership, user-defined literals named `True`/`False`, a false enum assertion,
+and a fixed-point scalar that must remain `Unproved` with `sort-mismatch`
+provenance. The proof-path manifest adds positive, adversarial, unsupported,
+and solver-unavailable evidence for the enum-assignment route. Real-corpus
+measurement is intentionally left to the separately scoped follow-up step.
+
 ### `Ada_Dotted_Name` (record-component) support: built, safe, near-zero corpus payoff (2026-08-13)
 
 The other named prerequisite for Tokeneer's dominant `Ada_Membership_Expr`

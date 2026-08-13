@@ -30,6 +30,9 @@ vc_conversion=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-conversion.XXXXXX")
 vc_conversion_modular=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-conversion-mod.XXXXXX")
 vc_quantified=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-quantified.XXXXXX")
 vc_quantified_outside=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-quantified-outside.XXXXXX")
+vc_enum_assignment=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-enum-assignment.XXXXXX")
+vc_enum_error=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-enum-error.XXXXXX")
+vc_unsupported_sort=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-unsupported-sort.XXXXXX")
 symbolic_assignment=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-assignment.XXXXXX")
 symbolic_branch=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-branch.XXXXXX")
 symbolic_join=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-join.XXXXXX")
@@ -57,7 +60,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -326,6 +329,35 @@ grep -F '"kind": "assertion", "status": "unsupported"' \
 if grep -F '"kind": "assertion", "status": "proved-safe"' \
   "$vc_quantified_outside" >/dev/null; then
    echo "a quantified expression outside Pre/Post/Assert widened the Contains_Unsupported_Semantics carve-out" >&2
+   exit 1
+fi
+
+run_json "$vc_enum_assignment" tests/verification_vc_enum_assignment.adb
+for operation in \
+  'Input = Admin' \
+  'Current = Admin' \
+  'Current in Guest | Admin' \
+  'Truth /= True'
+do
+   grep -F "\"operation\": \"$operation\"" "$vc_enum_assignment" |
+     grep -F '"status": "proved-safe", "method": "external-prover"' \
+       >/dev/null
+done
+
+run_json "$vc_enum_error" tests/verification_vc_enum_assignment_error.adb
+grep -F '"operation": "Truth = True"' "$vc_enum_error" |
+  grep -F '"status": "definite-error", "method": "external-prover"' \
+    >/dev/null
+
+run_json "$vc_unsupported_sort" \
+  tests/verification_vc_unsupported_scalar_sort.adb
+grep -F '"operation": "Copy = Input"' "$vc_unsupported_sort" |
+  grep -F '"status": "unproved"' |
+  grep -F '"reasonCode": "sort-mismatch"' |
+  grep -F '"blockingExpression": "Copy"' >/dev/null
+if grep -F '"kind": "assertion", "status": "proved-safe"' \
+  "$vc_unsupported_sort" >/dev/null; then
+   echo "an unsupported fixed-point scalar sort entered the SMT proof path" >&2
    exit 1
 fi
 

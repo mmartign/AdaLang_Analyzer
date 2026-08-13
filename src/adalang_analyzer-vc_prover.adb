@@ -15,6 +15,8 @@ with Ada.Text_IO;
 
 with GNAT.OS_Lib;
 
+with Langkit_Support.Text;
+
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;
@@ -442,6 +444,50 @@ package body Adalang_Analyzer.VC_Prover is
          return False;
    end Signed_Integer_Target;
 
+   --  Resolve the SMT sort from Ada's semantic type identity. In particular,
+   --  Boolean is recognized as Standard.Boolean, not by the spelling of an
+   --  identifier or by the absence of integer interval facts: ordinary enum
+   --  objects have no Flow_Domain value/range either, and the old negative
+   --  heuristic consequently mistyped them as Boolean.
+   type Sort_Resolution is record
+      Supported : Boolean := False;
+      Sort      : Scalar_Sort := Integer_Sort;
+   end record;
+
+   function Type_Sort
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Sort_Resolution
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return (Supported => False, Sort => Integer_Sort);
+      elsif Langkit_Support.Text.To_UTF8
+        (Typ.P_Canonical_Fully_Qualified_Name) = "standard.boolean"
+      then
+         return (Supported => True, Sort => Boolean_Sort);
+      elsif Typ.P_Is_Int_Type then
+         return (Supported => True, Sort => Integer_Sort);
+      elsif Typ.P_Is_Enum_Type then
+         return (Supported => True, Sort => Enum_Sort);
+      end if;
+      return (Supported => False, Sort => Integer_Sort);
+   exception
+      when others =>
+         return (Supported => False, Sort => Integer_Sort);
+   end Type_Sort;
+
+   function Expression_Sort
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Sort_Resolution
+   is
+   begin
+      if Node.Kind not in Libadalang.Common.Ada_Expr then
+         return (Supported => False, Sort => Integer_Sort);
+      end if;
+      return Type_Sort (Node.As_Expr.P_Expression_Type);
+   exception
+      when others =>
+         return (Supported => False, Sort => Integer_Sort);
+   end Expression_Sort;
+
    --  As Adalang_Analyzer.Flow_Interp.Formal_Mode (private to that unit's
    --  body): walks up from a formal's own defining name to its enclosing
    --  Param_Spec to read its mode.
@@ -542,30 +588,25 @@ package body Adalang_Analyzer.VC_Prover is
       return Result;
    end Object_Identity;
 
-   --  A formal's SMT sort, guessed from its type mark's own text rather
-   --  than full type resolution (mirroring the lightweight text-based
-   --  checks already used throughout this file, e.g. Boolean_Term's own
-   --  "true"/"false" literal check) -- Integer_Sort by default, since
-   --  every scalar type this bridge otherwise supports is integer-sorted;
-   --  a wrong guess only costs a Sort mismatch in Symbol_For's binding
-   --  lookup (Context.Supported := False), never an incorrect result.
+   --  Resolve a formal's declared scalar type through its Param_Spec. A
+   --  failure is explicit rather than silently defaulting to Integer_Sort.
    function Formal_Sort
-     (Formal : Libadalang.Analysis.Defining_Name'Class) return Scalar_Sort
+     (Formal : Libadalang.Analysis.Defining_Name'Class)
+      return Sort_Resolution
    is
-      Spec : constant Libadalang.Analysis.Param_Spec :=
-        Enclosing_Param_Spec (Formal);
    begin
-      if not Libadalang.Analysis.Is_Null (Spec)
-        and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
-          (Adalang_Analyzer.Ada_Text.Node_Text (Spec.F_Type_Expr)) =
-          "boolean"
-      then
-         return Boolean_Sort;
-      end if;
-      return Integer_Sort;
+      declare
+         Spec : constant Libadalang.Analysis.Param_Spec :=
+           Enclosing_Param_Spec (Formal);
+      begin
+         if Libadalang.Analysis.Is_Null (Spec) then
+            return (Supported => False, Sort => Integer_Sort);
+         end if;
+         return Type_Sort (Spec.F_Type_Expr.P_Designated_Type_Decl);
+      end;
    exception
       when others =>
-         return Integer_Sort;
+         return (Supported => False, Sort => Integer_Sort);
    end Formal_Sort;
 
    --  When Node is a reference to an enumeration literal (a bare
@@ -746,6 +787,7 @@ package body Adalang_Analyzer.VC_Prover is
 
          when Libadalang.Common.Ada_Identifier =>
             declare
+               Sort_Info : constant Sort_Resolution := Expression_Sort (Node);
                --  Checked first: an enum literal (e.g. "Mon") is not a
                --  flow-tracked object at all, so it must be recognized
                --  before the ordinary variable path below, which would
@@ -754,6 +796,12 @@ package body Adalang_Analyzer.VC_Prover is
                Literal_Position : constant Domain.Abstract_Int :=
                  Enum_Literal_Position (Node);
             begin
+               if not Sort_Info.Supported
+                 or else Sort_Info.Sort not in Integer_Sort | Enum_Sort
+               then
+                  Mark_Unsupported (Context, Node, Sort_Mismatch);
+                  return Null_Unbounded_String;
+               end if;
                if Literal_Position.Known then
                   return To_Unbounded_String
                     (SMT_Integer (Literal_Position.Value));
@@ -767,8 +815,14 @@ package body Adalang_Analyzer.VC_Prover is
                  Domain.Flow_Lookup (Context.State, Key);
                Bool_Value : constant Domain.Abstract_Bool :=
                  Domain.Flow_Bool_Lookup (Context.State, Key);
+               Sort_Info : constant Sort_Resolution := Expression_Sort (Node);
             begin
-               if Domain.Flow_Initialization (Context.State, Key) /=
+               if not Sort_Info.Supported
+                 or else Sort_Info.Sort not in Integer_Sort | Enum_Sort
+               then
+                  Mark_Unsupported (Context, Node, Sort_Mismatch);
+                  return Null_Unbounded_String;
+               elsif Domain.Flow_Initialization (Context.State, Key) /=
                  Domain.Bool_True
                  or else Bool_Value /= Domain.Bool_Unknown
                then
@@ -788,7 +842,7 @@ package body Adalang_Analyzer.VC_Prover is
                      Enum_Bounds : constant Domain.Abstract_Range :=
                        Enum_Variable_Bounds (Node);
                   begin
-                     if Enum_Bounds.Has_Low or else Enum_Bounds.Has_High then
+                     if Sort_Info.Sort = Enum_Sort then
                         return To_Unbounded_String
                           (Symbol_For
                              (Context, Plain_Key (Key), Enum_Sort,
@@ -1093,8 +1147,15 @@ package body Adalang_Analyzer.VC_Prover is
                     (Object => Object_Key, Component => Field_Name);
                   Enum_Bounds : constant Domain.Abstract_Range :=
                     Enum_Variable_Bounds (Node);
+                  Sort_Info   : constant Sort_Resolution :=
+                    Expression_Sort (Node);
                begin
-                  if Enum_Bounds.Has_Low or else Enum_Bounds.Has_High then
+                  if not Sort_Info.Supported
+                    or else Sort_Info.Sort not in Integer_Sort | Enum_Sort
+                  then
+                     Mark_Unsupported (Context, Node, Sort_Mismatch);
+                     return Null_Unbounded_String;
+                  elsif Sort_Info.Sort = Enum_Sort then
                      return To_Unbounded_String
                        (Symbol_For (Context, Key, Enum_Sort, Enum_Bounds));
                   end if;
@@ -1131,8 +1192,14 @@ package body Adalang_Analyzer.VC_Prover is
                 (Adalang_Analyzer.Ada_Text.Node_Text (Node));
             Key : Libadalang.Analysis.Ada_Node;
             Value : Domain.Abstract_Bool;
+            Sort_Info : constant Sort_Resolution := Expression_Sort (Node);
          begin
-            if Text = "true" or else Text = "false" then
+            if not Sort_Info.Supported
+              or else Sort_Info.Sort /= Boolean_Sort
+            then
+               Mark_Unsupported (Context, Node, Sort_Mismatch);
+               return Null_Unbounded_String;
+            elsif Text = "true" or else Text = "false" then
                return To_Unbounded_String (Text);
             end if;
             Key := Referenced_Key (Node);
@@ -1533,23 +1600,22 @@ package body Adalang_Analyzer.VC_Prover is
                   end;
                else
                   declare
-                     Formal_Sort_Value : constant Scalar_Sort :=
+                     Formal_Sort_Info : constant Sort_Resolution :=
                        Formal_Sort (Formal);
                      Term : Unbounded_String;
                   begin
-                     case Formal_Sort_Value is
+                     if not Formal_Sort_Info.Supported then
+                        Mark_Unsupported
+                          (Context, Actual, Unsupported_Expression_Kind);
+                        return Null_Unbounded_String;
+                     end if;
+                     case Formal_Sort_Info.Sort is
                         when Integer_Sort =>
                            Term := Integer_Term (Actual, Context);
                         when Boolean_Sort =>
                            Term := Boolean_Term (Actual, Context);
                         when Enum_Sort =>
-                           --  Formal_Sort never returns Enum_Sort (its
-                           --  type-mark text check only distinguishes
-                           --  Boolean from everything else); kept
-                           --  exhaustive for Scalar_Sort's sake.
-                           Mark_Unsupported
-                             (Context, Actual, Sort_Mismatch);
-                           Term := Null_Unbounded_String;
+                           Term := Integer_Term (Actual, Context);
                      end case;
 
                      if not Context.Supported then
@@ -1560,7 +1626,7 @@ package body Adalang_Analyzer.VC_Prover is
                        (Callee.Symbols,
                         (Key  => Plain_Key
                            (Libadalang.Analysis.Ada_Node (Formal)),
-                         Sort => Formal_Sort_Value,
+                         Sort => Formal_Sort_Info.Sort,
                          Term => Term));
                   end;
                end if;
@@ -1622,14 +1688,14 @@ package body Adalang_Analyzer.VC_Prover is
       Value       : Libadalang.Analysis.Expr'Class;
       Flow        : Domain.Flow_State) return Symbolic_State
    is
-      Boolean_Context : Translation_Context :=
+      Context : Translation_Context :=
         (State => Flow, Symbols => State, Supported => State.Supported,
          Object_Bindings => Object_Binding_Vectors.Empty_Vector,
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0);
-      Boolean_Value : constant Unbounded_String :=
-        Boolean_Term (Value, Boolean_Context);
+      Sort_Info : constant Sort_Resolution := Expression_Sort (Value);
+      Term      : Unbounded_String;
    begin
       if Libadalang.Analysis.Is_Null (Destination)
         or else Libadalang.Analysis.Is_Null (Value)
@@ -1638,38 +1704,29 @@ package body Adalang_Analyzer.VC_Prover is
             Tally (Assign_Havoc_By_Kind, "null-node");
          end if;
          return Havoc;
-      elsif Boolean_Context.Supported and then Length (Boolean_Value) > 0 then
-         Set_Binding
-           (Boolean_Context.Symbols,
-            (Key => Plain_Key (Destination), Sort => Boolean_Sort,
-             Term => Boolean_Value));
-         return Boolean_Context.Symbols;
+      elsif not Sort_Info.Supported then
+         if Symbolic_Diagnostics_Enabled then
+            Tally (Assign_Havoc_By_Kind, Value.Kind'Image);
+         end if;
+         return Havoc;
       end if;
 
-      declare
-         Integer_Context : Translation_Context :=
-           (State => Flow, Symbols => State, Supported => State.Supported,
-            Object_Bindings => Object_Binding_Vectors.Empty_Vector,
-            Failure_Reason => No_Unsupported_Reason,
-            Failure_Node => Libadalang.Analysis.No_Ada_Node,
-            Inlining_Path => Null_Unbounded_String,
-            Depth => 0);
-         Integer_Value : constant Unbounded_String :=
-           Integer_Term (Value, Integer_Context);
-      begin
-         if not Integer_Context.Supported or else Length (Integer_Value) = 0
-         then
-            if Symbolic_Diagnostics_Enabled then
-               Tally (Assign_Havoc_By_Kind, Value.Kind'Image);
-            end if;
-            return Havoc;
+      case Sort_Info.Sort is
+         when Boolean_Sort =>
+            Term := Boolean_Term (Value, Context);
+         when Integer_Sort | Enum_Sort =>
+            Term := Integer_Term (Value, Context);
+      end case;
+      if not Context.Supported or else Length (Term) = 0 then
+         if Symbolic_Diagnostics_Enabled then
+            Tally (Assign_Havoc_By_Kind, Value.Kind'Image);
          end if;
-         Set_Binding
-           (Integer_Context.Symbols,
-            (Key => Plain_Key (Destination), Sort => Integer_Sort,
-             Term => Integer_Value));
-         return Integer_Context.Symbols;
-      end;
+         return Havoc;
+      end if;
+      Set_Binding
+        (Context.Symbols,
+         (Key => Plain_Key (Destination), Sort => Sort_Info.Sort, Term => Term));
+      return Context.Symbols;
    exception
       when others =>
          if Symbolic_Diagnostics_Enabled then

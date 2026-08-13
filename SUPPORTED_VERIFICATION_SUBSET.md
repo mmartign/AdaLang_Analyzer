@@ -52,6 +52,13 @@ inlined within the depth limit. Integer `/`, `mod`, and `rem` are translated
 only when the divisor is provably nonzero and their Ada sign semantics are
 encoded.
 
+Symbolic assignments resolve their scalar sort from Ada semantic type
+identity: signed integers use mathematical-integer terms, `Standard.Boolean`
+uses SMT Boolean terms, and enumeration values use their declaration-order
+positions. Unsupported scalar types and inconsistent bindings stop translation
+with explicit `sort-mismatch` provenance rather than being inferred from the
+absence of interval facts.
+
 Machine-width safety is a separate overflow obligation. A solver refutation
 of an assertion containing potentially overflowing arithmetic is not promoted
 to `Definite_Error` merely from mathematical-integer semantics.

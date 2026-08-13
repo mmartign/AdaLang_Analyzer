@@ -80,7 +80,7 @@ The analyzer does not currently provide:
 
 - Exhaustive analysis of every execution path.
 - General verification-condition generation or interactive theorem proving
-  beyond the bounded scalar and loop-invariant subsets.
+  beyond the bounded scalar and loop-VC subsets.
 - Whole-program or general SPARK proof that enabled run-time checks cannot
   fail.
 - Complete points-to, alias, exception, dispatching, or concurrency analysis.

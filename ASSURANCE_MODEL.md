@@ -371,7 +371,7 @@ provers succeed. `tests/run_verification_mutations.sh` independently guards
 all 12 enumerated obligation families with seeded defects or conservative
 boundary cases; none may become `Proved_Safe` unexpectedly.
 `tests/run_proof_path_evidence.sh` separately inventories every source-level
-`Record_Proved_Safe` producer and checks 22 method-specific routes. Each route
+`Record_Proved_Safe` producer and checks 23 method-specific routes. Each route
 has positive and adversarial evidence, while solver-dependent routes also
 exercise unsupported translation and unavailable solvers. The gate compares
 the manifest with stable `proof-path` source tags, so a new unreviewed proof

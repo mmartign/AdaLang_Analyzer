@@ -653,7 +653,7 @@ quality, model, performance, and verification suites. Its differential stage
 runs 18 clean and 9 deliberately broken units through GNATprove when that tool
 is installed and reports an explicit skip otherwise. A separate seeded
 mutation campaign guards all 12 enumerated obligation families against
-false-safe regressions. A proof-path evidence gate maps 22 abstract, flow,
+false-safe regressions. A proof-path evidence gate maps 23 abstract, flow,
 contract-transfer, and external-prover routes to every one of the 17 current
 `Proved_Safe` producer sites, including adversarial and solver-boundary cases.
 
