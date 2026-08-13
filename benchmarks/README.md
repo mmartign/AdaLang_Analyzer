@@ -206,6 +206,36 @@ breakdown.
   closed them (also confirmed and re-run: **[gnatcoll](gnatcoll/RESULTS_2026-08-09.md)**
   and **[ada_drivers_library](ada_drivers_library/RESULTS_2026-08-05.md)**,
   both bit-identical to their prior baseline, no new dated files needed).
+- **[project_bias](project_bias/RESULTS_2026-08-13.md)** (2026-08-13) — a
+  long same-day chain of re-runs, all driven by one recurring shape in the
+  corpus's own loops: `if Rnd_Buffer (Rnd_Len) in Unbiased then Chain_Len
+  := Chain_Len + 1; ... end if;`, a one-sided branch inside a
+  dynamically-bounded loop. Five successive fixes (leading-invariant
+  pragma-order tolerance, one-level `if`/`else` branch-merge support,
+  array-element-write tolerance, symbolic `'Length` for unconstrained
+  array parameters, and a dynamic-subtype base-range fallback) were each
+  independently real, regression-tested, and zero-regression on every
+  other corpus re-checked alongside them — and each still left this
+  corpus's own `Proved_Safe` count unmoved, precisely diagnosed each time
+  as blocked one layer further in. The eventual payoff came from two more
+  fixes the same day: representing a loop-merge's disagreeing branch
+  values as an SMT `ite` over the branch's own condition (or an anonymous
+  placeholder selector when that condition itself doesn't translate,
+  e.g. an array-indexed read) instead of discarding them into an
+  unconstrained fresh symbol, plus a genuine, previously-undiscovered bug
+  the first fix's own precision gain exposed: `VC.Assume` bailing to a
+  totally empty symbolic state on *one* untranslatable leading invariant
+  was silently discarding every fact already assumed from a loop's
+  *other*, independently provable leading invariants, in both places a
+  loop's invariants are assumed one at a time
+  (`Apply_Loop_Invariants`/`Prove_Header`, `flow_interp.adb`). Fixing that
+  finally let the `ite`-encoded merge use the loop guard the way it was
+  designed to. Net for the file: `Proved_Safe` 400 → 425 (+25),
+  `Definite_Error` 0 throughout, matched-GNATprove-pair buckets showing
+  zero possible unsoundness and zero false positives at every step along
+  the way — a case study in a fix chain where most individual steps
+  measure zero on the corpus that motivated them, right up until the one
+  that finds what was actually blocking all of them.
 
 ## What these benchmarks have found, in total
 
@@ -269,16 +299,23 @@ results mean "no information," not "probably fine." It's also young
 pairs; CubedOS: 7) are small enough samples to corroborate the pattern
 rather than establish it independently.
 
-**Not every real-code run finds something new.** project_bias (17 files,
-floating-point entropy contracts, quantified array predicates, C/Windows
-entropy bindings) completed all three preset lanes cleanly, with zero
-confirmed analyzer mistakes — a useful negative data point against reading
-the eight-bug table above as evidence that every corpus run turns up a
-defect. Its own 27 GNATprove-matched pairs also showed zero disagreement,
-but the corpus isn't a fully-proved oracle (GNATprove itself leaves three
-step-limited checks and one flow error unresolved there), so that sample is
-both too small and too weak an oracle to add to the 2,056-obligation total
-above; it corroborates without counting.
+**Not every real-code run finds something new.** project_bias's first pass
+(17 files, floating-point entropy contracts, quantified array predicates,
+C/Windows entropy bindings) completed all three preset lanes cleanly, with
+zero `--recommended`/`--spark` rule false positives — a useful negative
+data point against reading the eight-bug table above (scoped to exactly
+those lint-style checks) as evidence that every corpus run turns up a
+defect in them. A later same-day return to the same corpus did surface a
+real `--verify`-side bug (see the 2026-08-13 bullet above), but only after
+five prior, individually-real, individually-zero-payoff-on-this-corpus
+fixes and direct experimentation on the corpus's own source — not
+something the corpus's own first pass, or either rule lane, ever flagged
+on its own. Its 27 GNATprove-matched pairs also showed zero disagreement
+throughout, unaffected by any of that same-day work, but the corpus isn't
+a fully-proved oracle (GNATprove itself leaves three step-limited checks
+and one flow error unresolved there), so that sample is both too small
+and too weak an oracle to add to the 2,056-obligation total above; it
+corroborates without counting.
 
 **Net:** use it for what static analysis on ordinary Ada is for — catching
 real defects fast, on code that will never be SPARK, or as an immediate
