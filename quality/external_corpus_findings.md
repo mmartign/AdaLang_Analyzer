@@ -1756,3 +1756,94 @@ fix's real-world payoff has to be measured per corpus, not assumed from
 the shape of the fix. No further action taken on the enum-sort or
 object-constraint gaps here; recorded as further validated-but-deferred
 input alongside the rest of this section.
+
+### Enum-sort support: built, confirmed on synthetic cases, zero net corpus payoff (2026-08-13)
+
+The enum-sort gap named above (`VC_Prover.Scalar_Sort` had only
+`Integer_Sort`/`Boolean_Sort`; Tokeneer's dominant `Ada_Membership_Expr`
+shape tests membership in an enumeration subtype) was built, scoped
+deliberately small: equality and membership-test translation only, no
+ordering/`'Succ`/`'Pred`/`'Pos`/`'Val`. A new `Enum_Sort` represents a value
+by its 0-based declaration-order position (Ada's `'Pos`, not GNAT's
+`'Enum_Rep`, which a representation clause can remap away from declaration
+order). Two new helpers do the resolution: `Enum_Literal_Position` (an enum
+literal reference, e.g. `Admin`, to its position) and
+`Enum_Type_Position_Range` (a full base enum type declaration to its `0 ..
+Literal_Count - 1` range, used to bound an unknown-valued enum variable's
+symbolic root the same way an integer subtype's declared range bounds an
+ordinary `Integer_Sort` root). Both are self-contained in `VC_Prover`
+rather than promoted to the shared `Flow_Eval` layer this time, since the
+scope was deliberately kept to VC_Prover's own translation, not the
+abstract interpreter. Neither resolves a range-narrowed subtype (`subtype
+S is T range A .. B`) -- conservatively `Unsupported` there, same as every
+other unhandled shape in this file.
+
+**Confirmed working end-to-end on the production path** (no shadow
+scaffolding) on four synthetic shapes, each moving from `Unproved` to
+`Proved_Safe` via `method: external-prover`: plain equality against a
+literal (`if R = Admin then pragma Assert (R = Admin); end if;`), range
+membership (`R in Guest .. Member`), value-list membership (`R in Guest |
+Admin`), and full-type-mark membership (`R in Role_Kind`) -- all with `R`
+a formal parameter compared directly, never reassigned. Full repository
+test suite green throughout, including the 217-case precision corpus and
+the GNATprove differential gate.
+
+**Real-world payoff on Tokeneer and project_bias (same corpora and
+pinned commits as the sections above): zero net movement in `provedSafe`,
+for a disclosed reason found by testing the "assign, then compare" shape
+before trusting the corpus numbers alone.** `Dump_Symbolic_Diagnostics`
+before/after (byte-identical `--verify` invocation, same two corpora):
+
+| | Tokeneer | project_bias |
+| --- | --- | --- |
+| `provedSafe` (of 6697 / 2342 total obligations) | 1741 → **1741** (unchanged) | 383 → **383** (unchanged) |
+| `Assign`-havoc, `Ada_Identifier` | 1543 → **1015** (-528, -34%) | 54 → **50** (-4) |
+| `Assume`-havoc, `Ada_Membership_Expr` | 10 → 10 (unchanged) | 308 → 308 (unchanged) |
+
+The membership-expr count not moving is expected and already explained by
+the two sections above: Tokeneer's dominant shape needs `Ada_Dotted_Name`
+(record-component access) support in `Integer_Term`, which this change
+does not add; project_bias's needs object-level (not type-level) array
+constraint resolution, also not touched here. The more surprising result
+is that a real, substantial `Assign`-havoc reduction (528 fewer failures on
+Tokeneer -- assigning an enum literal to a variable, e.g. `S := Admin;`,
+now translates instead of failing) produced **no** additional
+`provedSafe` obligations on either corpus.
+
+Root cause, found by testing the exact "assign, then compare" shape as a
+synthetic fixture rather than trusting the aggregate numbers alone:
+`VC_Prover.Assign` always tries `Boolean_Term` on the assigned value
+*first*, falling back to `Integer_Term` only if that fails. `Boolean_Term`'s
+own `Ada_Identifier` case has a guard that was never a real type check --
+it accepts anything the interval domain hasn't proven is definitely
+integer-valued (no known `Value`, no known range), which every enum
+variable trivially satisfies, since the interval domain never tracks enums
+at all (the same blind spot `Enum_Type_Position_Range` exists to patch on
+the `Integer_Term` side). So `S := R;` for two enum variables was *already*
+silently accepted by `Assign` before this change -- just bound as a
+fabricated `Boolean_Sort` symbol with no connection to `R`'s real value,
+not `Havoc`. That pre-existing (not introduced by this change) mistyping
+then collides with this change's own `Enum_Sort`/`Integer_Sort` binding for
+the *literal* side of a later comparison: `Symbol_For`'s Sort-mismatch
+check correctly refuses to compare a `Boolean_Sort`-bound variable against
+an `Enum_Sort`/`Integer_Sort`-typed literal, so the comparison stays
+`Unsupported` either way. Confirmed directly with two synthetic fixtures,
+both staying `Unproved` end-to-end: `S := Admin; pragma Assert (S =
+Admin);` (direct literal assignment) and `S := R; if S = Admin then pragma
+Assert (R = Admin); end if;` (variable-to-variable assignment) -- contrast
+with the four *unassigned*-parameter shapes above, which all prove.
+
+**Conclusion**: shipped as real, tested, and correctly scoped -- the
+`Enum_Sort` machinery is sound and does what it says for a directly-compared
+identifier -- but its practical payoff on the two corpora already being
+tracked is nil, because both corpora's actual code assigns before
+comparing far more often than it compares a never-reassigned identifier
+directly. The validated next blocker, matching this file's running theme,
+is `Boolean_Term`'s `Ada_Identifier` guard: it needs an actual "does the
+interval domain positively know this is integer/boolean" check rather than
+"has nothing disproven it," which is a change to a much more
+widely-exercised function (every `=`/`/=` comparison in the file routes
+through it) and therefore a materially larger-blast-radius fix than
+anything in this file so far -- deliberately not attempted in this same
+change, consistent with keeping each measured step to one mechanism. Not
+yet built; recorded here as the validated next step.

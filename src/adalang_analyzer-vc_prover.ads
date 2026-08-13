@@ -96,7 +96,13 @@ package Adalang_Analyzer.VC_Prover is
 
 private
 
-   type Scalar_Sort is (Integer_Sort, Boolean_Sort);
+   type Scalar_Sort is (Integer_Sort, Boolean_Sort, Enum_Sort);
+   --  Enum_Sort values are represented in SMT-LIB by their 0-based
+   --  declaration-order position (matching Ada's 'Pos, not GNAT's Enum_Rep,
+   --  which a representation clause can remap) -- see Enum_Literal_Position
+   --  and Enum_Type_Position_Range in the body. Scoped to equality and
+   --  membership-test translation only: no ordering, 'Succ/'Pred, or
+   --  'Pos/'Val attribute support yet.
 
    type Symbol_Root is record
       Name       : Ada.Strings.Unbounded.Unbounded_String;

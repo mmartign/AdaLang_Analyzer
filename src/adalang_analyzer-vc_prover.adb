@@ -142,14 +142,19 @@ package body Adalang_Analyzer.VC_Prover is
    end Root_Index;
 
    procedure Add_Root
-     (State  : in out Symbolic_State;
-      Name   : String;
-      Key    : Libadalang.Analysis.Ada_Node;
-      Sort   : Scalar_Sort;
-      Flow   : Domain.Flow_State)
+     (State       : in out Symbolic_State;
+      Name        : String;
+      Key         : Libadalang.Analysis.Ada_Node;
+      Sort        : Scalar_Sort;
+      Flow        : Domain.Flow_State;
+      Enum_Bounds : Domain.Abstract_Range := Domain.Unknown_Range)
    is
+      --  The scalar interval domain (Flow_Range_Lookup) never tracks
+      --  enum-typed objects -- Enum_Sort roots get their bounds from the
+      --  enum type's own literal count instead, supplied by the caller.
       Range_Value : constant Domain.Abstract_Range :=
-        Domain.Flow_Range_Lookup (Flow, Key);
+        (if Sort = Enum_Sort then Enum_Bounds
+         else Domain.Flow_Range_Lookup (Flow, Key));
    begin
       if Root_Index (State, Name) /= 0 then
          return;
@@ -159,16 +164,19 @@ package body Adalang_Analyzer.VC_Prover is
         ((Name     => To_Unbounded_String (Name),
           Key      => Key,
           Sort     => Sort,
-          Has_Low  => Sort = Integer_Sort and then Range_Value.Has_Low,
+          Has_Low  => Sort in Integer_Sort | Enum_Sort
+            and then Range_Value.Has_Low,
           Low      => Range_Value.Low,
-          Has_High => Sort = Integer_Sort and then Range_Value.Has_High,
+          Has_High => Sort in Integer_Sort | Enum_Sort
+            and then Range_Value.Has_High,
           High     => Range_Value.High));
    end Add_Root;
 
    function Symbol_For
-     (Context : in out Translation_Context;
-      Key     : Libadalang.Analysis.Ada_Node;
-      Sort    : Scalar_Sort) return String
+     (Context     : in out Translation_Context;
+      Key         : Libadalang.Analysis.Ada_Node;
+      Sort        : Scalar_Sort;
+      Enum_Bounds : Domain.Abstract_Range := Domain.Unknown_Range) return String
    is
       Binding : constant Natural := Binding_Index (Context.Symbols, Key);
    begin
@@ -186,7 +194,8 @@ package body Adalang_Analyzer.VC_Prover is
       declare
          Name : constant String := Root_Name (Key);
       begin
-         Add_Root (Context.Symbols, Name, Key, Sort, Context.State);
+         Add_Root
+           (Context.Symbols, Name, Key, Sort, Context.State, Enum_Bounds);
          return Name;
       end;
    end Symbol_For;
@@ -374,6 +383,118 @@ package body Adalang_Analyzer.VC_Prover is
          return Integer_Sort;
    end Formal_Sort;
 
+   --  When Node is a reference to an enumeration literal (a bare
+   --  identifier like "Mon", or a package-qualified one), returns its
+   --  0-based declaration-order position (Ada's 'Pos). Deliberately not
+   --  GNAT's 'Enum_Rep/P_Enum_Rep, which an explicit representation clause
+   --  can remap away from declaration order -- an "=" or "in" comparison
+   --  means 'Pos equality, not storage-representation equality. Returns
+   --  Known => False for anything else, the same conservative-Unsupported
+   --  fallback as every other unhandled shape in this file.
+   function Enum_Literal_Position
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Domain.Abstract_Int
+   is
+      Not_Known : constant Domain.Abstract_Int := Domain.Unknown_Int;
+      Decl      : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Node.Kind not in Libadalang.Common.Ada_Name then
+         return Not_Known;
+      end if;
+
+      Decl := Node.As_Name.P_Referenced_Decl;
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else Decl.Kind /= Libadalang.Common.Ada_Enum_Literal_Decl
+      then
+         return Not_Known;
+      end if;
+
+      declare
+         Enum_Type : constant Libadalang.Analysis.Type_Decl :=
+           Decl.As_Enum_Literal_Decl.P_Enum_Type;
+      begin
+         if Libadalang.Analysis.Is_Null (Enum_Type)
+           or else Enum_Type.F_Type_Def.Kind /=
+             Libadalang.Common.Ada_Enum_Type_Def
+         then
+            return Not_Known;
+         end if;
+
+         declare
+            Literals : constant Libadalang.Analysis.Enum_Literal_Decl_List :=
+              Enum_Type.F_Type_Def.As_Enum_Type_Def.F_Enum_Literals;
+         begin
+            for Index in 1 .. Literals.Children_Count loop
+               if Literals.Child (Index) =
+                 Libadalang.Analysis.Ada_Node (Decl)
+               then
+                  return (Known => True,
+                          Value => Long_Long_Integer (Index - 1));
+               end if;
+            end loop;
+            return Not_Known;
+         end;
+      end;
+   exception
+      when others =>
+         return Not_Known;
+   end Enum_Literal_Position;
+
+   --  The position range every value of enum type Typ falls in, 0 ..
+   --  Literal_Count - 1 -- used to bound a not-yet-known enum-typed
+   --  variable's symbolic root the same way an integer subtype's own
+   --  declared range bounds an ordinary Integer_Sort root. Only resolves a
+   --  full base type declaration ("type T is (...)"), not a range-narrowed
+   --  subtype ("subtype S is T range A .. B"): Domain.Unknown_Range for
+   --  anything else, the same conservative fallback used throughout this
+   --  file (costs precision, never soundness, since the true range is
+   --  always a subset of the base type's).
+   function Enum_Type_Position_Range
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class)
+      return Domain.Abstract_Range
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Typ)
+        or else Typ.Kind not in Libadalang.Common.Ada_Type_Decl
+        or else Typ.As_Type_Decl.F_Type_Def.Kind /=
+          Libadalang.Common.Ada_Enum_Type_Def
+      then
+         return Domain.Unknown_Range;
+      end if;
+
+      declare
+         Count : constant Natural :=
+           Typ.As_Type_Decl.F_Type_Def.As_Enum_Type_Def.F_Enum_Literals
+             .Children_Count;
+      begin
+         if Count = 0 then
+            return Domain.Unknown_Range;
+         end if;
+         return
+           (Has_Low => True, Low => 0,
+            Has_High => True, High => Long_Long_Integer (Count - 1));
+      end;
+   exception
+      when others =>
+         return Domain.Unknown_Range;
+   end Enum_Type_Position_Range;
+
+   --  As Enum_Type_Position_Range, but starting from a Name node (e.g. an
+   --  Ada_Identifier) instead of an already-resolved type declaration --
+   --  resolves Node's own expression type first.
+   function Enum_Variable_Bounds
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Domain.Abstract_Range
+   is
+   begin
+      if Node.Kind not in Libadalang.Common.Ada_Name then
+         return Domain.Unknown_Range;
+      end if;
+      return Enum_Type_Position_Range (Node.As_Name.P_Expression_Type);
+   exception
+      when others =>
+         return Domain.Unknown_Range;
+   end Enum_Variable_Bounds;
+
    function Integer_Term
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String;
@@ -438,6 +559,21 @@ package body Adalang_Analyzer.VC_Prover is
 
          when Libadalang.Common.Ada_Identifier =>
             declare
+               --  Checked first: an enum literal (e.g. "Mon") is not a
+               --  flow-tracked object at all, so it must be recognized
+               --  before the ordinary variable path below, which would
+               --  otherwise (correctly, but needlessly) reject it as
+               --  uninitialized.
+               Literal_Position : constant Domain.Abstract_Int :=
+                 Enum_Literal_Position (Node);
+            begin
+               if Literal_Position.Known then
+                  return To_Unbounded_String
+                    (SMT_Integer (Literal_Position.Value));
+               end if;
+            end;
+
+            declare
                Key   : constant Libadalang.Analysis.Ada_Node :=
                  Referenced_Key (Node);
                Value : constant Domain.Abstract_Int :=
@@ -454,8 +590,24 @@ package body Adalang_Analyzer.VC_Prover is
                elsif Value.Known then
                   return To_Unbounded_String (SMT_Integer (Value.Value));
                else
-                  return To_Unbounded_String
-                    (Symbol_For (Context, Key, Integer_Sort));
+                  declare
+                     --  Unknown-valued and not otherwise flow-tracked: if
+                     --  Node's own type is an enum, bound its symbolic
+                     --  root to the type's position range instead of
+                     --  leaving it a plain unconstrained Integer_Sort
+                     --  symbol -- same idea as an ordinary integer
+                     --  subtype's declared range, just resolved from the
+                     --  type declaration instead of Flow_Range_Lookup.
+                     Enum_Bounds : constant Domain.Abstract_Range :=
+                       Enum_Variable_Bounds (Node);
+                  begin
+                     if Enum_Bounds.Has_Low or else Enum_Bounds.Has_High then
+                        return To_Unbounded_String
+                          (Symbol_For (Context, Key, Enum_Sort, Enum_Bounds));
+                     end if;
+                     return To_Unbounded_String
+                       (Symbol_For (Context, Key, Integer_Sort));
+                  end;
                end if;
             end;
 
@@ -956,10 +1108,21 @@ package body Adalang_Analyzer.VC_Prover is
                             Libadalang.Common.Ada_Base_Type_Decl
                         then
                            declare
-                              Bounds : constant Domain.Abstract_Range :=
+                              Int_Bounds : constant Domain.Abstract_Range :=
                                 Eval.Type_Range
                                   (Type_Decl.As_Base_Type_Decl,
                                    Context.State);
+                              --  Eval.Type_Range only resolves integer
+                              --  subtypes; when the choice is an enum
+                              --  subtype mark instead (Type_Range leaves
+                              --  both bounds unset), fall back to its
+                              --  literal-position range.
+                              Bounds     : constant Domain.Abstract_Range :=
+                                (if Int_Bounds.Has_Low
+                                   or else Int_Bounds.Has_High
+                                 then Int_Bounds
+                                 else Enum_Type_Position_Range
+                                   (Type_Decl.As_Base_Type_Decl));
                            begin
                               if not Bounds.Has_Low
                                 or else not Bounds.Has_High
@@ -1066,6 +1229,13 @@ package body Adalang_Analyzer.VC_Prover is
                      Term := Integer_Term (Actual, Context);
                   when Boolean_Sort =>
                      Term := Boolean_Term (Actual, Context);
+                  when Enum_Sort =>
+                     --  Formal_Sort never returns Enum_Sort (its type-mark
+                     --  text check only distinguishes Boolean from
+                     --  everything else); kept exhaustive for Scalar_Sort's
+                     --  sake, not a reachable case today.
+                     Context.Supported := False;
+                     Term := Null_Unbounded_String;
                end case;
 
                if not Context.Supported then
@@ -1100,6 +1270,16 @@ package body Adalang_Analyzer.VC_Prover is
                   Result := Integer_Term (Body_Expr, Callee);
                when Boolean_Sort =>
                   Result := Boolean_Term (Body_Expr, Callee);
+               when Enum_Sort =>
+                  --  Inlined_Call_Term is only ever called with the Sort of
+                  --  an Integer_Term/Boolean_Term call site (line ~486,
+                  --  ~748 below), never Enum_Sort; kept exhaustive for
+                  --  Scalar_Sort's sake. Callee.Supported (not
+                  --  Context.Supported) is the one that actually reaches
+                  --  the caller, via the unconditional assignment just
+                  --  below.
+                  Callee.Supported := False;
+                  Result := Null_Unbounded_String;
             end case;
 
             Context.Supported := Callee.Supported;
@@ -1376,9 +1556,9 @@ package body Adalang_Analyzer.VC_Prover is
             Append
               (Result,
                "(declare-fun " & Name & " () " &
-                 (if Item.Sort = Integer_Sort then "Int" else "Bool") &
+                 (if Item.Sort = Boolean_Sort then "Bool" else "Int") &
                  ")" & ASCII.LF);
-            if Item.Sort = Integer_Sort then
+            if Item.Sort in Integer_Sort | Enum_Sort then
                if Item.Has_Low then
                   Append
                     (Result,
