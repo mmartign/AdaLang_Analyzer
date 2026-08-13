@@ -33,6 +33,7 @@ vc_quantified_outside=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-quantified-out
 vc_enum_assignment=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-enum-assignment.XXXXXX")
 vc_enum_error=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-enum-error.XXXXXX")
 vc_unsupported_sort=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-unsupported-sort.XXXXXX")
+vc_derived_overflow_base=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-derived-overflow-base.XXXXXX")
 symbolic_assignment=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-assignment.XXXXXX")
 symbolic_branch=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-branch.XXXXXX")
 symbolic_join=$(mktemp "${TMPDIR:-/tmp}/adalang-symbolic-join.XXXXXX")
@@ -60,7 +61,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -358,6 +359,23 @@ grep -F '"operation": "Copy = Input"' "$vc_unsupported_sort" |
 if grep -F '"kind": "assertion", "status": "proved-safe"' \
   "$vc_unsupported_sort" >/dev/null; then
    echo "an unsupported fixed-point scalar sort entered the SMT proof path" >&2
+   exit 1
+fi
+
+#  RFLX_Types.Index/Length shape (coap_spark): a twice-derived type ("new
+#  Length range 1 .. Length'Last", itself "new Natural") whose visible
+#  first-subtype constraint is narrower than its true machine base range.
+#  "X - 2" (X = Index'First = 1) is -1: outside Index's and Length's own
+#  declared constraints, but comfortably inside the true base range every
+#  derivation ultimately inherits from Integer. Only a single P_Base_Type
+#  hop reaches Length's still-narrow constraint; the overflow check must
+#  walk to the derivation root to avoid a false Definite_Error here.
+run_json "$vc_derived_overflow_base" \
+  tests/verification_vc_derived_overflow_base.adb
+grep -F '"operation": "X - 2"' "$vc_derived_overflow_base" |
+  grep -F '"kind": "integer-overflow", "status": "proved-safe"' >/dev/null
+if grep -F '"status": "definite-error"' "$vc_derived_overflow_base" >/dev/null; then
+   echo "a twice-derived type's narrow first-subtype constraint produced a false Definite_Error" >&2
    exit 1
 fi
 

@@ -61,7 +61,13 @@ absence of interval facts.
 
 Machine-width safety is a separate overflow obligation. A solver refutation
 of an assertion containing potentially overflowing arithmetic is not promoted
-to `Definite_Error` merely from mathematical-integer semantics.
+to `Definite_Error` merely from mathematical-integer semantics. The base
+range an overflow check tests against is resolved to the full derivation
+root, not one immediate-parent hop: a twice-derived type (RecordFlux's
+`Index is new Length range 1 .. Length'Last`, itself `Length is new
+Natural`, for instance) would otherwise be checked against an intermediate
+ancestor's own narrower first-subtype constraint rather than the true
+machine range every derivation ultimately inherits.
 
 The path context may contain entry preconditions, branch predicates,
 straight-line scalar substitutions, sound relational postcondition transfer,

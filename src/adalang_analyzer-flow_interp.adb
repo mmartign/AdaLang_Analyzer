@@ -1375,6 +1375,31 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end Definitely_Inside_Type;
 
+   function Overflow_Base_Range
+     (Typ   : Libadalang.Analysis.Base_Type_Decl'Class;
+      Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Abstract_Range
+   is
+      --  A single P_Base_Type hop only reaches the immediate parent, whose
+      --  own visible constraint can itself be a narrowed first subtype
+      --  (e.g. a "new Natural" parent still carries Natural's 0-based
+      --  constraint, not its own unconstrained base range). Walk to the
+      --  derivation root instead, so a multiply-derived type (RecordFlux's
+      --  Index -> Length -> Natural pattern, for instance) resolves to its
+      --  true machine base range. Only do this when a real parent exists:
+      --  Is_Null also covers non-derived types and Libadalang's synthetic
+      --  universal-integer root (named-number initializers such as a bare
+      --  "2**14"), neither of which has a real base range to widen to --
+      --  the latter's own visible "range" is a meaningless placeholder.
+      Immediate_Base : constant Libadalang.Analysis.Base_Type_Decl :=
+        Typ.P_Base_Type (Node);
+   begin
+      if Libadalang.Analysis.Is_Null (Immediate_Base) then
+         return Unknown_Range;
+      end if;
+      return Type_Range (Typ.P_Root_Type (Node), State);
+   end Overflow_Base_Range;
+
    function Arithmetic_Proved_Safe
      (Node  : Libadalang.Analysis.Expr'Class;
       State : Flow_State) return Boolean
@@ -1390,7 +1415,7 @@ package body Adalang_Analyzer.Flow_Interp is
 
       declare
          Bounds : Abstract_Range :=
-           Type_Range (Expr_Type.P_Base_Type (Node), State);
+           Overflow_Base_Range (Expr_Type, Node, State);
          Name   : constant String := Langkit_Support.Text.To_UTF8
            (Expr_Type.P_Canonical_Fully_Qualified_Name);
       begin
@@ -1435,7 +1460,7 @@ package body Adalang_Analyzer.Flow_Interp is
 
          declare
             Bounds : Abstract_Range :=
-              Type_Range (Expr_Type.P_Base_Type (Node), State);
+              Overflow_Base_Range (Expr_Type, Node, State);
             Name   : constant String := Langkit_Support.Text.To_UTF8
               (Expr_Type.P_Canonical_Fully_Qualified_Name);
          begin
@@ -1914,7 +1939,7 @@ package body Adalang_Analyzer.Flow_Interp is
                else
                   declare
                      Bounds : Abstract_Range :=
-                       Type_Range (Expr_Type.P_Base_Type (Node), State);
+                       Overflow_Base_Range (Expr_Type, Node, State);
                      Name : constant String := Langkit_Support.Text.To_UTF8
                        (Expr_Type.P_Canonical_Fully_Qualified_Name);
                   begin
@@ -4082,9 +4107,8 @@ package body Adalang_Analyzer.Flow_Interp is
                            if not Libadalang.Analysis.Is_Null (Expr_Type)
                              and then Expr_Type.P_Is_Int_Type
                            then
-                              Bounds := Type_Range
-                                (Expr_Type.P_Base_Type (Item.Expression),
-                                 Before_State);
+                              Bounds := Overflow_Base_Range
+                                (Expr_Type, Item.Expression, Before_State);
                               if not Bounds.Has_Low
                                 and then not Bounds.Has_High
                               then
