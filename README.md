@@ -250,7 +250,10 @@ records a stable `reasonCode`, the exact `blockingExpression`, and an
 more inlined expression functions. These appear as `reason:`, `blocked at:`,
 and `inline path:` in verbose text; JSON exposes them directly on each proof
 obligation, and SARIF carries the proof-obligation array in the run's
-`properties` object.
+`properties` object. This provenance is preserved for assertions,
+preconditions, postconditions, leading loop-invariant initialization and
+preservation, and scalar range, index, integer-overflow, and division-by-zero
+obligations whenever VC translation is attempted.
 
 The data-flow checks are intraprocedural and deliberately conservative.
 `Dead_Store` follows resolved simple-object and array-component assignments in
@@ -298,17 +301,20 @@ creating an obligation. This mirrors useful local proof behavior from
 GNATprove while remaining limited to conditions the abstract domain can
 decide.
 
-The same state is used for two common Ada run-time proof obligations. Integer
+The same state is used for common Ada run-time proof obligations. Integer
 initializations, assignments, and type conversions are compared with resolved
 subtype bounds, and array subscripts are compared with the resolved index type
-for each dimension. Findings are emitted only when the value's entire known
-range lies outside the permitted range; unknown or partially overlapping
-ranges remain silent.
+for each dimension. When interval reasoning is inconclusive in verification
+mode, the scalar VC backend receives the expression, permitted bounds, and
+path-sensitive symbolic state. It can prove containment, refute it, or retain
+an unproved result with explicit unsupported-translation provenance.
 
 Integer arithmetic is also checked against the resolved base type of the
 operation. This models Ada's overflow check separately from the subtype check
 performed by a later assignment and avoids reporting both obligations for the
-same definitely overflowing expression.
+same definitely overflowing expression. Division-by-zero obligations use the
+same fallback to prove that a divisor is nonzero or refute that condition when
+abstract ranges alone cannot decide it.
 
 Division, integer arithmetic, range checks, index checks, selected discriminant
 checks, assertions, preconditions, and postconditions reached by the

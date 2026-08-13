@@ -23,6 +23,8 @@ vc_division_refuted=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-division-refuted
 vc_division_zero_possible=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-division-zero.XXXXXX")
 vc_call_inlined=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-call-inlined.XXXXXX")
 vc_unsupported_provenance=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-provenance.XXXXXX")
+vc_contract_loop_provenance=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-contract-loop-provenance.XXXXXX")
+vc_runtime_solver=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-runtime-solver.XXXXXX")
 vc_call_statement_body=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-call-stmt.XXXXXX")
 vc_conversion=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-conversion.XXXXXX")
 vc_conversion_modular=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-conversion-mod.XXXXXX")
@@ -52,7 +54,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -247,6 +249,32 @@ grep -F '"operation": "Outer (X) >= 0"' "$vc_unsupported_provenance" |
   grep -F '"reasonCode": "unsupported-operator"' |
   grep -F '"blockingExpression": "Value ** 2"' |
   grep -F '"inlinePath": "Outer -> Square"' >/dev/null
+
+run_json "$vc_contract_loop_provenance" \
+  tests/verification_vc_contract_loop_provenance.adb
+for kind in precondition postcondition loop-invariant-initialization \
+  loop-invariant-preservation
+do
+  grep -F "\"kind\": \"$kind\"" "$vc_contract_loop_provenance" |
+    grep -F '"reasonCode": "unsupported-operator"' |
+    grep -F '"blockingExpression": "' >/dev/null
+done
+
+run_json "$vc_runtime_solver" tests/verification_vc_runtime_solver.adb
+grep -F '"kind": "range-check", "status": "proved-safe", "method": "external-prover"' \
+  "$vc_runtime_solver" | grep -F '"operation": "X - Y"' >/dev/null
+grep -F '"kind": "index-check", "status": "proved-safe", "method": "external-prover"' \
+  "$vc_runtime_solver" | grep -F '"operation": "X - Y + 10"' >/dev/null
+grep -F '"kind": "division-by-zero", "status": "proved-safe", "method": "external-prover"' \
+  "$vc_runtime_solver" | grep -F '"operation": "(Y - X)"' >/dev/null
+grep -F '"kind": "integer-overflow", "status": "proved-safe", "method": "external-prover"' \
+  "$vc_runtime_solver" | grep -F '"operation": "X - Y"' >/dev/null
+grep -F '"kind": "range-check", "status": "definite-error", "method": "external-prover"' \
+  "$vc_runtime_solver" | grep -F '"operation": "Y - X"' >/dev/null
+grep -F '"kind": "range-check", "status": "unproved"' "$vc_runtime_solver" |
+  grep -F '"operation": "X ** 2"' |
+  grep -F '"reasonCode": "unsupported-operator"' |
+  grep -F '"blockingExpression": "X ** 2"' >/dev/null
 
 run_json "$vc_call_statement_body" tests/verification_vc_call_statement_body.adb
 grep -F '"kind": "assertion", "status": "unproved"' \

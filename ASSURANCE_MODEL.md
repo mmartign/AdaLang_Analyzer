@@ -194,8 +194,9 @@ unsupported or reachable result cannot leave an earlier false-safe result in
 the registry.
 
 This remains deliberately bounded verification, not exhaustive Ada
-verification. Structured text and JSON reports expose the boundary; SARIF
-proof-obligation reporting is not yet connected.
+verification. Structured text, JSON, and SARIF reports expose the boundary,
+including unsupported-translation reason codes, blocking expressions, and
+expression-function inline paths where available.
 
 Each obligation should contain at least:
 
@@ -285,9 +286,10 @@ The `--verify` boundary is deliberately narrow:
   summaries, plus resolved SPARK calls with explicit global effects and
   structurally non-aliased simple writable actuals for relational contract
   transfer.
-- Side-effect-free scalar assertion formulas over initialized integer and
-  Boolean objects, with `+`, `-`, `*`, comparisons, equality, and Boolean
-  connectives.
+- Side-effect-free scalar obligations over initialized integer and Boolean
+  objects, including assertions, contracts, selected run-time checks, and
+  leading loop invariants, with `+`, `-`, `*`, comparisons, equality, and
+  Boolean connectives.
 - Relational entry preconditions, branch-local predicates, straight-line
   scalar assignments, simple actual-to-formal precondition substitution, and
   identical symbolic values that reach a join from every predecessor.
@@ -332,8 +334,10 @@ The excluded or explicitly unsupported set includes:
 - Unchecked conversion and target-dependent representation.
 - Unmodeled exception paths.
 - Calls without sound effect summaries or with unsupported writable aliasing.
-- VC translations for division/remainder, exponentiation, calls, aggregates,
-  and expressions whose Ada semantics are not yet encoded exactly.
+- VC translations for exponentiation, aggregates, modular conversions,
+  statement-bodied, impure, or dispatching calls, division/remainder without
+  a provably nonzero divisor, and expressions whose Ada semantics are not yet
+  encoded exactly.
 - Conflicting symbolic values at joins, exceptional edges, and calls without
   relational postconditions.
 - Loop invariants placed after executable statements, preservation paths with
@@ -369,7 +373,8 @@ the project still needs:
 1. A more formal supported-language and property specification.
 2. Mutation and seeded-defect campaigns designed to detect false-safe results.
 3. A larger routinely executed differential corpus.
-4. Complete structured reporting, including SARIF proof obligations.
+4. Broader unsupported-provenance coverage for the remaining expression and
+   control-flow classes.
 5. A documented review and release process for discovered false-safe results.
 
 Testing cannot prove the analyzer sound, but it is necessary evidence that the

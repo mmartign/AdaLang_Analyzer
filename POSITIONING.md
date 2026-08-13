@@ -61,8 +61,9 @@ The analyzer currently provides:
   checks.
 - A bounded `--verify` mode that classifies enumerated scalar obligations as
   proved safe, definite error, unproved, unreachable, or unsupported.
-- A small dual-solver scalar VC backend for assertion formulas that interval
-  analysis cannot decide.
+- A small dual-solver scalar VC backend for assertions, contracts, leading
+  loop invariants, and selected run-time checks that interval analysis cannot
+  decide.
 - Conservative symbolic propagation for scalar assignments, relational
   preconditions, and branch-local path predicates.
 - Bounded loop VCs for initialization and one-iteration preservation of

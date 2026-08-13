@@ -106,6 +106,36 @@ package body Adalang_Analyzer.Flow_Interp is
          Inline_Path, Final => Final);
    end Record_Unproved;
 
+   procedure Record_VC_Unproved
+     (Unit                  : Libadalang.Analysis.Analysis_Unit;
+      Node                  : Libadalang.Analysis.Ada_Node'Class;
+      Kind                  : Proof.Obligation_Kind;
+      Method                : Proof.Analysis_Method;
+      Explanation           : String;
+      Default_Imprecision   : String;
+      Outcome               : VC.VC_Outcome;
+      Final                 : Boolean := False) is
+   begin
+      Record_Unproved
+        (Unit, Node, Kind, Method, Explanation,
+         Imprecision =>
+           (if Outcome.Result = VC.VC_Unavailable
+            then "CVC5/Z3 prover portfolio is unavailable"
+            elsif Outcome.Result = VC.VC_Unsupported
+            then VC.Unsupported_Description (Outcome)
+            else Default_Imprecision),
+         Reason_Code =>
+           (if Outcome.Result = VC.VC_Unsupported
+            then VC.Unsupported_Reason_Code (Outcome) else ""),
+         Blocking_Expression =>
+           (if Outcome.Result = VC.VC_Unsupported
+            then VC.Blocking_Expression (Outcome) else ""),
+         Inline_Path =>
+           (if Outcome.Result = VC.VC_Unsupported
+            then VC.Inline_Path (Outcome) else ""),
+         Final => Final);
+   end Record_VC_Unproved;
+
    procedure Record_Proved_Safe
      (Unit           : Libadalang.Analysis.Analysis_Unit;
       Node           : Libadalang.Analysis.Ada_Node'Class;
@@ -863,13 +893,13 @@ package body Adalang_Analyzer.Flow_Interp is
                    then VC.Evidence else "precondition => true"),
                   Final => Final);
             else
-               Record_Unproved
+               Record_VC_Unproved
                  (Unit, Call, Proof.Precondition_Check,
                   Proof.Contract_Transfer,
                   "precondition failure is not established, but absence is " &
                     "not proved",
-                  Imprecision =>
-                    "current contract transfer does not certify safety",
+                  "current contract transfer does not certify safety",
+                  VC_Outcome,
                   Final => Final);
             end if;
          end;
@@ -1435,6 +1465,7 @@ package body Adalang_Analyzer.Flow_Interp is
       State   : Flow_State;
       Rule    : Rules.Rule_Kind;
       Message : String;
+      Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
       Final   : Boolean := False) is
    begin
       if Config.Rule_States (Rule) /= Config.Enabled then
@@ -1472,13 +1503,50 @@ package body Adalang_Analyzer.Flow_Interp is
               "Abstract interpretation found that every represented value " &
               "is outside the target subtype range.",
             Evidence => "value range is outside the target subtype range");
-      elsif Config.Verification_Mode
-        and then Definitely_Inside_Type (Value, Typ, State)
-      then
-         Record_Proved_Safe
-           (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
-            "value range is contained in the target subtype range",
-            "value bounds are within target bounds", Final => Final);
+      elsif Config.Verification_Mode then
+         if Definitely_Inside_Type (Value, Typ, State) then
+            Record_Proved_Safe
+              (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
+               "value range is contained in the target subtype range",
+               "value bounds are within target bounds", Final => Final);
+         else
+            declare
+               Outcome : constant VC.VC_Outcome :=
+                 VC.Decide_Bounds
+                   (Value, Type_Range (Typ, State), State, Symbols);
+            begin
+               case Outcome.Result is
+                  when VC.VC_Proved =>
+                     Record_Proved_Safe
+                       (Unit, Value, Proof.Range_Check,
+                        Proof.External_Prover,
+                        "scalar verification condition proves the value is " &
+                          "inside the target subtype range",
+                        VC.Evidence, Final => Final);
+                  when VC.VC_Refuted =>
+                     Record_Definite_Error
+                       (Unit, Value, Proof.Range_Check,
+                        Proof.External_Prover, Message, VC.Evidence,
+                        Final => Final);
+                     Report.Report_Rule_Violation
+                       (Unit, Value, Rule, Message,
+                        Explanation =>
+                          "The scalar verification condition establishes " &
+                          "that the value cannot satisfy the target subtype " &
+                          "bounds.",
+                        Evidence => VC.Evidence);
+                  when others =>
+                     Record_VC_Unproved
+                       (Unit, Value, Proof.Range_Check,
+                        Proof.Abstract_Interpretation,
+                        "range-check failure is not established, but " &
+                          "absence is not proved",
+                        "the current non-relational range domain is " &
+                          "inconclusive",
+                        Outcome, Final => Final);
+               end case;
+            end;
+         end if;
       else
          Record_Unproved
            (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
@@ -1529,6 +1597,7 @@ package body Adalang_Analyzer.Flow_Interp is
       Index_Value : Libadalang.Analysis.Expr'Class;
       Bounds      : Abstract_Range;
       State       : Flow_State;
+      Symbols     : VC.Symbolic_State := VC.Empty_Symbolic_State;
       Final       : Boolean := False)
    is
    begin
@@ -1544,13 +1613,51 @@ package body Adalang_Analyzer.Flow_Interp is
               "Abstract interpretation found that every represented " &
               "index value is outside the array bounds.",
             Evidence => "index range is outside the array bounds");
-      elsif Config.Verification_Mode
-        and then Definitely_Inside_Range (Index_Value, Bounds, State)
-      then
-         Record_Proved_Safe
-           (Unit, Index_Value, Proof.Index_Check, Proof.Abstract_Interpretation,
-            "index range is contained in the array index bounds",
-            "index bounds are within array bounds", Final => Final);
+      elsif Config.Verification_Mode then
+         if Definitely_Inside_Range (Index_Value, Bounds, State) then
+            Record_Proved_Safe
+              (Unit, Index_Value, Proof.Index_Check,
+               Proof.Abstract_Interpretation,
+               "index range is contained in the array index bounds",
+               "index bounds are within array bounds", Final => Final);
+         else
+            declare
+               Outcome : constant VC.VC_Outcome :=
+                 VC.Decide_Bounds (Index_Value, Bounds, State, Symbols);
+            begin
+               case Outcome.Result is
+                  when VC.VC_Proved =>
+                     Record_Proved_Safe
+                       (Unit, Index_Value, Proof.Index_Check,
+                        Proof.External_Prover,
+                        "scalar verification condition proves the index is " &
+                          "inside the array bounds",
+                        VC.Evidence, Final => Final);
+                  when VC.VC_Refuted =>
+                     Record_Definite_Error
+                       (Unit, Index_Value, Proof.Index_Check,
+                        Proof.External_Prover,
+                        "index is outside the array index subtype",
+                        VC.Evidence, Final => Final);
+                     Report.Report_Rule_Violation
+                       (Unit, Index_Value,
+                        Rules.Known_Index_Check_Failure,
+                        "index is outside the array index subtype",
+                        Explanation =>
+                          "The scalar verification condition establishes " &
+                          "that the index cannot satisfy the array bounds.",
+                        Evidence => VC.Evidence);
+                  when others =>
+                     Record_VC_Unproved
+                       (Unit, Index_Value, Proof.Index_Check,
+                        Proof.Abstract_Interpretation,
+                        "index-check failure is not established, but " &
+                          "absence is not proved",
+                        "index and bound ranges remain inconclusive",
+                        Outcome, Final => Final);
+               end case;
+            end;
+         end if;
       else
          Record_Unproved
            (Unit, Index_Value, Proof.Index_Check, Proof.Abstract_Interpretation,
@@ -1564,7 +1671,8 @@ package body Adalang_Analyzer.Flow_Interp is
    procedure Check_Conversion_Or_Index
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Call  : Libadalang.Analysis.Call_Expr;
-      State : Flow_State)
+      State : Flow_State;
+      Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State)
    is
    begin
       case Call.P_Kind is
@@ -1582,7 +1690,7 @@ package body Adalang_Analyzer.Flow_Interp is
                   Check_Value_Range
                     (Unit, Value, Decl.As_Base_Type_Decl, State,
                      Rules.Known_Range_Check_Failure,
-                     "value is outside the target subtype range");
+                     "value is outside the target subtype range", Symbols);
 
                   if Config.Rule_States (Rules.Redundant_Type_Conversion) =
                        Config.Enabled
@@ -1634,7 +1742,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                (Index_Value)
                            then
                               Check_Index_Range
-                                (Unit, Index_Value, Bounds, State);
+                                (Unit, Index_Value, Bounds, State, Symbols);
                            end if;
                         end;
                      end loop;
@@ -1660,6 +1768,7 @@ package body Adalang_Analyzer.Flow_Interp is
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Expr  : Libadalang.Analysis.Bin_Op;
       State : Flow_State;
+      Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
       Final : Boolean := False)
    is
       Right       : constant Abstract_Int :=
@@ -1689,18 +1798,52 @@ package body Adalang_Analyzer.Flow_Interp is
                  "operation without an intervening write.",
                Evidence => "right operand => 0");
          end if;
-      elsif Config.Verification_Mode
-        and then
-          ((Right_Range.Has_High and then Right_Range.High < 0)
-           or else
-           (Right_Range.Has_Low and then Right_Range.Low > 0))
-      then
-         Record_Proved_Safe
-           (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
-            Proof.Abstract_Interpretation,
-            "right operand range excludes zero",
-            "right operand is strictly negative or positive",
-            Final => Final);
+      elsif Config.Verification_Mode then
+         if (Right_Range.Has_High and then Right_Range.High < 0)
+           or else (Right_Range.Has_Low and then Right_Range.Low > 0)
+         then
+            Record_Proved_Safe
+              (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+               Proof.Abstract_Interpretation,
+               "right operand range excludes zero",
+               "right operand is strictly negative or positive",
+               Final => Final);
+         else
+            declare
+               Outcome : constant VC.VC_Outcome :=
+                 VC.Decide_Nonzero (Expr.F_Right, State, Symbols);
+            begin
+               case Outcome.Result is
+                  when VC.VC_Proved =>
+                     Record_Proved_Safe
+                       (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+                        Proof.External_Prover,
+                        "scalar verification condition proves the divisor " &
+                          "is nonzero",
+                        VC.Evidence, Final => Final);
+                  when VC.VC_Refuted =>
+                     Record_Definite_Error
+                       (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+                        Proof.External_Prover,
+                        "right operand is zero in every represented state",
+                        VC.Evidence, Final => Final);
+                     Report.Report_Rule_Violation
+                       (Unit, Expr.F_Right, Rules.Division_By_Zero,
+                        "right operand is zero here",
+                        Explanation =>
+                          "The scalar verification condition establishes " &
+                          "that the divisor is zero.",
+                        Evidence => VC.Evidence);
+                  when others =>
+                     Record_VC_Unproved
+                       (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
+                        Proof.Abstract_Interpretation,
+                        "zero has not been excluded from the divisor",
+                        "the divisor range is unknown or contains zero",
+                        Outcome, Final => Final);
+               end case;
+            end;
+         end if;
       else
          Record_Unproved
            (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
@@ -1716,6 +1859,7 @@ package body Adalang_Analyzer.Flow_Interp is
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Node  : Libadalang.Analysis.Bin_Op;
       State : Flow_State;
+      Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
       Final : Boolean := False)
    is
    begin
@@ -1751,15 +1895,72 @@ package body Adalang_Analyzer.Flow_Interp is
                     "result is outside the operation's base type.",
                   Evidence =>
                     "result range is outside the operation's base type");
-            elsif Config.Verification_Mode
-              and then Arithmetic_Proved_Safe (Node.As_Expr, State)
-            then
-               Record_Proved_Safe
-                 (Unit, Node, Proof.Integer_Overflow_Check,
-                  Proof.Abstract_Interpretation,
-                  "arithmetic result range is inside its base type",
-                  "result bounds are within base-type bounds",
-                  Final => Final);
+            elsif Config.Verification_Mode then
+               if Arithmetic_Proved_Safe (Node.As_Expr, State) then
+                  Record_Proved_Safe
+                    (Unit, Node, Proof.Integer_Overflow_Check,
+                     Proof.Abstract_Interpretation,
+                     "arithmetic result range is inside its base type",
+                     "result bounds are within base-type bounds",
+                     Final => Final);
+               else
+                  declare
+                     Bounds : Abstract_Range :=
+                       Type_Range (Expr_Type.P_Base_Type (Node), State);
+                     Name : constant String := Langkit_Support.Text.To_UTF8
+                       (Expr_Type.P_Canonical_Fully_Qualified_Name);
+                  begin
+                     if not Bounds.Has_Low
+                       and then not Bounds.Has_High
+                       and then Name = "standard.integer"
+                     then
+                        Bounds := Type_Range (Expr_Type, State);
+                     end if;
+
+                     declare
+                        Outcome : constant VC.VC_Outcome :=
+                          VC.Decide_Bounds
+                            (Node.As_Expr, Bounds, State, Symbols);
+                     begin
+                        case Outcome.Result is
+                           when VC.VC_Proved =>
+                              Record_Proved_Safe
+                                (Unit, Node, Proof.Integer_Overflow_Check,
+                                 Proof.External_Prover,
+                                 "scalar verification condition proves the " &
+                                   "arithmetic result fits its base type",
+                                 VC.Evidence, Final => Final);
+                           when VC.VC_Refuted =>
+                              Record_Definite_Error
+                                (Unit, Node, Proof.Integer_Overflow_Check,
+                                 Proof.External_Prover,
+                                 "arithmetic result is outside its base " &
+                                   "type range",
+                                 VC.Evidence, Final => Final);
+                              Report.Report_Rule_Violation
+                                (Unit, Node,
+                                 Rules.Known_Overflow_Failure,
+                                 "arithmetic result is outside its base " &
+                                   "type range",
+                                 Explanation =>
+                                   "The scalar verification condition " &
+                                   "establishes that the arithmetic result " &
+                                   "cannot fit in its base type.",
+                                 Evidence => VC.Evidence);
+                           when others =>
+                              Record_VC_Unproved
+                                (Unit, Node,
+                                 Proof.Integer_Overflow_Check,
+                                 Proof.Abstract_Interpretation,
+                                 "overflow is not established, but absence " &
+                                   "is not proved",
+                                 "the current range domain does not certify " &
+                                   "the result",
+                                 Outcome, Final => Final);
+                        end case;
+                     end;
+                  end;
+               end if;
             else
                Record_Unproved
                  (Unit, Node, Proof.Integer_Overflow_Check,
@@ -1788,7 +1989,8 @@ package body Adalang_Analyzer.Flow_Interp is
    procedure Scan_Expression_For_Flow_Bugs
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Node  : Libadalang.Analysis.Ada_Node'Class;
-      State : Flow_State)
+      State : Flow_State;
+      Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State)
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
@@ -1854,13 +2056,15 @@ package body Adalang_Analyzer.Flow_Interp is
       if Config.Rule_States (Rules.Division_By_Zero) = Config.Enabled
         and then Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
       then
-         Check_Division_By_Zero (Unit, Node.As_Bin_Op, State);
+         Check_Division_By_Zero
+           (Unit, Node.As_Bin_Op, State, Symbols);
       end if;
 
       if Config.Rule_States (Rules.Known_Overflow_Failure) = Config.Enabled
         and then Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
       then
-         Check_Integer_Overflow (Unit, Node.As_Bin_Op, State);
+         Check_Integer_Overflow
+           (Unit, Node.As_Bin_Op, State, Symbols);
       end if;
 
       if Node.Kind = Libadalang.Common.Ada_Call_Expr then
@@ -1868,8 +2072,9 @@ package body Adalang_Analyzer.Flow_Interp is
             Call : constant Libadalang.Analysis.Call_Expr :=
               Node.As_Call_Expr;
          begin
-            Check_Conversion_Or_Index (Unit, Call, State);
-            Check_Call_Precondition (Unit, Call.F_Name, State);
+            Check_Conversion_Or_Index (Unit, Call, State, Symbols);
+            Check_Call_Precondition
+              (Unit, Call.F_Name, State, Symbols);
 
             --  An out-only actual is a destination, not a read. Walking the
             --  raw call subtree would classify an uninitialized outer out
@@ -1878,7 +2083,8 @@ package body Adalang_Analyzer.Flow_Interp is
             --  ordinary calls; in-out and input actuals still get scanned.
             if Call.P_Kind = Libadalang.Common.Call then
                begin
-                  Scan_Expression_For_Flow_Bugs (Unit, Call.F_Name, State);
+                  Scan_Expression_For_Flow_Bugs
+                    (Unit, Call.F_Name, State, Symbols);
                   for Pair of Call.F_Name.P_Call_Params loop
                      if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
                        Libadalang.Common.Ada_Mode_Out
@@ -1886,7 +2092,8 @@ package body Adalang_Analyzer.Flow_Interp is
                          Libadalang.Common.Ada_Identifier
                      then
                         Scan_Expression_For_Flow_Bugs
-                          (Unit, Libadalang.Analysis.Actual (Pair), State);
+                          (Unit, Libadalang.Analysis.Actual (Pair), State,
+                           Symbols);
                      end if;
                   end loop;
                   return;
@@ -1901,7 +2108,8 @@ package body Adalang_Analyzer.Flow_Interp is
       end if;
 
       for I in 1 .. Node.Children_Count loop
-         Scan_Expression_For_Flow_Bugs (Unit, Node.Child (I), State);
+         Scan_Expression_For_Flow_Bugs
+           (Unit, Node.Child (I), State, Symbols);
       end loop;
    end Scan_Expression_For_Flow_Bugs;
 
@@ -2092,27 +2300,14 @@ package body Adalang_Analyzer.Flow_Interp is
                 else "assertion condition => true"),
                Final => Final);
          else
-            Record_Unproved
+            Record_VC_Unproved
               (Unit, Cond, Proof.Assertion_Check,
                Proof.Abstract_Interpretation,
                "assertion failure is not established, but the assertion " &
                  "is not proved",
-               Imprecision =>
-                  (if VC_Result = VC.VC_Unavailable
-                  then "CVC5/Z3 prover portfolio is unavailable"
-                  elsif VC_Result = VC.VC_Unsupported
-                  then VC.Unsupported_Description (VC_Outcome)
-                  else "abstract interpretation and the scalar VC " &
-                    "portfolio did not certify it"),
-               Reason_Code =>
-                 (if VC_Result = VC.VC_Unsupported
-                  then VC.Unsupported_Reason_Code (VC_Outcome) else ""),
-               Blocking_Expression =>
-                 (if VC_Result = VC.VC_Unsupported
-                  then VC.Blocking_Expression (VC_Outcome) else ""),
-               Inline_Path =>
-                 (if VC_Result = VC.VC_Unsupported
-                  then VC.Inline_Path (VC_Outcome) else ""),
+               "abstract interpretation and the scalar VC portfolio did " &
+                 "not certify it",
+               VC_Outcome,
                Final => Final);
          end if;
       end;
@@ -2134,7 +2329,7 @@ package body Adalang_Analyzer.Flow_Interp is
          return Result;
       end if;
 
-      Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
+      Scan_Expression_For_Flow_Bugs (Unit, Cond, State, Symbols);
 
       if Name /= "assume" then
          Check_Proof_Pragma_Assertion (Unit, Cond, State, Symbols);
@@ -2858,6 +3053,8 @@ package body Adalang_Analyzer.Flow_Interp is
            Proof.Abstract_Interpretation;
          Preservation_By     : Proof.Analysis_Method :=
            Proof.Abstract_Interpretation;
+         Initialization_Outcome : VC.VC_Outcome := VC.Unknown_Outcome;
+         Preservation_Outcome   : VC.VC_Outcome := VC.Unknown_Outcome;
       end record;
 
       package Loop_Invariant_Vectors is new Ada.Containers.Vectors
@@ -3195,6 +3392,21 @@ package body Adalang_Analyzer.Flow_Interp is
          return Found;
       end Invariants_Trusted;
 
+      procedure Remember_Inconclusive
+        (Stored    : in out VC.VC_Outcome;
+         Candidate : VC.VC_Outcome)
+      is
+      begin
+         --  Preserve an explicit unsupported boundary in preference to a
+         --  later generic unknown result: it carries the actionable reason
+         --  for why this multi-path loop VC could not be discharged.
+         if Candidate.Result = VC.VC_Unsupported
+           or else Stored.Result /= VC.VC_Unsupported
+         then
+            Stored := Candidate;
+         end if;
+      end Remember_Inconclusive;
+
       procedure Check_Loop_VCs
         (Header  : CFG.Node_Id;
          State   : Flow_State;
@@ -3226,6 +3438,8 @@ package body Adalang_Analyzer.Flow_Interp is
                      if Is_Back then
                         if not Proved then
                            Item.Preservation := VC_Not_Discharged;
+                           Remember_Inconclusive
+                             (Item.Preservation_Outcome, Outcome);
                         elsif Item.Preservation /= VC_Not_Discharged then
                            Item.Preservation := VC_Discharged;
                            Item.Preservation_By := Method;
@@ -3233,6 +3447,8 @@ package body Adalang_Analyzer.Flow_Interp is
                      else
                         if not Proved then
                            Item.Initialization := VC_Not_Discharged;
+                           Remember_Inconclusive
+                             (Item.Initialization_Outcome, Outcome);
                         elsif Item.Initialization /= VC_Not_Discharged then
                            Item.Initialization := VC_Discharged;
                            Item.Initialization_By := Method;
@@ -3523,13 +3739,14 @@ package body Adalang_Analyzer.Flow_Interp is
                      end if;
                      if Dest.Kind = Libadalang.Common.Ada_Call_Expr then
                         Check_Conversion_Or_Index
-                          (Unit, Dest.As_Call_Expr, Input);
+                          (Unit, Dest.As_Call_Expr, Input, Input_Symbols);
                      end if;
                   end;
                elsif Source.Kind = Libadalang.Common.Ada_Call_Stmt then
                   Check_Call_Precondition
                     (Unit, Source.As_Call_Stmt.F_Call, Input, Input_Symbols);
-                  Scan_Expression_For_Flow_Bugs (Unit, Source, Input);
+                  Scan_Expression_For_Flow_Bugs
+                    (Unit, Source, Input, Input_Symbols);
                   Output :=
                     Interpret_Statement (Unit, Source, Input).State;
                   Output_Symbols := VC.Havoc;
@@ -3551,7 +3768,8 @@ package body Adalang_Analyzer.Flow_Interp is
                  Libadalang.Common.Ada_Return_Stmt
                    | Libadalang.Common.Ada_Raise_Stmt
                then
-                  Scan_Expression_For_Flow_Bugs (Unit, Source, Input);
+                  Scan_Expression_For_Flow_Bugs
+                    (Unit, Source, Input, Input_Symbols);
                end if;
 
             when CFG.Condition_Node =>
@@ -3560,10 +3778,12 @@ package body Adalang_Analyzer.Flow_Interp is
                     Boolean_Condition (Source);
                begin
                   if not Libadalang.Analysis.Is_Null (Cond) then
-                     Scan_Expression_For_Flow_Bugs (Unit, Cond, Input);
+                     Scan_Expression_For_Flow_Bugs
+                       (Unit, Cond, Input, Input_Symbols);
                      Check_Flow_Condition (Unit, Cond, Input);
                   elsif Source.Kind in Libadalang.Common.Ada_Expr then
-                     Scan_Expression_For_Flow_Bugs (Unit, Source, Input);
+                     Scan_Expression_For_Flow_Bugs
+                       (Unit, Source, Input, Input_Symbols);
                   end if;
                end;
 
@@ -3573,11 +3793,13 @@ package body Adalang_Analyzer.Flow_Interp is
                     Boolean_Condition (Source);
                begin
                   if not Libadalang.Analysis.Is_Null (Cond) then
-                     Scan_Expression_For_Flow_Bugs (Unit, Cond, Input);
+                     Scan_Expression_For_Flow_Bugs
+                       (Unit, Cond, Input, Input_Symbols);
                      Check_Flow_Condition (Unit, Cond, Input);
                   elsif Source.Kind = Libadalang.Common.Ada_For_Loop_Stmt then
                      Scan_Expression_For_Flow_Bugs
-                       (Unit, Source.As_For_Loop_Stmt.F_Spec, Input);
+                       (Unit, Source.As_For_Loop_Stmt.F_Spec, Input,
+                        Input_Symbols);
                   end if;
                end;
 
@@ -3694,6 +3916,8 @@ package body Adalang_Analyzer.Flow_Interp is
                                  else Proof.Abstract_Interpretation);
                            else
                               Item.Preservation := VC_Not_Discharged;
+                              Remember_Inconclusive
+                                (Item.Preservation_Outcome, Outcome);
                            end if;
                         end;
                      end if;
@@ -3914,7 +4138,10 @@ package body Adalang_Analyzer.Flow_Interp is
               (Unit, Value, Typ,
                (if Container = CFG.No_Node then Empty_Flow_State
                 else States (Container)),
-               Rule, Message, Final => True);
+               Rule, Message,
+               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
+                else Symbolic_States (Container)),
+               Final => True);
          end if;
       end Finalize_Range_Check;
 
@@ -3941,6 +4168,8 @@ package body Adalang_Analyzer.Flow_Interp is
               (Unit, Index_Value, Bounds,
                (if Container = CFG.No_Node then Empty_Flow_State
                 else States (Container)),
+               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
+                else Symbolic_States (Container)),
                Final => True);
          end if;
       end Finalize_Index_Check;
@@ -3974,6 +4203,8 @@ package body Adalang_Analyzer.Flow_Interp is
               (Unit, Expr,
                (if Container = CFG.No_Node then Empty_Flow_State
                 else States (Container)),
+               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
+                else Symbolic_States (Container)),
                Final => True);
          end if;
       end Finalize_Division_Check;
@@ -4010,6 +4241,8 @@ package body Adalang_Analyzer.Flow_Interp is
               (Unit, Expr,
                (if Container = CFG.No_Node then Empty_Flow_State
                 else States (Container)),
+               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
+                else Symbolic_States (Container)),
                Final => True);
          end if;
       end Finalize_Overflow_Check;
@@ -4145,13 +4378,13 @@ package body Adalang_Analyzer.Flow_Interp is
                      Proof.Loop_Invariant_Initialization,
                      "the loop head has no represented entry");
                else
-                  Record_Unproved
+                  Record_VC_Unproved
                     (Unit, Condition,
                      Proof.Loop_Invariant_Initialization,
                      Proof.Abstract_Interpretation,
                      "the loop-entry state does not establish the invariant",
-                     Imprecision =>
-                       "the scalar loop initialization VC was not discharged");
+                     "the scalar loop initialization VC was not discharged",
+                     Item.Initialization_Outcome);
                end if;
 
                if Boundary_Supported and then Item.Leading then
@@ -4171,14 +4404,14 @@ package body Adalang_Analyzer.Flow_Interp is
                         Proof.Loop_Invariant_Preservation,
                         "no represented loop back edge is reachable");
                   else
-                     Record_Unproved
+                     Record_VC_Unproved
                        (Unit, Condition,
                         Proof.Loop_Invariant_Preservation,
                         Proof.Abstract_Interpretation,
                         "the loop body does not establish invariant " &
                           "preservation",
-                        Imprecision =>
-                          "the scalar loop preservation VC was not discharged");
+                        "the scalar loop preservation VC was not discharged",
+                        Item.Preservation_Outcome);
                   end if;
                end if;
                return;
@@ -4637,12 +4870,13 @@ package body Adalang_Analyzer.Flow_Interp is
                      (if VC_Result = VC.VC_Refuted
                       then VC.Evidence else "postcondition => false"));
                else
-                  Record_Unproved
+                  Record_VC_Unproved
                     (Unit, Post, Proof.Postcondition_Check,
                      Proof.Abstract_Interpretation,
                      "postcondition is inconclusive at the joined normal " &
                        "exit",
-                     Imprecision => "exit states do not imply the contract");
+                     "exit states do not imply the contract",
+                     VC_Outcome);
                end if;
             end;
          end if;
