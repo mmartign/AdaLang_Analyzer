@@ -122,6 +122,19 @@ AdaLang's defensible distinction is a curated combination of rules,
 flow-sensitive defect findings, safety profiles, and SPARK-readiness feedback
 in one inspectable implementation.
 
+`GNATCHECK_RULE_COMPARISON.md` maps AdaLang's 99 checks against GNATcheck's
+predefined-rule catalog by name and intent (a documentation-based comparison,
+not a same-corpus run of both tools -- see that file's own caveats on why no
+`gnatcheck` binary was available to run one). Of the 99, 18 are a direct
+match, 14 close, 18 overlap only through a GNATcheck generic mechanism
+(`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), and 49 have no
+predefined-rule counterpart at all -- mostly the flow-sensitive defect,
+SPARK-contract-consistency, and DO-178C-traceability checks that are
+AdaLang's actual differentiator. The reverse direction is larger still:
+GNATcheck's catalog has entire unmatched families (identifier casing/
+readability, OOP-depth metrics, portability, "prefer this modern Ada
+construct" style suggestions) that AdaLang does not attempt.
+
 ### GNATtest
 
 GNATtest addresses dynamic testing infrastructure. It is not a static-analysis
