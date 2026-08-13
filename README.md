@@ -649,7 +649,9 @@ quality, model, performance, and verification suites. Its differential stage
 runs 17 clean and 8 deliberately broken units through GNATprove when that tool
 is installed and reports an explicit skip otherwise. A separate seeded
 mutation campaign guards all 12 enumerated obligation families against
-false-safe regressions.
+false-safe regressions. A proof-path evidence gate maps 21 abstract, flow,
+contract-transfer, and external-prover routes to every one of the 16 current
+`Proved_Safe` producer sites, including adversarial and solver-boundary cases.
 
 ## Usage
 
@@ -861,6 +863,10 @@ sh tests/run_do178c.sh
 sh tests/run_cli_robustness.sh
 sh tests/run_config_file.sh
 sh tests/run_circular_dependencies.sh
+sh tests/run_verification.sh
+sh tests/run_verification_mutations.sh
+sh tests/run_proof_path_evidence.sh
+sh tests/run_gnatprove_differential.sh
 sh tests/run_performance_smoke.sh
 ```
 

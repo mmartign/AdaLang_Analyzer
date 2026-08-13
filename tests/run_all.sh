@@ -27,6 +27,7 @@ for test_script in \
   tests/run_quality_metrics.sh \
   tests/run_verification.sh \
   tests/run_verification_mutations.sh \
+  tests/run_proof_path_evidence.sh \
   tests/run_gnatprove_differential.sh \
   tests/run_performance_smoke.sh
 do

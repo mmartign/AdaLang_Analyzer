@@ -27,6 +27,8 @@ evidence requirements in
 [Supported Verification Subset](SUPPORTED_VERIFICATION_SUBSET.md). Confirmed
 false-safe results use the release-blocking process in
 [False-Safe Response and Release Policy](FALSE_SAFE_RESPONSE.md).
+Every new `Record_Proved_Safe` producer needs a unique `proof-path` source tag
+and one or more routes in `quality/proof_path_evidence.tsv`.
 
 Please use GitHub issues for reproducible bug reports and feature proposals;
 the issue forms prompt for the analyzer version, host platform, command line,

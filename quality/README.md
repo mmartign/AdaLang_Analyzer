@@ -33,6 +33,7 @@ sh tests/run_automotive_evidence.sh
 sh tests/run_do178c_evidence.sh
 sh tests/run_precision_corpus.sh
 sh tests/run_verification_mutations.sh
+sh tests/run_proof_path_evidence.sh
 ```
 
 `automotive_rule_evidence.tsv` maps every check enabled by `--automotive` to a
@@ -61,6 +62,13 @@ requires every named obligation to exist, rejects any `Proved_Safe` result,
 and also checks the expected `Definite_Error` or `Unproved` classification.
 This is a focused false-safe regression gate, complementary to the clean and
 broken GNATprove differential corpora.
+
+`proof_path_evidence.tsv` maps every source-tagged `Record_Proved_Safe`
+producer to one or more method-specific evidence routes. Its gate checks a
+positive proof and an adversarial non-proof for every route. Routes that need
+the external solver portfolio must additionally retain `Unproved` outcomes
+for both unsupported scalar translation and unavailable solvers. The source
+and manifest producer sets must match exactly.
 
 ## Precision corpus
 

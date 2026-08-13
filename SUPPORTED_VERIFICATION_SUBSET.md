@@ -88,10 +88,13 @@ The executable evidence consists of:
 
 - `tests/run_verification.sh` for obligation outcomes and provenance;
 - `tests/run_verification_mutations.sh` for seeded false-safe detection;
+- `tests/run_proof_path_evidence.sh` for complete `Proved_Safe` producer and
+  method-route coverage;
 - `tests/run_gnatprove_differential.sh` for clean and deliberately broken
   oracle comparison; and
 - `tests/run_all.sh` for the complete repository gate.
 
 Any change that expands a `Proved_Safe` path must update this document, add a
-positive case, add a boundary or seeded-defect case, and pass the complete
-gate. Confirmed false-safe results follow [FALSE_SAFE_RESPONSE.md](FALSE_SAFE_RESPONSE.md).
+positive case, add a boundary or seeded-defect case, register the producer in
+`quality/proof_path_evidence.tsv`, and pass the complete gate. Confirmed
+false-safe results follow [FALSE_SAFE_RESPONSE.md](FALSE_SAFE_RESPONSE.md).

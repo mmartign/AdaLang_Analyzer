@@ -370,6 +370,12 @@ remain `Unproved` where GNATprove's stronger VC generation and automated
 provers succeed. `tests/run_verification_mutations.sh` independently guards
 all 12 enumerated obligation families with seeded defects or conservative
 boundary cases; none may become `Proved_Safe` unexpectedly.
+`tests/run_proof_path_evidence.sh` separately inventories every source-level
+`Record_Proved_Safe` producer and checks 21 method-specific routes. Each route
+has positive and adversarial evidence, while solver-dependent routes also
+exercise unsupported translation and unavailable solvers. The gate compares
+the manifest with stable `proof-path` source tags, so a new unreviewed proof
+producer fails the repository gate.
 
 The exact current proof boundary is specified in
 `SUPPORTED_VERIFICATION_SUBSET.md`. Confirmed false-safe results are governed
@@ -378,8 +384,8 @@ by the release-blocking response process in `FALSE_SAFE_RESPONSE.md`.
 Before broadening the supported subset or making a stronger product claim,
 the project still needs:
 
-1. Expansion of the seeded mutation campaign beyond its current one-or-more
-   cases per obligation family to every proof-producing semantic boundary.
+1. Expansion of proof-path evidence beyond the current producer and method
+   routes to additional operator, type, join, and exception sub-boundaries.
 2. A larger routinely executed differential corpus beyond the current clean
    and broken units.
 3. Broader unsupported-provenance coverage for the remaining expression and

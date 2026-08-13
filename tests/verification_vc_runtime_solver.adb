@@ -22,6 +22,8 @@ begin
 
    if X ** 2 <= 100 then
       D := X ** 2;
+      Sink := A (X ** 2);
+      Sink := 1 / (X ** 2);
       Sink := Sink + D;
    end if;
 end Verification_VC_Runtime_Solver;

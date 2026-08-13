@@ -884,6 +884,7 @@ package body Adalang_Analyzer.Flow_Interp is
               and then
                 (Value = Bool_True or else VC_Result = VC.VC_Proved)
             then
+               --  proof-path: precondition-decision
                Record_Proved_Safe
                  (Unit, Call, Proof.Precondition_Check,
                   (if VC_Result = VC.VC_Proved
@@ -1505,6 +1506,7 @@ package body Adalang_Analyzer.Flow_Interp is
             Evidence => "value range is outside the target subtype range");
       elsif Config.Verification_Mode then
          if Definitely_Inside_Type (Value, Typ, State) then
+            --  proof-path: range-abstract
             Record_Proved_Safe
               (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
                "value range is contained in the target subtype range",
@@ -1517,6 +1519,7 @@ package body Adalang_Analyzer.Flow_Interp is
             begin
                case Outcome.Result is
                   when VC.VC_Proved =>
+                     --  proof-path: range-external
                      Record_Proved_Safe
                        (Unit, Value, Proof.Range_Check,
                         Proof.External_Prover,
@@ -1615,6 +1618,7 @@ package body Adalang_Analyzer.Flow_Interp is
             Evidence => "index range is outside the array bounds");
       elsif Config.Verification_Mode then
          if Definitely_Inside_Range (Index_Value, Bounds, State) then
+            --  proof-path: index-abstract
             Record_Proved_Safe
               (Unit, Index_Value, Proof.Index_Check,
                Proof.Abstract_Interpretation,
@@ -1627,6 +1631,7 @@ package body Adalang_Analyzer.Flow_Interp is
             begin
                case Outcome.Result is
                   when VC.VC_Proved =>
+                     --  proof-path: index-external
                      Record_Proved_Safe
                        (Unit, Index_Value, Proof.Index_Check,
                         Proof.External_Prover,
@@ -1802,6 +1807,7 @@ package body Adalang_Analyzer.Flow_Interp is
          if (Right_Range.Has_High and then Right_Range.High < 0)
            or else (Right_Range.Has_Low and then Right_Range.Low > 0)
          then
+            --  proof-path: division-abstract
             Record_Proved_Safe
               (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
                Proof.Abstract_Interpretation,
@@ -1815,6 +1821,7 @@ package body Adalang_Analyzer.Flow_Interp is
             begin
                case Outcome.Result is
                   when VC.VC_Proved =>
+                     --  proof-path: division-external
                      Record_Proved_Safe
                        (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
                         Proof.External_Prover,
@@ -1897,6 +1904,7 @@ package body Adalang_Analyzer.Flow_Interp is
                     "result range is outside the operation's base type");
             elsif Config.Verification_Mode then
                if Arithmetic_Proved_Safe (Node.As_Expr, State) then
+                  --  proof-path: overflow-abstract
                   Record_Proved_Safe
                     (Unit, Node, Proof.Integer_Overflow_Check,
                      Proof.Abstract_Interpretation,
@@ -1924,6 +1932,7 @@ package body Adalang_Analyzer.Flow_Interp is
                      begin
                         case Outcome.Result is
                            when VC.VC_Proved =>
+                              --  proof-path: overflow-external
                               Record_Proved_Safe
                                 (Unit, Node, Proof.Integer_Overflow_Check,
                                  Proof.External_Prover,
@@ -2023,6 +2032,7 @@ package body Adalang_Analyzer.Flow_Interp is
             if Tracked then
                case Flow_Initialization (State, Key) is
                   when Bool_True =>
+                     --  proof-path: initialization-live
                      Record_Proved_Safe
                        (Unit, Node, Proof.Initialization_Check,
                         Proof.Flow_Analysis,
@@ -2286,6 +2296,7 @@ package body Adalang_Analyzer.Flow_Interp is
            and then
              (Value = Bool_True or else VC_Result = VC.VC_Proved)
          then
+            --  proof-path: assertion-decision
             Record_Proved_Safe
               (Unit, Cond, Proof.Assertion_Check,
                (if VC_Result = VC.VC_Proved
@@ -3003,6 +3014,7 @@ package body Adalang_Analyzer.Flow_Interp is
                elsif Config.Verification_Mode
                  and then Boolean_Value (Post, Result.State) = Bool_True
                then
+                  --  proof-path: postcondition-legacy
                   Record_Proved_Safe
                     (Unit, Post, Proof.Postcondition_Check,
                      Proof.Contract_Transfer,
@@ -4359,6 +4371,7 @@ package body Adalang_Analyzer.Flow_Interp is
                      Imprecision =>
                        "the invariant is not at the loop-head cut point");
                elsif Item.Initialization = VC_Discharged then
+                  --  proof-path: loop-invariant-initialization
                   Record_Proved_Safe
                     (Unit, Condition,
                      Proof.Loop_Invariant_Initialization,
@@ -4389,6 +4402,7 @@ package body Adalang_Analyzer.Flow_Interp is
 
                if Boundary_Supported and then Item.Leading then
                   if Item.Preservation = VC_Discharged then
+                     --  proof-path: loop-invariant-preservation
                      Record_Proved_Safe
                        (Unit, Condition,
                         Proof.Loop_Invariant_Preservation,
@@ -4636,6 +4650,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                 Key)
                         is
                            when Bool_True =>
+                              --  proof-path: initialization-final
                               Record_Proved_Safe
                                 (Unit, Node, Proof.Initialization_Check,
                                  Proof.Flow_Analysis,
@@ -4846,6 +4861,7 @@ package body Adalang_Analyzer.Flow_Interp is
             begin
                Scan_Expression_For_Flow_Bugs (Unit, Post, Exit_State);
                if Value = Bool_True or else VC_Result = VC.VC_Proved then
+                  --  proof-path: postcondition-final
                   Record_Proved_Safe
                     (Unit, Post, Proof.Postcondition_Check,
                      (if VC_Result = VC.VC_Proved
