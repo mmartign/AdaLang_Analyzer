@@ -82,6 +82,12 @@ requires a nonnegative entry value and a strictly smaller exit value;
 within the expression base type's static bounds, which supplies the finite
 lower or upper bound needed for the corresponding termination argument.
 
+A leading `Loop_Invariant` or `Loop_Variant` pragma is one preceded, within
+the loop body, only by other leading loop-invariant/loop-variant pragmas --
+either may come first. `Loop_Variant (Increases => I); Loop_Invariant (I <=
+N);` and the reverse order both leave the invariant leading, since Ada/SPARK
+attaches no meaning to their relative order.
+
 An external result is accepted only when both configured CVC5 and Z3 runs
 agree by returning `unsat` for the negated goal. Solver absence or disagreement
 cannot produce `Proved_Safe` or `Definite_Error`.

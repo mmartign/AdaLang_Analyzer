@@ -3355,34 +3355,13 @@ package body Adalang_Analyzer.Flow_Interp is
          return CFG.No_Node;
       end Header_For;
 
-      function Is_Leading_Invariant
-        (Loop_Node   : Libadalang.Analysis.Ada_Node;
-         Pragma_Node : Libadalang.Analysis.Ada_Node) return Boolean
-      is
-         Stmts : constant Libadalang.Analysis.Stmt_List :=
-           Loop_Node.As_Base_Loop_Stmt.F_Stmts;
-      begin
-         for Index in 1 .. Stmts.Children_Count loop
-            declare
-               Item : constant Libadalang.Analysis.Ada_Node :=
-                 Stmts.Child (Index);
-            begin
-               if Item = Pragma_Node then
-                  return True;
-               elsif Item.Kind /= Libadalang.Common.Ada_Pragma_Node
-                 or else Normalized_Text (Item.As_Pragma_Node.F_Id) /=
-                   "loop-invariant"
-               then
-                  return False;
-               end if;
-            end;
-         end loop;
-         return False;
-      exception
-         when others =>
-            return False;
-      end Is_Leading_Invariant;
-
+      --  True when every loop-body statement up to and including
+      --  Pragma_Node is itself a "loop-invariant" or "loop-variant"
+      --  pragma. Ada/SPARK attaches no meaning to the relative order of
+      --  the two: a Loop_Invariant preceded only by a Loop_Variant (or
+      --  vice versa) is just as much at the loop-head cut point as one
+      --  preceded only by other invariants, so both pragma kinds share
+      --  this one leading-position check.
       function Is_Leading_Loop_Proof_Pragma
         (Loop_Node   : Libadalang.Analysis.Ada_Node;
          Pragma_Node : Libadalang.Analysis.Ada_Node) return Boolean
@@ -3441,7 +3420,7 @@ package body Adalang_Analyzer.Flow_Interp is
                       Header            => Header,
                       Leading           =>
                         Header /= CFG.No_Node
-                        and then Is_Leading_Invariant
+                        and then Is_Leading_Loop_Proof_Pragma
                           (Loop_Node,
                            Libadalang.Analysis.Ada_Node (Pragma_Node)),
                       others            => <>));

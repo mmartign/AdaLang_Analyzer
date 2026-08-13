@@ -45,6 +45,7 @@ loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
 loop_variant_increases=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-increases.XXXXXX")
 loop_variant_wrong=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-wrong.XXXXXX")
 loop_variant_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-unsupported.XXXXXX")
+loop_variant_leading_order=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-leading-order.XXXXXX")
 out_forwarding=$(mktemp "${TMPDIR:-/tmp}/adalang-out-forwarding.XXXXXX")
 interprocedural_effects=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-effects.XXXXXX")
 interprocedural_ordinary=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-ordinary.XXXXXX")
@@ -61,7 +62,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -453,6 +454,27 @@ grep -F '"kind": "loop-variant", "status": "unproved"' \
   grep -F '"operation": "I ** 2"' |
   grep -F '"reasonCode": "unsupported-operator"' |
   grep -F '"blockingExpression": "I ** 2"' >/dev/null
+
+#  A Loop_Invariant is only ever discharged when every loop-body statement
+#  before it is itself a leading loop-invariant/loop-variant pragma (see
+#  Is_Leading_Loop_Proof_Pragma in flow_interp.adb). This fixture is
+#  verification_loop_variant_increases.adb with its two pragmas swapped --
+#  Loop_Variant first, Loop_Invariant second, the dominant real-world style
+#  (e.g. every one of the EliAvila10/project_bias corpus's 26 loops; see
+#  benchmarks/project_bias/RESULTS_2026-08-13.md). Ada/SPARK attaches no
+#  meaning to that ordering, but a prior version of the leading-invariant
+#  check only tolerated preceding loop-invariant pragmas, not a preceding
+#  loop-variant, so this exact reordering used to leave the invariant
+#  non-leading and its preservation permanently unproved -- which then
+#  starved the loop-variant progress check of the discharged leading
+#  invariant it depends on, even though the variant's own leading check
+#  already tolerated either pragma order.
+run_json "$loop_variant_leading_order" \
+  tests/verification_vc_variant_leading_invariant_order.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_variant_leading_order" >/dev/null
+grep -F '"kind": "loop-variant", "status": "proved-safe", "method": "external-prover"' \
+  "$loop_variant_leading_order" >/dev/null
 
 vc_status=0
 ADALANG_CVC5=/nonexistent/cvc5 ADALANG_Z3=/nonexistent/z3 \
