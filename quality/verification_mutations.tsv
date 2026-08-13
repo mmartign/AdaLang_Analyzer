@@ -1,0 +1,13 @@
+# id	fixture	kind	operation	expected_status	note
+assertion-false	tests/verification_vc_error.adb	assertion	X /= X	definite-error	Contradictory assertion must never become proved-safe.
+precondition-false	tests/verification_mutation_contracts.adb	precondition	Require_Positive (0)	definite-error	Statically invalid call precondition.
+postcondition-false	tests/verification_mutation_contracts.adb	postcondition	Y /= X	definite-error	Body contradicts its postcondition.
+range-outside	tests/verification_mutation_runtime.adb	range-check	X	definite-error	Value is outside target subtype Small.
+index-outside	tests/verification_mutation_runtime.adb	index-check	X	definite-error	Index is outside Values bounds.
+division-zero	tests/verification_mutation_runtime.adb	division-by-zero	(X - 11)	definite-error	Path contract fixes the divisor at zero.
+overflow-positive	tests/verification_mutation_runtime.adb	integer-overflow	Integer'Last + X	definite-error	Positive addition to Integer'Last must overflow.
+initialization-read	tests/verification_initialization_error.adb	initialization-check	Source	definite-error	Read of an uninitialized scalar.
+discriminant-excluded	tests/discriminant_check_findings.adb	discriminant-check	R.Float_Val	definite-error	Selected variant excludes the referenced component.
+loop-invariant-initialization	tests/verification_mutation_loop_initialization.adb	loop-invariant-initialization	I = 0	unproved	False entry invariant must not be proved-safe.
+loop-invariant-preservation	tests/verification_loop_vc_broken.adb	loop-invariant-preservation	I >= 0 and then I <= 3 and then Y = X + I	unproved	Broken induction step must not be proved-safe.
+loop-variant-undischarged	tests/verification_loop_clean.adb	loop-variant	3 - I	unproved	Termination is enumerated but outside the proved subset.

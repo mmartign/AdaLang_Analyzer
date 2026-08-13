@@ -219,7 +219,9 @@ grep -F '"kind": "assertion", "status": "definite-error", "method": "external-pr
 run_json "$vc_division_zero_possible" \
   tests/verification_vc_division_zero_possible.adb
 grep -F '"kind": "assertion", "status": "unproved"' \
-  "$vc_division_zero_possible" >/dev/null
+  "$vc_division_zero_possible" |
+  grep -F '"reasonCode": "unsafe-divisor-semantics"' |
+  grep -F '"blockingExpression": "X mod Y"' >/dev/null
 if grep -F '"kind": "assertion", "status": "proved-safe"' \
   "$vc_division_zero_possible" >/dev/null; then
    echo "a divisor range spanning zero was treated as provably nonzero" >&2
@@ -278,7 +280,10 @@ grep -F '"kind": "range-check", "status": "unproved"' "$vc_runtime_solver" |
 
 run_json "$vc_call_statement_body" tests/verification_vc_call_statement_body.adb
 grep -F '"kind": "assertion", "status": "unproved"' \
-  "$vc_call_statement_body" >/dev/null
+  "$vc_call_statement_body" |
+  grep -F '"reasonCode": "callee-not-expression-function"' |
+  grep -F '"blockingExpression": "Double (X)"' |
+  grep -F '"inlinePath": "Double"' >/dev/null
 if grep -F '"kind": "assertion", "status": "proved-safe"' \
   "$vc_call_statement_body" >/dev/null; then
    echo "a statement-bodied function call was inlined like an expression function" >&2
@@ -291,7 +296,13 @@ grep -F '"kind": "assertion", "status": "proved-safe", "method": "external-prove
 
 run_json "$vc_conversion_modular" tests/verification_vc_conversion_modular.adb
 grep -F '"kind": "assertion", "status": "unproved"' \
-  "$vc_conversion_modular" >/dev/null
+  "$vc_conversion_modular" |
+  grep -F '"reasonCode": "unsupported-conversion"' |
+  grep -F '"blockingExpression": "Byte (X)"' >/dev/null
+grep -F '"kind": "range-check", "status": "unproved"' \
+  "$vc_conversion_modular" |
+  grep -F '"reasonCode": "unsupported-conversion"' |
+  grep -F '"blockingExpression": "Byte (X)"' >/dev/null
 if grep -F '"kind": "assertion", "status": "proved-safe"' \
   "$vc_conversion_modular" >/dev/null; then
    echo "a modular type conversion was translated as an identity" >&2

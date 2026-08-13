@@ -22,6 +22,12 @@ Before opening a pull request:
 5. Keep commits small and explain observable behavior changes in the pull
    request.
 
+Changes that add or broaden a `Proved_Safe` result must also follow the
+evidence requirements in
+[Supported Verification Subset](SUPPORTED_VERIFICATION_SUBSET.md). Confirmed
+false-safe results use the release-blocking process in
+[False-Safe Response and Release Policy](FALSE_SAFE_RESPONSE.md).
+
 Please use GitHub issues for reproducible bug reports and feature proposals;
 the issue forms prompt for the analyzer version, host platform, command line,
 a minimal Ada input, and the actual and expected output. Found a security

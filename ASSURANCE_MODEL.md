@@ -359,23 +359,33 @@ subprogram postcondition and a deliberately unpreserved invariant that must
 leave the postcondition unproved.
 `tests/run_gnatprove_differential.sh` also runs a compatible corpus through
 GNATprove when GNATprove is installed and explicitly reports a skip when it is
-not. The clean differential corpus currently contains 16 units, including
-dedicated arithmetic, conditional, modular-call, array, and loop cases. The
-differential gate requires GNATprove to analyze every corpus unit and prove
-every generated check, and rejects an AdaLang `Definite_Error` or `Unsupported`
-result on that clean corpus. It deliberately allows AdaLang to remain
-`Unproved` where GNATprove's stronger VC generation and automated provers
-succeed.
+not. The clean differential corpus currently contains 17 units, including
+dedicated arithmetic, conditional, modular-call, array, loop, and relational
+run-time-check cases. An eight-unit broken corpus provides the opposite oracle:
+GNATprove must retain at least one failed check and may not skip any unit. The
+differential gate requires GNATprove to analyze every clean-corpus unit and
+prove every generated check, and rejects an AdaLang `Definite_Error` or
+`Unsupported` result on that clean corpus. It deliberately allows AdaLang to
+remain `Unproved` where GNATprove's stronger VC generation and automated
+provers succeed. `tests/run_verification_mutations.sh` independently guards
+all 12 enumerated obligation families with seeded defects or conservative
+boundary cases; none may become `Proved_Safe` unexpectedly.
+
+The exact current proof boundary is specified in
+`SUPPORTED_VERIFICATION_SUBSET.md`. Confirmed false-safe results are governed
+by the release-blocking response process in `FALSE_SAFE_RESPONSE.md`.
 
 Before broadening the supported subset or making a stronger product claim,
 the project still needs:
 
-1. A more formal supported-language and property specification.
-2. Mutation and seeded-defect campaigns designed to detect false-safe results.
-3. A larger routinely executed differential corpus.
-4. Broader unsupported-provenance coverage for the remaining expression and
+1. Expansion of the seeded mutation campaign beyond its current one-or-more
+   cases per obligation family to every proof-producing semantic boundary.
+2. A larger routinely executed differential corpus beyond the current clean
+   and broken units.
+3. Broader unsupported-provenance coverage for the remaining expression and
    control-flow classes.
-5. A documented review and release process for discovered false-safe results.
+4. Independent review and versioned approval of the supported-subset
+   specification before stronger product claims are made.
 
 Testing cannot prove the analyzer sound, but it is necessary evidence that the
 implementation conforms to its specified analysis.

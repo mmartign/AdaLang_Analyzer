@@ -30,6 +30,10 @@ proof statuses, are defined in
   claims
 - [ASSURANCE_MODEL.md](ASSURANCE_MODEL.md) — what a finding and a proof status
   do and do not mean
+- [SUPPORTED_VERIFICATION_SUBSET.md](SUPPORTED_VERIFICATION_SUBSET.md) — the
+  precise `--verify` language, obligation, and proof boundary
+- [FALSE_SAFE_RESPONSE.md](FALSE_SAFE_RESPONSE.md) — response and release
+  policy for an incorrect `Proved_Safe` result
 - [AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md) —
   `--automotive` rule-by-rule mapping to Ada/SPARK high-integrity guidance
 - [DO178C_COMPLIANCE_MATRIX.md](DO178C_COMPLIANCE_MATRIX.md) — `--do178c`
@@ -642,8 +646,10 @@ sh tests/run_all.sh
 
 The gate builds the current sources and runs all regression, reporting,
 quality, model, performance, and verification suites. Its differential stage
-runs 16 clean and 5 deliberately broken units through GNATprove when that tool
-is installed and reports an explicit skip otherwise.
+runs 17 clean and 8 deliberately broken units through GNATprove when that tool
+is installed and reports an explicit skip otherwise. A separate seeded
+mutation campaign guards all 12 enumerated obligation families against
+false-safe regressions.
 
 ## Usage
 

@@ -5,6 +5,9 @@ project Verification_Differential_Broken is
       "verification_loop_vc_broken.adb",
       "verification_initialization_error.adb",
       "verification_symbolic_call.adb",
-      "verification_symbolic_join.adb");
+      "verification_symbolic_join.adb",
+      "verification_mutation_contracts.adb",
+      "verification_mutation_runtime.adb",
+      "verification_mutation_loop_initialization.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;

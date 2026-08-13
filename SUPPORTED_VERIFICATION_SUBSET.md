@@ -1,0 +1,97 @@
+# Supported Verification Subset
+
+This document is the behavioral contract for `--verify`. It defines the
+source constructs and proof claims that AdaLang Analyzer currently supports.
+The implementation and regression corpus take precedence over aspirational
+examples elsewhere in the documentation.
+
+## Meaning of a result
+
+The unit of verification is one enumerated proof obligation at one source
+location. A `Proved_Safe` result means only that the named obligation was
+discharged for every state represented by the supported analysis at that
+location. It is not a whole-program proof and says nothing about unenumerated
+checks, target representation, unchecked conversion, concurrency, or code the
+front end could not resolve.
+
+`Definite_Error` means the represented state establishes failure.
+`Unproved` means neither safety nor failure was established. `Unreachable`
+means no represented path reaches the operation. `Unsupported` means the
+subprogram or control-flow boundary is outside this contract. An unsupported
+scalar translation within an otherwise supported boundary remains `Unproved`
+and carries a reason code and blocking expression.
+
+No missing, `Unproved`, `Unsupported`, or ordinary rule-finding result may be
+interpreted as proof of safety.
+
+## Enumerated obligations
+
+| Obligation | Supported proof basis | Current boundary |
+|---|---|---|
+| Division by zero | Exact/range exclusion of zero; otherwise scalar `divisor /= 0` VC | Integer scalar divisor only |
+| Integer overflow | Operation base-type range; otherwise scalar bounds VC | Integer `+`, `-`, `*`, `/`, and selected power checks |
+| Range | Resolved scalar subtype bounds; otherwise scalar bounds VC | Integer scalar initialization, assignment, and conversion |
+| Index | Resolved index subtype per dimension; otherwise scalar bounds VC | Statically modeled array types and scalar indices |
+| Discriminant | Static and abstract discriminant checks | Selected resolved discriminated objects only |
+| Initialization | Flow-sensitive definite-initialization state | Tracked scalar objects and documented composite write summaries |
+| Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
+| Precondition | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts |
+| Postcondition | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions |
+| Loop invariant initialization | Entry-edge abstract/symbolic state | Leading invariants on supported loops |
+| Loop invariant preservation | Generic one-iteration abstract/symbolic VC | Straight-line scalar body without nested loops, calls, branches, or unsupported transfers |
+| Loop variant | Enumeration and reachability only | Decrease/termination is not currently discharged; never yields `Proved_Safe` |
+
+## Scalar VC language
+
+The external prover portfolio operates on mathematical integers and Booleans.
+The supported translation includes initialized scalar names, integer and
+Boolean literals, unary negation and `not`, arithmetic `+`, `-`, and `*`,
+comparisons, equality, Boolean connectives, supported integer conversions,
+bounded quantifiers, and side-effect-free expression functions that can be
+inlined within the depth limit. Integer `/`, `mod`, and `rem` are translated
+only when the divisor is provably nonzero and their Ada sign semantics are
+encoded.
+
+Machine-width safety is a separate overflow obligation. A solver refutation
+of an assertion containing potentially overflowing arithmetic is not promoted
+to `Definite_Error` merely from mathematical-integer semantics.
+
+The path context may contain entry preconditions, branch predicates,
+straight-line scalar substitutions, sound relational postcondition transfer,
+and identical symbolic facts preserved at every incoming join. Conflicting
+join values, exceptional flow, and calls without sound relational summaries
+drop facts rather than assuming them.
+
+An external result is accepted only when both configured CVC5 and Z3 runs
+agree by returning `unsat` for the negated goal. Solver absence or disagreement
+cannot produce `Proved_Safe` or `Definite_Error`.
+
+## Supported control flow
+
+The verification CFG covers sequential statements and declaration
+elaboration; `if`/`elsif`/`else`; `case`; `while`, `for`, and unconditional
+loops; unnamed exits; returns; raises; nested blocks; and conservative
+exception-handler dispatch. Fixed-point iteration widens growing loop ranges.
+A subprogram with an incomplete or malformed CFG cannot yield a proof based on
+that boundary.
+
+Explicit access dereference, general alias/points-to reasoning, tasking,
+protected operations, dispatching/class-wide calls, floating-point proof,
+unchecked conversion, target-dependent representation, and unmodeled
+exception semantics are outside the supported subset. Other unsupported
+scalar forms must retain a stable provenance reason rather than silently
+becoming proof evidence.
+
+## Evidence and change control
+
+The executable evidence consists of:
+
+- `tests/run_verification.sh` for obligation outcomes and provenance;
+- `tests/run_verification_mutations.sh` for seeded false-safe detection;
+- `tests/run_gnatprove_differential.sh` for clean and deliberately broken
+  oracle comparison; and
+- `tests/run_all.sh` for the complete repository gate.
+
+Any change that expands a `Proved_Safe` path must update this document, add a
+positive case, add a boundary or seeded-defect case, and pass the complete
+gate. Confirmed false-safe results follow [FALSE_SAFE_RESPONSE.md](FALSE_SAFE_RESPONSE.md).

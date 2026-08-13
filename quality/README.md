@@ -32,6 +32,7 @@ sh tests/run_quality_metrics.sh
 sh tests/run_automotive_evidence.sh
 sh tests/run_do178c_evidence.sh
 sh tests/run_precision_corpus.sh
+sh tests/run_verification_mutations.sh
 ```
 
 `automotive_rule_evidence.tsv` maps every check enabled by `--automotive` to a
@@ -52,6 +53,15 @@ the matrix's per-row "DO-178C level(s)" column agrees with which tier each
 rule actually comes from in `src/adalang_analyzer-rules.ads`, not just that
 every rule name appears somewhere in the table.
 
+## Verification mutation campaign
+
+`verification_mutations.tsv` records deliberately unsafe proof obligations
+and their expected conservative outcomes. `run_verification_mutations.sh`
+requires every named obligation to exist, rejects any `Proved_Safe` result,
+and also checks the expected `Definite_Error` or `Unproved` classification.
+This is a focused false-safe regression gate, complementary to the clean and
+broken GNATprove differential corpora.
+
 ## Precision corpus
 
 `precision_corpus.tsv` is a growing, machine-checked corpus of boundary and
@@ -64,7 +74,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (214 cases; the tally below itemizes the threshold and
+Current coverage (217 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
