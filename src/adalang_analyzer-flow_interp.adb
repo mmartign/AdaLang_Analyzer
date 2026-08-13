@@ -1394,10 +1394,32 @@ package body Adalang_Analyzer.Flow_Interp is
       Immediate_Base : constant Libadalang.Analysis.Base_Type_Decl :=
         Typ.P_Base_Type (Node);
    begin
-      if Libadalang.Analysis.Is_Null (Immediate_Base) then
-         return Unknown_Range;
+      if not Libadalang.Analysis.Is_Null (Immediate_Base) then
+         return Type_Range (Typ.P_Root_Type (Node), State);
       end if;
-      return Type_Range (Typ.P_Root_Type (Node), State);
+
+      --  Not a derived type, but Typ's own declared range can still be a
+      --  dynamic constraint layered on an otherwise statically-bounded
+      --  named type (e.g. "Rnd_Len : size_t range Rnd_Buffer'First ..
+      --  Rnd_Buffer'Length", where Rnd_Buffer is an unconstrained array
+      --  parameter, so the constraint itself has no static bounds).
+      --  Ada scalar subtyping only ever narrows a type's range, so
+      --  falling back to Typ's own fully-unwound base subtype -- which
+      --  P_Base_Subtype already recurses through any further subtype
+      --  chain to reach -- is always a sound, if looser,
+      --  overapproximation: a wider bound, never a wrong one.
+      declare
+         Base_Subtype : constant Libadalang.Analysis.Base_Type_Decl :=
+           Typ.P_Base_Subtype (Node);
+      begin
+         if Libadalang.Analysis.Is_Null (Base_Subtype)
+           or else Libadalang.Analysis.Ada_Node (Base_Subtype) =
+             Libadalang.Analysis.Ada_Node (Typ)
+         then
+            return Unknown_Range;
+         end if;
+         return Type_Range (Base_Subtype, State);
+      end;
    end Overflow_Base_Range;
 
    function Arithmetic_Proved_Safe

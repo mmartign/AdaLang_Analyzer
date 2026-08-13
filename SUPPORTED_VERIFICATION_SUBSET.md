@@ -77,7 +77,16 @@ root, not one immediate-parent hop: a twice-derived type (RecordFlux's
 `Index is new Length range 1 .. Length'Last`, itself `Length is new
 Natural`, for instance) would otherwise be checked against an intermediate
 ancestor's own narrower first-subtype constraint rather than the true
-machine range every derivation ultimately inherits.
+machine range every derivation ultimately inherits. The same base-range
+fallback also applies when an ordinary (non-derived) subtype's own declared
+constraint isn't statically known — e.g. `N : Natural range 0 ..
+Arr'Length`, where `Arr` is an unconstrained array parameter — by widening
+to the named type's own fully-unwound base subtype; Ada scalar subtyping
+only ever narrows, so this is always a sound, if looser, envelope. This
+resolves the *base-range gate* that loop-variant progress and overflow
+checks require before attempting a proof; it does not by itself guarantee
+the proof succeeds, and does not affect loop-variant obligations already
+blocked upstream by an undischarged leading invariant.
 
 The path context may contain entry preconditions, branch predicates,
 straight-line scalar substitutions, sound relational postcondition transfer,

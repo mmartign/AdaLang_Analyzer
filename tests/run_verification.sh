@@ -49,6 +49,7 @@ loop_array_write=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-array-write.XXXXXX")
 loop_record_write=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-record-write.XXXXXX")
 loop_length_symbolic=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-length-symbolic.XXXXXX")
 length_attribute_unsound=$(mktemp "${TMPDIR:-/tmp}/adalang-length-attribute-unsound.XXXXXX")
+loop_variant_dynamic_bound=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-dynamic-bound.XXXXXX")
 loop_variant_increases=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-increases.XXXXXX")
 loop_variant_wrong=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-wrong.XXXXXX")
 loop_variant_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-unsupported.XXXXXX")
@@ -69,7 +70,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -535,6 +536,23 @@ grep -F '"kind": "assertion", "status": "proved-safe"' \
 if grep -F '"kind": "assertion", "status": "proved-safe"' \
   "$length_attribute_unsound" | grep -F "Chain'Length >= 1" >/dev/null; then
    echo "an unconstrained array's 'Length was given an unwarranted lower bound" >&2
+   exit 1
+fi
+
+#  A loop-variant expression declared with a dynamic range constraint on an
+#  otherwise statically-bounded named type (e.g. "Chain_Len : Natural range
+#  0 .. Chain'Length", where Chain is an unconstrained array parameter)
+#  must not be refused outright for lacking static bounds -- Ada scalar
+#  subtyping only narrows, so the named type's own fully-unwound base
+#  range is always a sound fallback envelope. This only asserts the bounds
+#  gate is cleared (no "missing-static-bounds" reason code); the SMT
+#  solver may still not discharge progress itself.
+run_json "$loop_variant_dynamic_bound" \
+  tests/verification_loop_variant_dynamic_bound.adb
+if grep -F '"kind": "loop-variant"' "$loop_variant_dynamic_bound" |
+  grep -F '"reasonCode": "missing-static-bounds"' >/dev/null
+then
+   echo "a dynamically-constrained loop-variant counter on a statically-bounded named type still refused static bounds" >&2
    exit 1
 fi
 
