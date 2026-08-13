@@ -94,6 +94,13 @@ package Adalang_Analyzer.VC_Prover is
       Flow        : Adalang_Analyzer.Flow_Domain.Flow_State;
       Merge_Tag   : Positive) return Symbolic_State;
 
+   function Join_On_Condition
+     (True_Side, False_Side : Symbolic_State;
+      Pre_Fork_Side          : Symbolic_State;
+      Condition              : Libadalang.Analysis.Ada_Node'Class;
+      Flow                   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Merge_Tag              : Positive) return Symbolic_State;
+
    function Equal (Left, Right : Symbolic_State) return Boolean;
 
    function Havoc return Symbolic_State is (Empty_Symbolic_State);

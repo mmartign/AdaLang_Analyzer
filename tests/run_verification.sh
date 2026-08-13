@@ -45,6 +45,12 @@ loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
 loop_branch_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-clean.XXXXXX")
 loop_branch_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-broken.XXXXXX")
 loop_branch_elsif=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif.XXXXXX")
+loop_branch_ite_precision=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-ite-precision.XXXXXX")
+loop_branch_ite_unsafe=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-ite-unsafe.XXXXXX")
+loop_branch_ite_cond_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-ite-cond-unsupported.XXXXXX")
+loop_branch_ite_cond_unsupported_precision=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-ite-cond-unsupported-precision.XXXXXX")
+loop_branch_ite_cond_unsupported_unsafe=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-ite-cond-unsupported-unsafe.XXXXXX")
+loop_invariant_independent_failure=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-invariant-independent-failure.XXXXXX")
 loop_array_write=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-array-write.XXXXXX")
 loop_record_write=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-record-write.XXXXXX")
 loop_length_symbolic=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-length-symbolic.XXXXXX")
@@ -70,7 +76,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -485,6 +491,96 @@ grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
   "$loop_branch_elsif" >/dev/null
 grep -F '"kind": "loop-variant", "status": "unproved"' \
   "$loop_branch_elsif" >/dev/null
+
+#  A one-sided if (no else) that increments a counter only on the true
+#  arm, with the invariant bound genuinely following from the loop guard,
+#  is exactly the shape the precise ite-join (VC.Join_On_Condition) exists
+#  for: the merged value keeps its relation to the loop guard through an
+#  "(ite <cond> <true-term> <false-term>)" SMT term instead of collapsing
+#  to a totally unconstrained fresh symbol.
+run_json "$loop_branch_ite_precision" \
+  tests/verification_loop_branch_ite_precision.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_ite_precision" >/dev/null
+grep -F '"kind": "loop-variant", "status": "proved-safe", "method": "external-prover"' \
+  "$loop_branch_ite_precision" >/dev/null
+
+#  Same one-sided-if shape, but the increment on the true arm is large
+#  enough that the invariant bound is not actually guaranteed by the loop
+#  guard -- a real defect. The precise ite-join must never paper over this:
+#  it stays unproved, confirming the one-sided (Missing_Term) path of
+#  Join_On_Condition doesn't trade soundness for precision.
+run_json "$loop_branch_ite_unsafe" \
+  tests/verification_loop_branch_ite_unsafe.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_branch_ite_unsafe" >/dev/null
+grep -F '"kind": "loop-variant", "status": "unproved"' \
+  "$loop_branch_ite_unsafe" >/dev/null
+if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_ite_unsafe" >/dev/null; then
+   echo "an unsafe one-sided branch increment escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
+
+#  If the branch condition itself doesn't translate to an SMT term (here,
+#  an array-indexed read), Join_On_Condition still builds an ite, but with
+#  an anonymous placeholder boolean standing in for the real condition
+#  (sound for any selector value, per Join_On_Condition's own reasoning)
+#  instead of Cond_Term. This fixture's two arms genuinely disagree on a
+#  value the invariant depends on (Extra can go negative on the false
+#  arm), so it must stay unproved even though the ite path is taken --
+#  confirming the placeholder never manufactures a false proof.
+run_json "$loop_branch_ite_cond_unsupported" \
+  tests/verification_loop_branch_ite_cond_unsupported.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_branch_ite_cond_unsupported" >/dev/null
+grep -F '"kind": "loop-variant", "status": "unproved"' \
+  "$loop_branch_ite_cond_unsupported" >/dev/null
+
+#  The placeholder selector is still precise, not just safe: a one-sided
+#  branch whose condition doesn't translate (again an array-indexed read,
+#  mirroring project_bias's own Chain_Generator.adb shape exactly) but
+#  whose increment is genuinely bounded by the loop guard alone must now
+#  reach proved-safe -- the whole point of not collapsing all the way to
+#  a fresh, unconstrained symbol just because Condition itself is opaque.
+run_json "$loop_branch_ite_cond_unsupported_precision" \
+  tests/verification_loop_branch_ite_cond_unsupported_precision.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_ite_cond_unsupported_precision" >/dev/null
+
+#  Adversarial counterpart: same one-sided, condition-unsupported shape,
+#  but the increment (+2) is not actually guaranteed safe by the loop
+#  guard (which only ever proves +1 safe). Must stay unproved -- the
+#  placeholder selector's added precision must never paper over a real
+#  defect in the one-sided Missing_Term path.
+run_json "$loop_branch_ite_cond_unsupported_unsafe" \
+  tests/verification_loop_branch_ite_cond_unsupported_unsafe.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_branch_ite_cond_unsupported_unsafe" >/dev/null
+if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_ite_cond_unsupported_unsafe" >/dev/null; then
+   echo "an unsafe increment behind an untranslatable condition escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
+
+#  Two leading invariants on the same loop, straight-line body (no branch
+#  at all -- this is about Apply_Loop_Invariants/Prove_Header's own setup,
+#  not the branch-merge machinery above): the first is plain and always
+#  translatable; the second references an indexed array read and can
+#  never translate. VC.Assume bails to a totally empty state (VC.Havoc)
+#  for the second, and adopting that unconditionally used to erase the
+#  first invariant's already-accumulated assumption too, poisoning an
+#  otherwise-trivially-provable obligation. The first invariant's own
+#  initialization and preservation must both still reach proved-safe;
+#  the second, unsupported one is expected to stay unproved for itself.
+run_json "$loop_invariant_independent_failure" \
+  tests/verification_loop_invariant_independent_failure.adb
+grep -F '"kind": "loop-invariant-initialization", "status": "proved-safe"' \
+  "$loop_invariant_independent_failure" >/dev/null
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_invariant_independent_failure" >/dev/null
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_invariant_independent_failure" >/dev/null
 
 #  An array-element write inside a loop body must not block invariant
 #  preservation / variant progress for obligations that don't depend on the

@@ -38,7 +38,7 @@ interpreted as proof of safety.
 | Precondition | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts |
 | Postcondition | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions |
 | Loop invariant initialization | Entry-edge abstract/symbolic state | Leading invariants on supported loops |
-| Loop invariant preservation | Generic one-iteration abstract/symbolic VC | Straight-line scalar body, or a straight-line scalar body containing exactly one non-nested `if`/`else` (the `else` may be omitted) whose two branches each independently reach the loop's back edge, joined with the same merge machinery used at ordinary CFG merge points; array-element and pointer-dereference writes are tolerated (never symbolically tracked, so skipping them leaves no stale binding), but a record-component write is not, since that *is* symbolically tracked and could otherwise resolve to a stale pre-write value; `elsif` chains, `case` statements, a second sequential conditional, nested branches, nested loops, calls, or unsupported transfers remain outside this subset |
+| Loop invariant preservation | Generic one-iteration abstract/symbolic VC | Straight-line scalar body, or a straight-line scalar body containing exactly one non-nested `if`/`else` (the `else` may be omitted) whose two branches each independently reach the loop's back edge, joined with the same merge machinery used at ordinary CFG merge points; a scalar binding on which the two arms disagree is represented as an SMT `(ite <selector> <true-term> <false-term>)` term, letting facts already established before the branch (such as the loop guard) carry through the disjunction regardless of which arm actually ran -- the selector is the branch's own condition when that condition translates to the scalar VC language (correlating it with any of the condition's own free variables appearing elsewhere in the obligation), or otherwise an anonymous, totally unconstrained boolean symbol standing in for it (sound for any selector value, but unable to correlate with anything else in the obligation); a fresh, unconstrained symbol is used instead of an `ite` only when a binding's own sort disagrees between arms, an unreachable defensive case; array-element and pointer-dereference writes are tolerated (never symbolically tracked, so skipping them leaves no stale binding), but a record-component write is not, since that *is* symbolically tracked and could otherwise resolve to a stale pre-write value; `elsif` chains, `case` statements, a second sequential conditional, nested branches, nested loops, calls, or unsupported transfers remain outside this subset |
 | Loop variant progress | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant on the same iteration subset as invariant preservation (straight-line, or with exactly one non-nested `if`/`else`); usable leading invariants must first discharge |
 
 ## Scalar VC language
@@ -106,6 +106,15 @@ the loop body, only by other leading loop-invariant/loop-variant pragmas --
 either may come first. `Loop_Variant (Increases => I); Loop_Invariant (I <=
 N);` and the reverse order both leave the invariant leading, since Ada/SPARK
 attaches no meaning to their relative order.
+
+When a loop carries more than one leading invariant, each is assumed
+independently before the loop body is walked: one invariant's condition
+failing to translate to the scalar VC language contributes nothing on its
+own (that invariant's own obligations stay `Unproved`), but never discards
+the facts already assumed from the loop's *other*, independently
+translatable leading invariants -- a loop guard or sibling invariant
+outside the scalar subset does not, by itself, block preservation or
+variant progress for an otherwise-provable one.
 
 An external result is accepted only when both configured CVC5 and Z3 runs
 agree by returning `unsat` for the negated goal. Solver absence or disagreement

@@ -3610,13 +3610,30 @@ package body Adalang_Analyzer.Flow_Interp is
             if Item.Header = Header and then Item.Leading then
                declare
                   True_State, False_State : Flow_State;
+                  Updated : VC.Symbolic_State;
                begin
                   Narrow_By_Condition
                     (Item.Condition, State, True_State, False_State);
                   State := True_State;
-                  Symbols :=
+                  Updated :=
                     VC.Assume
                       (Symbols, Item.Condition, Truth => True, Flow => State);
+                  --  VC.Assume bails to VC.Havoc (a totally empty state,
+                  --  not merely "unsupported") when this one invariant's
+                  --  own condition doesn't translate -- e.g. it references
+                  --  an attribute whose bounds aren't statically known.
+                  --  Adopting that empty result unconditionally would
+                  --  discard every assumption already accumulated from
+                  --  this loop's *other*, independently-translatable
+                  --  leading invariants processed earlier in this same
+                  --  loop, poisoning their otherwise-provable preservation
+                  --  obligations too. Keeping the prior Symbols instead
+                  --  means this invariant simply contributes nothing (the
+                  --  same conservative, sound outcome as if it had never
+                  --  been assumed) without erasing what came before it.
+                  if not VC.Equal (Updated, VC.Havoc) then
+                     Symbols := Updated;
+                  end if;
                end;
             end if;
          end loop;
@@ -4299,9 +4316,13 @@ package body Adalang_Analyzer.Flow_Interp is
                                  State :=
                                    Flow_Join (True_State, False_State);
                                  Symbols :=
-                                   VC.Join
-                                     (True_Symbols, False_Symbols, State,
-                                      Merge_Tag => Positive (Current));
+                                   VC.Join_On_Condition
+                                     (True_Side     => True_Symbols,
+                                      False_Side    => False_Symbols,
+                                      Pre_Fork_Side => Symbols,
+                                      Condition     => Node_Info.Source,
+                                      Flow          => State,
+                                      Merge_Tag     => Positive (Current));
                                  Reached_Back := True;
                                  return True;
                               end;
@@ -4364,18 +4385,33 @@ package body Adalang_Analyzer.Flow_Interp is
             end if;
 
             Havoc_Loop_Writes (Source_Node (Header), State);
+            --  VC.Assume bails to VC.Havoc (a totally empty state) when
+            --  the one condition just given to it doesn't translate.
+            --  Adopting that unconditionally would let one untranslatable
+            --  leading invariant (or the loop guard itself) erase every
+            --  assumption already accumulated from this loop's *other*,
+            --  independently-translatable leading invariants -- poisoning
+            --  their own, otherwise-provable preservation obligations too.
+            --  Keeping the prior Symbols instead means the failing
+            --  condition simply contributes nothing (the same
+            --  conservative, sound outcome as if it had never been
+            --  assumed) without erasing what came before it.
             for Item of Loop_Invariants loop
                if Item.Header = Header and then Item.Leading then
                   declare
                      True_State, False_State : Flow_State;
+                     Updated : VC.Symbolic_State;
                   begin
                      Narrow_By_Condition
                        (Item.Condition, State, True_State, False_State);
                      State := True_State;
-                     Symbols :=
+                     Updated :=
                        VC.Assume
                          (Symbols, Item.Condition, Truth => True,
                           Flow => State);
+                     if not VC.Equal (Updated, VC.Havoc) then
+                        Symbols := Updated;
+                     end if;
                   end;
                end if;
             end loop;
@@ -4387,13 +4423,17 @@ package body Adalang_Analyzer.Flow_Interp is
                if not Libadalang.Analysis.Is_Null (Cond) then
                   declare
                      True_State, False_State : Flow_State;
+                     Updated : VC.Symbolic_State;
                   begin
                      Narrow_By_Condition
                        (Cond, State, True_State, False_State);
                      State := True_State;
-                     Symbols :=
+                     Updated :=
                        VC.Assume
                          (Symbols, Cond, Truth => True, Flow => State);
+                     if not VC.Equal (Updated, VC.Havoc) then
+                        Symbols := Updated;
+                     end if;
                   end;
                end if;
             end;

@@ -1940,6 +1940,175 @@ package body Adalang_Analyzer.VC_Prover is
          return Havoc;
    end Join;
 
+   function Join_On_Condition
+     (True_Side, False_Side : Symbolic_State;
+      Pre_Fork_Side          : Symbolic_State;
+      Condition              : Libadalang.Analysis.Ada_Node'Class;
+      Flow                   : Domain.Flow_State;
+      Merge_Tag              : Positive) return Symbolic_State
+   is
+      Result : Symbolic_State := Empty_Symbolic_State;
+
+      Cond_Context : Translation_Context :=
+        (State => Flow, Symbols => Pre_Fork_Side, others => <>);
+      Cond_Term : constant Unbounded_String :=
+        Boolean_Term (Condition, Cond_Context);
+      Cond_OK   : constant Boolean :=
+        Cond_Context.Supported and then Length (Cond_Term) > 0;
+
+      --  The ite selector for every disagreeing binding at this merge:
+      --  Cond_Term when Condition translates (correlating the selector
+      --  with any of Condition's own free variables that also appear
+      --  elsewhere in the surrounding proof obligation), or an anonymous,
+      --  totally unconstrained boolean symbol otherwise -- minted below,
+      --  keyed to Condition's own source location so it's deterministic
+      --  and unique per merge site, when Condition itself doesn't
+      --  translate (an unsupported shape, e.g. an indexed array read).
+      --  Sound regardless of what the selector "means": the ite VC is
+      --  checked for every possible value of its selector, so proving it
+      --  holds for an unconstrained placeholder proves it holds for
+      --  whatever the real (but here untranslated) condition actually is
+      --  too. A placeholder costs precision relative to a real,
+      --  correlated condition (nothing else in the VC can be related back
+      --  to it), but is strictly more precise than the fresh-symbol
+      --  fallback it replaces, since it still ties the merged value to
+      --  exactly the true-arm or false-arm term instead of discarding
+      --  both. Assigned exactly once, below, before either binding loop
+      --  reads it.
+      Selector : Unbounded_String;
+
+      --  Exactly Join's fresh-symbol fallback, for one binding only. Used
+      --  now only when a binding's sort itself disagrees between arms (an
+      --  ite would be ill-typed) -- confirmed unreachable from real Ada
+      --  source, since Assign's sort always comes from the assigned
+      --  expression's own resolved static Ada type, kept defensive anyway.
+      function Fresh_Term (Key : Symbol_Key; Sort : Scalar_Sort) return String
+      is
+         Name : constant String :=
+           Root_Name (Key, "j" & Natural_Image (Merge_Tag) & "_");
+      begin
+         Add_Root (Result, Name, Key, Sort, Flow);
+         return Name;
+      end Fresh_Term;
+
+      --  A key's term on a side that carries no binding for it: the
+      --  ordinary "plain root" reference (Symbol_For's own no-binding
+      --  case), minted directly into Result so it's recorded where the
+      --  returned name actually needs to exist.
+      function Missing_Term (Key : Symbol_Key; Sort : Scalar_Sort) return String
+      is
+         Name : constant String := Root_Name (Key);
+      begin
+         if Root_Index (Result, Name) = 0 then
+            Add_Root (Result, Name, Key, Sort, Flow);
+         end if;
+         return Name;
+      end Missing_Term;
+
+   begin
+      if not True_Side.Supported or else not False_Side.Supported
+        or else not Pre_Fork_Side.Supported
+      then
+         return Havoc;
+      end if;
+
+      for Item of True_Side.Roots loop
+         Include_Root (Result, Item);
+      end loop;
+      for Item of False_Side.Roots loop
+         Include_Root (Result, Item);
+      end loop;
+      if Cond_OK then
+         for Item of Cond_Context.Symbols.Roots loop
+            Include_Root (Result, Item);
+         end loop;
+         Selector := Cond_Term;
+      else
+         --  Condition itself doesn't translate: mint one anonymous,
+         --  totally unconstrained boolean symbol, keyed to Condition's
+         --  own source location so it's deterministic and unique per
+         --  merge site, to stand in for it as the ite selector below.
+         declare
+            Key  : constant Symbol_Key :=
+              Plain_Key (Libadalang.Analysis.Ada_Node (Condition));
+            Name : constant String :=
+              Root_Name (Key, "jc" & Natural_Image (Merge_Tag) & "_");
+         begin
+            Add_Root (Result, Name, Key, Boolean_Sort, Flow);
+            Selector := To_Unbounded_String (Name);
+         end;
+      end if;
+
+      for Item of True_Side.Bindings loop
+         declare
+            False_Index : constant Natural :=
+              Binding_Index (False_Side, Item.Key);
+         begin
+            if False_Index /= 0
+              and then False_Side.Bindings.Element (False_Index).Sort =
+                Item.Sort
+              and then False_Side.Bindings.Element (False_Index).Term =
+                Item.Term
+            then
+               Set_Binding (Result, Item);
+            elsif False_Index /= 0
+              and then False_Side.Bindings.Element (False_Index).Sort /=
+                Item.Sort
+            then
+               Set_Binding
+                 (Result,
+                  (Key => Item.Key, Sort => Item.Sort,
+                   Term => To_Unbounded_String
+                     (Fresh_Term (Item.Key, Item.Sort))));
+            else
+               declare
+                  False_Term : constant String :=
+                    (if False_Index = 0
+                     then Missing_Term (Item.Key, Item.Sort)
+                     else To_String
+                       (False_Side.Bindings.Element (False_Index).Term));
+               begin
+                  Set_Binding
+                    (Result,
+                     (Key => Item.Key, Sort => Item.Sort,
+                      Term => To_Unbounded_String
+                        ("(ite " & To_String (Selector) & " " &
+                         To_String (Item.Term) & " " & False_Term & ")")));
+               end;
+            end if;
+         end;
+      end loop;
+
+      for Item of False_Side.Bindings loop
+         if Binding_Index (True_Side, Item.Key) = 0 then
+            declare
+               True_Term : constant String :=
+                 Missing_Term (Item.Key, Item.Sort);
+            begin
+               Set_Binding
+                 (Result,
+                  (Key => Item.Key, Sort => Item.Sort,
+                   Term => To_Unbounded_String
+                     ("(ite " & To_String (Selector) & " " & True_Term &
+                      " " & To_String (Item.Term) & ")")));
+            end;
+         end if;
+      end loop;
+
+      for Item of True_Side.Assumptions loop
+         for Other of False_Side.Assumptions loop
+            if Item = Other then
+               Result.Assumptions.Append (Item);
+               exit;
+            end if;
+         end loop;
+      end loop;
+      return Result;
+   exception
+      when others =>
+         return Havoc;
+   end Join_On_Condition;
+
    function Equal (Left, Right : Symbolic_State) return Boolean is
    begin
       if Left.Supported /= Right.Supported

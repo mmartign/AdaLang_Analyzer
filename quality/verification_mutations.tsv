@@ -12,3 +12,4 @@ loop-invariant-initialization	tests/verification_mutation_loop_initialization.ad
 loop-invariant-preservation	tests/verification_loop_vc_broken.adb	loop-invariant-preservation	I >= 0 and then I <= 3 and then Y = X + I	unproved	Broken induction step must not be proved-safe.
 loop-variant-wrong-direction	tests/verification_loop_variant_wrong_direction.adb	loop-variant	I	definite-error	A declared decreasing variant actually increases.
 loop-invariant-preservation-branch	tests/verification_loop_branch_vc_broken.adb	loop-invariant-preservation	I >= 0 and then I <= 3 and then Y = X + I and then Extra >= 0	unproved	Branch-disagreement on Extra must not be proved-safe.
+loop-invariant-preservation-ite-unsafe	tests/verification_loop_branch_ite_unsafe.adb	loop-invariant-preservation	I >= 0 and then I <= N and then Count >= 0 and then Count <= I	unproved	Unsafe one-sided branch increment must not be proved-safe by the precise ite-join.
