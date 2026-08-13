@@ -45,6 +45,8 @@ loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
 loop_branch_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-clean.XXXXXX")
 loop_branch_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-broken.XXXXXX")
 loop_branch_elsif=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif.XXXXXX")
+loop_array_write=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-array-write.XXXXXX")
+loop_record_write=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-record-write.XXXXXX")
 loop_variant_increases=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-increases.XXXXXX")
 loop_variant_wrong=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-wrong.XXXXXX")
 loop_variant_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-unsupported.XXXXXX")
@@ -65,7 +67,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_array_write" "$loop_record_write" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -480,6 +482,36 @@ grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
   "$loop_branch_elsif" >/dev/null
 grep -F '"kind": "loop-variant", "status": "unproved"' \
   "$loop_branch_elsif" >/dev/null
+
+#  An array-element write inside a loop body must not block invariant
+#  preservation / variant progress for obligations that don't depend on the
+#  array's contents -- Symbol_For has no support for indexed reads, so
+#  skipping the symbolic update for that one statement (while still letting
+#  the abstract flow interpreter process it) leaves no stale binding behind.
+run_json "$loop_array_write" tests/verification_loop_array_write_clean.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_array_write" >/dev/null
+grep -F '"kind": "loop-variant", "status": "proved-safe", "method": "external-prover"' \
+  "$loop_array_write" >/dev/null
+grep -F '"kind": "postcondition", "status": "proved-safe"' \
+  "$loop_array_write" >/dev/null
+
+#  A record-component write is different from an array-element write: unlike
+#  an array element, VC_Prover *does* plant a symbolic root for Obj.Field
+#  reads, so skipping its update would let a later reference to it resolve
+#  to a stale pre-write value -- a real soundness trap. This must keep
+#  conservatively bailing to unproved, never proved-safe.
+run_json "$loop_record_write" \
+  tests/verification_loop_record_write_unsupported.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_record_write" >/dev/null
+grep -F '"kind": "loop-variant", "status": "unproved"' \
+  "$loop_record_write" >/dev/null
+if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_record_write" >/dev/null; then
+   echo "a record-component write escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
 
 run_json "$loop_variant_increases" \
   tests/verification_loop_variant_increases.adb

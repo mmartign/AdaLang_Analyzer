@@ -4165,16 +4165,39 @@ package body Adalang_Analyzer.Flow_Interp is
                             Libadalang.Common.Ada_Assign_Stmt
                         then
                            declare
-                              Key : constant Libadalang.Analysis.Ada_Node :=
+                              Key  : constant Libadalang.Analysis.Ada_Node :=
                                 Flow_Assigned_Name (Source);
+                              Dest : constant Libadalang.Analysis.Name :=
+                                Source.As_Assign_Stmt.F_Dest;
                            begin
-                              if Libadalang.Analysis.Is_Null (Key) then
+                              --  An array-element/slice write or a
+                              --  pointer-dereference write is never
+                              --  symbolically tracked anywhere in this
+                              --  engine (Symbol_For has no support for an
+                              --  indexed or dereferenced read either), so
+                              --  skipping the symbolic update below for
+                              --  one of those two shapes leaves no stale
+                              --  binding behind. A record-component
+                              --  write (Ada_Dotted_Name) is different:
+                              --  VC_Prover *does* plant a root for
+                              --  Obj.Field reads, so skipping its update
+                              --  here would let a later reference resolve
+                              --  to the pre-write value -- keep bailing
+                              --  for that shape, as for any other
+                              --  unresolved destination.
+                              if Libadalang.Analysis.Is_Null (Key)
+                                and then Dest.Kind not in
+                                  Libadalang.Common.Ada_Call_Expr
+                                    | Libadalang.Common.Ada_Explicit_Deref
+                              then
                                  return False;
                               end if;
-                              Symbols :=
-                                VC.Assign
-                                  (Symbols, Key,
-                                   Source.As_Assign_Stmt.F_Expr, State);
+                              if not Libadalang.Analysis.Is_Null (Key) then
+                                 Symbols :=
+                                   VC.Assign
+                                     (Symbols, Key,
+                                      Source.As_Assign_Stmt.F_Expr, State);
+                              end if;
                               State :=
                                 Interpret_Statement
                                   (Unit, Source, State).State;

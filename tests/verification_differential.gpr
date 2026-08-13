@@ -19,6 +19,7 @@ project Verification_Differential is
       "verification_diff_loop.adb",
       "verification_diff_runtime_relational.adb",
       "verification_loop_variant_increases.adb",
-      "verification_loop_branch_clean.adb");
+      "verification_loop_branch_clean.adb",
+      "verification_loop_array_write_clean.adb");
    for Object_Dir use "../obj/verification_differential";
 end Verification_Differential;
