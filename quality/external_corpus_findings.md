@@ -1950,3 +1950,94 @@ either promoting global/package-level seeding into the interpreter's own
 different, weaker safety argument for non-local prefixes -- neither
 attempted here. Recorded as further validated-but-deferred input,
 consistent with this file's own methodology.
+
+### `Inlined_Call_Term` object-identity substitution (2026-08-13, user-authored)
+
+The record-component work above named the actual mechanism blocking
+Tokeneer's own `IsPresent`-shaped example: `function IsPresent (TheAdmin :
+T) return Boolean is (TheAdmin.RolePresent in PrivTypes.AdminPrivilegeT);`,
+called at its use sites as `Admin.IsPresent(TheAdmin)`. `Inlined_Call_Term`
+substitutes every formal by translating its actual into a scalar SMT term
+-- correct for an ordinary scalar, but for a record-typed formal like this
+one it manufactured a meaningless fresh symbol for the whole record and
+bound the formal to that, severing any connection between the callee's own
+`TheAdmin.RolePresent` and the caller's `A.RolePresent`. Confirmed directly
+before this fix: even the simplest possible reproduction (`function Get_Age
+(TheAdmin : Rec) return Integer is (TheAdmin.Age); ... if Get_Age (A) > 0
+then pragma Assert (A.Age > 0)`) stayed `Unproved`.
+
+Fixed (by the repository owner, not this session) by adding a second,
+separate substitution mechanism for record-typed formals: a
+`Object_Binding` list on `Translation_Context` recording `(Formal, Actual)`
+pairs, consulted by a new `Object_Identity` function that the
+`Ada_Dotted_Name` case now calls on its resolved prefix before building a
+`Symbol_Key`, so a callee's `TheAdmin.Field` builds the *same* key the
+caller's own `A.Field` would. Scoped deliberately narrowly: only a plain
+identifier actual is accepted (`Actual.Kind /= Ada_Identifier` bails to
+`Unsupported`), gated on the same `Flow_Initialization` check the plain
+record-read case already uses. `Object_Identity` also walks the binding
+chain (bounded by its own length) rather than substituting once, so a
+record identity threaded through two levels of inlining (`F` calling `G`,
+both taking the same record type) still resolves to the original object.
+
+**Verified in this session** (not the author's own testing, which already
+added a passing regression case to `tests/verification_vc_call_inlined.adb`
+and `tests/run_verification.sh`):
+
+- **Correctness**: the exact `IsPresent` shape, reproduced synthetically,
+  now proves via `external-prover` where it previously stayed `Unproved`.
+  The two-level `F`/`G` chain case the design comment calls out also
+  resolves correctly.
+- **Soundness -- traced to the code, not just spot-checked**, since this
+  change touches how every inlined call with a record parameter behaves,
+  not a self-contained new case. A record-component write (`R.F := 10;`)
+  does not match `Flow_Assigned_Name`'s recognized destination shapes, so
+  `Flow_Interp.adb`'s own CFG-transfer logic (line ~3500) falls to its
+  `else` branch and calls `VC.Havoc`, discarding the *entire* symbolic
+  state on that write -- a pre-existing, coarse-grained safety net neither
+  this fix nor the record-component work above touches. A sharp adversarial
+  test confirms it holds: `if R.F = 5 then R.F := 10; pragma Assert (R.F =
+  5); end if;` (now false) correctly stays `Unproved`, not wrongly proved.
+  The record-component work's own regression fixtures (distinct-objects
+  non-conflation, the truly-uninitialized safety gate, RM 8.3 own-name-
+  qualification read/write) were all re-run and still hold.
+- **Real before/after binary comparison on the same three corpora** as the
+  section above (SPARKNaCl, `project_bias`, Tokeneer): every `compare.awk`
+  bucket, on all three, is again byte-identical, including the two that
+  matter most given the soundness stakes -- possible unsoundness and false
+  positives both stayed at 0 everywhere. `provedSafe` also stayed exactly
+  byte-identical on all three (Tokeneer 1,741, SPARKNaCl 3,469,
+  `project_bias` 383) -- **despite the fix demonstrably working on
+  Tokeneer's own named shape**, corpus-level payoff is again zero.
+
+**A correction to this file's own earlier reasoning, found while chasing
+why the payoff is still zero.** The previous section's "`Ada_Membership_Expr`
+count didn't move" argument, and this file's running practice of reading
+`Assume_Havoc_By_Kind`/`Assign_Havoc_By_Kind` tallies to diagnose what's
+blocked, both rest on an assumption that doesn't hold for an
+inlining-dependent gap like this one: `Assume`'s own havoc tally
+(`Tally (Assume_Havoc_By_Kind, Condition.Kind'Image)`) records the *outer*
+condition's node kind -- e.g. `Admin.IsPresent(TheAdmin) and not
+AdminToken.IsPresent` tallies as `ADA_BIN_OP` -- never the kind of whatever
+sub-expression, however many inlining levels deep, actually caused the
+failure. A membership expression buried inside an inlined call's own body
+was never separately visible in that tally at all, so "the count didn't
+move" was never good evidence about this specific mechanism one way or the
+other. This file's per-kind tallies remain useful for *directly*-occurring
+node shapes (which is what every prior use of them, including the
+`Ada_Membership_Expr`/`Ada_Attribute_Ref` work, actually measured) but are
+the wrong tool for anything gated behind `Inlined_Call_Term` -- diagnosing
+those needs per-obligation, per-location inspection instead, not attempted
+here.
+
+**Conclusion**: a real, verified, and independently soundness-checked fix
+to a genuine gap in how record identity threads through expression-
+function inlining -- confirmed on the project's own exact named blocking
+example, not a synthetic stand-in for it. Its zero measured corpus payoff
+does not indicate the fix is wrong; it indicates that whatever `IsPresent`-
+guarded facts exist in Tokeneer's actual control flow either don't
+currently feed into a `--verify`-tracked obligation, or do so in a way this
+session did not isolate. Finding out which would need walking specific
+`Admin.IsPresent`/`AdminToken.IsPresent` call sites against the `--verify
+-v` obligation list directly -- recorded here as the honest state of the
+investigation, not chased further in this session.
