@@ -30,37 +30,39 @@ overwriting the old one, is how this directory is meant to grow.
 | [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 101 | 0 | 0 |
 | [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 212 | 0 | 0 |
 | [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 853 | 0 | 0 |
+| [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 221 | 0 | 0 |
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 7 | 0 | 0 |
 
 (Matched-pair counts as of each corpus's latest re-run — see the dated
 `RESULTS_*.md` files below; several moved after `Ada_Membership_Expr`/
 `Ada_Attribute_Ref` support landed in `VC_Prover` on 2026-08-11.)
 
-**Across four independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark) — 2,056 proof obligations both tools could
-independently evaluate at the same location, spanning four different
-authors and four structurally different domains — AdaLang has never once
-called something safe that GNATprove could not prove, and never once called
-something a definite error that GNATprove proved safe.** CubedOS's 7
-matched pairs (not a fully-proved corpus, so a weaker oracle) show the same
-zero-disagreement pattern on a much smaller sample.
+**Across five independently-authored, fully-proved corpora (SPARKNaCl,
+Saatana, libkeccak, coap_spark, Tokeneer) — 2,277 proof obligations both
+tools could independently evaluate at the same location, spanning five
+different authors/origins and five structurally different domains —
+AdaLang has never once called something safe that GNATprove could not
+prove, and never once called something a definite error that GNATprove
+proved safe.** CubedOS's 7 matched pairs (not a fully-proved corpus, so a
+weaker oracle) show the same zero-disagreement pattern on a much smaller
+sample.
 
 What this table doesn't show: AdaLang answers "I don't know"
-(`Unproved`/`Unsupported`) far more often than GNATprove does on all five —
+(`Unproved`/`Unsupported`) far more often than GNATprove does on all six —
 consistent with `POSITIONING.md`'s framing of `--verify` as "a much
 narrower scalar subset," not a competitor to full SMT-backed proof. The
 "both safe" share of each corpus's matched pairs varies a lot by code
-style: SPARKNaCl 37/890 (~4%), libkeccak 50/212 (~24%), coap_spark 1/853
-(~0.1%) — coap_spark's RecordFlux-generated protocol contracts and
-session-state logic are the hardest code shape yet for AdaLang's bounded
-verifier to independently prove, even though it never gets one *wrong*
-there. coap_spark's `Proved_Safe` count did jump substantially in the
-2026-08-11 re-run (+283, the largest single-corpus movement any fix has
-produced in this directory) — almost entirely outside the strict
-matched-pair set, since it resolves obligation shapes (buffer-length-bounded
-loops, protocol-field membership tests) that often don't have a directly
-comparable GNATprove message at the same location; see
-`coap_spark/RESULTS_2026-08-11.md`'s own re-run section for the full
+style: SPARKNaCl 37/890 (~4%), Tokeneer 15/221 (~7%), libkeccak 50/212
+(~24%), coap_spark 1/853 (~0.1%) — coap_spark's RecordFlux-generated
+protocol contracts and session-state logic are the hardest code shape yet
+for AdaLang's bounded verifier to independently prove, even though it
+never gets one *wrong* there. coap_spark's `Proved_Safe` count did jump
+substantially in the 2026-08-11 re-run (+283, the largest single-corpus
+movement any fix has produced in this directory) — almost entirely outside
+the strict matched-pair set, since it resolves obligation shapes
+(buffer-length-bounded loops, protocol-field membership tests) that often
+don't have a directly comparable GNATprove message at the same location;
+see `coap_spark/RESULTS_2026-08-11.md`'s own re-run section for the full
 breakdown.
 
 - **[sparknacl](sparknacl/RESULTS_2026-08-04.md)** (2026-08-04) — the first
@@ -116,6 +118,15 @@ breakdown.
   (confirmed for `aws`, plausible but not independently re-confirmed for
   `sparknacl`/`cubedos`) to `FP-046`, an unrelated fix that landed in this
   same window — not to `FP-047`.
+- **[tokeneer](tokeneer/RESULTS_2026-08-13.md)** (2026-08-13) — this
+  project's oldest external corpus (first used before this benchmark
+  directory's own `run.sh` convention existed; see
+  `quality/external_corpus_findings.md` for that longer history), brought
+  into this directory's reproducible-comparison shape for the first time.
+  Also its largest yet by proof-obligation count (6,697 AdaLang
+  obligations, 120 files). `test.gpr` sets no GNATprove `--report` switch
+  of its own, the same gap `saatana` and `coap_spark` hit, fixed the same
+  way (`--report=statistics` added on the command line).
 
 ## Real-code validation (no GNATprove oracle)
 
