@@ -52,6 +52,9 @@ package body Adalang_Analyzer.Flow_Interp is
       Explanation    : String;
       Abstract_State : String := "";
       Imprecision    : String := "";
+      Reason_Code    : String := "";
+      Blocking_Expression : String := "";
+      Inline_Path    : String := "";
       Final          : Boolean := False) is
    begin
       Proof.Register_At
@@ -63,6 +66,9 @@ package body Adalang_Analyzer.Flow_Interp is
          Abstract_State   => Abstract_State,
          Explanation      => Explanation,
          Imprecision_Source => Imprecision,
+         Reason_Code      => Reason_Code,
+         Blocking_Expression => Blocking_Expression,
+         Inline_Path      => Inline_Path,
          Configuration_Id => Config.Assurance_Profile_Name,
          Final            => Final);
    end Record_Outcome;
@@ -89,11 +95,15 @@ package body Adalang_Analyzer.Flow_Interp is
       Explanation    : String;
       Abstract_State : String := "";
       Imprecision    : String := "";
+      Reason_Code    : String := "";
+      Blocking_Expression : String := "";
+      Inline_Path    : String := "";
       Final          : Boolean := False) is
    begin
       Record_Outcome
         (Unit, Node, Kind, Proof.Unproved, Method, Explanation,
-         Abstract_State, Imprecision, Final => Final);
+         Abstract_State, Imprecision, Reason_Code, Blocking_Expression,
+         Inline_Path, Final => Final);
    end Record_Unproved;
 
    procedure Record_Proved_Safe
@@ -811,11 +821,12 @@ package body Adalang_Analyzer.Flow_Interp is
          declare
             Value : constant Abstract_Bool :=
               Boolean_Value (Pre, Contract_State);
-            VC_Result : constant VC.VC_Result :=
+            VC_Outcome : constant VC.VC_Outcome :=
               (if Config.Verification_Mode and then Value = Bool_Unknown
                then VC.Decide
                  (Pre, Contract_State, Contract_Symbols)
-               else VC.VC_Unknown);
+               else VC.Unknown_Outcome);
+            VC_Result : constant VC.VC_Result := VC_Outcome.Result;
          begin
             if Value = Bool_False
               or else
@@ -2030,9 +2041,10 @@ package body Adalang_Analyzer.Flow_Interp is
 
       declare
          Value     : constant Abstract_Bool := Boolean_Value (Cond, State);
-         VC_Result : constant VC.VC_Result :=
+         VC_Outcome : constant VC.VC_Outcome :=
            (if Config.Verification_Mode and then Value = Bool_Unknown
-            then VC.Decide (Cond, State, Symbols) else VC.VC_Unknown);
+            then VC.Decide (Cond, State, Symbols) else VC.Unknown_Outcome);
+         VC_Result : constant VC.VC_Result := VC_Outcome.Result;
       begin
          if Value = Bool_False
            or else
@@ -2086,12 +2098,21 @@ package body Adalang_Analyzer.Flow_Interp is
                "assertion failure is not established, but the assertion " &
                  "is not proved",
                Imprecision =>
-                 (if VC_Result = VC.VC_Unavailable
+                  (if VC_Result = VC.VC_Unavailable
                   then "CVC5/Z3 prover portfolio is unavailable"
                   elsif VC_Result = VC.VC_Unsupported
-                  then "expression is outside the scalar VC subset"
+                  then VC.Unsupported_Description (VC_Outcome)
                   else "abstract interpretation and the scalar VC " &
                     "portfolio did not certify it"),
+               Reason_Code =>
+                 (if VC_Result = VC.VC_Unsupported
+                  then VC.Unsupported_Reason_Code (VC_Outcome) else ""),
+               Blocking_Expression =>
+                 (if VC_Result = VC.VC_Unsupported
+                  then VC.Blocking_Expression (VC_Outcome) else ""),
+               Inline_Path =>
+                 (if VC_Result = VC.VC_Unsupported
+                  then VC.Inline_Path (VC_Outcome) else ""),
                Final => Final);
          end if;
       end;
@@ -3190,10 +3211,11 @@ package body Adalang_Analyzer.Flow_Interp is
                   declare
                      Value  : constant Abstract_Bool :=
                        Boolean_Value (Item.Condition, State);
-                     Result : constant VC.VC_Result :=
+                     Outcome : constant VC.VC_Outcome :=
                        (if Value = Bool_Unknown
                         then VC.Decide (Item.Condition, State, Symbols)
-                        else VC.VC_Unknown);
+                        else VC.Unknown_Outcome);
+                     Result : constant VC.VC_Result := Outcome.Result;
                      Proved : constant Boolean :=
                        Value = Bool_True or else Result = VC.VC_Proved;
                      Method : constant Proof.Analysis_Method :=
@@ -3655,11 +3677,12 @@ package body Adalang_Analyzer.Flow_Interp is
                         declare
                            Value : constant Abstract_Bool :=
                              Boolean_Value (Item.Condition, State);
-                           Result : constant VC.VC_Result :=
+                           Outcome : constant VC.VC_Outcome :=
                              (if Value = Bool_Unknown
                               then VC.Decide
                                 (Item.Condition, State, Symbols)
-                              else VC.VC_Unknown);
+                              else VC.Unknown_Outcome);
+                           Result : constant VC.VC_Result := Outcome.Result;
                         begin
                            if Value = Bool_True
                              or else Result = VC.VC_Proved
@@ -4580,12 +4603,13 @@ package body Adalang_Analyzer.Flow_Interp is
                  States (CFG.Normal_Exit (Graph));
                Value : constant Abstract_Bool :=
                  Boolean_Value (Post, Exit_State);
-               VC_Result : constant VC.VC_Result :=
+               VC_Outcome : constant VC.VC_Outcome :=
                  (if Value = Bool_Unknown
                   then VC.Decide
                     (Post, Exit_State,
                      Symbolic_States (CFG.Normal_Exit (Graph)))
-                  else VC.VC_Unknown);
+                  else VC.Unknown_Outcome);
+               VC_Result : constant VC.VC_Result := VC_Outcome.Result;
             begin
                Scan_Expression_For_Flow_Bugs (Unit, Post, Exit_State);
                if Value = Bool_True or else VC_Result = VC.VC_Proved then

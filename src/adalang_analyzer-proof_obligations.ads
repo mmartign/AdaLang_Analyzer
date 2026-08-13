@@ -78,6 +78,9 @@ package Adalang_Analyzer.Proof_Obligations is
       Abstract_State     : Unbounded_String;
       Explanation        : Unbounded_String;
       Imprecision_Source : Unbounded_String;
+      Reason_Code        : Unbounded_String;
+      Blocking_Expression : Unbounded_String;
+      Inline_Path        : Unbounded_String;
       Configuration_Id   : Unbounded_String;
    end record;
 
@@ -94,6 +97,9 @@ package Adalang_Analyzer.Proof_Obligations is
       Abstract_State     : String := "";
       Explanation        : String := "";
       Imprecision_Source : String := "";
+      Reason_Code        : String := "";
+      Blocking_Expression : String := "";
+      Inline_Path        : String := "";
       Configuration_Id   : String := "") return Obligation;
    --  Constructs an obligation and rejects an empty Stable_Id.
 
@@ -124,6 +130,9 @@ package Adalang_Analyzer.Proof_Obligations is
       Abstract_State     : String := "";
       Explanation        : String := "";
       Imprecision_Source : String := "";
+      Reason_Code        : String := "";
+      Blocking_Expression : String := "";
+      Inline_Path        : String := "";
       Configuration_Id   : String := "";
       Final              : Boolean := False);
    --  Creates and registers an obligation anchored at Node. Repeated
@@ -164,7 +173,10 @@ package Adalang_Analyzer.Proof_Obligations is
       Method             : Analysis_Method;
       Abstract_State     : String := "";
       Explanation        : String := "";
-      Imprecision_Source : String := "");
+      Imprecision_Source : String := "";
+      Reason_Code        : String := "";
+      Blocking_Expression : String := "";
+      Inline_Path        : String := "");
    --  Replaces only result fields, preserving identity, kind, source context,
    --  operation, assumptions, and configuration. Raises Constraint_Error
    --  when Stable_Id is absent.

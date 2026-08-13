@@ -1667,6 +1667,20 @@ package body Adalang_Analyzer.CLI is
                           ("      imprecision: " &
                            To_String (Item.Imprecision_Source));
                      end if;
+                     if Item.Reason_Code /= Null_Unbounded_String then
+                        Ada.Text_IO.Put_Line
+                          ("      reason: " & To_String (Item.Reason_Code));
+                     end if;
+                     if Item.Blocking_Expression /= Null_Unbounded_String then
+                        Ada.Text_IO.Put_Line
+                          ("      blocked at: " &
+                           To_String (Item.Blocking_Expression));
+                     end if;
+                     if Item.Inline_Path /= Null_Unbounded_String then
+                        Ada.Text_IO.Put_Line
+                          ("      inline path: " &
+                           To_String (Item.Inline_Path));
+                     end if;
                   end;
                end loop;
             else

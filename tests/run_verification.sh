@@ -22,6 +22,7 @@ vc_division=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-division.XXXXXX")
 vc_division_refuted=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-division-refuted.XXXXXX")
 vc_division_zero_possible=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-division-zero.XXXXXX")
 vc_call_inlined=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-call-inlined.XXXXXX")
+vc_unsupported_provenance=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-provenance.XXXXXX")
 vc_call_statement_body=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-call-stmt.XXXXXX")
 vc_conversion=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-conversion.XXXXXX")
 vc_conversion_modular=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-vc-conversion-mod.XXXXXX")
@@ -51,7 +52,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -231,6 +232,21 @@ if [ "$(grep -F -c '"kind": "assertion", "status": "proved-safe", "method": "ext
    echo "an inlined record formal did not preserve the actual object's identity" >&2
    exit 1
 fi
+
+run_json "$vc_unsupported_provenance" \
+  tests/verification_vc_unsupported_provenance.adb
+grep -F '"operation": "X ** 2 >= 0"' "$vc_unsupported_provenance" |
+  grep -F '"reasonCode": "unsupported-operator"' |
+  grep -F '"blockingExpression": "X ** 2"' |
+  grep -F '"inlinePath": ""' >/dev/null
+grep -F '"operation": "Square (X) >= 0"' "$vc_unsupported_provenance" |
+  grep -F '"reasonCode": "unsupported-operator"' |
+  grep -F '"blockingExpression": "Value ** 2"' |
+  grep -F '"inlinePath": "Square"' >/dev/null
+grep -F '"operation": "Outer (X) >= 0"' "$vc_unsupported_provenance" |
+  grep -F '"reasonCode": "unsupported-operator"' |
+  grep -F '"blockingExpression": "Value ** 2"' |
+  grep -F '"inlinePath": "Outer -> Square"' >/dev/null
 
 run_json "$vc_call_statement_body" tests/verification_vc_call_statement_body.adb
 grep -F '"kind": "assertion", "status": "unproved"' \

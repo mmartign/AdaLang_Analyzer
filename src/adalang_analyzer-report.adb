@@ -983,6 +983,12 @@ package body Adalang_Analyzer.Report is
                JSON_Escape (To_String (Item.Explanation)) &
                """, ""imprecisionSource"": """ &
                JSON_Escape (To_String (Item.Imprecision_Source)) &
+               """, ""reasonCode"": """ &
+               JSON_Escape (To_String (Item.Reason_Code)) &
+               """, ""blockingExpression"": """ &
+               JSON_Escape (To_String (Item.Blocking_Expression)) &
+               """, ""inlinePath"": """ &
+               JSON_Escape (To_String (Item.Inline_Path)) &
                """, ""configurationId"": """ &
                JSON_Escape (To_String (Item.Configuration_Id)) & """}");
          end;
@@ -1029,6 +1035,33 @@ package body Adalang_Analyzer.Report is
       Ada.Text_IO.Put_Line
         (File, "    ""certificationClaim"": " &
          """verification support only; not a compliance determination"",");
+      Ada.Text_IO.Put_Line (File, "    ""proofObligations"": [");
+      First := True;
+      for Index in 1 .. Adalang_Analyzer.Proof_Obligations.Count loop
+         if not First then
+            Ada.Text_IO.Put_Line (File, ",");
+         end if;
+         First := False;
+         declare
+            package Proof renames Adalang_Analyzer.Proof_Obligations;
+            Item : constant Proof.Obligation := Proof.Element (Index);
+         begin
+            Ada.Text_IO.Put
+              (File,
+               "      {""id"": """ &
+               JSON_Escape (To_String (Item.Stable_Id)) &
+               """, ""kind"": """ & Proof.Kind_Name (Item.Kind) &
+               """, ""status"": """ & Proof.Status_Name (Item.Status) &
+               """, ""reasonCode"": """ &
+               JSON_Escape (To_String (Item.Reason_Code)) &
+               """, ""blockingExpression"": """ &
+               JSON_Escape (To_String (Item.Blocking_Expression)) &
+               """, ""inlinePath"": """ &
+               JSON_Escape (To_String (Item.Inline_Path)) & """}");
+         end;
+      end loop;
+      Ada.Text_IO.New_Line (File);
+      Ada.Text_IO.Put_Line (File, "    ],");
       Emit_Analysis_Configuration
         (File, "    ", Followed_By_More => False);
       Ada.Text_IO.Put_Line (File, "  },");

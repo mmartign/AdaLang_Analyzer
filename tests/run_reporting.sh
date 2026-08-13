@@ -112,6 +112,27 @@ grep -F '  why: The two Boolean operands are structural complements' \
   "$work/text" >/dev/null
 grep -F '  evidence: left operand =>' "$work/text" >/dev/null
 
+#  Unsupported scalar VCs identify the exact blocking expression and retain
+#  the expression-function call chain in every report surface.
+"$analyzer" --verify -q --format=sarif \
+  --output="$work/provenance.sarif" \
+  tests/verification_vc_unsupported_provenance.adb
+grep -F '"reasonCode": "unsupported-operator"' \
+  "$work/provenance.sarif" >/dev/null
+grep -F '"blockingExpression": "Value ** 2"' \
+  "$work/provenance.sarif" >/dev/null
+grep -F '"inlinePath": "Outer -> Square"' \
+  "$work/provenance.sarif" >/dev/null
+"$analyzer" --verify -v \
+  tests/verification_vc_unsupported_provenance.adb \
+  >"$work/provenance-text" 2>&1
+grep -F '      reason: unsupported-operator' \
+  "$work/provenance-text" >/dev/null
+grep -F '      blocked at: Value ** 2' \
+  "$work/provenance-text" >/dev/null
+grep -F '      inline path: Outer -> Square' \
+  "$work/provenance-text" >/dev/null
+
 #  Every range/index operation reached by the current check machinery is
 #  represented. Known failures refine to definite-error; all other outcomes
 #  remain unproved because this stage makes no green proof claim.

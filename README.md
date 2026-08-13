@@ -243,8 +243,14 @@ listed with `-v`; without it, only the aggregate total and per-status counts
 are printed. Running with `-v` prints each obligation's location, method,
 explanation, abstract-state evidence, and source of imprecision. Tooling that
 parses the text report for individual proof obligations must pass `-v`, or use
-`--format=json`/`--compliance-report`, which always include the full
-per-obligation data regardless of verbosity.
+JSON/SARIF, which always include the full per-obligation data regardless of
+verbosity. When scalar VC translation is unsupported, the obligation also
+records a stable `reasonCode`, the exact `blockingExpression`, and an
+`inlinePath` such as `Outer -> Inner` when the blocker occurs inside one or
+more inlined expression functions. These appear as `reason:`, `blocked at:`,
+and `inline path:` in verbose text; JSON exposes them directly on each proof
+obligation, and SARIF carries the proof-obligation array in the run's
+`properties` object.
 
 The data-flow checks are intraprocedural and deliberately conservative.
 `Dead_Store` follows resolved simple-object and array-component assignments in

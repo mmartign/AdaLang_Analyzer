@@ -32,6 +32,9 @@ package body Adalang_Analyzer.Proof_Obligations is
       Abstract_State     : String := "";
       Explanation        : String := "";
       Imprecision_Source : String := "";
+      Reason_Code        : String := "";
+      Blocking_Expression : String := "";
+      Inline_Path        : String := "";
       Configuration_Id   : String := "") return Obligation
    is
    begin
@@ -53,6 +56,9 @@ package body Adalang_Analyzer.Proof_Obligations is
          Abstract_State     => To_Unbounded_String (Abstract_State),
          Explanation        => To_Unbounded_String (Explanation),
          Imprecision_Source => To_Unbounded_String (Imprecision_Source),
+         Reason_Code        => To_Unbounded_String (Reason_Code),
+         Blocking_Expression => To_Unbounded_String (Blocking_Expression),
+         Inline_Path        => To_Unbounded_String (Inline_Path),
          Configuration_Id   => To_Unbounded_String (Configuration_Id));
    end Create;
 
@@ -209,6 +215,9 @@ package body Adalang_Analyzer.Proof_Obligations is
       Abstract_State     : String := "";
       Explanation        : String := "";
       Imprecision_Source : String := "";
+      Reason_Code        : String := "";
+      Blocking_Expression : String := "";
+      Inline_Path        : String := "";
       Configuration_Id   : String := "";
       Final              : Boolean := False)
    is
@@ -245,8 +254,6 @@ package body Adalang_Analyzer.Proof_Obligations is
             if Item.Kind /= Kind then
                raise Constraint_Error with
                  "conflicting kind for proof obligation ID: " & Id;
-            elsif Item.Status = Status then
-               return;
             elsif Final then
                Update_Result
                  (Stable_Id          => Id,
@@ -254,7 +261,12 @@ package body Adalang_Analyzer.Proof_Obligations is
                   Method             => Method,
                   Abstract_State     => Abstract_State,
                   Explanation        => Explanation,
-                  Imprecision_Source => Imprecision_Source);
+                  Imprecision_Source => Imprecision_Source,
+                  Reason_Code        => Reason_Code,
+                  Blocking_Expression => Blocking_Expression,
+                  Inline_Path        => Inline_Path);
+               return;
+            elsif Item.Status = Status then
                return;
             elsif (Item.Status = Proved_Safe and then Status = Definite_Error)
               or else
@@ -269,7 +281,10 @@ package body Adalang_Analyzer.Proof_Obligations is
                   Method             => Method,
                   Abstract_State     => Abstract_State,
                   Explanation        => Explanation,
-                  Imprecision_Source => Imprecision_Source);
+                  Imprecision_Source => Imprecision_Source,
+                  Reason_Code        => Reason_Code,
+                  Blocking_Expression => Blocking_Expression,
+                  Inline_Path        => Inline_Path);
                return;
             else
                return;
@@ -291,6 +306,9 @@ package body Adalang_Analyzer.Proof_Obligations is
             Abstract_State     => Abstract_State,
             Explanation        => Explanation,
             Imprecision_Source => Imprecision_Source,
+            Reason_Code        => Reason_Code,
+            Blocking_Expression => Blocking_Expression,
+            Inline_Path        => Inline_Path,
             Configuration_Id   => Configuration_Id));
    end Register_At;
 
@@ -351,7 +369,10 @@ package body Adalang_Analyzer.Proof_Obligations is
       Method             : Analysis_Method;
       Abstract_State     : String := "";
       Explanation        : String := "";
-      Imprecision_Source : String := "")
+      Imprecision_Source : String := "";
+      Reason_Code        : String := "";
+      Blocking_Expression : String := "";
+      Inline_Path        : String := "")
    is
       Index : constant Natural := Find (Stable_Id);
       Item  : Obligation;
@@ -367,6 +388,9 @@ package body Adalang_Analyzer.Proof_Obligations is
       Item.Abstract_State := To_Unbounded_String (Abstract_State);
       Item.Explanation := To_Unbounded_String (Explanation);
       Item.Imprecision_Source := To_Unbounded_String (Imprecision_Source);
+      Item.Reason_Code := To_Unbounded_String (Reason_Code);
+      Item.Blocking_Expression := To_Unbounded_String (Blocking_Expression);
+      Item.Inline_Path := To_Unbounded_String (Inline_Path);
       Obligations.Replace_Element (Index, Item);
    end Update_Result;
 

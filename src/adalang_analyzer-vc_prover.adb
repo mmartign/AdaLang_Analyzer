@@ -90,6 +90,10 @@ package body Adalang_Analyzer.VC_Prover is
       State           : Domain.Flow_State;
       Symbols         : Symbolic_State := Empty_Symbolic_State;
       Object_Bindings : Object_Binding_Vectors.Vector;
+      Failure_Reason  : Unsupported_Reason := No_Unsupported_Reason;
+      Failure_Node    : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Inlining_Path   : Unbounded_String;
       Supported       : Boolean := True;
       Depth           : Natural := 0;
       --  How many expression-function inlinings or quantifier scopes deep
@@ -100,6 +104,78 @@ package body Adalang_Analyzer.VC_Prover is
    end record;
 
    Max_Inline_Depth : constant := 4;
+
+   procedure Mark_Unsupported
+     (Context : in out Translation_Context;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Reason  : Unsupported_Reason)
+   is
+   begin
+      Context.Supported := False;
+      if Context.Failure_Reason = No_Unsupported_Reason then
+         Context.Failure_Reason := Reason;
+         if not Libadalang.Analysis.Is_Null (Node) then
+            Context.Failure_Node := Libadalang.Analysis.Ada_Node (Node);
+         end if;
+      end if;
+   end Mark_Unsupported;
+
+   procedure Copy_Failure
+     (Target : in out Translation_Context;
+      Source : Translation_Context)
+   is
+   begin
+      Target.Supported := Source.Supported;
+      if not Source.Supported then
+         Target.Failure_Reason := Source.Failure_Reason;
+         Target.Failure_Node := Source.Failure_Node;
+         Target.Inlining_Path := Source.Inlining_Path;
+      end if;
+   end Copy_Failure;
+
+   function Unsupported_Provenance_For
+     (Context  : Translation_Context;
+      Fallback : Libadalang.Analysis.Ada_Node'Class)
+      return Unsupported_Provenance
+   is
+      Node : constant Libadalang.Analysis.Ada_Node :=
+        (if Libadalang.Analysis.Is_Null (Context.Failure_Node)
+         then Libadalang.Analysis.Ada_Node (Fallback)
+         else Context.Failure_Node);
+   begin
+      return
+        (Reason =>
+           (if Context.Failure_Reason = No_Unsupported_Reason
+            then Unsupported_Expression_Kind
+            else Context.Failure_Reason),
+         Blocking_Expression =>
+           (if Libadalang.Analysis.Is_Null (Node)
+            then Null_Unbounded_String
+            else To_Unbounded_String
+              (Adalang_Analyzer.Ada_Text.Node_Text (Node))),
+         Inline_Path => Context.Inlining_Path);
+   exception
+      when others =>
+         return
+           (Reason              => Translation_Error,
+            Blocking_Expression => Null_Unbounded_String,
+            Inline_Path         => Context.Inlining_Path);
+   end Unsupported_Provenance_For;
+
+   function Appended_Path
+     (Path : Unbounded_String;
+      Call : Libadalang.Analysis.Call_Expr) return Unbounded_String
+   is
+      Name : constant String :=
+        Adalang_Analyzer.Ada_Text.Node_Text (Call.F_Name);
+   begin
+      return To_Unbounded_String
+        ((if Length (Path) = 0 then Name
+          else To_String (Path) & " -> " & Name));
+   exception
+      when others =>
+         return Path;
+   end Appended_Path;
 
    function Trimmed_Image (Value : Long_Long_Integer) return String is
      (Ada.Strings.Fixed.Trim
@@ -216,11 +292,11 @@ package body Adalang_Analyzer.VC_Prover is
       Binding : constant Natural := Binding_Index (Context.Symbols, Key);
    begin
       if Libadalang.Analysis.Is_Null (Key.Object) then
-         Context.Supported := False;
+         Mark_Unsupported (Context, Key.Object, Null_Expression);
          return "";
       elsif Binding /= 0 then
          if Context.Symbols.Bindings.Element (Binding).Sort /= Sort then
-            Context.Supported := False;
+            Mark_Unsupported (Context, Key.Object, Sort_Mismatch);
             return "";
          end if;
          return To_String (Context.Symbols.Bindings.Element (Binding).Term);
@@ -651,7 +727,7 @@ package body Adalang_Analyzer.VC_Prover is
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
-         Context.Supported := False;
+         Mark_Unsupported (Context, Node, Null_Expression);
          return Null_Unbounded_String;
       end if;
 
@@ -661,7 +737,8 @@ package body Adalang_Analyzer.VC_Prover is
                Value : constant Domain.Abstract_Int := Eval.Integer_Value (Node);
             begin
                if not Value.Known then
-                  Context.Supported := False;
+                  Mark_Unsupported
+                    (Context, Node, Unsupported_Expression_Kind);
                   return Null_Unbounded_String;
                end if;
                return To_Unbounded_String (SMT_Integer (Value.Value));
@@ -695,7 +772,7 @@ package body Adalang_Analyzer.VC_Prover is
                  Domain.Bool_True
                  or else Bool_Value /= Domain.Bool_Unknown
                then
-                  Context.Supported := False;
+                  Mark_Unsupported (Context, Node, Uninitialized_Object);
                   return Null_Unbounded_String;
                elsif Value.Known then
                   return To_Unbounded_String (SMT_Integer (Value.Value));
@@ -740,7 +817,8 @@ package body Adalang_Analyzer.VC_Prover is
                           or else Libadalang.Analysis.Is_Null (Actual)
                           or else not Signed_Integer_Target (Target)
                         then
-                           Context.Supported := False;
+                           Mark_Unsupported
+                             (Context, Node, Unsupported_Conversion);
                            return Null_Unbounded_String;
                         end if;
                         return Integer_Term (Actual, Context);
@@ -750,7 +828,7 @@ package body Adalang_Analyzer.VC_Prover is
                      return Inlined_Call_Term (Call, Context, Integer_Sort);
 
                   when others =>
-                     Context.Supported := False;
+                     Mark_Unsupported (Context, Node, Unsupported_Call);
                      return Null_Unbounded_String;
                end case;
             end;
@@ -775,7 +853,7 @@ package body Adalang_Analyzer.VC_Prover is
                   when Libadalang.Common.Ada_Op_Abs =>
                      return To_Unbounded_String (Abs_Of (To_String (Item)));
                   when others =>
-                     Context.Supported := False;
+                     Mark_Unsupported (Context, Node, Unsupported_Operator);
                      return Null_Unbounded_String;
                end case;
             end;
@@ -809,7 +887,8 @@ package body Adalang_Analyzer.VC_Prover is
                      if not Divisor_Provably_Nonzero
                        (Expr.F_Right, Context.State)
                      then
-                        Context.Supported := False;
+                        Mark_Unsupported
+                          (Context, Node, Unsafe_Divisor_Semantics);
                         return Null_Unbounded_String;
                      end if;
 
@@ -865,7 +944,7 @@ package body Adalang_Analyzer.VC_Prover is
                      --  Ada exponentiation needs a bounded case-split over
                      --  the exponent's range to map onto SMT and is not
                      --  yet encoded.
-                     Context.Supported := False;
+                     Mark_Unsupported (Context, Node, Unsupported_Operator);
                      return Null_Unbounded_String;
                end case;
             end;
@@ -886,7 +965,7 @@ package body Adalang_Analyzer.VC_Prover is
                if Attr.F_Args.Children_Count > 0
                  or else Name not in "first" | "last" | "length"
                then
-                  Context.Supported := False;
+                  Mark_Unsupported (Context, Node, Unsupported_Attribute);
                   return Null_Unbounded_String;
                end if;
 
@@ -926,19 +1005,22 @@ package body Adalang_Analyzer.VC_Prover is
 
                   if Name = "first" then
                      if not Bounds.Has_Low then
-                        Context.Supported := False;
+                        Mark_Unsupported
+                          (Context, Node, Missing_Static_Bounds);
                         return Null_Unbounded_String;
                      end if;
                      return To_Unbounded_String (SMT_Integer (Bounds.Low));
                   elsif Name = "last" then
                      if not Bounds.Has_High then
-                        Context.Supported := False;
+                        Mark_Unsupported
+                          (Context, Node, Missing_Static_Bounds);
                         return Null_Unbounded_String;
                      end if;
                      return To_Unbounded_String (SMT_Integer (Bounds.High));
                   else
                      if not Bounds.Has_Low or else not Bounds.Has_High then
-                        Context.Supported := False;
+                        Mark_Unsupported
+                          (Context, Node, Missing_Static_Bounds);
                         return Null_Unbounded_String;
                      elsif Bounds.Low > Bounds.High then
                         return To_Unbounded_String ("0");
@@ -982,7 +1064,16 @@ package body Adalang_Analyzer.VC_Prover is
                  or else Domain.Flow_Initialization
                    (Context.State, Object_Key) /= Domain.Bool_True
                then
-                  Context.Supported := False;
+                  Mark_Unsupported
+                    (Context, Node,
+                     (if not Libadalang.Analysis.Is_Null (Object_Key)
+                        and then not Libadalang.Analysis.Is_Null (Field_Name)
+                        and then Field_Name.Kind =
+                          Libadalang.Common.Ada_Defining_Name
+                        and then Field_Name.As_Defining_Name.P_Basic_Decl.Kind =
+                          Libadalang.Common.Ada_Component_Decl
+                      then Uninitialized_Object
+                      else Unsupported_Expression_Kind));
                   return Null_Unbounded_String;
                end if;
 
@@ -1013,12 +1104,13 @@ package body Adalang_Analyzer.VC_Prover is
             end;
 
          when others =>
-            Context.Supported := False;
+            Mark_Unsupported
+              (Context, Node, Unsupported_Expression_Kind);
             return Null_Unbounded_String;
       end case;
    exception
       when others =>
-         Context.Supported := False;
+         Mark_Unsupported (Context, Node, Translation_Error);
          return Null_Unbounded_String;
    end Integer_Term;
 
@@ -1028,7 +1120,7 @@ package body Adalang_Analyzer.VC_Prover is
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
-         Context.Supported := False;
+         Mark_Unsupported (Context, Node, Null_Expression);
          return Null_Unbounded_String;
       end if;
 
@@ -1053,7 +1145,7 @@ package body Adalang_Analyzer.VC_Prover is
               or else Domain.Flow_Range_Lookup
                 (Context.State, Key).Has_High
             then
-               Context.Supported := False;
+               Mark_Unsupported (Context, Node, Uninitialized_Object);
                return Null_Unbounded_String;
             elsif Value = Domain.Bool_True then
                return To_Unbounded_String ("true");
@@ -1073,7 +1165,7 @@ package body Adalang_Analyzer.VC_Prover is
             if Call.P_Kind = Libadalang.Common.Call then
                return Inlined_Call_Term (Call, Context, Boolean_Sort);
             end if;
-            Context.Supported := False;
+            Mark_Unsupported (Context, Node, Unsupported_Call);
             return Null_Unbounded_String;
          end;
       elsif Node.Kind = Libadalang.Common.Ada_Quantified_Expr then
@@ -1091,7 +1183,7 @@ package body Adalang_Analyzer.VC_Prover is
               or else Iter_Expr.As_Bin_Op.F_Op /=
                 Libadalang.Common.Ada_Op_Double_Dot
             then
-               Context.Supported := False;
+               Mark_Unsupported (Context, Node, Unsupported_Quantifier);
                return Null_Unbounded_String;
             end if;
 
@@ -1122,7 +1214,7 @@ package body Adalang_Analyzer.VC_Prover is
                     "(and (<= " & To_String (Low) & " " & Bound_Name &
                       ") (<= " & Bound_Name & " " & To_String (High) & "))";
                begin
-                  Context.Supported := Child.Supported;
+                  Copy_Failure (Context, Child);
                   Context.Symbols.Roots := Child.Symbols.Roots;
 
                   case Quant.F_Quantifier is
@@ -1147,7 +1239,7 @@ package body Adalang_Analyzer.VC_Prover is
                  ("(not " & To_String
                     (Boolean_Term (Expr.F_Expr, Context)) & ")");
             end if;
-            Context.Supported := False;
+            Mark_Unsupported (Context, Node, Unsupported_Operator);
             return Null_Unbounded_String;
          end;
       elsif Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
@@ -1212,7 +1304,7 @@ package body Adalang_Analyzer.VC_Prover is
                      end if;
                   end;
                when others =>
-                  Context.Supported := False;
+                  Mark_Unsupported (Context, Node, Unsupported_Operator);
                   return Null_Unbounded_String;
             end case;
          end;
@@ -1232,7 +1324,10 @@ package body Adalang_Analyzer.VC_Prover is
             Goal    : Unbounded_String;
          begin
             if not Context.Supported or else Length (Subject) = 0 then
-               Context.Supported := False;
+               if Context.Failure_Reason = No_Unsupported_Reason then
+                  Mark_Unsupported
+                    (Context, Node, Unsupported_Expression_Kind);
+               end if;
                return Null_Unbounded_String;
             end if;
 
@@ -1302,7 +1397,9 @@ package body Adalang_Analyzer.VC_Prover is
                               if not Bounds.Has_Low
                                 or else not Bounds.Has_High
                               then
-                                 Context.Supported := False;
+                                 Mark_Unsupported
+                                   (Context, Alternative,
+                                    Missing_Static_Bounds);
                                  return Null_Unbounded_String;
                               end if;
                               Term := To_Unbounded_String
@@ -1334,7 +1431,8 @@ package body Adalang_Analyzer.VC_Prover is
             end loop;
 
             if Length (Goal) = 0 then
-               Context.Supported := False;
+               Mark_Unsupported
+                 (Context, Node, Unsupported_Expression_Kind);
                return Null_Unbounded_String;
             elsif Expr.F_Op = Libadalang.Common.Ada_Op_In then
                return Goal;
@@ -1344,11 +1442,11 @@ package body Adalang_Analyzer.VC_Prover is
          end;
       end if;
 
-      Context.Supported := False;
+      Mark_Unsupported (Context, Node, Unsupported_Expression_Kind);
       return Null_Unbounded_String;
    exception
       when others =>
-         Context.Supported := False;
+         Mark_Unsupported (Context, Node, Translation_Error);
          return Null_Unbounded_String;
    end Boolean_Term;
 
@@ -1363,7 +1461,12 @@ package body Adalang_Analyzer.VC_Prover is
         or else Libadalang.Analysis.Is_Null (Decl)
         or else Call.F_Name.P_Is_Dispatching_Call
       then
-         Context.Supported := False;
+         Context.Inlining_Path := Appended_Path (Context.Inlining_Path, Call);
+         Mark_Unsupported
+           (Context, Call,
+            (if Context.Depth >= Max_Inline_Depth
+             then Inline_Depth_Exceeded
+             else Unsupported_Call));
          return Null_Unbounded_String;
       end if;
 
@@ -1375,7 +1478,9 @@ package body Adalang_Analyzer.VC_Prover is
       if Libadalang.Analysis.Is_Null (Decl)
         or else Decl.Kind /= Libadalang.Common.Ada_Expr_Function
       then
-         Context.Supported := False;
+         Context.Inlining_Path := Appended_Path (Context.Inlining_Path, Call);
+         Mark_Unsupported
+           (Context, Call, Callee_Not_Expression_Function);
          return Null_Unbounded_String;
       end if;
 
@@ -1383,6 +1488,7 @@ package body Adalang_Analyzer.VC_Prover is
          Callee : Translation_Context := Context;
       begin
          Callee.Depth := Context.Depth + 1;
+         Callee.Inlining_Path := Appended_Path (Context.Inlining_Path, Call);
 
          for Pair of Call.F_Name.P_Call_Params loop
             declare
@@ -1392,7 +1498,8 @@ package body Adalang_Analyzer.VC_Prover is
                  Libadalang.Analysis.Actual (Pair);
             begin
                if Formal_Is_Writable (Formal) then
-                  Context.Supported := False;
+                  Mark_Unsupported (Callee, Call, Writable_Formal);
+                  Copy_Failure (Context, Callee);
                   return Null_Unbounded_String;
                end if;
 
@@ -1402,7 +1509,9 @@ package body Adalang_Analyzer.VC_Prover is
                   --  actual object's identity so Formal.Field builds the
                   --  same Symbol_Key as Actual.Field in the caller.
                   if Actual.Kind /= Libadalang.Common.Ada_Identifier then
-                     Context.Supported := False;
+                     Mark_Unsupported
+                       (Callee, Actual, Record_Actual_Not_Object);
+                     Copy_Failure (Context, Callee);
                      return Null_Unbounded_String;
                   end if;
                   declare
@@ -1413,7 +1522,9 @@ package body Adalang_Analyzer.VC_Prover is
                        or else Domain.Flow_Initialization
                          (Context.State, Actual_Key) /= Domain.Bool_True
                      then
-                        Context.Supported := False;
+                        Mark_Unsupported
+                          (Callee, Actual, Uninitialized_Object);
+                        Copy_Failure (Context, Callee);
                         return Null_Unbounded_String;
                      end if;
                      Set_Object_Binding
@@ -1436,7 +1547,8 @@ package body Adalang_Analyzer.VC_Prover is
                            --  type-mark text check only distinguishes
                            --  Boolean from everything else); kept
                            --  exhaustive for Scalar_Sort's sake.
-                           Context.Supported := False;
+                           Mark_Unsupported
+                             (Context, Actual, Sort_Mismatch);
                            Term := Null_Unbounded_String;
                      end case;
 
@@ -1480,11 +1592,11 @@ package body Adalang_Analyzer.VC_Prover is
                   --  Context.Supported) is the one that actually reaches
                   --  the caller, via the unconditional assignment just
                   --  below.
-                  Callee.Supported := False;
+                  Mark_Unsupported (Callee, Call, Sort_Mismatch);
                   Result := Null_Unbounded_String;
             end case;
 
-            Context.Supported := Callee.Supported;
+            Copy_Failure (Context, Callee);
             Context.Symbols.Roots := Callee.Symbols.Roots;
             return Result;
          end;
@@ -1512,7 +1624,10 @@ package body Adalang_Analyzer.VC_Prover is
    is
       Boolean_Context : Translation_Context :=
         (State => Flow, Symbols => State, Supported => State.Supported,
-         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
       Boolean_Value : constant Unbounded_String :=
         Boolean_Term (Value, Boolean_Context);
    begin
@@ -1535,6 +1650,9 @@ package body Adalang_Analyzer.VC_Prover is
          Integer_Context : Translation_Context :=
            (State => Flow, Symbols => State, Supported => State.Supported,
             Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+            Failure_Reason => No_Unsupported_Reason,
+            Failure_Node => Libadalang.Analysis.No_Ada_Node,
+            Inlining_Path => Null_Unbounded_String,
             Depth => 0);
          Integer_Value : constant Unbounded_String :=
            Integer_Term (Value, Integer_Context);
@@ -1568,7 +1686,10 @@ package body Adalang_Analyzer.VC_Prover is
    is
       Context : Translation_Context :=
         (State => Flow, Symbols => State, Supported => State.Supported,
-         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
       Term : constant Unbounded_String := Boolean_Term (Condition, Context);
    begin
       if not Context.Supported or else Length (Term) = 0 then
@@ -1992,7 +2113,7 @@ package body Adalang_Analyzer.VC_Prover is
    --  synthesized containment/nonzero formula), never in how it is decided.
    function Decide_Goal
      (Goal    : Unbounded_String;
-      Context : Translation_Context) return VC_Result
+      Context : Translation_Context) return VC_Outcome
    is
       Formula : Unbounded_String;
       Negated : Solver_Answer;
@@ -2004,24 +2125,28 @@ package body Adalang_Analyzer.VC_Prover is
          "(define-fun goal () Bool " & To_String (Goal) & ")" & ASCII.LF);
       Negated := Query (To_String (Formula), Negate => True);
       if Negated = Solver_Unavailable then
-         return VC_Unavailable;
+         return (Result => VC_Unavailable,
+                 Provenance => No_Unsupported_Provenance);
       elsif Negated = Solver_Unsat then
-         return VC_Proved;
+         return (Result => VC_Proved,
+                 Provenance => No_Unsupported_Provenance);
       end if;
 
       Direct := Query (To_String (Formula), Negate => False);
       if Direct = Solver_Unavailable then
-         return VC_Unavailable;
+         return (Result => VC_Unavailable,
+                 Provenance => No_Unsupported_Provenance);
       elsif Direct = Solver_Unsat then
-         return VC_Refuted;
+         return (Result => VC_Refuted,
+                 Provenance => No_Unsupported_Provenance);
       else
-         return VC_Unknown;
+         return Unknown_Outcome;
       end if;
    end Decide_Goal;
 
    function Decide
      (Condition : Libadalang.Analysis.Expr;
-      State     : Domain.Flow_State) return VC_Result
+      State     : Domain.Flow_State) return VC_Outcome
    is
    begin
       return Decide (Condition, State, Empty_Symbolic_State);
@@ -2030,39 +2155,53 @@ package body Adalang_Analyzer.VC_Prover is
    function Decide
      (Condition : Libadalang.Analysis.Expr;
       State     : Domain.Flow_State;
-      Symbols   : Symbolic_State) return VC_Result
+      Symbols   : Symbolic_State) return VC_Outcome
    is
       Context : Translation_Context :=
         (State => State, Symbols => Symbols, Supported => Symbols.Supported,
-         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
-      Goal    : constant Unbounded_String :=
-        Boolean_Term (Condition, Context);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
+      Goal : Unbounded_String;
    begin
+      Goal := Boolean_Term (Condition, Context);
       if not Context.Supported or else Length (Goal) = 0 then
-         return VC_Unsupported;
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Condition));
       end if;
       return Decide_Goal (Goal, Context);
    exception
       when others =>
-         return VC_Unknown;
+         return Unknown_Outcome;
    end Decide;
 
    function Decide_Bounds
      (Value   : Libadalang.Analysis.Expr'Class;
       Bounds  : Domain.Abstract_Range;
       State   : Domain.Flow_State;
-      Symbols : Symbolic_State) return VC_Result
+      Symbols : Symbolic_State) return VC_Outcome
    is
       Context : Translation_Context :=
         (State => State, Symbols => Symbols, Supported => Symbols.Supported,
-         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
-      Term : constant Unbounded_String := Integer_Term (Value, Context);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
+      Term : Unbounded_String;
       Goal : Unbounded_String;
    begin
+      Term := Integer_Term (Value, Context);
       if not Context.Supported or else Length (Term) = 0
         or else (not Bounds.Has_Low and then not Bounds.Has_High)
       then
-         return VC_Unsupported;
+         if Context.Supported then
+            Mark_Unsupported (Context, Value, Missing_Static_Bounds);
+         end if;
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Value));
       end if;
 
       if Bounds.Has_Low then
@@ -2085,32 +2224,127 @@ package body Adalang_Analyzer.VC_Prover is
       return Decide_Goal (Goal, Context);
    exception
       when others =>
-         return VC_Unknown;
+         return Unknown_Outcome;
    end Decide_Bounds;
 
    function Decide_Nonzero
      (Value   : Libadalang.Analysis.Expr'Class;
       State   : Domain.Flow_State;
-      Symbols : Symbolic_State) return VC_Result
+      Symbols : Symbolic_State) return VC_Outcome
    is
       Context : Translation_Context :=
         (State => State, Symbols => Symbols, Supported => Symbols.Supported,
-         Object_Bindings => Object_Binding_Vectors.Empty_Vector, Depth => 0);
-      Term : constant Unbounded_String := Integer_Term (Value, Context);
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
+      Term : Unbounded_String;
    begin
+      Term := Integer_Term (Value, Context);
       if not Context.Supported or else Length (Term) = 0 then
-         return VC_Unsupported;
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Value));
       end if;
       return Decide_Goal
         (To_Unbounded_String ("(not (= " & To_String (Term) & " 0))"),
          Context);
    exception
       when others =>
-         return VC_Unknown;
+         return Unknown_Outcome;
    end Decide_Nonzero;
 
    function Evidence return String is
      ("SMT-LIB scalar VC; CVC5 and Z3 agreement required");
+
+   function Reason_Code (Reason : Unsupported_Reason) return String is
+   begin
+      case Reason is
+         when No_Unsupported_Reason =>
+            return "";
+         when Null_Expression =>
+            return "null-expression";
+         when Uninitialized_Object =>
+            return "uninitialized-object";
+         when Sort_Mismatch =>
+            return "sort-mismatch";
+         when Unsupported_Expression_Kind =>
+            return "unsupported-expression-kind";
+         when Unsupported_Operator =>
+            return "unsupported-operator";
+         when Unsupported_Call =>
+            return "unsupported-call";
+         when Unsupported_Conversion =>
+            return "unsupported-conversion";
+         when Unsupported_Attribute =>
+            return "unsupported-attribute";
+         when Unsupported_Quantifier =>
+            return "unsupported-quantifier";
+         when Missing_Static_Bounds =>
+            return "missing-static-bounds";
+         when Unsafe_Divisor_Semantics =>
+            return "unsafe-divisor-semantics";
+         when Inline_Depth_Exceeded =>
+            return "inline-depth-exceeded";
+         when Callee_Not_Expression_Function =>
+            return "callee-not-expression-function";
+         when Writable_Formal =>
+            return "writable-formal";
+         when Record_Actual_Not_Object =>
+            return "record-actual-not-object";
+         when Translation_Error =>
+            return "translation-error";
+      end case;
+   end Reason_Code;
+
+   function Unsupported_Reason_Code (Outcome : VC_Outcome) return String is
+     (Reason_Code (Outcome.Provenance.Reason));
+
+   function Unsupported_Description (Outcome : VC_Outcome) return String is
+   begin
+      case Outcome.Provenance.Reason is
+         when No_Unsupported_Reason =>
+            return "";
+         when Null_Expression =>
+            return "the expression could not be resolved";
+         when Uninitialized_Object =>
+            return "the blocking object is not known to be initialized";
+         when Sort_Mismatch =>
+            return "the expression conflicts with its symbolic scalar sort";
+         when Unsupported_Expression_Kind =>
+            return "this expression form is outside the scalar VC subset";
+         when Unsupported_Operator =>
+            return "this operator is outside the scalar VC subset";
+         when Unsupported_Call =>
+            return "this call form cannot be inlined safely";
+         when Unsupported_Conversion =>
+            return "this conversion is not modeled conservatively";
+         when Unsupported_Attribute =>
+            return "this attribute is outside the scalar VC subset";
+         when Unsupported_Quantifier =>
+            return "this quantified-expression form is not modeled";
+         when Missing_Static_Bounds =>
+            return "the required bounds are not statically known";
+         when Unsafe_Divisor_Semantics =>
+            return "Ada division semantics require a provably nonzero divisor";
+         when Inline_Depth_Exceeded =>
+            return "expression-function inlining exceeded its depth limit";
+         when Callee_Not_Expression_Function =>
+            return "the callee is not a plain expression function";
+         when Writable_Formal =>
+            return "an out or in out formal prevents pure call inlining";
+         when Record_Actual_Not_Object =>
+            return "a record formal requires a plain object-reference actual";
+         when Translation_Error =>
+            return "semantic translation raised an internal property error";
+      end case;
+   end Unsupported_Description;
+
+   function Blocking_Expression (Outcome : VC_Outcome) return String is
+     (To_String (Outcome.Provenance.Blocking_Expression));
+
+   function Inline_Path (Outcome : VC_Outcome) return String is
+     (To_String (Outcome.Provenance.Inline_Path));
 
    procedure Dump_Symbolic_Diagnostics is
       use Ada.Text_IO;

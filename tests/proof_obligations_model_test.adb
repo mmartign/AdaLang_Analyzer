@@ -35,6 +35,9 @@ begin
       Abstract_State     => "Divisor => [-1, 1]",
       Explanation        => "zero remains in the represented range",
       Imprecision_Source => "input has no precondition",
+      Reason_Code        => "missing-static-bounds",
+      Blocking_Expression => "Divisor'Range",
+      Inline_Path        => "Outer -> Inner",
       Configuration_Id   => "config-1");
    Register (First);
 
@@ -48,6 +51,11 @@ begin
       and then Element (1).Location.Line = 10
       and then Element (1).Location.Column = 7,
       "source position was not preserved");
+   Check
+     (To_String (Element (1).Reason_Code) = "missing-static-bounds"
+      and then To_String (Element (1).Blocking_Expression) = "Divisor'Range"
+      and then To_String (Element (1).Inline_Path) = "Outer -> Inner",
+      "unsupported provenance was not preserved");
 
    Check
      (Kind_Name (Division_By_Zero_Check) = "division-by-zero"
@@ -67,7 +75,8 @@ begin
    Check
      (Element (1).Status = Proved_Safe
       and then Element (1).Kind = Division_By_Zero_Check
-      and then To_String (Element (1).Operation) = "10 / Divisor",
+      and then To_String (Element (1).Operation) = "10 / Divisor"
+      and then Element (1).Reason_Code = Null_Unbounded_String,
       "result update changed obligation identity or context");
 
    declare

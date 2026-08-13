@@ -26,6 +26,52 @@ package Adalang_Analyzer.VC_Prover is
       VC_Unsupported,
       VC_Unavailable);
 
+   type Unsupported_Reason is
+     (No_Unsupported_Reason,
+      Null_Expression,
+      Uninitialized_Object,
+      Sort_Mismatch,
+      Unsupported_Expression_Kind,
+      Unsupported_Operator,
+      Unsupported_Call,
+      Unsupported_Conversion,
+      Unsupported_Attribute,
+      Unsupported_Quantifier,
+      Missing_Static_Bounds,
+      Unsafe_Divisor_Semantics,
+      Inline_Depth_Exceeded,
+      Callee_Not_Expression_Function,
+      Writable_Formal,
+      Record_Actual_Not_Object,
+      Translation_Error);
+
+   type Unsupported_Provenance is record
+      Reason              : Unsupported_Reason := No_Unsupported_Reason;
+      Blocking_Expression : Ada.Strings.Unbounded.Unbounded_String;
+      Inline_Path         : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   No_Unsupported_Provenance : constant Unsupported_Provenance :=
+     (Reason              => No_Unsupported_Reason,
+      Blocking_Expression => Ada.Strings.Unbounded.Null_Unbounded_String,
+      Inline_Path         => Ada.Strings.Unbounded.Null_Unbounded_String);
+
+   type VC_Outcome is record
+      Result     : VC_Result := VC_Unknown;
+      Provenance : Unsupported_Provenance := No_Unsupported_Provenance;
+   end record;
+
+   Unknown_Outcome : constant VC_Outcome :=
+     (Result => VC_Unknown, Provenance => No_Unsupported_Provenance);
+
+   function Unsupported_Reason_Code (Outcome : VC_Outcome) return String;
+   function Unsupported_Description (Outcome : VC_Outcome) return String;
+   function Blocking_Expression (Outcome : VC_Outcome) return String;
+   function Inline_Path (Outcome : VC_Outcome) return String;
+   --  Provenance belongs to the returned decision, so nested or subsequent
+   --  solver calls cannot overwrite it. Empty strings mean that Outcome is
+   --  not VC_Unsupported or no more specific provenance was available.
+
    type Symbolic_State is private;
    Empty_Symbolic_State : constant Symbolic_State;
 
@@ -54,18 +100,18 @@ package Adalang_Analyzer.VC_Prover is
 
    function Decide
      (Condition : Libadalang.Analysis.Expr;
-      State     : Adalang_Analyzer.Flow_Domain.Flow_State) return VC_Result;
+      State     : Adalang_Analyzer.Flow_Domain.Flow_State) return VC_Outcome;
 
    function Decide
      (Condition : Libadalang.Analysis.Expr;
       State     : Adalang_Analyzer.Flow_Domain.Flow_State;
-      Symbols   : Symbolic_State) return VC_Result;
+      Symbols   : Symbolic_State) return VC_Outcome;
 
    function Decide_Bounds
      (Value   : Libadalang.Analysis.Expr'Class;
       Bounds  : Adalang_Analyzer.Flow_Domain.Abstract_Range;
       State   : Adalang_Analyzer.Flow_Domain.Flow_State;
-      Symbols : Symbolic_State) return VC_Result;
+      Symbols : Symbolic_State) return VC_Outcome;
    --  As Decide, but for a containment goal (Bounds.Low <= Value and/or
    --  Value <= Bounds.High, whichever side Bounds supplies) synthesized
    --  from Value's own translated term instead of a literal source
@@ -77,7 +123,7 @@ package Adalang_Analyzer.VC_Prover is
    function Decide_Nonzero
      (Value   : Libadalang.Analysis.Expr'Class;
       State   : Adalang_Analyzer.Flow_Domain.Flow_State;
-      Symbols : Symbolic_State) return VC_Result;
+      Symbols : Symbolic_State) return VC_Outcome;
    --  As Decide_Bounds, for Division_By_Zero_Check's "divisor /= 0" goal,
    --  which Abstract_Range cannot express (a single excluded point, not a
    --  bound).
