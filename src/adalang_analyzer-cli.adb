@@ -33,6 +33,7 @@ with Libadalang.Unit_Files;
 
 with Adalang_Analyzer.Checks;
 with Adalang_Analyzer.Circular_Dependencies;
+with Adalang_Analyzer.Clone_Detection;
 with Adalang_Analyzer.Compliance_Mapping;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Config_File;   use Adalang_Analyzer.Config_File;
@@ -1580,6 +1581,10 @@ package body Adalang_Analyzer.CLI is
       if Rule_States (Circular_Package_Dependency) = Enabled then
          Adalang_Analyzer.Circular_Dependencies.Analyze
            (Ctx, Files_To_Process);
+      end if;
+
+      if Rule_States (Duplicate_Subprogram) = Enabled then
+         Adalang_Analyzer.Clone_Detection.Analyze (Ctx, Files_To_Process);
       end if;
 
       Finalize_Output;

@@ -8,6 +8,10 @@ Too_Many_Parameters	boundary-finding	tests/precision_too_many_parameters_over_th
 Swappable_Parameters	positive-same-mode-same-type	tests/precision_swappable_parameters_finding.adb	finding	two adjacent parameters with the same (default, i.e. in) mode and the same resolved type must fire
 Swappable_Parameters	negative-different-types	tests/precision_swappable_parameters_different_types_clean.adb	clean	adjacent parameters with different resolved types cannot be swapped without a type error and must not fire
 Swappable_Parameters	negative-different-modes	tests/precision_swappable_parameters_different_modes_clean.adb	clean	adjacent same-type parameters with different modes (in vs. out) must not fire
+Assertion_Side_Effect	positive-in-out-callee	tests/precision_assertion_side_effect_finding.adb	finding	a pragma Assert condition calling a function with an in out parameter must fire
+Assertion_Side_Effect	negative-pure-callee	tests/precision_assertion_side_effect_clean.adb	clean	a pragma Assert condition calling a function whose parameters are all mode in must not fire
+Duplicate_Subprogram	positive-identical-bodies	tests/precision_duplicate_subprogram_finding.adb	finding	two subprograms with textually identical (including identifier names) statement lists must fire
+Duplicate_Subprogram	negative-trivial-bodies	tests/precision_duplicate_subprogram_trivial_clean.adb	clean	two subprograms with identical but trivially short (single-assignment) bodies must not fire; below Minimum_Signature_Length
 Long_Line	boundary-clean	tests/precision_long_line_at_threshold.adb	clean	default threshold is 120; a line of exactly 120 characters must not fire
 Long_Line	boundary-finding	tests/precision_long_line_over_threshold.adb	finding	a line of 121 characters must fire
 Generic_Instantiation_Limit	boundary-clean	tests/precision_generic_instantiation_limit_at_threshold.adb	clean	default threshold is 10; exactly 10 instantiations must not fire

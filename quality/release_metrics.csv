@@ -28,3 +28,5 @@ version,open_known_false_positives,open_known_false_negatives,supported_verifica
 1.0.0-rc1,1,1,12,22,217
 1.0.0-rc1,0,1,12,22,217
 1.0.0-rc1,0,1,12,22,220
+1.0.0-rc1,0,1,12,22,222
+1.0.0-rc1,0,1,12,22,224

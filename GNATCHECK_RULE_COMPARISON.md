@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This is a **documentation-based** comparison: AdaLang Analyzer's 100 checks
+This is a **documentation-based** comparison: AdaLang Analyzer's 102 checks
 (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -20,14 +20,14 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 100 checks:
+Of AdaLang Analyzer's 102 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
 | Direct | 18 | Same check, essentially the same semantics |
 | Close | 14 | Same intent, minor scope difference |
 | Partial | 18 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
-| No GNATcheck counterpart | 50 | Nothing in the predefined catalog does this |
+| No GNATcheck counterpart | 52 | Nothing in the predefined catalog does this |
 
 GNATcheck's own catalog runs to roughly 180 predefined rules; large families
 of it (identifier casing/prefixes/readability, OOP-depth metrics,
@@ -99,7 +99,7 @@ cover a different-shaped case than the nearest predefined rule.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-50 of AdaLang's 100 rules do something GNATcheck's predefined catalog does
+52 of AdaLang's 102 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -128,9 +128,9 @@ Handler_Order.
 
 **Everything else** (no close GNATcheck family at all):
 No_Label, Unused_Parameter, Wrong_Parameter_Mode, Swappable_Parameters,
-Shadowed_Declaration,
+Assertion_Side_Effect, Shadowed_Declaration,
 Missing_Overriding_Indicator, Inefficient_String_Concatenation,
-Circular_Package_Dependency, Missing_Loop_Variant,
+Circular_Package_Dependency, Duplicate_Subprogram, Missing_Loop_Variant,
 Potentially_Blocking_Operation, No_Explicit_Dereference, No_Rendezvous,
 No_Select, No_Requeue, No_Asynchronous_Transfer, No_Dispatching_Call,
 No_Classwide_Type, Unused_Variable.

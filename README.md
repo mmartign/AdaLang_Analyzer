@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 100 checks spanning coding policy, data/control-flow defects, and
+At a glance: 102 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -96,7 +96,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 100 checks fall into five broad groups:
+AdaLang Analyzer's 102 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -179,6 +179,7 @@ The analyzer currently provides the following checks:
 | SPARK | `Known_Precondition_Failure` | Reliability | High | Reports calls whose actual values make a precondition false. |
 | SPARK | `Known_Postcondition_Failure` | Reliability | High | Reports bodies whose resulting state makes their postcondition false. |
 | SPARK | `Known_Assertion_Failure` | Reliability | High | Reports assertion pragmas whose condition is statically false at that program point. |
+| SPARK | `Assertion_Side_Effect` | Reliability | Medium | Reports assertion pragmas whose condition calls a function with an out or in out parameter. |
 | SPARK | `Known_Range_Check_Failure` | Reliability | High | Reports values provably outside an assignment, initialization, or conversion subtype. |
 | SPARK | `Known_Index_Check_Failure` | Reliability | High | Reports array indices provably outside the corresponding index subtype. |
 | SPARK | `Known_Overflow_Failure` | Reliability | High | Reports integer arithmetic provably outside the operation's base type. |
@@ -210,6 +211,7 @@ The analyzer currently provides the following checks:
 | Automotive | `Generic_Instantiation_Limit` | Maintainability | Medium | Reports units exceeding the configured generic-instantiation limit. |
 | Automotive | `Dependency_Limit` | Maintainability | Medium | Reports units exceeding the configured with-clause limit. |
 | Automotive | `Circular_Package_Dependency` | Maintainability | Medium | Reports groups of analyzed units whose with clauses form a dependency cycle. |
+| Duplication | `Duplicate_Subprogram` | Maintainability | Medium | Reports subprogram bodies, anywhere in the analyzed project, textually identical to another subprogram's. |
 | Automotive | `Naming_Convention` | Maintainability | Low | Reports one-character identifiers except loop indices and enumeration literals. |
 | Automotive | `No_Compiler_Extensions` | Maintainability | High | Reports implementation-defined pragmas, including extension-enabling pragmas. |
 | Automotive | `No_Runtime_Check_Suppression` | Reliability | High | Reports `Suppress`, `Suppress_All`, and check policies that ignore or disable Ada run-time checks. |

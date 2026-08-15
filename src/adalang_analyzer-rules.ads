@@ -86,9 +86,11 @@ package Adalang_Analyzer.Rules is
       Missing_Overriding_Indicator,
       Inefficient_String_Concatenation,
       Circular_Package_Dependency,
+      Duplicate_Subprogram,
       Known_Precondition_Failure,
       Known_Postcondition_Failure,
       Known_Assertion_Failure,
+      Assertion_Side_Effect,
       Known_Range_Check_Failure,
       Known_Index_Check_Failure,
       Known_Overflow_Failure,
@@ -845,6 +847,18 @@ package Adalang_Analyzer.Rules is
             "the dependency to a child unit, or using a limited with."),
          Quality     => Quality_Maintainability,
          Severity    => Severity_Medium),
+      Duplicate_Subprogram =>
+        (Name        => To_Unbounded_String ("Duplicate_Subprogram"),
+         Description => To_Unbounded_String
+           ("Find subprogram bodies, anywhere in the analyzed project, " &
+            "whose statement list is textually identical (modulo " &
+            "whitespace and identifier casing) to another subprogram's."),
+         Guidance    => To_Unbounded_String
+           ("Extract the shared logic into one subprogram both callers " &
+            "use, or confirm the duplication is intentional and document " &
+            "why it can't be shared."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
       Known_Precondition_Failure =>
         (Name        => To_Unbounded_String ("Known_Precondition_Failure"),
          Description => To_Unbounded_String
@@ -875,6 +889,19 @@ package Adalang_Analyzer.Rules is
             "property holds at this program point."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
+      Assertion_Side_Effect =>
+        (Name        => To_Unbounded_String ("Assertion_Side_Effect"),
+         Description => To_Unbounded_String
+           ("Find Assert, Assert_And_Cut, Check, and Loop_Invariant pragmas " &
+            "whose condition calls a function with an out or in out " &
+            "parameter."),
+         Guidance    => To_Unbounded_String
+           ("Move the mutation out of the assertion condition. Disabling " &
+            "assertions (pragma Assertion_Policy (Ignore), or building " &
+            "without -gnata) would silently stop that side effect from " &
+            "happening, changing the program's behavior."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Known_Range_Check_Failure =>
         (Name        => To_Unbounded_String ("Known_Range_Check_Failure"),
          Description => To_Unbounded_String

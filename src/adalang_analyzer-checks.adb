@@ -200,6 +200,68 @@ package body Adalang_Analyzer.Checks is
          return Libadalang.Analysis.No_Expr;
    end Assertion_Expression;
 
+   --  Reports Assertion_Side_Effect for every call in Node's subtree whose
+   --  callee has an out or in out parameter. Only a function can appear in
+   --  an assertion condition's expression syntax, so no Subp_Kind check is
+   --  needed here -- but a function with an out/in-out parameter (legal
+   --  since Ada 2012) can still mutate caller-visible state through it, an
+   --  effect that silently stops happening if assertions are disabled.
+   procedure Report_Assertion_Side_Effects
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Node : Libadalang.Analysis.Ada_Node'Class)
+   is
+   begin
+      if Node.Kind = Libadalang.Common.Ada_Call_Expr then
+         begin
+            declare
+               Callee : constant Libadalang.Analysis.Basic_Decl :=
+                 Node.As_Call_Expr.F_Name.P_Referenced_Decl
+                   (Imprecise_Fallback => True);
+            begin
+               if not Libadalang.Analysis.Is_Null (Callee) then
+                  declare
+                     Spec : constant Libadalang.Analysis.Base_Subp_Spec :=
+                       Callee.P_Subp_Spec_Or_Null;
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Spec) then
+                        for Param of Spec.P_Params loop
+                           if Param.F_Mode.Kind in
+                             Libadalang.Common.Ada_Mode_Out_Range
+                               | Libadalang.Common.Ada_Mode_In_Out_Range
+                           then
+                              Report_Rule_Violation
+                                (Unit, Node, Assertion_Side_Effect,
+                                 "assertion condition calls '" &
+                                   Node_Text (Node.As_Call_Expr.F_Name) &
+                                   "', which has an out or in out " &
+                                   "parameter and can mutate caller state");
+                              exit;
+                           end if;
+                        end loop;
+                     end if;
+                  end;
+               end if;
+            end;
+         exception
+            when Exc : others =>
+               Log_Verbose_Once
+                 ("skipping assertion side-effect resolution: " &
+                  Ada.Exceptions.Exception_Message (Exc));
+         end;
+      end if;
+
+      for Index in 1 .. Node.Children_Count loop
+         --  A positional Param_Assoc's F_Designator (among other optional
+         --  fields) is null, unlike the always-present expression children
+         --  Has_Classwide_Operand's identical-shaped walk normally meets;
+         --  recursing into it would raise on the unguarded .Kind read
+         --  above.
+         if not Libadalang.Analysis.Is_Null (Node.Child (Index)) then
+            Report_Assertion_Side_Effects (Unit, Node.Child (Index));
+         end if;
+      end loop;
+   end Report_Assertion_Side_Effects;
+
    function Has_Exception_Boundary
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
 
@@ -425,49 +487,62 @@ package body Adalang_Analyzer.Checks is
               (Unit, Node.As_Exception_Handler);
 
          when Libadalang.Common.Ada_Pragma_Node =>
-            if Rule_States (Known_Assertion_Failure) = Enabled then
+            if Rule_States (Known_Assertion_Failure) = Enabled
+              or else Rule_States (Assertion_Side_Effect) = Enabled
+            then
                declare
                   Cond : constant Libadalang.Analysis.Expr :=
                     Assertion_Expression (Node.As_Pragma_Node);
                begin
                   if not Libadalang.Analysis.Is_Null (Cond) then
-                     if Boolean_Value (Cond) = Bool_False then
-                        Adalang_Analyzer.Proof_Obligations.Register_At
-                          (Unit           => Unit,
-                           Node           => Cond,
-                           Kind           =>
-                             Adalang_Analyzer.Proof_Obligations.Assertion_Check,
-                           Status         =>
-                             Adalang_Analyzer.Proof_Obligations.Definite_Error,
-                           Method         =>
-                             Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
-                           Abstract_State => "assertion condition => false",
-                           Explanation    =>
-                             "assertion condition is statically false",
-                           Configuration_Id => Assurance_Profile_Name);
-                        Report_Rule_Violation
-                          (Unit, Cond, Known_Assertion_Failure,
-                           "assertion condition is statically false",
-                           Explanation =>
-                             "Static evaluation resolved the assertion " &
-                             "condition to False.",
-                           Evidence => "assertion condition => false");
-                     else
-                        Adalang_Analyzer.Proof_Obligations.Register_At
-                          (Unit         => Unit,
-                           Node         => Cond,
-                           Kind         =>
-                             Adalang_Analyzer.Proof_Obligations.Assertion_Check,
-                           Status       =>
-                             Adalang_Analyzer.Proof_Obligations.Unproved,
-                           Method       =>
-                             Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
-                           Explanation  =>
-                             "assertion failure is not established, but the " &
-                             "assertion is not proved",
-                           Imprecision_Source =>
-                             "static evaluation is inconclusive",
-                           Configuration_Id => Assurance_Profile_Name);
+                     if Rule_States (Assertion_Side_Effect) = Enabled then
+                        Report_Assertion_Side_Effects (Unit, Cond);
+                     end if;
+
+                     if Rule_States (Known_Assertion_Failure) = Enabled then
+                        if Boolean_Value (Cond) = Bool_False then
+                           Adalang_Analyzer.Proof_Obligations.Register_At
+                             (Unit           => Unit,
+                              Node           => Cond,
+                              Kind           =>
+                                Adalang_Analyzer.Proof_Obligations
+                                  .Assertion_Check,
+                              Status         =>
+                                Adalang_Analyzer.Proof_Obligations
+                                  .Definite_Error,
+                              Method         =>
+                                Adalang_Analyzer.Proof_Obligations
+                                  .Static_Evaluation,
+                              Abstract_State => "assertion condition => false",
+                              Explanation    =>
+                                "assertion condition is statically false",
+                              Configuration_Id => Assurance_Profile_Name);
+                           Report_Rule_Violation
+                             (Unit, Cond, Known_Assertion_Failure,
+                              "assertion condition is statically false",
+                              Explanation =>
+                                "Static evaluation resolved the assertion " &
+                                "condition to False.",
+                              Evidence => "assertion condition => false");
+                        else
+                           Adalang_Analyzer.Proof_Obligations.Register_At
+                             (Unit         => Unit,
+                              Node         => Cond,
+                              Kind         =>
+                                Adalang_Analyzer.Proof_Obligations
+                                  .Assertion_Check,
+                              Status       =>
+                                Adalang_Analyzer.Proof_Obligations.Unproved,
+                              Method       =>
+                                Adalang_Analyzer.Proof_Obligations
+                                  .Static_Evaluation,
+                              Explanation  =>
+                                "assertion failure is not established, " &
+                                "but the assertion is not proved",
+                              Imprecision_Source =>
+                                "static evaluation is inconclusive",
+                              Configuration_Id => Assurance_Profile_Name);
+                        end if;
                      end if;
                   end if;
                end;
