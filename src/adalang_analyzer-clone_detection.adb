@@ -140,13 +140,15 @@ package body Adalang_Analyzer.Clone_Detection is
                     (Clones (J).Unit, Clones (J).Subp_Node,
                      Duplicate_Subprogram,
                      "subprogram '" & To_String (Clones (J).Name) &
-                       "' has a body identical to '" &
-                       To_String (Clones (I).Name) & "' at " &
+                       "' has a statement sequence identical to '" &
+                       To_String (Clones (I).Name) & "'s at " &
                        Ada.Directories.Simple_Name
                          (To_String (Clones (I).Filename)) & ":" &
                        To_Decimal
                          (Natural
-                            (Clones (I).Subp_Node.Sloc_Range.Start_Line)));
+                            (Clones (I).Subp_Node.Sloc_Range.Start_Line)) &
+                       " (local declarations not compared -- they may " &
+                       "still differ, e.g. a parameterizing constant)");
                   J := J + 1;
                end loop;
                I := J;
