@@ -66,6 +66,7 @@ package Adalang_Analyzer.Rules is
       Non_Short_Circuit_Condition,
       Address_Clause,
       Too_Many_Parameters,
+      Swappable_Parameters,
       Deep_Nesting,
       Unused_Variable,
       Empty_If_Body,
@@ -641,6 +642,18 @@ package Adalang_Analyzer.Rules is
            ("Group related parameters into a record, or split the " &
             "subprogram into smaller, more cohesive operations."),
          Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Swappable_Parameters =>
+        (Name        => To_Unbounded_String ("Swappable_Parameters"),
+         Description => To_Unbounded_String
+           ("Find consecutive parameters with the same mode and type, " &
+            "which a positional call can transpose without a compile " &
+            "error."),
+         Guidance    => To_Unbounded_String
+           ("Reorder the parameters to separate same-typed neighbors, " &
+            "give them distinct types (e.g. derived types), or require " &
+            "named association at call sites."),
+         Quality     => Quality_Reliability,
          Severity    => Severity_Medium),
       Deep_Nesting =>
         (Name        => To_Unbounded_String ("Deep_Nesting"),

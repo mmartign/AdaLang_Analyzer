@@ -785,6 +785,17 @@ package body Adalang_Analyzer.Checks.Declarations is
       Subprogram : Libadalang.Analysis.Subp_Body)
    is
       Param_Count : Natural := 0;
+
+      --  Swappable_Parameters state, threaded across every (Param, Id)
+      --  pair in call order so adjacency is checked across Param_Spec
+      --  boundaries too ("A, B : Integer; C : Integer" makes B and C
+      --  adjacent, not just A and B).
+      Previous_Id   : Libadalang.Analysis.Defining_Name :=
+        Libadalang.Analysis.No_Defining_Name;
+      Previous_Mode : Libadalang.Common.Ada_Node_Kind_Type :=
+        Libadalang.Common.Ada_Mode_Default;
+      Previous_Type : Libadalang.Analysis.Base_Type_Decl :=
+        Libadalang.Analysis.No_Base_Type_Decl;
    begin
       if Rule_States (Missing_Overriding_Indicator) = Enabled then
          Check_Overriding_Indicator
@@ -795,6 +806,7 @@ package body Adalang_Analyzer.Checks.Declarations is
       if Rule_States (Unused_Parameter) = Enabled
         or else Rule_States (Wrong_Parameter_Mode) = Enabled
         or else Rule_States (Too_Many_Parameters) = Enabled
+        or else Rule_States (Swappable_Parameters) = Enabled
       then
          for Param of Subprogram.F_Subp_Spec.P_Params loop
             for Id of Param.F_Ids loop
@@ -850,6 +862,42 @@ package body Adalang_Analyzer.Checks.Declarations is
                            "parameter '" & Node_Text (Id) &
                              "' is only written; use mode out");
                      end if;
+                  end;
+               end if;
+
+               if Rule_States (Swappable_Parameters) = Enabled then
+                  declare
+                     --  Default mode (no "in"/"out"/"in out" written at
+                     --  all) is mode in by language definition, so it is
+                     --  normalized to Ada_Mode_In here; otherwise a bare
+                     --  "X : T" next to an explicit "Y : in T" would be
+                     --  the same risk but go undetected.
+                     Mode : constant Libadalang.Common.Ada_Node_Kind_Type :=
+                       (if Param.F_Mode.Kind = Libadalang.Common.Ada_Mode_Default
+                        then Libadalang.Common.Ada_Mode_In
+                        else Param.F_Mode.Kind);
+                     Type_Decl : constant Libadalang.Analysis.Base_Type_Decl :=
+                       Param.F_Type_Expr.P_Designated_Type_Decl;
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Previous_Id)
+                       and then not Libadalang.Analysis.Is_Null (Type_Decl)
+                       and then not Libadalang.Analysis.Is_Null (Previous_Type)
+                       and then Mode = Previous_Mode
+                       and then Libadalang.Analysis."=" (Type_Decl, Previous_Type)
+                     then
+                        Report_Rule_Violation
+                          (Unit, Id, Swappable_Parameters,
+                           "parameter '" & Node_Text (Id) &
+                             "' has the same mode and type as the " &
+                             "preceding parameter '" &
+                             Node_Text (Previous_Id) &
+                             "'; a positional call could swap them " &
+                             "undetected");
+                     end if;
+
+                     Previous_Id   := Id.As_Defining_Name;
+                     Previous_Mode := Mode;
+                     Previous_Type := Type_Decl;
                   end;
                end if;
             end loop;

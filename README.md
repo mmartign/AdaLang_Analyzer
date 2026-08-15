@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 99 checks spanning coding policy, data/control-flow defects, and
+At a glance: 100 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -96,7 +96,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 99 checks fall into five broad groups:
+AdaLang Analyzer's 100 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -160,6 +160,7 @@ The analyzer currently provides the following checks:
 | Control flow | `Non_Short_Circuit_Condition` | Reliability | High | Reports plain `and`/`or` used in an if/elsif/exit-when/while condition. |
 | Safety | `Address_Clause` | Security | High | Reports address representation clauses. |
 | Complexity | `Too_Many_Parameters` | Maintainability | Medium | Reports subprograms exceeding the configured parameter-count threshold. |
+| Complexity | `Swappable_Parameters` | Reliability | Medium | Reports adjacent parameters sharing a mode and a resolved type, which a positional call could transpose undetected. |
 | Complexity | `Deep_Nesting` | Maintainability | Medium | Reports subprograms exceeding the configured nesting-depth threshold. |
 | Data flow | `Unused_Variable` | Maintainability | Low | Reports local objects that are never referenced. |
 | Style | `Empty_If_Body` | Maintainability | Low | Reports if statements with no elsif/else whose body has no effect. |

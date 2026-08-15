@@ -5,6 +5,9 @@ Deep_Nesting	boundary-clean	tests/precision_deep_nesting_at_threshold.adb	clean	
 Deep_Nesting	boundary-finding	tests/precision_deep_nesting_over_threshold.adb	finding	nesting depth of 5 must fire
 Too_Many_Parameters	boundary-clean	tests/precision_too_many_parameters_at_threshold.adb	clean	default threshold is 6; exactly 6 parameters must not fire
 Too_Many_Parameters	boundary-finding	tests/precision_too_many_parameters_over_threshold.adb	finding	7 parameters must fire
+Swappable_Parameters	positive-same-mode-same-type	tests/precision_swappable_parameters_finding.adb	finding	two adjacent parameters with the same (default, i.e. in) mode and the same resolved type must fire
+Swappable_Parameters	negative-different-types	tests/precision_swappable_parameters_different_types_clean.adb	clean	adjacent parameters with different resolved types cannot be swapped without a type error and must not fire
+Swappable_Parameters	negative-different-modes	tests/precision_swappable_parameters_different_modes_clean.adb	clean	adjacent same-type parameters with different modes (in vs. out) must not fire
 Long_Line	boundary-clean	tests/precision_long_line_at_threshold.adb	clean	default threshold is 120; a line of exactly 120 characters must not fire
 Long_Line	boundary-finding	tests/precision_long_line_over_threshold.adb	finding	a line of 121 characters must fire
 Generic_Instantiation_Limit	boundary-clean	tests/precision_generic_instantiation_limit_at_threshold.adb	clean	default threshold is 10; exactly 10 instantiations must not fire

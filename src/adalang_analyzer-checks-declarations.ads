@@ -38,8 +38,9 @@ private package Adalang_Analyzer.Checks.Declarations is
    --  Runs the per-subprogram checks: Unused_Parameter and Unused_Variable
    --  (no reference in either the local declarations or the statements),
    --  Cyclomatic_Complexity (base 1 plus every decision point in the
-   --  body), Too_Many_Parameters, Deep_Nesting, No_Multiple_Return, and
-   --  SPARK flow-contract readiness, and (via
+   --  body), Too_Many_Parameters, Swappable_Parameters (adjacent
+   --  parameters sharing a mode and a resolved type), Deep_Nesting,
+   --  No_Multiple_Return, and SPARK flow-contract readiness, and (via
    --  Adalang_Analyzer.Flow_Interp) the flow-sensitive strengthening of
    --  Division_By_Zero and Constant_Condition.
 
