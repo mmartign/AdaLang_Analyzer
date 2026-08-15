@@ -3,11 +3,34 @@
 This directory keeps the small, reviewable evidence used by the routine
 quality gate.
 
-`recommended.baseline` contains the 22 findings accepted after reviewing the
-analyzer's own sources with `--recommended`. Duplicate fingerprints are
+`recommended.baseline` contains the 121 findings accepted after reviewing
+the analyzer's own sources with `--recommended`. Duplicate fingerprints are
 intentional: the baseline records occurrences, not only unique shapes. The
 gate fails when a new non-baselined finding appears; removing an old finding
 does not fail the gate.
+
+`Swappable_Parameters` joined `--recommended` on 2026-08-15, growing the
+baseline from 22 to 121 in one jump: 107 of the addition is that one check.
+External-corpus validation first (benchmarks against gnatcoll-core and AWS,
+~1,700 files combined) showed the check's parameter-name pairs are not
+dominated by the trivially-safe `Left`/`Right` idiom this project's own
+smaller, keyword-argument-heavy source had suggested -- real risky pairs
+turned up (`User`/`Pwd`, `Stdin`/`Stdout`/`Stderr`, `Src`/`Dst`). Reviewing
+this project's own 107 before baselining them found one category worth
+naming specifically: `Adalang_Analyzer.Control_Flow_Graph`'s `Build_List`/
+`Build_Handled`/`Build_Else_Chain` family takes 2-3 same-typed, same-mode
+`Continuation`/`Exception_Target`/`Return_Target`/`Outer_Exception`
+parameters and is called positionally throughout -- exactly the shape the
+check exists to catch, in the CFG builder the bounded verifier depends on.
+No misordering was found there on review, so it's baselined rather than
+reordered, but it is the strongest real-world confirmation yet that the
+check earns its place in `--recommended` rather than just adding volume.
+The rest of the 107 fall into two lower-risk, still-legitimate categories:
+conventional commutative/comparison-idiom pairs (`Left`/`Right`, `X`/`Y`)
+and long keyword-style helper signatures (`Explanation`, `Evidence`,
+`Abstract_State`, ...) that are, in this codebase, always called with named
+association already, confirmed by spot-checking call sites rather than
+assumed.
 
 `known_analysis_issues.tsv` is the registry of confirmed analyzer mistakes.
 An open false-positive or false-negative entry contributes to the release

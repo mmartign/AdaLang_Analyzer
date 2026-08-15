@@ -372,7 +372,8 @@ package body Adalang_Analyzer.CLI is
          Known_Range_Check_Failure, Known_Index_Check_Failure,
          Known_Overflow_Failure, Identical_Case_Alternative,
          Redundant_Type_Conversion, Handler_Order,
-         Aliasing_Between_Parameters, Known_Discriminant_Check_Failure);
+         Aliasing_Between_Parameters, Known_Discriminant_Check_Failure,
+         Swappable_Parameters);
    begin
       Active_Preset := Recommended_Preset;
       Active_Assurance_Profile := No_Assurance_Profile;
