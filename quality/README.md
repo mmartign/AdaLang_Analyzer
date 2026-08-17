@@ -105,7 +105,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (224 cases; the tally below itemizes the threshold and
+Current coverage (227 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
@@ -311,6 +311,15 @@ instead of being re-itemized here):
   `Trailing_Whitespace` (a line ending in spaces, vs. a genuinely empty
   line, which the `Line'Length > 0` guard excludes even though both look
   blank).
+
+- 3 cases for `Integer_Division_Before_Multiplication`, added alongside the
+  new check: an unparenthesized `A / B * C` on `Integer` operands
+  (`finding`), paired with two confirmed-clean exemptions — `(Addr /
+  Alignment) * Alignment`, Ada's idiomatic round-down-to-a-multiple pattern
+  (the multiplier matches the division's own divisor, so the check exempts
+  it as intentional rather than a precision-loss mistake), and the
+  identical `A / B * C` shape on `Float` operands, which does not truncate
+  the same way and so must not fire.
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:

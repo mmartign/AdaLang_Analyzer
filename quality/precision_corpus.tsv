@@ -12,6 +12,9 @@ Assertion_Side_Effect	positive-in-out-callee	tests/precision_assertion_side_effe
 Assertion_Side_Effect	negative-pure-callee	tests/precision_assertion_side_effect_clean.adb	clean	a pragma Assert condition calling a function whose parameters are all mode in must not fire
 Duplicate_Subprogram	positive-identical-bodies	tests/precision_duplicate_subprogram_finding.adb	finding	two subprograms with textually identical (including identifier names) statement lists must fire
 Duplicate_Subprogram	negative-trivial-bodies	tests/precision_duplicate_subprogram_trivial_clean.adb	clean	two subprograms with identical but trivially short (single-assignment) bodies must not fire; below Minimum_Signature_Length
+Integer_Division_Before_Multiplication	positive-unparenthesized-chain	tests/precision_integer_division_before_multiplication_finding.adb	finding	an integer multiplication whose left operand is an unparenthesized integer division ("A / B * C") must fire
+Integer_Division_Before_Multiplication	negative-alignment-idiom	tests/precision_integer_division_before_multiplication_alignment_clean.adb	clean	"(A / N) * N" rounds A down to the nearest multiple of N, a deliberate alignment idiom rather than a precision-loss mistake, and must not fire
+Integer_Division_Before_Multiplication	negative-floating-point	tests/precision_integer_division_before_multiplication_float_clean.adb	clean	the check only applies to integer operands; the identical shape on Float operands must not fire
 Long_Line	boundary-clean	tests/precision_long_line_at_threshold.adb	clean	default threshold is 120; a line of exactly 120 characters must not fire
 Long_Line	boundary-finding	tests/precision_long_line_over_threshold.adb	finding	a line of 121 characters must fire
 Generic_Instantiation_Limit	boundary-clean	tests/precision_generic_instantiation_limit_at_threshold.adb	clean	default threshold is 10; exactly 10 instantiations must not fire

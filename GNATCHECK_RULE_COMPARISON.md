@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This is a **documentation-based** comparison: AdaLang Analyzer's 102 checks
+This is a **documentation-based** comparison: AdaLang Analyzer's 103 checks
 (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -20,14 +20,14 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 102 checks:
+Of AdaLang Analyzer's 103 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
 | Direct | 18 | Same check, essentially the same semantics |
 | Close | 14 | Same intent, minor scope difference |
 | Partial | 18 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
-| No GNATcheck counterpart | 52 | Nothing in the predefined catalog does this |
+| No GNATcheck counterpart | 53 | Nothing in the predefined catalog does this |
 
 GNATcheck's own catalog runs to roughly 180 predefined rules; large families
 of it (identifier casing/prefixes/readability, OOP-depth metrics,
@@ -99,7 +99,7 @@ cover a different-shaped case than the nearest predefined rule.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-52 of AdaLang's 102 rules do something GNATcheck's predefined catalog does
+53 of AdaLang's 103 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -121,7 +121,8 @@ Suppression_Without_Rationale.
 purely syntactic matching doesn't reach):
 Dead_Store, Overwritten_Assignment, Unreachable_Case_Alternative,
 Overlapping_Case_Ranges, Constant_Condition, Unreachable_Code,
-Division_By_Zero, Reversed_Range, Self_Assignment, Contradictory_Condition,
+Division_By_Zero, Integer_Division_Before_Multiplication, Reversed_Range,
+Self_Assignment, Contradictory_Condition,
 Repeated_Statement, Ineffective_Operation, Constant_Result_Operation,
 Empty_Loop, Unnecessary_Else_After_Return, Redundant_Type_Conversion,
 Handler_Order.

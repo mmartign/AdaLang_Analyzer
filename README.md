@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 102 checks spanning coding policy, data/control-flow defects, and
+At a glance: 103 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -96,7 +96,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 102 checks fall into five broad groups:
+AdaLang Analyzer's 103 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -142,6 +142,7 @@ The analyzer currently provides the following checks:
 | Control flow | `Constant_Condition` | Reliability | Medium | Reports conditions that are statically always true or false. |
 | Control flow | `Unreachable_Code` | Maintainability | Medium | Reports statements following an unconditional transfer of control. |
 | Arithmetic | `Division_By_Zero` | Reliability | Blocker | Reports statically detectable division, `mod`, or `rem` by zero. |
+| Arithmetic | `Integer_Division_Before_Multiplication` | Reliability | Medium | Reports integer multiplications whose left operand is an unparenthesized integer division. |
 | Arithmetic | `Reversed_Range` | Reliability | Medium | Reports static ranges whose lower bound exceeds their upper bound. |
 | Assignment | `Self_Assignment` | Reliability | Medium | Reports assignments whose target and value designate the same object, including through simple renames. |
 | Expression | `Same_Operand` | Reliability | Medium | Reports suspicious binary expressions with identical operands. |

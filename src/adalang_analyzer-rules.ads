@@ -48,6 +48,7 @@ package Adalang_Analyzer.Rules is
       Constant_Condition,
       Unreachable_Code,
       Division_By_Zero,
+      Integer_Division_Before_Multiplication,
       Reversed_Range,
       Self_Assignment,
       Same_Operand,
@@ -464,6 +465,19 @@ package Adalang_Analyzer.Rules is
             "exceptional case explicit before evaluating the operation."),
          Quality     => Quality_Reliability,
          Severity    => Severity_Blocker),
+      Integer_Division_Before_Multiplication =>
+        (Name        => To_Unbounded_String
+           ("Integer_Division_Before_Multiplication"),
+         Description => To_Unbounded_String
+           ("Find integer multiplications whose left operand is itself an " &
+            "unparenthesized integer division."),
+         Guidance    => To_Unbounded_String
+           ("Reorder to multiply before dividing when the extra precision " &
+            "is needed and does not risk overflow, or wrap the division in " &
+            "explicit parentheses to document that the truncation is " &
+            "intentional."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Reversed_Range =>
         (Name        => To_Unbounded_String ("Reversed_Range"),
          Description => To_Unbounded_String

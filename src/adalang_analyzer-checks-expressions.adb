@@ -64,6 +64,24 @@ package body Adalang_Analyzer.Checks.Expressions is
          return False;
    end Is_Standard_Boolean_Expression;
 
+   --  True when Node's static type is an integer type (signed or modular),
+   --  as opposed to a floating-point or fixed-point type where "divide
+   --  then multiply" does not truncate the same way. Backs
+   --  Integer_Division_Before_Multiplication.
+   function Is_Integer_Expression
+     (Node : Libadalang.Analysis.Expr'Class) return Boolean
+   is
+      Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+        Node.P_Expression_Type;
+   begin
+      return not Libadalang.Analysis.Is_Null (Expr_Type)
+        and then Expr_Type.P_Is_Int_Type;
+   exception
+      when others =>
+         --  Name resolution can legitimately fail for incomplete source.
+         return False;
+   end Is_Integer_Expression;
+
    --  Strips one layer of enclosing parentheses, if present, so operands
    --  that are otherwise structurally identical still compare equal by
    --  text even when one of them is written with a redundant "(...)".
@@ -190,6 +208,31 @@ package body Adalang_Analyzer.Checks.Expressions is
                  "static evaluation does not determine a nonzero operand",
                Configuration_Id   => Assurance_Profile_Name);
          end if;
+      end if;
+
+      if Rule_States (Integer_Division_Before_Multiplication) = Enabled
+        and then Op = Libadalang.Common.Ada_Op_Mult
+        and then not Libadalang.Analysis.Is_Null (Expr.F_Left)
+        and then Expr.F_Left.Kind = Libadalang.Common.Ada_Bin_Op
+        and then Expr.F_Left.As_Bin_Op.F_Op = Libadalang.Common.Ada_Op_Div
+        and then Is_Integer_Expression (Expr.F_Left)
+        and then Is_Integer_Expression (Expr.F_Right)
+
+        --  "(A / N) * N" rounds A down to the nearest multiple of N, a
+        --  deliberate, idiomatic pattern (e.g. address alignment), not a
+        --  precision-loss mistake -- exempt it.
+        and then Canonical_Text (Expr.F_Left.As_Bin_Op.F_Right) /= Right_Text
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Integer_Division_Before_Multiplication,
+            "integer division is truncated before the multiplication runs",
+            Explanation =>
+              "'/' and '*' have the same precedence and Ada evaluates " &
+              "them left to right, so this division's remainder is " &
+              "discarded before the multiplication applies.",
+            Evidence =>
+              "left operand => " & Left_Text & "; right operand => " &
+              Right_Text);
       end if;
 
       if Rule_States (Floating_Equality) = Enabled
