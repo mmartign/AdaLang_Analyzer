@@ -112,9 +112,18 @@ package body Adalang_Analyzer.Clone_Detection is
               Ctx.Get_From_File (F);
          begin
             if not Libadalang.Analysis.Is_Null (Unit.Root) then
-               Collect
-                 (Unit.Root, To_Unbounded_String (Unit.Get_Filename), Unit,
-                  Clones);
+
+               --  F, not Unit.Get_Filename: Libadalang resolves the latter
+               --  to an absolute path, which would bake the analyzing
+               --  machine's checkout location into the "matches X at Y"
+               --  half of Duplicate_Subprogram's message (and, through it,
+               --  into the finding's baseline fingerprint) -- passing a
+               --  baseline written on one machine or CI checkout to
+               --  another then desyncs every cross-file match. F is
+               --  whatever path was given on the command line, already
+               --  portable the same way the finding's own primary location
+               --  is.
+               Collect (Unit.Root, To_Unbounded_String (F), Unit, Clones);
             end if;
          end;
       end loop;
