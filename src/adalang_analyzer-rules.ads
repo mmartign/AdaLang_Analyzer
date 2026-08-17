@@ -163,7 +163,8 @@ package Adalang_Analyzer.Rules is
 
    DO_178C_Level_AB_Rules : aliased constant Rule_List :=
      (Suppression_Without_Rationale, No_Dynamic_Allocation,
-      No_Unchecked_Conversion, No_Unchecked_Deallocation,
+      No_Unchecked_Conversion, No_Unchecked_Access,
+      No_Unchecked_Deallocation,
       Complete_Initialization, Uninitialized_Read, No_Dispatching_Call,
       Missing_Global_Contract, Missing_Depends_Contract,
       Missing_Loop_Variant, Potentially_Blocking_Operation,
@@ -178,7 +179,8 @@ package Adalang_Analyzer.Rules is
    Automotive_Rules : aliased constant Rule_List :=
      (No_Goto, No_Label, No_Multiple_Return, No_Abort, No_Raise,
       No_Access_To_Subp_Def,
-      No_Unchecked_Conversion, Floating_Equality, Magic_Number,
+      No_Unchecked_Conversion, No_Unchecked_Access,
+      Floating_Equality, Magic_Number,
       Dead_Store, Overwritten_Assignment, Shadowed_Declaration,
       Infinite_Loop, Constant_Condition, Unreachable_Code,
       Unreachable_Branch, Unreachable_Case_Alternative,

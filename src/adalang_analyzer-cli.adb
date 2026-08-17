@@ -393,7 +393,8 @@ package body Adalang_Analyzer.CLI is
    procedure Enable_SPARK_Preset is
       SPARK_Rules : constant array (Positive range <>) of Rule_Kind :=
         (No_Goto, No_Abort, No_Raise, No_Access_To_Subp_Def,
-         No_Unchecked_Conversion, Floating_Equality, Dead_Store,
+         No_Unchecked_Conversion, No_Unchecked_Access,
+         Floating_Equality, Dead_Store,
          Overwritten_Assignment, Infinite_Loop, Constant_Condition,
          Unreachable_Code, Division_By_Zero, Reversed_Range,
          Self_Assignment, Contradictory_Condition, No_Recursion,

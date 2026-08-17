@@ -6,6 +6,7 @@ No_Abort	tests/automotive_restrictions_findings.adb	tests/automotive_restriction
 No_Raise	tests/automotive_additional_findings.adb	tests/automotive_additional_clean.adb
 No_Access_To_Subp_Def	tests/automotive_additional_findings.adb	tests/automotive_additional_clean.adb
 No_Unchecked_Conversion	tests/high_value_findings.adb	tests/high_value_clean.adb
+No_Unchecked_Access	tests/precision_no_unchecked_access_finding.adb	tests/precision_no_unchecked_access_clean.adb
 Floating_Equality	tests/high_value_findings.adb	tests/high_value_clean.adb
 Magic_Number	tests/high_value_findings.adb	tests/high_value_clean.adb
 Dead_Store	tests/advanced_findings.adb	tests/advanced_clean.adb

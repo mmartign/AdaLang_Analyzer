@@ -1265,6 +1265,14 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                 (Last_Stmt.As_Raise_Stmt.F_Exception_Name)
               and then Canonical_Text
                 (Last_Stmt.As_Raise_Stmt.F_Exception_Name) = Caught_Name
+
+              --  "raise Foo with "<context>";" deliberately replaces the
+              --  message with added diagnostic context before
+              --  re-propagating -- a legitimate enrich-and-reraise idiom,
+              --  not the accidental message/traceback loss this check
+              --  targets. Only a bare "raise Foo;" (no message) is flagged.
+              and then Libadalang.Analysis.Is_Null
+                (Last_Stmt.As_Raise_Stmt.F_Error_Message)
             then
                Report_Rule_Violation
                  (Unit, Last_Stmt, Reraise_Discards_Occurrence,

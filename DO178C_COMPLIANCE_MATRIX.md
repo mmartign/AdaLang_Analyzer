@@ -48,8 +48,8 @@ selected level:
 |---|---|---|
 | D | Core tier only (19 checks) | None |
 | C | Core + Level C tier (30 checks) | Statement coverage |
-| B | Core + Level C + Level A/B tier (all 45 checks) | Decision coverage |
-| A | Core + Level C + Level A/B tier (all 45 checks) | MC/DC |
+| B | Core + Level C + Level A/B tier (all 46 checks) | Decision coverage |
+| A | Core + Level C + Level A/B tier (all 46 checks) | MC/DC |
 
 AdaLang does not measure structural coverage itself; the objective above is
 recorded in JSON/SARIF output as metadata for a separate coverage tool such
@@ -59,7 +59,7 @@ as GNATcoverage, not evidence that coverage was achieved.
 
 The alignment labels measure similarity of safety intent, not standards
 coverage — the same three labels `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md` uses,
-since 41 of the 45 checks below are shared with the `--automotive` preset and
+since 42 of the 46 checks below are shared with the `--automotive` preset and
 carry the same underlying Ada/SPARK rationale regardless of which profile
 enables them:
 
@@ -122,29 +122,30 @@ listed only under "A, B" is not enabled at level C or D.
 | 31 | `Suppression_Without_Rationale` | A, B | Ensure every inline analyzer deviation has a reviewable reason. | General deviation-control practice; not itself an Annex H restriction identifier or SPARK Reference Manual rule. | Practice | Checks inline analyzer suppressions only; baselines still need an external rationale, owner, approval, scope, and expiry record. |
 | 32 | `No_Dynamic_Allocation` | A, B | Keep memory consumption, allocation failure, and execution time bounded. | Ada RM Annex H restriction identifier `No_Allocators` (D.7). | Restriction | Detects Ada allocators; custom pools, imported allocators, container internals, and start-up-only allocation need project controls. |
 | 33 | `No_Unchecked_Conversion` | A, B | Prevent representation reinterpretation that bypasses the type system. | Ada RM 13.12.1 `pragma Restrictions (No_Dependence => Ada.Unchecked_Conversion)`; SPARK requires each unchecked conversion instance to be independently justified. | Restriction | Detects semantic instantiations of `Ada.Unchecked_Conversion`; interfacing code and other unchecked facilities remain separate concerns. |
-| 34 | `No_Unchecked_Deallocation` | A, B | Prevent dangling references, double release, and use after free. | Ada RM 13.12.1 `pragma Restrictions (No_Dependence => Ada.Unchecked_Deallocation)`; SPARK's ownership model manages deallocation without this generic instantiation. | Restriction | Detects semantic instantiations of the Ada unchecked facility; foreign deallocators and custom storage management are outside its scope. |
-| 35 | `Complete_Initialization` | A, B | Require explicit initial values for objects and record components. | SPARK flow analysis: SPARK's default full-initialization policy for objects and record components (Bronze level). | SPARK | A syntactic/semantic initialization policy is not proof that the chosen value is valid or that later reads are initialized. |
-| 36 | `Uninitialized_Read` | A, B | Detect scalar locals whose first use is a read. | SPARK flow analysis: use-before-initialization is a core Bronze-level flow-soundness diagnostic. | SPARK | Limited to supported scalar local flow; arrays, records, aliases, calls, exceptional paths, and unsupported constructs can require stronger analysis. |
-| 37 | `No_Dispatching_Call` | A, B | Keep runtime call targets bounded and reviewable. | Ada RM Annex H restriction identifier `No_Dispatch` (D.7). | Restriction | Detects semantically resolved dispatching and access-to-subprogram calls; unresolved or imported dispatch mechanisms require review. |
-| 38 | `Missing_Global_Contract` | A, B | Require declared global effects for every subprogram that has them. | SPARK `Global` aspect completeness rule (Bronze level); pairs with `Global_Contract_Mismatch`, which checks consistency once a contract exists. | SPARK | Reports subprograms that access global state without an explicit `Global` contract; subprograms with no global access need no contract and are not reported. |
-| 39 | `Missing_Depends_Contract` | A, B | Require declared information-flow contracts for every subprogram that has outputs. | SPARK `Depends` aspect completeness rule (Bronze level); pairs with `Depends_Contract_Mismatch` and `Incomplete_Depends_Contract`, which check consistency and partial omission once a contract exists. | SPARK | Reports subprograms with outputs but no explicit `Depends` contract; it does not validate the relation once one is present. |
-| 40 | `Missing_Loop_Variant` | A, B | Require termination evidence for annotated proof loops. | SPARK `Loop_Variant` aspect, used by GNATprove to prove loop termination. | SPARK | Applies only when a loop already has a `Loop_Invariant`; it does not require or prove termination for every loop. |
-| 41 | `Potentially_Blocking_Operation` | A, B | Avoid blocking while holding protected synchronization state. | Ada RM 9.5.1's normative definition of a potentially blocking operation, which a protected operation must not invoke. | Restriction | Covers selected direct and transitively summarized Ada blocking operations; scheduling and WCET evidence remain external. |
-| 42 | `No_Compiler_Extensions` | A, B | Keep the language subset portable and compiler behavior controlled. | General portability practice grounded in the Ada RM's definition of a conforming, standard-defined program; both high-integrity Ada and SPARK guidance require staying within standard, non-implementation-defined constructs. | Practice | Detects selected implementation-defined pragmas; compiler switches, predefined environment, runtime library, and all implementation-defined behavior need a configuration record. |
-| 43 | `Library_Level_Initialization` | A, B | Avoid hidden, fallible, or order-dependent elaboration work. | Ada RM 10.2 elaboration-order rules and the `Preelaborate`/`Pure` categorization pragmas used to keep elaboration predictable. | Restriction | Reports calls in library-level initializers; complete Ada elaboration-order correctness and runtime start-up behavior need other evidence. |
-| 44 | `Cyclomatic_Complexity` | A, B | Bound the number of independent control-flow paths requiring review and test. | General coding practice; not addressed by Annex H or the SPARK Reference Manual. | Practice | Uses a configurable structural count; the threshold and any deviation need project justification. |
-| 45 | `Deep_Nesting` | A, B | Keep control structure locally understandable and testable. | General coding practice; not addressed by Annex H or the SPARK Reference Manual. | Practice | Uses a configurable nesting threshold; it does not measure semantic or architectural complexity. |
+| 34 | `No_Unchecked_Access` | A, B | Prevent an accessibility-bypassing access value from outliving its designated object. | Ada RM Annex H restriction identifier `No_Unchecked_Access` (D.7); SPARK does not permit `'Unchecked_Access` in `SPARK_Mode => On` code. | Restriction | Detects every use of the `'Unchecked_Access` attribute; a matching-accessibility-level `'Access` and other access-safety concerns remain separate. |
+| 35 | `No_Unchecked_Deallocation` | A, B | Prevent dangling references, double release, and use after free. | Ada RM 13.12.1 `pragma Restrictions (No_Dependence => Ada.Unchecked_Deallocation)`; SPARK's ownership model manages deallocation without this generic instantiation. | Restriction | Detects semantic instantiations of the Ada unchecked facility; foreign deallocators and custom storage management are outside its scope. |
+| 36 | `Complete_Initialization` | A, B | Require explicit initial values for objects and record components. | SPARK flow analysis: SPARK's default full-initialization policy for objects and record components (Bronze level). | SPARK | A syntactic/semantic initialization policy is not proof that the chosen value is valid or that later reads are initialized. |
+| 37 | `Uninitialized_Read` | A, B | Detect scalar locals whose first use is a read. | SPARK flow analysis: use-before-initialization is a core Bronze-level flow-soundness diagnostic. | SPARK | Limited to supported scalar local flow; arrays, records, aliases, calls, exceptional paths, and unsupported constructs can require stronger analysis. |
+| 38 | `No_Dispatching_Call` | A, B | Keep runtime call targets bounded and reviewable. | Ada RM Annex H restriction identifier `No_Dispatch` (D.7). | Restriction | Detects semantically resolved dispatching and access-to-subprogram calls; unresolved or imported dispatch mechanisms require review. |
+| 39 | `Missing_Global_Contract` | A, B | Require declared global effects for every subprogram that has them. | SPARK `Global` aspect completeness rule (Bronze level); pairs with `Global_Contract_Mismatch`, which checks consistency once a contract exists. | SPARK | Reports subprograms that access global state without an explicit `Global` contract; subprograms with no global access need no contract and are not reported. |
+| 40 | `Missing_Depends_Contract` | A, B | Require declared information-flow contracts for every subprogram that has outputs. | SPARK `Depends` aspect completeness rule (Bronze level); pairs with `Depends_Contract_Mismatch` and `Incomplete_Depends_Contract`, which check consistency and partial omission once a contract exists. | SPARK | Reports subprograms with outputs but no explicit `Depends` contract; it does not validate the relation once one is present. |
+| 41 | `Missing_Loop_Variant` | A, B | Require termination evidence for annotated proof loops. | SPARK `Loop_Variant` aspect, used by GNATprove to prove loop termination. | SPARK | Applies only when a loop already has a `Loop_Invariant`; it does not require or prove termination for every loop. |
+| 42 | `Potentially_Blocking_Operation` | A, B | Avoid blocking while holding protected synchronization state. | Ada RM 9.5.1's normative definition of a potentially blocking operation, which a protected operation must not invoke. | Restriction | Covers selected direct and transitively summarized Ada blocking operations; scheduling and WCET evidence remain external. |
+| 43 | `No_Compiler_Extensions` | A, B | Keep the language subset portable and compiler behavior controlled. | General portability practice grounded in the Ada RM's definition of a conforming, standard-defined program; both high-integrity Ada and SPARK guidance require staying within standard, non-implementation-defined constructs. | Practice | Detects selected implementation-defined pragmas; compiler switches, predefined environment, runtime library, and all implementation-defined behavior need a configuration record. |
+| 44 | `Library_Level_Initialization` | A, B | Avoid hidden, fallible, or order-dependent elaboration work. | Ada RM 10.2 elaboration-order rules and the `Preelaborate`/`Pure` categorization pragmas used to keep elaboration predictable. | Restriction | Reports calls in library-level initializers; complete Ada elaboration-order correctness and runtime start-up behavior need other evidence. |
+| 45 | `Cyclomatic_Complexity` | A, B | Bound the number of independent control-flow paths requiring review and test. | General coding practice; not addressed by Annex H or the SPARK Reference Manual. | Practice | Uses a configurable structural count; the threshold and any deviation need project justification. |
+| 46 | `Deep_Nesting` | A, B | Keep control structure locally understandable and testable. | General coding practice; not addressed by Annex H or the SPARK Reference Manual. | Practice | Uses a configurable nesting threshold; it does not measure semantic or architectural complexity. |
 
 ## Rules by DO-178C objective
 
-`--compliance-report=do178c` groups the same 45 checks under five
+`--compliance-report=do178c` groups the same 46 checks under five
 non-normative objectives (see `src/adalang_analyzer-compliance_mapping.adb`
 for the authoritative mapping the report generator actually uses — this
 section is a cross-reference for this document, not a second source of
 truth):
 
 - **Traceability** — `Missing_Requirement_Trace`, `Malformed_Requirement_Trace`.
-- **Standards conformance** — the 15 checks listed above under levels "A, B"
+- **Standards conformance** — the 16 checks listed above under levels "A, B"
   only (the Level A/B coding-restriction tier in full).
 - **Accuracy and consistency** — the 19 Core-tier checks plus `Dead_Store`,
   `Overwritten_Assignment`, `Uninitialized_Output`, `Global_Contract_Mismatch`,

@@ -144,7 +144,8 @@ package body Adalang_Analyzer.Compliance_Mapping is
       Rules.No_Classwide_Type);
 
    Storage_And_Aliasing_Rules : aliased constant Rules.Rule_List :=
-     (Rules.No_Unchecked_Conversion, Rules.No_Dynamic_Allocation,
+     (Rules.No_Unchecked_Conversion, Rules.No_Unchecked_Access,
+      Rules.No_Dynamic_Allocation,
       Rules.Restricted_Access_Type, Rules.No_Explicit_Dereference,
       Rules.No_Unchecked_Deallocation, Rules.Aliasing_Between_Parameters,
       Rules.No_Controlled_Type);

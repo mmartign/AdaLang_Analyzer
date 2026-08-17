@@ -237,9 +237,59 @@ breakdown.
   measure zero on the corpus that motivated them, right up until the one
   that finds what was actually blocking all of them.
 
+## New-check corpus validation (2026-08-17)
+
+Ten checks landed the same day (`Integer_Division_Before_Multiplication`,
+`No_Unchecked_Access`, `Duplicate_With_Clause`, `Excessive_Shift_Amount`,
+`Reraise_Discards_Occurrence`, `Duplicate_Exception_Choice`,
+`Succ_Pred_Boundary_Overflow`, `Redundant_If_Boolean_Return`,
+`Redundant_Final_Return`, `Entry_Barrier_Side_Effect`), validated only
+against synthetic `quality/precision_corpus.tsv` fixtures and a clean
+self-analysis run at the time. Before deciding whether any belonged in
+`--recommended`, all ten were run (isolated via `-checks="-*,<the ten
+names>"`) against every corpus in this directory — the seven SPARK/oracle
+corpora above plus the three real-code ones (aws, gnatcoll,
+ada_drivers_library) — ~950 files total, no `-P`/build step required for
+any of them beyond what each corpus's own entry above already documents.
+
+Nine of the ten found nothing anywhere, SPARK or not. `No_Unchecked_Access`
+was the exception: 48 hits, all in the three non-SPARK corpora (gnatcoll
+24, aws 21, ada_drivers_library 3) and zero in any SPARK corpus — expected,
+since `'Unchecked_Access` is not legal in `SPARK_Mode => On` code. A sample
+was spot-checked directly against source; all genuine (the check is a
+literal attribute-name match, so it cannot misfire). `Redundant_Final_Return`
+(1, gnatcoll) and `Redundant_If_Boolean_Return` (1, aws — a textbook `if X
+in [...] then return True; else return False; end if;` in
+`AWS.Utils.Is_Ada_Reserved_Word`) were each genuine but too sparse, alone,
+to draw a signal from.
+
+The run also caught `Reraise_Discards_Occurrence` misfiring on
+`aws-config-utils.adb`'s `Value` function: `raise Constraint_Error with
+Error_Context & "unrecognized option " & Item;` inside a `when
+Constraint_Error =>` handler with no other choices. The check's own
+rationale (naming the caught exception loses the original message/
+traceback) doesn't apply here — the `with`-message deliberately *replaces*
+the message with better diagnostic context before re-propagating, a
+legitimate idiom distinct from the accidental-loss bare `raise Foo;` shape
+the check exists to catch. Fixed same-session as `FP-051` (see table
+below): the check now exempts any raise with a non-null `F_Error_Message`.
+
+`No_Unchecked_Access` is structurally identical to two already-shipped
+checks, `No_Unchecked_Conversion` and `No_Unchecked_Deallocation`: all
+three flag every instance of a construct that is sometimes genuinely
+necessary, not a defect pattern with a low false-positive rate to tune.
+Both siblings are deliberately excluded from `--recommended` (see the
+comment on `Enable_Recommended_Preset`, `adalang_analyzer-cli.adb`) and
+instead live in `--spark`, `--automotive`, and DO-178C Level A/B — profiles
+where a restricted-construct policy is actually in force. Despite the
+corpus signal, `No_Unchecked_Access` was placed the same way as its
+siblings, not added to `--recommended`, to keep that established
+recommended/profile boundary intact; see `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`
+and `DO178C_COMPLIANCE_MATRIX.md` for its entries in those matrices.
+
 ## What these benchmarks have found, in total
 
-Eight real analyzer bugs, all discovered by running against independently
+Nine real analyzer bugs, all discovered by running against independently
 authored code no one on this project wrote or reviewed for analyzer
 blind spots — the value external-corpus validation is meant to deliver
 (`quality/external_corpus_findings.md`), each fixed with a regression test:
@@ -254,6 +304,7 @@ blind spots — the value external-corpus validation is meant to deliver
 | `FP-043` | gnatcoll | A `pragma Unreferenced` argument misread as a value read, in a second initialization walk `Checks.Data_Flow`'s own guard didn't cover |
 | `FP-044` | gnatcoll | A gap in the overload-arity fallback `FP-021` added: a wrong same-named-overload resolution could still be trusted when it coincidentally had a formal at the queried position |
 | `FP-045` | gnatcoll | Ada's `Low .. Low - 1` empty-array idiom flagged as a reversed range |
+| `FP-051` | aws | `Reraise_Discards_Occurrence` flagged `raise Foo with "<context>";` (a deliberate enrich-and-reraise idiom) the same as a bare `raise Foo;` (accidental occurrence loss) |
 
 `FP-044`'s own two originating findings (gnatcoll-buffer.adb's
 `Current_Text_Position`) persist despite the fix, unlike every other row

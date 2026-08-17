@@ -495,7 +495,8 @@ unresolved transitive call makes state effects incomplete and restores the
 unknown-call fallback.
 
 The `--automotive` preset combines these checks into a deliberately strict Ada
-profile. It covers allocation and access use; unchecked deallocation; tasking,
+profile. It covers allocation and access use; unchecked conversion,
+deallocation, and access; tasking,
 rendezvous, select, requeue, and asynchronous transfer; exception handling and
 escape; dispatching, class-wide, access-to-subprogram, controlled, and
 finalization features; initialization; volatile/atomic use; representation
