@@ -3,11 +3,31 @@
 This directory keeps the small, reviewable evidence used by the routine
 quality gate.
 
-`recommended.baseline` contains the 121 findings accepted after reviewing
+`recommended.baseline` contains the 138 findings accepted after reviewing
 the analyzer's own sources with `--recommended`. Duplicate fingerprints are
 intentional: the baseline records occurrences, not only unique shapes. The
 gate fails when a new non-baselined finding appears; removing an old finding
 does not fail the gate.
+
+`Duplicate_Subprogram` joined `--recommended` on 2026-08-17, growing the
+baseline from 121 to 138. External-corpus validation first (all ten
+benchmark corpora in `benchmarks/`, ~950 files, run in isolation via
+`-checks="-*,Duplicate_Subprogram"`): 394 findings across nine of the ten
+corpora, no false-positive class found on inspection anywhere -- see
+`benchmarks/README.md`'s "Older-check corpus validation" section for the
+full breakdown (cross-platform duplicate implementations, generated
+protocol code, and a real "same statement shape, differing only in an
+uncompared local declaration" pattern, all genuine). That run also found
+and fixed `FP-052`, a message-clarity bug the check's very first external
+corpus (AdaCore/Ada_Drivers_Library's per-chip-family driver layout)
+happened to trigger. The 17 findings on this project's own source --
+unchanged from the count already reviewed and confirmed genuine when the
+check was first added (`Effective_SPARK_Enabled`, `Contract_Expression`,
+`Formal_Mode`, `Formal_At`, `Is_Parameter_Key`, and others independently
+reimplemented, identically, across `SPARK_Readiness`,
+`SPARK_Dependency_Analysis`, `Flow_Interp`, and `Checks.Data_Flow`) -- are
+baselined rather than extracted, the same call the project made when the
+check was first self-analyzed.
 
 `Swappable_Parameters` joined `--recommended` on 2026-08-15, growing the
 baseline from 22 to 121 in one jump: 107 of the addition is that one check.
