@@ -42,8 +42,25 @@ package body Adalang_Analyzer.Clone_Detection is
    package Clone_Vectors is new Ada.Containers.Indefinite_Vectors
      (Index_Type => Positive, Element_Type => Clone_Info);
 
+   --  Ada.Containers.Generic_Sorting.Sort makes no stability guarantee for
+   --  elements that compare equal, so a comparator ordering purely on
+   --  Signature leaves the relative order of every tied pair/run
+   --  unspecified -- observed in practice as the same signature tie
+   --  sorting one way on one platform's GNAT runtime and the other way on
+   --  another's. Since Analyze reports "every body after the first in a
+   --  run duplicates the first", an unspecified order means an
+   --  unspecified choice of which side of the pair is "the duplicate" and
+   --  which is "the original", flipping the message text -- and, through
+   --  it, the finding's baseline fingerprint -- between environments.
+   --  Breaking ties by Filename and then by source line makes the order
+   --  a deterministic function of the source alone.
    function Signature_Less (Left, Right : Clone_Info) return Boolean is
-     (Left.Signature < Right.Signature);
+     (if Left.Signature /= Right.Signature
+      then Left.Signature < Right.Signature
+      elsif Left.Filename /= Right.Filename
+      then Left.Filename < Right.Filename
+      else Natural (Left.Subp_Node.Sloc_Range.Start_Line) <
+           Natural (Right.Subp_Node.Sloc_Range.Start_Line));
 
    package Sorting is new Clone_Vectors.Generic_Sorting
      ("<" => Signature_Less);
