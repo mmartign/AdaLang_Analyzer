@@ -25,6 +25,18 @@ Excessive_Shift_Amount	negative-unrelated-function	tests/precision_excessive_shi
 Reraise_Discards_Occurrence	positive-named-reraise	tests/precision_reraise_discards_occurrence_finding.adb	finding	a handler's last statement re-raising the same single exception it caught by name must fire
 Reraise_Discards_Occurrence	negative-bare-raise	tests/precision_reraise_discards_occurrence_bare_raise_clean.adb	clean	a bare 'raise;' re-propagating the original occurrence must not fire
 Reraise_Discards_Occurrence	negative-different-exception	tests/precision_reraise_discards_occurrence_different_exception_clean.adb	clean	raising a different exception than the one caught must not fire
+Duplicate_Exception_Choice	positive-repeated-choice	tests/precision_duplicate_exception_choice_finding.adb	finding	a handler whose own choice list names the same exception twice ("when E1 | E1 =>") must fire
+Duplicate_Exception_Choice	negative-distinct-choices	tests/precision_duplicate_exception_choice_clean.adb	clean	a handler naming two distinct exceptions must not fire
+Succ_Pred_Boundary_Overflow	positive-succ-last	tests/precision_succ_pred_boundary_overflow_succ_finding.adb	finding	"T'Succ (T'Last)" always raises Constraint_Error and must fire
+Succ_Pred_Boundary_Overflow	positive-pred-first	tests/precision_succ_pred_boundary_overflow_pred_finding.adb	finding	"T'Pred (T'First)" always raises Constraint_Error and must fire
+Succ_Pred_Boundary_Overflow	negative-ordinary-succ	tests/precision_succ_pred_boundary_overflow_clean.adb	clean	"T'Succ" applied to an ordinary literal, not the type's own 'Last, must not fire
+Redundant_If_Boolean_Return	positive-opposite-literals	tests/precision_redundant_if_boolean_return_finding.adb	finding	an if statement returning True on the then branch and False on the else branch must fire
+Redundant_If_Boolean_Return	negative-same-literal	tests/precision_redundant_if_boolean_return_same_literal_clean.adb	clean	both branches returning the identical boolean literal must not fire
+Redundant_If_Boolean_Return	negative-non-boolean	tests/precision_redundant_if_boolean_return_non_boolean_clean.adb	clean	both branches returning an integer literal, not a boolean one, must not fire
+Redundant_Final_Return	positive-trailing-bare-return	tests/precision_redundant_final_return_finding.adb	finding	a bare 'return;' as the last statement of a procedure body must fire
+Redundant_Final_Return	negative-conditional-return	tests/precision_redundant_final_return_clean.adb	clean	a 'return;' inside an if branch, not the body's own last statement, must not fire
+Entry_Barrier_Side_Effect	positive-in-out-callee	tests/precision_entry_barrier_side_effect_finding.adb	finding	a protected entry barrier calling a function with an in out parameter must fire
+Entry_Barrier_Side_Effect	negative-pure-barrier	tests/precision_entry_barrier_side_effect_clean.adb	clean	a barrier that is a plain boolean component, not a call, must not fire
 Long_Line	boundary-clean	tests/precision_long_line_at_threshold.adb	clean	default threshold is 120; a line of exactly 120 characters must not fire
 Long_Line	boundary-finding	tests/precision_long_line_over_threshold.adb	finding	a line of 121 characters must fire
 Generic_Instantiation_Limit	boundary-clean	tests/precision_generic_instantiation_limit_at_threshold.adb	clean	default threshold is 10; exactly 10 instantiations must not fire

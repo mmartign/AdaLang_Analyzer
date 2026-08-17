@@ -16,6 +16,7 @@ with Ada.Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
+with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;    use Adalang_Analyzer.Ada_Text;
@@ -924,6 +925,35 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       end if;
    end Analyze_Infinite_Loop;
 
+   --  True when Node is the identifier "True" or "False" and its static
+   --  type actually resolves to Standard.Boolean, as opposed to a
+   --  user-declared enumeration type that merely has a same-spelled
+   --  literal. Backs Redundant_If_Boolean_Return; mirrors
+   --  Checks.Expressions.Is_Standard_Boolean_Expression, used there for
+   --  the identical concern in Redundant_Boolean_Comparison.
+   function Is_Standard_Boolean_Literal
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if not Is_Boolean_Literal (Node) then
+         return False;
+      end if;
+
+      declare
+         Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Node.As_Expr.P_Expression_Type;
+      begin
+         return not Libadalang.Analysis.Is_Null (Expr_Type)
+           and then Langkit_Support.Text.To_UTF8
+             (Expr_Type.P_Canonical_Fully_Qualified_Name) =
+             "standard.boolean";
+      end;
+   exception
+      when others =>
+         --  Name resolution can legitimately fail for incomplete source.
+         return False;
+   end Is_Standard_Boolean_Literal;
+
    procedure Analyze_If_Statement  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.If_Stmt)
@@ -1019,6 +1049,40 @@ package body Adalang_Analyzer.Checks.Control_Flow is
            (Unit, Stmt.F_Else_Part, Unnecessary_Else_After_Return,
             "else is unnecessary because the then branch always returns, " &
               "raises, or exits");
+      end if;
+
+      if Rule_States (Redundant_If_Boolean_Return) = Enabled
+        and then Alternatives.Children_Count = 0
+        and then not Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
+        and then Stmt.F_Then_Stmts.Children_Count = 1
+        and then Stmt.F_Else_Part.F_Stmts.Children_Count = 1
+        and then Stmt.F_Then_Stmts.Child (1).Kind =
+          Libadalang.Common.Ada_Return_Stmt
+        and then Stmt.F_Else_Part.F_Stmts.Child (1).Kind =
+          Libadalang.Common.Ada_Return_Stmt
+      then
+         declare
+            Then_Expr : constant Libadalang.Analysis.Ada_Node :=
+              Libadalang.Analysis.Ada_Node
+                (Stmt.F_Then_Stmts.Child (1).As_Return_Stmt.F_Return_Expr);
+            Else_Expr : constant Libadalang.Analysis.Ada_Node :=
+              Libadalang.Analysis.Ada_Node
+                (Stmt.F_Else_Part.F_Stmts.Child
+                   (1).As_Return_Stmt.F_Return_Expr);
+         begin
+            if Is_Standard_Boolean_Literal (Then_Expr)
+              and then Is_Standard_Boolean_Literal (Else_Expr)
+              and then Boolean_Value (Then_Expr) /= Boolean_Value (Else_Expr)
+            then
+               Report_Rule_Violation
+                 (Unit, Stmt, Redundant_If_Boolean_Return,
+                  "if statement returns an opposite boolean literal on " &
+                  "each branch and can be simplified to returning the " &
+                  "condition" &
+                  (if Boolean_Value (Then_Expr) = Bool_False
+                   then " negated" else ""));
+            end if;
+         end;
       end if;
 
       Report_Identical_Statement_Branches (Unit, Stmt);
@@ -1125,6 +1189,33 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          Report_Rule_Violation
            (Unit, Handler, Empty_Exception_Handler,
             "exception handler contains no substantive statements");
+      end if;
+
+      if Rule_States (Duplicate_Exception_Choice) = Enabled then
+         for I in 2 .. Handler.F_Handled_Exceptions.Children_Count loop
+            declare
+               Choice      : constant Libadalang.Analysis.Ada_Node :=
+                 Handler.F_Handled_Exceptions.Child (I);
+               Choice_Text : constant String := Canonical_Text (Choice);
+            begin
+               if Choice.Kind /= Libadalang.Common.Ada_Others_Designator
+                 and then Choice_Text /= ""
+               then
+                  for J in 1 .. I - 1 loop
+                     if Canonical_Text
+                       (Handler.F_Handled_Exceptions.Child (J)) =
+                       Choice_Text
+                     then
+                        Report_Rule_Violation
+                          (Unit, Choice, Duplicate_Exception_Choice,
+                           "exception choice repeats an earlier choice in " &
+                           "the same handler");
+                        exit;  --  adalang-analyzer: ignore No_Exit
+                     end if;
+                  end loop;
+               end if;
+            end;
+         end loop;
       end if;
 
       if Rule_States (Handler_Order) = Enabled then

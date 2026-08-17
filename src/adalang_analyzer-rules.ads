@@ -51,12 +51,15 @@ package Adalang_Analyzer.Rules is
       Division_By_Zero,
       Integer_Division_Before_Multiplication,
       Excessive_Shift_Amount,
+      Succ_Pred_Boundary_Overflow,
       Reversed_Range,
       Self_Assignment,
       Same_Operand,
       Duplicate_Condition,
       Duplicate_With_Clause,
+      Duplicate_Exception_Choice,
       Null_Statement,
+      Redundant_Final_Return,
       Empty_Exception_Handler,
       Unreachable_Branch,
       Contradictory_Condition,
@@ -75,6 +78,7 @@ package Adalang_Analyzer.Rules is
       Unused_Variable,
       Empty_If_Body,
       Unnecessary_Else_After_Return,
+      Redundant_If_Boolean_Return,
       Function_Side_Effect,
       Redundant_Boolean_Comparison,
       Long_Line,
@@ -95,6 +99,7 @@ package Adalang_Analyzer.Rules is
       Known_Postcondition_Failure,
       Known_Assertion_Failure,
       Assertion_Side_Effect,
+      Entry_Barrier_Side_Effect,
       Known_Range_Check_Failure,
       Known_Index_Check_Failure,
       Known_Overflow_Failure,
@@ -503,6 +508,16 @@ package Adalang_Analyzer.Rules is
             "bit width if the wraparound is intentional."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
+      Succ_Pred_Boundary_Overflow =>
+        (Name        => To_Unbounded_String ("Succ_Pred_Boundary_Overflow"),
+         Description => To_Unbounded_String
+           ("Find 'Succ applied to 'Last or 'Pred applied to 'First of the " &
+            "same scalar type, which always raises Constraint_Error."),
+         Guidance    => To_Unbounded_String
+           ("Guard the call with a range check, or correct the intended " &
+            "bound."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Blocker),
       Reversed_Range =>
         (Name        => To_Unbounded_String ("Reversed_Range"),
          Description => To_Unbounded_String
@@ -551,6 +566,15 @@ package Adalang_Analyzer.Rules is
            ("Remove the redundant with clause."),
          Quality     => Quality_Maintainability,
          Severity    => Severity_Low),
+      Duplicate_Exception_Choice =>
+        (Name        => To_Unbounded_String ("Duplicate_Exception_Choice"),
+         Description => To_Unbounded_String
+           ("Find an exception handler whose own choice list names the " &
+            "same exception more than once."),
+         Guidance    => To_Unbounded_String
+           ("Remove the redundant choice."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       Null_Statement =>
         (Name        => To_Unbounded_String ("Null_Statement"),
          Description => To_Unbounded_String
@@ -558,6 +582,16 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Remove the placeholder or replace it with explicit handling so " &
             "the empty action is intentional."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Redundant_Final_Return =>
+        (Name        => To_Unbounded_String ("Redundant_Final_Return"),
+         Description => To_Unbounded_String
+           ("Find a bare 'return;' as the last statement of a procedure " &
+            "body, where control would fall through to the same effect " &
+            "anyway."),
+         Guidance    => To_Unbounded_String
+           ("Remove the redundant return statement."),
          Quality     => Quality_Maintainability,
          Severity    => Severity_Low),
       Empty_Exception_Handler =>
@@ -743,6 +777,16 @@ package Adalang_Analyzer.Rules is
            ("Remove the else and dedent its statements to the enclosing " &
             "block, now that the earlier branch always transfers control " &
             "away."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Redundant_If_Boolean_Return =>
+        (Name        => To_Unbounded_String ("Redundant_If_Boolean_Return"),
+         Description => To_Unbounded_String
+           ("Find an if statement whose then and else branches each " &
+            "return only an opposite boolean literal."),
+         Guidance    => To_Unbounded_String
+           ("Return the condition directly (negated if the branches are " &
+            "reversed) instead of branching to a boolean literal."),
          Quality     => Quality_Maintainability,
          Severity    => Severity_Low),
       Function_Side_Effect =>
@@ -948,6 +992,17 @@ package Adalang_Analyzer.Rules is
             "assertions (pragma Assertion_Policy (Ignore), or building " &
             "without -gnata) would silently stop that side effect from " &
             "happening, changing the program's behavior."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Entry_Barrier_Side_Effect =>
+        (Name        => To_Unbounded_String ("Entry_Barrier_Side_Effect"),
+         Description => To_Unbounded_String
+           ("Find protected entry barrier conditions that call a function " &
+            "with an out or in out parameter."),
+         Guidance    => To_Unbounded_String
+           ("Move the mutation out of the barrier condition; a barrier is " &
+            "evaluated on every call and exit of the protected object and " &
+            "must stay free of side effects."),
          Quality     => Quality_Reliability,
          Severity    => Severity_Medium),
       Known_Range_Check_Failure =>

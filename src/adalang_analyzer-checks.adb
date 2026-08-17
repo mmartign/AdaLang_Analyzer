@@ -200,15 +200,20 @@ package body Adalang_Analyzer.Checks is
          return Libadalang.Analysis.No_Expr;
    end Assertion_Expression;
 
-   --  Reports Assertion_Side_Effect for every call in Node's subtree whose
-   --  callee has an out or in out parameter. Only a function can appear in
-   --  an assertion condition's expression syntax, so no Subp_Kind check is
-   --  needed here -- but a function with an out/in-out parameter (legal
-   --  since Ada 2012) can still mutate caller-visible state through it, an
-   --  effect that silently stops happening if assertions are disabled.
-   procedure Report_Assertion_Side_Effects
-     (Unit : Libadalang.Analysis.Analysis_Unit;
-      Node : Libadalang.Analysis.Ada_Node'Class)
+   --  Reports Rule for every call in Node's subtree whose callee has an
+   --  out or in out parameter. Only a function can appear in an assertion
+   --  condition's or entry barrier's expression syntax, so no Subp_Kind
+   --  check is needed here -- but a function with an out/in-out parameter
+   --  (legal since Ada 2012) can still mutate caller-visible state through
+   --  it. Shared by Assertion_Side_Effect (an effect that silently stops
+   --  happening if assertions are disabled) and Entry_Barrier_Side_Effect
+   --  (a barrier is evaluated on every call/exit of the protected object
+   --  and RM 9.5.3 requires it to be side-effect-free).
+   procedure Report_Call_Side_Effects
+     (Unit        : Libadalang.Analysis.Analysis_Unit;
+      Node        : Libadalang.Analysis.Ada_Node'Class;
+      Rule        : Rule_Kind;
+      Context     : String)
    is
    begin
       if Node.Kind = Libadalang.Common.Ada_Call_Expr then
@@ -230,8 +235,8 @@ package body Adalang_Analyzer.Checks is
                                | Libadalang.Common.Ada_Mode_In_Out_Range
                            then
                               Report_Rule_Violation
-                                (Unit, Node, Assertion_Side_Effect,
-                                 "assertion condition calls '" &
+                                (Unit, Node, Rule,
+                                 Context & " calls '" &
                                    Node_Text (Node.As_Call_Expr.F_Name) &
                                    "', which has an out or in out " &
                                    "parameter and can mutate caller state");
@@ -245,7 +250,7 @@ package body Adalang_Analyzer.Checks is
          exception
             when Exc : others =>
                Log_Verbose_Once
-                 ("skipping assertion side-effect resolution: " &
+                 ("skipping call side-effect resolution: " &
                   Ada.Exceptions.Exception_Message (Exc));
          end;
       end if;
@@ -257,10 +262,10 @@ package body Adalang_Analyzer.Checks is
          --  recursing into it would raise on the unguarded .Kind read
          --  above.
          if not Libadalang.Analysis.Is_Null (Node.Child (Index)) then
-            Report_Assertion_Side_Effects (Unit, Node.Child (Index));
+            Report_Call_Side_Effects (Unit, Node.Child (Index), Rule, Context);
          end if;
       end loop;
-   end Report_Assertion_Side_Effects;
+   end Report_Call_Side_Effects;
 
    function Has_Exception_Boundary
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
@@ -486,6 +491,20 @@ package body Adalang_Analyzer.Checks is
             Control_Flow.Analyze_Exception_Handler
               (Unit, Node.As_Exception_Handler);
 
+         when Libadalang.Common.Ada_Entry_Body =>
+            if Rule_States (Entry_Barrier_Side_Effect) = Enabled then
+               declare
+                  Barrier : constant Libadalang.Analysis.Expr :=
+                    Node.As_Entry_Body.F_Barrier;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Barrier) then
+                     Report_Call_Side_Effects
+                       (Unit, Barrier, Entry_Barrier_Side_Effect,
+                        "entry barrier condition");
+                  end if;
+               end;
+            end if;
+
          when Libadalang.Common.Ada_Pragma_Node =>
             if Rule_States (Known_Assertion_Failure) = Enabled
               or else Rule_States (Assertion_Side_Effect) = Enabled
@@ -496,7 +515,9 @@ package body Adalang_Analyzer.Checks is
                begin
                   if not Libadalang.Analysis.Is_Null (Cond) then
                      if Rule_States (Assertion_Side_Effect) = Enabled then
-                        Report_Assertion_Side_Effects (Unit, Cond);
+                        Report_Call_Side_Effects
+                          (Unit, Cond, Assertion_Side_Effect,
+                           "assertion condition");
                      end if;
 
                      if Rule_States (Known_Assertion_Failure) = Enabled then
@@ -976,6 +997,28 @@ package body Adalang_Analyzer.Checks is
               (Unit, Node, Missing_Requirement_Trace,
                "subprogram has no DO-178C low-level requirement trace");
          end if;
+         if Rule_States (Redundant_Final_Return) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Subp_Body
+         then
+            declare
+               Stmts : constant Libadalang.Analysis.Stmt_List :=
+                 Node.As_Subp_Body.F_Stmts.F_Stmts;
+            begin
+               if Stmts.Children_Count > 0
+                 and then Stmts.Child (Stmts.Children_Count).Kind =
+                   Libadalang.Common.Ada_Return_Stmt
+                 and then Libadalang.Analysis.Is_Null
+                   (Stmts.Child
+                      (Stmts.Children_Count).As_Return_Stmt.F_Return_Expr)
+               then
+                  Report_Rule_Violation
+                    (Unit, Stmts.Child (Stmts.Children_Count),
+                     Redundant_Final_Return,
+                     "redundant 'return;' as the last statement of the " &
+                     "procedure body");
+               end if;
+            end;
+         end if;
          if Rule_States (SPARK_Mode) = Enabled then
             if Node.Kind = Libadalang.Common.Ada_Aspect_Assoc then
                declare
@@ -1184,6 +1227,54 @@ package body Adalang_Analyzer.Checks is
             Report_Rule_Violation
               (Unit, Node, No_Unchecked_Access,
                "'Unchecked_Access attribute used");
+         end if;
+         if Rule_States (Succ_Pred_Boundary_Overflow) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Node.As_Call_Expr.F_Name.Kind =
+             Libadalang.Common.Ada_Attribute_Ref
+           and then Node.As_Call_Expr.F_Suffix.Kind in
+             Libadalang.Common.Ada_Basic_Assoc_List
+           and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
+           and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
+             Libadalang.Common.Ada_Param_Assoc
+         then
+            declare
+               Attr      : constant Libadalang.Analysis.Attribute_Ref :=
+                 Node.As_Call_Expr.F_Name.As_Attribute_Ref;
+               Attr_Name : constant String :=
+                 Normalize_Rule_Name (Node_Text (Attr.F_Attribute));
+               Arg       : constant Libadalang.Analysis.Expr :=
+                 Node.As_Call_Expr.F_Suffix.Child
+                   (1).As_Param_Assoc.F_R_Expr;
+            begin
+               if Attr_Name in "succ" | "pred"
+                 and then not Libadalang.Analysis.Is_Null (Arg)
+                 and then Arg.Kind = Libadalang.Common.Ada_Attribute_Ref
+               then
+                  declare
+                     Arg_Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                       Arg.As_Attribute_Ref;
+                     Arg_Name : constant String :=
+                       Normalize_Rule_Name (Node_Text (Arg_Attr.F_Attribute));
+                  begin
+                     if ((Attr_Name = "succ" and then Arg_Name = "last")
+                           or else
+                         (Attr_Name = "pred" and then Arg_Name = "first"))
+                       and then Canonical_Text (Attr.F_Prefix) /= ""
+                       and then Canonical_Text (Attr.F_Prefix) =
+                         Canonical_Text (Arg_Attr.F_Prefix)
+                     then
+                        Report_Rule_Violation
+                          (Unit, Node, Succ_Pred_Boundary_Overflow,
+                           "'" &
+                           (if Attr_Name = "succ" then "Succ" else "Pred") &
+                           " applied to the type's own '" &
+                           (if Attr_Name = "succ" then "Last" else "First") &
+                           " always raises Constraint_Error");
+                     end if;
+                  end;
+               end if;
+            end;
          end if;
          if Rule_States (Excessive_Shift_Amount) = Enabled
            and then Node.Kind = Libadalang.Common.Ada_Call_Expr

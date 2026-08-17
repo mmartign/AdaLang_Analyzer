@@ -105,7 +105,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (237 cases; the tally below itemizes the threshold and
+Current coverage (249 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
@@ -334,6 +334,21 @@ instead of being re-itemized here):
   re-raising the single exception it caught by name, vs. a bare `raise;`
   at the same shape, paired with a third case confirming raising a
   *different* exception than the one caught does not fire).
+
+- 12 cases for five more new checks added together: `Duplicate_Exception_Choice`
+  (a handler's own choice list naming the same exception twice, "when E1 |
+  E1 =>", vs. two distinct exceptions); `Succ_Pred_Boundary_Overflow`
+  (`T'Succ (T'Last)` and `T'Pred (T'First)`, both of which always raise
+  `Constraint_Error`, vs. an ordinary `T'Succ` applied to an ordinary
+  literal rather than the type's own `'Last`); `Redundant_If_Boolean_Return`
+  (an if statement returning `True` on the then branch and `False` on the
+  else branch, vs. both branches returning the identical literal, and vs.
+  both branches returning an integer literal instead of a boolean one);
+  `Redundant_Final_Return` (a bare `return;` as a procedure body's own
+  last statement, vs. a `return;` inside an if branch, not the body's own
+  last statement); and `Entry_Barrier_Side_Effect` (a protected entry
+  barrier calling a function with an `in out` parameter, vs. a barrier
+  that is a plain boolean component with no call at all).
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:

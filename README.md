@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 107 checks spanning coding policy, data/control-flow defects, and
+At a glance: 112 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -96,7 +96,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 107 checks fall into five broad groups:
+AdaLang Analyzer's 112 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -145,13 +145,16 @@ The analyzer currently provides the following checks:
 | Arithmetic | `Division_By_Zero` | Reliability | Blocker | Reports statically detectable division, `mod`, or `rem` by zero. |
 | Arithmetic | `Integer_Division_Before_Multiplication` | Reliability | Medium | Reports integer multiplications whose left operand is an unparenthesized integer division. |
 | Arithmetic | `Excessive_Shift_Amount` | Reliability | High | Reports `Interfaces` shift/rotate calls whose static amount is not less than the operand type's bit width. |
+| Arithmetic | `Succ_Pred_Boundary_Overflow` | Reliability | Blocker | Reports `'Succ` applied to `'Last` or `'Pred` applied to `'First` of the same scalar type. |
 | Arithmetic | `Reversed_Range` | Reliability | Medium | Reports static ranges whose lower bound exceeds their upper bound. |
 | Assignment | `Self_Assignment` | Reliability | Medium | Reports assignments whose target and value designate the same object, including through simple renames. |
 | Expression | `Same_Operand` | Reliability | Medium | Reports suspicious binary expressions with identical operands. |
 | Conditional | `Duplicate_Condition` | Reliability | Medium | Reports repeated conditions in an `if`/`elsif` chain. |
 | Duplication | `Duplicate_With_Clause` | Maintainability | Low | Reports with clauses naming a unit already with'd in the same context clause. |
 | Style | `Null_Statement` | Maintainability | Low | Reports executable `null` statements. |
+| Style | `Redundant_Final_Return` | Maintainability | Low | Reports a bare `return;` as the last statement of a procedure body. |
 | Exception handling | `Empty_Exception_Handler` | Reliability | High | Reports handlers containing no substantive statements. |
+| Exception handling | `Duplicate_Exception_Choice` | Maintainability | Low | Reports an exception handler whose own choice list names the same exception more than once. |
 | Control flow | `Unreachable_Branch` | Reliability | Medium | Reports branches excluded by earlier static conditions. |
 | Conditional | `Contradictory_Condition` | Reliability | High | Reports expressions such as `X and not X` or `X or not X`. |
 | Conditional | `Identical_Branches` | Reliability | Medium | Reports adjacent conditional branches with identical bodies. |
@@ -169,6 +172,7 @@ The analyzer currently provides the following checks:
 | Data flow | `Unused_Variable` | Maintainability | Low | Reports local objects that are never referenced. |
 | Style | `Empty_If_Body` | Maintainability | Low | Reports if statements with no elsif/else whose body has no effect. |
 | Style | `Unnecessary_Else_After_Return` | Maintainability | Low | Reports else parts made redundant by an earlier unconditional return/raise/exit. |
+| Style | `Redundant_If_Boolean_Return` | Maintainability | Low | Reports an if statement whose then and else branches each return only an opposite boolean literal. |
 | Data flow | `Function_Side_Effect` | Reliability | High | Reports functions that assign to state outside their own parameters and locals. |
 | Expression | `Redundant_Boolean_Comparison` | Maintainability | Low | Reports equality/inequality comparisons against the literal `True`/`False`. |
 | Style | `Long_Line` | Maintainability | Low | Reports source lines longer than the configured threshold. |
@@ -184,6 +188,7 @@ The analyzer currently provides the following checks:
 | SPARK | `Known_Postcondition_Failure` | Reliability | High | Reports bodies whose resulting state makes their postcondition false. |
 | SPARK | `Known_Assertion_Failure` | Reliability | High | Reports assertion pragmas whose condition is statically false at that program point. |
 | SPARK | `Assertion_Side_Effect` | Reliability | Medium | Reports assertion pragmas whose condition calls a function with an out or in out parameter. |
+| Tasking | `Entry_Barrier_Side_Effect` | Reliability | Medium | Reports protected entry barrier conditions that call a function with an out or in out parameter. |
 | SPARK | `Known_Range_Check_Failure` | Reliability | High | Reports values provably outside an assignment, initialization, or conversion subtype. |
 | SPARK | `Known_Index_Check_Failure` | Reliability | High | Reports array indices provably outside the corresponding index subtype. |
 | SPARK | `Known_Overflow_Failure` | Reliability | High | Reports integer arithmetic provably outside the operation's base type. |

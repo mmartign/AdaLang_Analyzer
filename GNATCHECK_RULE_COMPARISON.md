@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This is a **documentation-based** comparison: AdaLang Analyzer's 107 checks
+This is a **documentation-based** comparison: AdaLang Analyzer's 112 checks
 (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -20,14 +20,14 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 107 checks:
+Of AdaLang Analyzer's 112 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
 | Direct | 18 | Same check, essentially the same semantics |
 | Close | 14 | Same intent, minor scope difference |
 | Partial | 18 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
-| No GNATcheck counterpart | 57 | Nothing in the predefined catalog does this |
+| No GNATcheck counterpart | 62 | Nothing in the predefined catalog does this |
 
 GNATcheck's own catalog runs to roughly 180 predefined rules; large families
 of it (identifier casing/prefixes/readability, OOP-depth metrics,
@@ -99,14 +99,15 @@ cover a different-shaped case than the nearest predefined rule.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-57 of AdaLang's 107 rules do something GNATcheck's predefined catalog does
+62 of AdaLang's 112 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
 CodePeer territory, not GNATcheck's syntactic/semantic rule matching):
 Known_Precondition_Failure, Known_Postcondition_Failure,
 Known_Assertion_Failure, Known_Range_Check_Failure, Known_Index_Check_Failure,
-Known_Overflow_Failure, Known_Discriminant_Check_Failure.
+Known_Overflow_Failure, Known_Discriminant_Check_Failure,
+Succ_Pred_Boundary_Overflow.
 
 **SPARK contract consistency** (Global/Depends contracts checked against
 actual code behavior, not just presence):
@@ -136,7 +137,9 @@ Circular_Package_Dependency, Duplicate_Subprogram, Missing_Loop_Variant,
 Potentially_Blocking_Operation, No_Explicit_Dereference, No_Rendezvous,
 No_Select, No_Requeue, No_Asynchronous_Transfer, No_Dispatching_Call,
 No_Classwide_Type, Unused_Variable, No_Unchecked_Access,
-Duplicate_With_Clause, Reraise_Discards_Occurrence.
+Duplicate_With_Clause, Reraise_Discards_Occurrence,
+Duplicate_Exception_Choice, Redundant_If_Boolean_Return,
+Redundant_Final_Return, Entry_Barrier_Side_Effect.
 
 (Several of these -- Unused_Parameter, Unused_Variable, Shadowed_Declaration,
 Missing_Overriding_Indicator, Dead_Store -- are things GNAT itself reports as
