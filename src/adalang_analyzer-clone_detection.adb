@@ -7,7 +7,6 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Containers.Indefinite_Vectors;
-with Ada.Directories;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 with Libadalang.Common;
@@ -142,8 +141,16 @@ package body Adalang_Analyzer.Clone_Detection is
                      "subprogram '" & To_String (Clones (J).Name) &
                        "' has a statement sequence identical to '" &
                        To_String (Clones (I).Name) & "'s at " &
-                       Ada.Directories.Simple_Name
-                         (To_String (Clones (I).Filename)) & ":" &
+
+                       --  The full filename, not just its simple name: two
+                       --  files in different directories can share a
+                       --  basename (e.g. a per-target board/chip variant
+                       --  layout providing an alternate "stm32-crc.adb"
+                       --  per directory, found on AdaCore/Ada_Drivers_
+                       --  Library), and a simple name alone would then
+                       --  read as if a body were reported as a duplicate
+                       --  of itself.
+                       To_String (Clones (I).Filename) & ":" &
                        To_Decimal
                          (Natural
                             (Clones (I).Subp_Node.Sloc_Range.Start_Line)) &

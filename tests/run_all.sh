@@ -18,6 +18,7 @@ for test_script in \
   tests/run_compliance_report.sh \
   tests/run_precision_corpus.sh \
   tests/run_circular_dependencies.sh \
+  tests/run_clone_detection.sh \
   tests/run_cli_robustness.sh \
   tests/run_cli_parameter_effects.sh \
   tests/run_config_file.sh \

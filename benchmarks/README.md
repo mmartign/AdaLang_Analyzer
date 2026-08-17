@@ -287,9 +287,80 @@ siblings, not added to `--recommended`, to keep that established
 recommended/profile boundary intact; see `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`
 and `DO178C_COMPLIANCE_MATRIX.md` for its entries in those matrices.
 
+## Older-check corpus validation: Duplicate_Subprogram, Assertion_Side_Effect (2026-08-17)
+
+Two more checks had never been run against an external corpus at all --
+only self-analysis (17 findings on this project's own source for
+`Duplicate_Subprogram`, reviewed by hand at the time; zero for
+`Assertion_Side_Effect`, which needs the rare combination of an assertion
+condition calling a function with an out/in-out parameter). Both were run
+in isolation against the same ten corpora as the sweep above.
+
+`Assertion_Side_Effect` again found nothing anywhere -- the combination it
+targets is narrow enough that ten real corpora, SPARK and not, still don't
+contain an example. No change from this.
+
+`Duplicate_Subprogram` found 394 findings across nine of the ten corpora
+(zero only in saatana): sparknacl 10, project_bias 9, tokeneer 9, gnatcoll
+68, libkeccak 14, cubedos 13, coap_spark 132, ada_drivers_library 27, aws
+112. Every single one, in every corpus, is a *cross-file* match (never two
+duplicate bodies in the same file) -- a different profile than the
+same-file pair `precision_duplicate_subprogram_finding.adb` exercises, and
+the reason this corpus run was worth doing even though the check already
+had a synthetic positive fixture.
+
+Investigating the volume rather than assuming it was noise:
+
+- coap_spark's 132 is 129 findings inside `generated/rflx-*.adb`
+  (RecordFlux-generated protocol code) and only 3 in hand-written source.
+  The generated ones are technically correct -- the bodies genuinely are
+  identical -- but not something a developer would act on: the fix would
+  be to the code generator's template, not the generated output. The 3
+  hand-written findings (`coap_spark-client_session.adb`/
+  `coap_spark-server_session.adb`'s `Read`/`Write`, `secure_server.adb`/
+  `coap_secure.adb`'s `Update`) are genuine extraction candidates.
+- gnatcoll's 68 and aws's 112 split roughly 2:1 into same-name pairs
+  (parallel Unix/Windows implementations of the same operation, e.g.
+  `gnatcoll-io-remote-unix.adb`/`gnatcoll-io-remote-windows.adb`'s
+  `Read_Whole_File`) and different-name pairs. The latter turned out to be
+  a real, useful pattern on inspection, not noise: gnatcoll's
+  `Is_Symbolic_Link`/`Is_Readable`/`Is_Writable`/`Is_Directory`/
+  `Is_Regular_File`/`Change_Dir`/`Make_Dir` (all in
+  `gnatcoll-io-remote-unix.adb`) share the identical three-statement
+  `Exec.Execute_Remotely (Args, Status); Free (Args); return Status;`
+  body -- the check's own disclosed limitation ("local declarations not
+  compared") is exactly why they match: the actual differentiating shell
+  command (`"test"`/`"-L"` vs `"-r"` vs `"cd"`, ...) lives in each
+  function's own declarative part, which the check deliberately doesn't
+  compare. That's not a false positive; it's the check surfacing a real
+  "these could be one helper parameterized by the shell command" shape,
+  exactly what the disclaimer in every finding's message already warns a
+  reader to go check.
+- ada_drivers_library's 27 are, all 27 of them, matches between two files
+  that share a simple name in different directories -- this corpus's
+  per-chip-family driver layout (`crc_stm32f4/stm32-crc.adb` vs
+  `crc_stm32f7/stm32-crc.adb`, each providing its own implementation for
+  the same nominal package). This is where **FP-052** was found: the
+  "matches X at Y" half of the message rendered the matched location via
+  `Ada.Directories.Simple_Name`, dropping the directory, so two files
+  sharing a basename produced a message reading as if a body had been
+  reported as a duplicate of itself ("`stm32-crc.adb:72` ... identical to
+  ... `stm32-crc.adb:72`"). The underlying detection was correct the whole
+  time -- both chip variants' `Update_CRC` genuinely are byte-identical --
+  only the citation was ambiguous. Fixed by reporting the matched
+  location's full filename instead of its simple name; covered by
+  `tests/run_clone_detection.sh`'s cross-file pair (two files both named
+  `shared_body.adb`, in `tests/duplicate_subprogram_cross_file/variant_a/`
+  and `variant_b/`).
+
+No false-positive class turned up in `Duplicate_Subprogram` itself across
+any of the ten corpora -- every sampled finding, in every corpus, pointed
+at a real, explainable duplication. That's a materially stronger basis
+than the original self-analysis-only evidence it shipped with.
+
 ## What these benchmarks have found, in total
 
-Nine real analyzer bugs, all discovered by running against independently
+Ten real analyzer bugs, all discovered by running against independently
 authored code no one on this project wrote or reviewed for analyzer
 blind spots — the value external-corpus validation is meant to deliver
 (`quality/external_corpus_findings.md`), each fixed with a regression test:
@@ -305,6 +376,7 @@ blind spots — the value external-corpus validation is meant to deliver
 | `FP-044` | gnatcoll | A gap in the overload-arity fallback `FP-021` added: a wrong same-named-overload resolution could still be trusted when it coincidentally had a formal at the queried position |
 | `FP-045` | gnatcoll | Ada's `Low .. Low - 1` empty-array idiom flagged as a reversed range |
 | `FP-051` | aws | `Reraise_Discards_Occurrence` flagged `raise Foo with "<context>";` (a deliberate enrich-and-reraise idiom) the same as a bare `raise Foo;` (accidental occurrence loss) |
+| `FP-052` | ada_drivers_library | `Duplicate_Subprogram`'s matched-location message dropped the directory, so two files sharing a simple name in different directories read as a body reported as a duplicate of itself |
 
 `FP-044`'s own two originating findings (gnatcoll-buffer.adb's
 `Current_Text_Position`) persist despite the fix, unlike every other row
