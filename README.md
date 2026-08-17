@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 103 checks spanning coding policy, data/control-flow defects, and
+At a glance: 107 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -96,7 +96,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 103 checks fall into five broad groups:
+AdaLang Analyzer's 107 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -124,6 +124,7 @@ The analyzer currently provides the following checks:
 | Restricted construct | `No_Pragma` | Maintainability | Low | Reports pragmas. |
 | Restricted construct | `No_Access_To_Subp_Def` | Maintainability | Medium | Reports access-to-subprogram type definitions. |
 | Safety | `No_Unchecked_Conversion` | Security | High | Reports instantiations of `Ada.Unchecked_Conversion`. |
+| Safety | `No_Unchecked_Access` | Security | High | Reports uses of the `'Unchecked_Access` attribute. |
 | Numerical safety | `Floating_Equality` | Reliability | Medium | Reports `=` and `/=` applied to floating-point operands. |
 | Maintainability | `Magic_Number` | Maintainability | Low | Reports unexplained numeric literals other than 0, 1, and -1 outside named constant declarations. |
 | Data flow | `Unused_Parameter` | Maintainability | Low | Reports subprogram parameters that are never referenced. |
@@ -143,10 +144,12 @@ The analyzer currently provides the following checks:
 | Control flow | `Unreachable_Code` | Maintainability | Medium | Reports statements following an unconditional transfer of control. |
 | Arithmetic | `Division_By_Zero` | Reliability | Blocker | Reports statically detectable division, `mod`, or `rem` by zero. |
 | Arithmetic | `Integer_Division_Before_Multiplication` | Reliability | Medium | Reports integer multiplications whose left operand is an unparenthesized integer division. |
+| Arithmetic | `Excessive_Shift_Amount` | Reliability | High | Reports `Interfaces` shift/rotate calls whose static amount is not less than the operand type's bit width. |
 | Arithmetic | `Reversed_Range` | Reliability | Medium | Reports static ranges whose lower bound exceeds their upper bound. |
 | Assignment | `Self_Assignment` | Reliability | Medium | Reports assignments whose target and value designate the same object, including through simple renames. |
 | Expression | `Same_Operand` | Reliability | Medium | Reports suspicious binary expressions with identical operands. |
 | Conditional | `Duplicate_Condition` | Reliability | Medium | Reports repeated conditions in an `if`/`elsif` chain. |
+| Duplication | `Duplicate_With_Clause` | Maintainability | Low | Reports with clauses naming a unit already with'd in the same context clause. |
 | Style | `Null_Statement` | Maintainability | Low | Reports executable `null` statements. |
 | Exception handling | `Empty_Exception_Handler` | Reliability | High | Reports handlers containing no substantive statements. |
 | Control flow | `Unreachable_Branch` | Reliability | Medium | Reports branches excluded by earlier static conditions. |
@@ -188,6 +191,7 @@ The analyzer currently provides the following checks:
 | Expression | `Redundant_Type_Conversion` | Maintainability | Low | Reports explicit type conversions whose operand already has the target subtype. |
 | Style | `Missing_Overriding_Indicator` | Maintainability | Medium | Reports primitive subprograms that override an inherited operation without the `overriding` keyword. |
 | Exception handling | `Handler_Order` | Reliability | High | Reports a `when others` handler that precedes, and thereby shadows, a more specific handler in the same list. |
+| Exception handling | `Reraise_Discards_Occurrence` | Reliability | Medium | Reports an exception handler's last statement re-raising the same single exception it caught by name instead of a bare `raise;`. |
 | Data flow | `Aliasing_Between_Parameters` | Reliability | High | Reports calls that pass the same object or component as two actual parameters when at least one corresponding formal is written. |
 | SPARK | `Missing_Loop_Variant` | Maintainability | Medium | Reports loops with a `Loop_Invariant` pragma but no `Loop_Variant` pragma. |
 | SPARK | `Known_Discriminant_Check_Failure` | Reliability | High | Reports accesses to a variant-part component that a statically known discriminant constraint provably excludes. |

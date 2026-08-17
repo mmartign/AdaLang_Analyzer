@@ -15,6 +15,16 @@ Duplicate_Subprogram	negative-trivial-bodies	tests/precision_duplicate_subprogra
 Integer_Division_Before_Multiplication	positive-unparenthesized-chain	tests/precision_integer_division_before_multiplication_finding.adb	finding	an integer multiplication whose left operand is an unparenthesized integer division ("A / B * C") must fire
 Integer_Division_Before_Multiplication	negative-alignment-idiom	tests/precision_integer_division_before_multiplication_alignment_clean.adb	clean	"(A / N) * N" rounds A down to the nearest multiple of N, a deliberate alignment idiom rather than a precision-loss mistake, and must not fire
 Integer_Division_Before_Multiplication	negative-floating-point	tests/precision_integer_division_before_multiplication_float_clean.adb	clean	the check only applies to integer operands; the identical shape on Float operands must not fire
+No_Unchecked_Access	positive-attribute-used	tests/precision_no_unchecked_access_finding.adb	finding	an 'Unchecked_Access attribute reference must fire
+No_Unchecked_Access	negative-ordinary-access	tests/precision_no_unchecked_access_clean.adb	clean	an ordinary 'Access attribute reference must not fire
+Duplicate_With_Clause	positive-repeated-unit	tests/precision_duplicate_with_clause_finding.adb	finding	a with clause naming a unit already with'd earlier in the same context clause must fire
+Duplicate_With_Clause	negative-distinct-units	tests/precision_duplicate_with_clause_clean.adb	clean	two with clauses naming distinct units must not fire
+Excessive_Shift_Amount	positive-amount-equals-width	tests/precision_excessive_shift_amount_finding.adb	finding	Shift_Left on an Interfaces.Unsigned_8 value with a static amount of 8 (not less than the 8-bit width) must fire
+Excessive_Shift_Amount	negative-amount-below-width	tests/precision_excessive_shift_amount_clean.adb	clean	Shift_Left on an Interfaces.Unsigned_8 value with a static amount of 7 must not fire
+Excessive_Shift_Amount	negative-unrelated-function	tests/precision_excessive_shift_amount_unrelated_function_clean.adb	clean	a locally declared function merely named Shift_Left, unrelated to Interfaces, must not fire regardless of its argument value
+Reraise_Discards_Occurrence	positive-named-reraise	tests/precision_reraise_discards_occurrence_finding.adb	finding	a handler's last statement re-raising the same single exception it caught by name must fire
+Reraise_Discards_Occurrence	negative-bare-raise	tests/precision_reraise_discards_occurrence_bare_raise_clean.adb	clean	a bare 'raise;' re-propagating the original occurrence must not fire
+Reraise_Discards_Occurrence	negative-different-exception	tests/precision_reraise_discards_occurrence_different_exception_clean.adb	clean	raising a different exception than the one caught must not fire
 Long_Line	boundary-clean	tests/precision_long_line_at_threshold.adb	clean	default threshold is 120; a line of exactly 120 characters must not fire
 Long_Line	boundary-finding	tests/precision_long_line_over_threshold.adb	finding	a line of 121 characters must fire
 Generic_Instantiation_Limit	boundary-clean	tests/precision_generic_instantiation_limit_at_threshold.adb	clean	default threshold is 10; exactly 10 instantiations must not fire

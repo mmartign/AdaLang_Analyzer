@@ -846,6 +846,48 @@ package body Adalang_Analyzer.Checks is
         or else Name = "volatile_components";
    end Is_Language_Defined_Pragma;
 
+   --  Bit width of Typ when it is one of the eight predefined Interfaces
+   --  modular/signed types (RM B.2) that Shift_Left/Shift_Right/
+   --  Shift_Right_Arithmetic/Rotate_Left/Rotate_Right operate on, 0
+   --  otherwise. Deliberately narrow: a user-defined type with its own
+   --  same-named operation is not this attribute's concern, and guessing
+   --  its width from an arbitrary representation clause would risk a
+   --  wrong verdict rather than just missing one.
+   function Interfaces_Shift_Rotate_Bit_Width
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Natural
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return 0;
+      end if;
+
+      declare
+         Name : constant String := Langkit_Support.Text.To_UTF8
+           (Typ.P_Canonical_Fully_Qualified_Name);
+      begin
+         if Name in "interfaces.unsigned_8" | "interfaces.integer_8" then
+            return 8;
+         elsif Name in
+           "interfaces.unsigned_16" | "interfaces.integer_16"
+         then
+            return 16;
+         elsif Name in
+           "interfaces.unsigned_32" | "interfaces.integer_32"
+         then
+            return 32;
+         elsif Name in
+           "interfaces.unsigned_64" | "interfaces.integer_64"
+         then
+            return 64;
+         else
+            return 0;
+         end if;
+      end;
+   exception
+      when others =>
+         return 0;
+   end Interfaces_Shift_Rotate_Bit_Width;
+
    function Has_Requirement_Trace
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
@@ -1133,6 +1175,71 @@ package body Adalang_Analyzer.Checks is
             Report_Rule_Violation
               (Unit, Node, No_Classwide_Type, "class-wide type used");
          end if;
+         if Rule_States (No_Unchecked_Access) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+           and then Normalize_Rule_Name
+             (Node_Text (Node.As_Attribute_Ref.F_Attribute)) =
+             "unchecked-access"
+         then
+            Report_Rule_Violation
+              (Unit, Node, No_Unchecked_Access,
+               "'Unchecked_Access attribute used");
+         end if;
+         if Rule_States (Excessive_Shift_Amount) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Node.As_Call_Expr.F_Suffix.Kind in
+             Libadalang.Common.Ada_Basic_Assoc_List
+           and then Node.As_Call_Expr.F_Suffix.Children_Count = 2
+         then
+            declare
+               Call   : constant Libadalang.Analysis.Call_Expr :=
+                 Node.As_Call_Expr;
+               Callee : constant Libadalang.Analysis.Basic_Decl :=
+                 Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+            begin
+               if not Libadalang.Analysis.Is_Null (Callee) then
+                  declare
+                     Qualified_Name : constant String :=
+                       Langkit_Support.Text.To_UTF8
+                         (Callee.P_Canonical_Fully_Qualified_Name);
+                  begin
+                     if Qualified_Name in
+                       "interfaces.shift_left" | "interfaces.shift_right" |
+                       "interfaces.shift_right_arithmetic" |
+                       "interfaces.rotate_left" | "interfaces.rotate_right"
+                       and then Call.F_Suffix.Child (1).Kind =
+                         Libadalang.Common.Ada_Param_Assoc
+                       and then Call.F_Suffix.Child (2).Kind =
+                         Libadalang.Common.Ada_Param_Assoc
+                     then
+                        declare
+                           Value_Expr  : constant Libadalang.Analysis.Expr :=
+                             Call.F_Suffix.Child (1).As_Param_Assoc.F_R_Expr;
+                           Amount_Expr : constant Libadalang.Analysis.Expr :=
+                             Call.F_Suffix.Child (2).As_Param_Assoc.F_R_Expr;
+                           Width       : constant Natural :=
+                             Interfaces_Shift_Rotate_Bit_Width
+                               (Value_Expr.P_Expression_Type);
+                           Amount_Val  : constant Abstract_Int :=
+                             Integer_Value (Amount_Expr);
+                        begin
+                           if Width > 0
+                             and then Amount_Val.Known
+                             and then Amount_Val.Value >=
+                               Long_Long_Integer (Width)
+                           then
+                              Report_Rule_Violation
+                                (Unit, Node, Excessive_Shift_Amount,
+                                 "shift/rotate amount is not less than " &
+                                 "the operand's " & Width'Image &
+                                 "-bit width");
+                           end if;
+                        end;
+                     end if;
+                  end;
+               end if;
+            end;
+         end if;
          if Rule_States (No_Controlled_Type) = Enabled
            and then Node.Kind in Libadalang.Common.Ada_Base_Type_Decl
            and then Is_Controlled_Type (Node)
@@ -1214,6 +1321,44 @@ package body Adalang_Analyzer.Checks is
                then
                   Report_Rule_Violation
                     (Unit, Node, Address_Clause, "address clause used");
+               end if;
+            end;
+         end if;
+         if Rule_States (Duplicate_With_Clause) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_With_Clause
+         then
+            declare
+               Clause  : constant Libadalang.Analysis.With_Clause :=
+                 Node.As_With_Clause;
+               Sibling : Libadalang.Analysis.Ada_Node :=
+                 Node.Previous_Sibling;
+               Found   : Boolean := False;
+            begin
+               Earlier_Siblings :
+               while not Libadalang.Analysis.Is_Null (Sibling) loop
+                  if Sibling.Kind = Libadalang.Common.Ada_With_Clause then
+                     for Pkg_Name of Clause.F_Packages loop
+                        for Earlier_Name of
+                          Sibling.As_With_Clause.F_Packages
+                        loop
+                           if Canonical_Text (Pkg_Name) /= ""
+                             and then Canonical_Text (Pkg_Name) =
+                               Canonical_Text (Earlier_Name)
+                           then
+                              Found := True;
+                           end if;
+                        end loop;
+                     end loop;
+                  end if;
+                  exit Earlier_Siblings when Found;
+                  Sibling := Sibling.Previous_Sibling;
+               end loop Earlier_Siblings;
+
+               if Found then
+                  Report_Rule_Violation
+                    (Unit, Node, Duplicate_With_Clause,
+                     "with clause names a unit already with'd in this " &
+                     "context clause");
                end if;
             end;
          end if;

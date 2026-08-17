@@ -32,6 +32,7 @@ package Adalang_Analyzer.Rules is
       No_Pragma,
       No_Access_To_Subp_Def,
       No_Unchecked_Conversion,
+      No_Unchecked_Access,
       Floating_Equality,
       Magic_Number,
       Unused_Parameter,
@@ -49,10 +50,12 @@ package Adalang_Analyzer.Rules is
       Unreachable_Code,
       Division_By_Zero,
       Integer_Division_Before_Multiplication,
+      Excessive_Shift_Amount,
       Reversed_Range,
       Self_Assignment,
       Same_Operand,
       Duplicate_Condition,
+      Duplicate_With_Clause,
       Null_Statement,
       Empty_Exception_Handler,
       Unreachable_Branch,
@@ -98,6 +101,7 @@ package Adalang_Analyzer.Rules is
       Identical_Case_Alternative,
       Redundant_Type_Conversion,
       Handler_Order,
+      Reraise_Discards_Occurrence,
       Aliasing_Between_Parameters,
       Missing_Loop_Variant,
       Known_Discriminant_Check_Failure,
@@ -306,6 +310,17 @@ package Adalang_Analyzer.Rules is
             "and justify the instantiation."),
          Quality     => Quality_Security,
          Severity    => Severity_High),
+      No_Unchecked_Access =>
+        (Name        => To_Unbounded_String ("No_Unchecked_Access"),
+         Description => To_Unbounded_String
+           ("Find uses of the 'Unchecked_Access attribute, which bypasses " &
+            "Ada's normal accessibility rules."),
+         Guidance    => To_Unbounded_String
+           ("Use 'Access under a matching accessibility level, an aliased " &
+            "library-level or enclosing-scope object, or isolate and " &
+            "justify the escape when the accessibility bypass is required."),
+         Quality     => Quality_Security,
+         Severity    => Severity_High),
       Floating_Equality =>
         (Name        => To_Unbounded_String ("Floating_Equality"),
          Description => To_Unbounded_String
@@ -478,6 +493,16 @@ package Adalang_Analyzer.Rules is
             "intentional."),
          Quality     => Quality_Reliability,
          Severity    => Severity_Medium),
+      Excessive_Shift_Amount =>
+        (Name        => To_Unbounded_String ("Excessive_Shift_Amount"),
+         Description => To_Unbounded_String
+           ("Find Interfaces shift/rotate calls whose statically known " &
+            "amount is not less than the operand type's bit width."),
+         Guidance    => To_Unbounded_String
+           ("Correct the shift amount, or reduce it modulo the operand's " &
+            "bit width if the wraparound is intentional."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
       Reversed_Range =>
         (Name        => To_Unbounded_String ("Reversed_Range"),
          Description => To_Unbounded_String
@@ -517,6 +542,15 @@ package Adalang_Analyzer.Rules is
             "the unreachable branch."),
          Quality     => Quality_Reliability,
          Severity    => Severity_Medium),
+      Duplicate_With_Clause =>
+        (Name        => To_Unbounded_String ("Duplicate_With_Clause"),
+         Description => To_Unbounded_String
+           ("Find with clauses naming a unit already with'd in the same " &
+            "context clause."),
+         Guidance    => To_Unbounded_String
+           ("Remove the redundant with clause."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       Null_Statement =>
         (Name        => To_Unbounded_String ("Null_Statement"),
          Description => To_Unbounded_String
@@ -977,6 +1011,17 @@ package Adalang_Analyzer.Rules is
             "currently precedes."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
+      Reraise_Discards_Occurrence =>
+        (Name        => To_Unbounded_String ("Reraise_Discards_Occurrence"),
+         Description => To_Unbounded_String
+           ("Find an exception handler's last statement re-raising the " &
+            "same single exception it caught by name."),
+         Guidance    => To_Unbounded_String
+           ("Use a bare 'raise;' to re-propagate the original exception " &
+            "occurrence (message and traceback intact) instead of naming " &
+            "the exception, which raises a fresh occurrence."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
       Aliasing_Between_Parameters =>
         (Name        => To_Unbounded_String ("Aliasing_Between_Parameters"),
          Description => To_Unbounded_String

@@ -1156,6 +1156,32 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                "when others handler silently discards the exception");
          end if;
       end if;
+
+      if Rule_States (Reraise_Discards_Occurrence) = Enabled
+        and then Handler.F_Handled_Exceptions.Children_Count = 1
+        and then Handler.F_Handled_Exceptions.Child (1).Kind /=
+          Libadalang.Common.Ada_Others_Designator
+        and then Handler.F_Stmts.Children_Count > 0
+      then
+         declare
+            Caught_Name : constant String :=
+              Canonical_Text (Handler.F_Handled_Exceptions.Child (1));
+            Last_Stmt   : constant Libadalang.Analysis.Ada_Node :=
+              Handler.F_Stmts.Child (Handler.F_Stmts.Children_Count);
+         begin
+            if Last_Stmt.Kind = Libadalang.Common.Ada_Raise_Stmt
+              and then not Libadalang.Analysis.Is_Null
+                (Last_Stmt.As_Raise_Stmt.F_Exception_Name)
+              and then Canonical_Text
+                (Last_Stmt.As_Raise_Stmt.F_Exception_Name) = Caught_Name
+            then
+               Report_Rule_Violation
+                 (Unit, Last_Stmt, Reraise_Discards_Occurrence,
+                  "re-raises the caught exception by name instead of a " &
+                  "bare 'raise;'");
+            end if;
+         end;
+      end if;
    end Analyze_Exception_Handler;
 
 end Adalang_Analyzer.Checks.Control_Flow;

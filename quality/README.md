@@ -105,7 +105,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (227 cases; the tally below itemizes the threshold and
+Current coverage (237 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
@@ -320,6 +320,20 @@ instead of being re-itemized here):
   it as intentional rather than a precision-loss mistake), and the
   identical `A / B * C` shape on `Float` operands, which does not truncate
   the same way and so must not fire.
+
+- 10 cases for four new checks added together: `No_Unchecked_Access` (an
+  `'Unchecked_Access` attribute reference, vs. an ordinary `'Access` at the
+  same shape); `Duplicate_With_Clause` (a with clause naming a unit already
+  with'd earlier in the same context clause, vs. two with clauses naming
+  distinct units); `Excessive_Shift_Amount` (`Shift_Left` on an
+  `Interfaces.Unsigned_8` value with a static amount of 8, not less than
+  the type's 8-bit width, vs. an amount of 7, paired with a third case
+  confirming a locally declared function merely *named* `Shift_Left`,
+  unrelated to `Interfaces`, is not misidentified regardless of its
+  argument); and `Reraise_Discards_Occurrence` (a handler's last statement
+  re-raising the single exception it caught by name, vs. a bare `raise;`
+  at the same shape, paired with a third case confirming raising a
+  *different* exception than the one caught does not fire).
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
