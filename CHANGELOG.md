@@ -5,9 +5,9 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [1.0.0-rc1] - 2026-08-18
+## [1.0.0] - 2026-08-18
 
-Initial public release candidate.
+Initial public release.
 
 ### Added
 
@@ -28,4 +28,4 @@ Initial public release candidate.
 - Alire packaging (`alire.toml`); submitted to the community index as
   `adalang_analyzer`.
 
-[1.0.0-rc1]: https://github.com/mmartign/AdaLang_Analyzer/releases/tag/v1.0.0-rc1
+[1.0.0]: https://github.com/mmartign/AdaLang_Analyzer/releases/tag/v1.0.0

@@ -71,7 +71,7 @@ then
    exit 1
 fi
 grep -F '"selectedPreset": "automotive"' "$automotive_json" >/dev/null
-grep -F '"toolVersion": "1.0.0-rc1"' "$automotive_json" >/dev/null
+grep -F '"toolVersion": "1.0.0"' "$automotive_json" >/dev/null
 grep -F '"No_Runtime_Check_Suppression"' "$automotive_json" >/dev/null
 if [ "$(grep -c '^      "[A-Za-z_]*"$' "$automotive_json")" -ne 1 ]; then
    echo "structured report did not preserve the effective enabled-rule set" >&2

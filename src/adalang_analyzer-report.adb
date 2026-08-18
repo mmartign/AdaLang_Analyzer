@@ -1006,7 +1006,8 @@ package body Adalang_Analyzer.Report is
          """https://json.schemastore.org/sarif-2.1.0.json"", ""runs"": [{");
       Ada.Text_IO.Put_Line
         (File, "  ""tool"": {""driver"": {""name"": ""AdaLang Analyzer"", " &
-         """version"": ""1.0.0-rc1"", ""informationUri"": " &
+         """version"": """ & Config.Analyzer_Version & """, " &
+         """informationUri"": " &
          """https://spazioit.com/"", ""rules"": [");
       for Rule in Rules.Rule_Kind loop
          if not First then
