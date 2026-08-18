@@ -125,7 +125,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (249 cases; the tally below itemizes the threshold and
+Current coverage (254 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
@@ -369,6 +369,19 @@ instead of being re-itemized here):
   last statement); and `Entry_Barrier_Side_Effect` (a protected entry
   barrier calling a function with an `in out` parameter, vs. a barrier
   that is a plain boolean component with no call at all).
+
+- 4 cases for `Known_Enum_Val_Failure`, added alongside the new check:
+  `Color'Val (5)` on a 3-literal enumeration, whose valid positions are
+  `0 .. 2`, must fire (`finding`); `Color'Val (2)`, the last valid
+  position, must not fire (boundary-clean); a `'Val` argument that is not
+  statically known (a subprogram parameter) must not fire, since the
+  check never assumes a value it cannot prove; and `Character'Val (300)`
+  must not fire even though 300 is genuinely outside `Character`'s
+  `0 .. 255` range — Libadalang synthesizes `Standard.Character`'s (and
+  `Wide_Character`'s and `Wide_Wide_Character`'s) literal list as a
+  placeholder rather than one node per position, so this check excludes
+  those three predefined types entirely rather than risk a false positive
+  on every ordinary use of them.
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:

@@ -1276,6 +1276,92 @@ package body Adalang_Analyzer.Checks is
                end if;
             end;
          end if;
+         if Rule_States (Known_Enum_Val_Failure) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Node.As_Call_Expr.F_Name.Kind =
+             Libadalang.Common.Ada_Attribute_Ref
+           and then Node.As_Call_Expr.F_Suffix.Kind in
+             Libadalang.Common.Ada_Basic_Assoc_List
+           and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
+           and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
+             Libadalang.Common.Ada_Param_Assoc
+         then
+            declare
+               Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                 Node.As_Call_Expr.F_Name.As_Attribute_Ref;
+            begin
+               if Normalize_Rule_Name (Node_Text (Attr.F_Attribute)) =
+                 "val"
+                 and then not Libadalang.Analysis.Is_Null (Attr.F_Prefix)
+               then
+                  declare
+                     Arg : constant Libadalang.Analysis.Expr :=
+                       Node.As_Call_Expr.F_Suffix.Child
+                         (1).As_Param_Assoc.F_R_Expr;
+                     Arg_Value : constant Abstract_Int := Integer_Value (Arg);
+                  begin
+                     if Arg_Value.Known then
+                        declare
+                           Prefix_Decl :
+                             constant Libadalang.Analysis.Basic_Decl :=
+                             Attr.F_Prefix.P_Referenced_Decl
+                               (Imprecise_Fallback => True);
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Prefix_Decl)
+                             and then Prefix_Decl.Kind in
+                               Libadalang.Common.Ada_Type_Decl
+                             and then Prefix_Decl.As_Type_Decl.F_Type_Def
+                               .Kind = Libadalang.Common.Ada_Enum_Type_Def
+
+                             --  Standard's predefined character types are
+                             --  synthesized with a placeholder literal list
+                             --  rather than one node per position, so their
+                             --  Children_Count does not reflect the type's
+                             --  true (256/65536-position) range -- exclude
+                             --  them rather than risk a false positive on
+                             --  every ordinary use.
+                             and then Langkit_Support.Text.To_UTF8
+                               (Prefix_Decl.P_Canonical_Fully_Qualified_Name)
+                               not in
+                               "standard.character" |
+                               "standard.wide_character" |
+                               "standard.wide_wide_character"
+                           then
+                              declare
+                                 Literal_Count : constant Natural :=
+                                   Prefix_Decl.As_Type_Decl.F_Type_Def
+                                     .As_Enum_Type_Def.F_Enum_Literals
+                                     .Children_Count;
+                              begin
+                                 if Literal_Count > 0
+                                   and then
+                                     (Arg_Value.Value < 0
+                                        or else Arg_Value.Value >
+                                          Long_Long_Integer
+                                            (Literal_Count - 1))
+                                 then
+                                    Report_Rule_Violation
+                                      (Unit, Node, Known_Enum_Val_Failure,
+                                       "'Val argument" &
+                                       Arg_Value.Value'Image &
+                                       " is outside the type's valid " &
+                                       "position range 0 .." &
+                                       Natural'Image (Literal_Count - 1),
+                                       Explanation =>
+                                         "'Val requires its argument to " &
+                                         "be a valid enumeration " &
+                                         "position of the prefix type; " &
+                                         "any other value raises " &
+                                         "Constraint_Error.");
+                                 end if;
+                              end;
+                           end if;
+                        end;
+                     end if;
+                  end;
+               end if;
+            end;
+         end if;
          if Rule_States (Excessive_Shift_Amount) = Enabled
            and then Node.Kind = Libadalang.Common.Ada_Call_Expr
            and then Node.As_Call_Expr.F_Suffix.Kind in

@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 112 checks spanning coding policy, data/control-flow defects, and
+At a glance: 113 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -97,14 +97,14 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 112 checks fall into five broad groups:
+AdaLang Analyzer's 113 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
   checks that flag likely or definite runtime and logic defects.
 - **SPARK readiness** — `Global`/`Depends` contract checks and known
-  precondition/postcondition/assertion/range/index/overflow/discriminant
-  failures that anticipate what a later GNATprove pass will need.
+  precondition/postcondition/assertion/range/index/overflow/discriminant/
+  enum-val failures that anticipate what a later GNATprove pass will need.
 - **Bounded verification** — `--verify`'s scalar proof-obligation
   classification (a mode, not a rule in the table below; see the following
   sections).
@@ -201,6 +201,7 @@ The analyzer currently provides the following checks:
 | Data flow | `Aliasing_Between_Parameters` | Reliability | High | Reports calls that pass the same object or component as two actual parameters when at least one corresponding formal is written. |
 | SPARK | `Missing_Loop_Variant` | Maintainability | Medium | Reports loops with a `Loop_Invariant` pragma but no `Loop_Variant` pragma. |
 | SPARK | `Known_Discriminant_Check_Failure` | Reliability | High | Reports accesses to a variant-part component that a statically known discriminant constraint provably excludes. |
+| SPARK | `Known_Enum_Val_Failure` | Reliability | High | Reports `'Val` attribute calls whose statically known argument is outside the enumeration type's literal positions. |
 | SPARK | `Potentially_Blocking_Operation` | Reliability | High | Reports entry calls, delay statements, and calls transitively reaching them from a protected operation. |
 | Automotive | `No_Dynamic_Allocation` | Reliability | High | Reports allocators. |
 | Automotive | `Restricted_Access_Type` | Reliability | High | Reports access-to-object type definitions. |

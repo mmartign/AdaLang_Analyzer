@@ -110,6 +110,7 @@ package Adalang_Analyzer.Rules is
       Aliasing_Between_Parameters,
       Missing_Loop_Variant,
       Known_Discriminant_Check_Failure,
+      Known_Enum_Val_Failure,
       Potentially_Blocking_Operation,
       No_Dynamic_Allocation,
       Restricted_Access_Type,
@@ -1110,6 +1111,16 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Access a component that the object's discriminant constraint " &
             "actually permits, or correct the constraint."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Enum_Val_Failure =>
+        (Name        => To_Unbounded_String ("Known_Enum_Val_Failure"),
+         Description => To_Unbounded_String
+           ("Find 'Val attribute calls whose statically known argument is " &
+            "outside the enumeration type's literal positions."),
+         Guidance    => To_Unbounded_String
+           ("Constrain the argument to the type's valid position range, " &
+            "or correct the literal that was entered incorrectly."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
       Potentially_Blocking_Operation =>

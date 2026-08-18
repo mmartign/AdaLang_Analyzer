@@ -5,6 +5,14 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `Known_Enum_Val_Failure` check: flags `'Val` attribute calls whose
+  statically known argument is outside the enumeration type's literal
+  positions (always raises `Constraint_Error`).
+
 ## [1.0.0] - 2026-08-18
 
 Initial public release.
