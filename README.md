@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 113 checks spanning coding policy, data/control-flow defects, and
+At a glance: 114 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -97,14 +97,15 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 113 checks fall into five broad groups:
+AdaLang Analyzer's 114 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
   checks that flag likely or definite runtime and logic defects.
 - **SPARK readiness** — `Global`/`Depends` contract checks and known
   precondition/postcondition/assertion/range/index/overflow/discriminant/
-  enum-val failures that anticipate what a later GNATprove pass will need.
+  enum-val/value-conversion failures that anticipate what a later
+  GNATprove pass will need.
 - **Bounded verification** — `--verify`'s scalar proof-obligation
   classification (a mode, not a rule in the table below; see the following
   sections).
@@ -202,6 +203,7 @@ The analyzer currently provides the following checks:
 | SPARK | `Missing_Loop_Variant` | Maintainability | Medium | Reports loops with a `Loop_Invariant` pragma but no `Loop_Variant` pragma. |
 | SPARK | `Known_Discriminant_Check_Failure` | Reliability | High | Reports accesses to a variant-part component that a statically known discriminant constraint provably excludes. |
 | SPARK | `Known_Enum_Val_Failure` | Reliability | High | Reports `'Val` attribute calls whose statically known argument is outside the enumeration type's literal positions. |
+| SPARK | `Known_Value_Conversion_Failure` | Reliability | High | Reports `'Value` attribute calls whose static string literal argument can never denote a value of the prefix integer or enumeration type. |
 | SPARK | `Potentially_Blocking_Operation` | Reliability | High | Reports entry calls, delay statements, and calls transitively reaching them from a protected operation. |
 | Automotive | `No_Dynamic_Allocation` | Reliability | High | Reports allocators. |
 | Automotive | `Restricted_Access_Type` | Reliability | High | Reports access-to-object type definitions. |

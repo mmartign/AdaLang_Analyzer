@@ -12,6 +12,9 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - `Known_Enum_Val_Failure` check: flags `'Val` attribute calls whose
   statically known argument is outside the enumeration type's literal
   positions (always raises `Constraint_Error`).
+- `Known_Value_Conversion_Failure` check: flags `'Value` attribute calls
+  whose static string literal argument can never denote a value of the
+  prefix integer or enumeration type (always raises `Constraint_Error`).
 
 ## [1.0.0] - 2026-08-18
 

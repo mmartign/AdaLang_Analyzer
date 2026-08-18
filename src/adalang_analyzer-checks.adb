@@ -14,6 +14,7 @@
 
 with Ada.Characters.Handling;
 with Ada.Exceptions;
+with Ada.Strings;
 with Ada.Strings.Fixed;
 
 with Libadalang.Common;
@@ -1355,6 +1356,163 @@ package body Adalang_Analyzer.Checks is
                                          "Constraint_Error.");
                                  end if;
                               end;
+                           end if;
+                        end;
+                     end if;
+                  end;
+               end if;
+            end;
+         end if;
+         if Rule_States (Known_Value_Conversion_Failure) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Node.As_Call_Expr.F_Name.Kind =
+             Libadalang.Common.Ada_Attribute_Ref
+           and then Node.As_Call_Expr.F_Suffix.Kind in
+             Libadalang.Common.Ada_Basic_Assoc_List
+           and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
+           and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
+             Libadalang.Common.Ada_Param_Assoc
+         then
+            declare
+               Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                 Node.As_Call_Expr.F_Name.As_Attribute_Ref;
+            begin
+               if Normalize_Rule_Name (Node_Text (Attr.F_Attribute)) =
+                 "value"
+                 and then not Libadalang.Analysis.Is_Null (Attr.F_Prefix)
+               then
+                  declare
+                     Arg : constant Libadalang.Analysis.Expr :=
+                       Node.As_Call_Expr.F_Suffix.Child
+                         (1).As_Param_Assoc.F_R_Expr;
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Arg)
+                       and then Arg.Kind =
+                         Libadalang.Common.Ada_String_Literal
+                     then
+                        declare
+                           Trimmed : constant String :=
+                             Ada.Strings.Fixed.Trim
+                               (Langkit_Support.Text.To_UTF8
+                                  (Arg.As_String_Literal.P_Denoted_Value),
+                                Ada.Strings.Both);
+                           Prefix_Decl :
+                             constant Libadalang.Analysis.Basic_Decl :=
+                             Attr.F_Prefix.P_Referenced_Decl
+                               (Imprecise_Fallback => True);
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Prefix_Decl)
+                             and then Prefix_Decl.Kind in
+                               Libadalang.Common.Ada_Type_Decl
+                           then
+                              if Prefix_Decl.As_Type_Decl.F_Type_Def.Kind =
+                                Libadalang.Common.Ada_Enum_Type_Def
+                                and then Langkit_Support.Text.To_UTF8
+                                  (Prefix_Decl
+                                     .P_Canonical_Fully_Qualified_Name)
+                                  not in
+                                  "standard.character" |
+                                  "standard.wide_character" |
+                                  "standard.wide_wide_character"
+                              then
+                                 declare
+                                    Literals :
+                                      constant Libadalang.Analysis
+                                        .Enum_Literal_Decl_List :=
+                                      Prefix_Decl.As_Type_Decl.F_Type_Def
+                                        .As_Enum_Type_Def.F_Enum_Literals;
+                                    Has_Char_Literal : Boolean := False;
+                                    Matches          : Boolean := False;
+                                 begin
+                                    for Index in
+                                      1 .. Literals.Children_Count
+                                    loop
+                                       declare
+                                          Lit_Text : constant String :=
+                                            Node_Text
+                                              (Literals.Child
+                                                 (Index).As_Enum_Literal_Decl
+                                                 .F_Name);
+                                       begin
+                                          if Lit_Text'Length > 0
+                                            and then Lit_Text
+                                                (Lit_Text'First) = '''
+                                          then
+                                             Has_Char_Literal := True;
+                                          elsif Ada.Characters.Handling
+                                            .To_Lower (Lit_Text) =
+                                            Ada.Characters.Handling.To_Lower
+                                              (Trimmed)
+                                          then
+                                             Matches := True;
+                                          end if;
+                                       end;
+                                    end loop;
+                                    if not Has_Char_Literal
+                                      and then not Matches
+                                    then
+                                       Report_Rule_Violation
+                                         (Unit, Node,
+                                          Known_Value_Conversion_Failure,
+                                          "'Value string """ & Trimmed &
+                                          """ names no literal of the " &
+                                          "prefix enumeration type",
+                                          Explanation =>
+                                            "'Value requires its " &
+                                            "argument, once leading and " &
+                                            "trailing blanks are removed, " &
+                                            "to name (case-insensitively) " &
+                                            "one of the type's literals; " &
+                                            "any other value raises " &
+                                            "Constraint_Error.");
+                                    end if;
+                                 end;
+                              elsif Prefix_Decl.As_Type_Decl.P_Is_Int_Type
+                              then
+                                 declare
+                                    Malformed : Boolean := False;
+                                    First     : Positive := Trimmed'First;
+                                 begin
+                                    if Trimmed'Length = 0 then
+                                       Malformed := True;
+                                    else
+                                       if Trimmed (First) in '+' | '-' then
+                                          First := First + 1;
+                                       end if;
+                                       if First > Trimmed'Last then
+                                          Malformed := True;
+                                       else
+                                          for I in First .. Trimmed'Last
+                                          loop
+                                             if Trimmed (I) not in
+                                               '0' .. '9' | 'a' .. 'f' |
+                                               'A' .. 'F' | '_' | '#' |
+                                               'e' | 'E'
+                                             then
+                                                Malformed := True;
+                                             end if;
+                                          end loop;
+                                       end if;
+                                    end if;
+                                    if Malformed then
+                                       Report_Rule_Violation
+                                         (Unit, Node,
+                                          Known_Value_Conversion_Failure,
+                                          "'Value string """ & Trimmed &
+                                          """ cannot denote any value of " &
+                                          "the prefix integer type",
+                                          Explanation =>
+                                            "'Value requires its " &
+                                            "argument, once leading and " &
+                                            "trailing blanks are removed, " &
+                                            "to be an optionally signed " &
+                                            "numeric literal; this text " &
+                                            "does not have that shape, so " &
+                                            "the call always raises " &
+                                            "Constraint_Error.");
+                                    end if;
+                                 end;
+                              end if;
                            end if;
                         end;
                      end if;

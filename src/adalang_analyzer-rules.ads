@@ -111,6 +111,7 @@ package Adalang_Analyzer.Rules is
       Missing_Loop_Variant,
       Known_Discriminant_Check_Failure,
       Known_Enum_Val_Failure,
+      Known_Value_Conversion_Failure,
       Potentially_Blocking_Operation,
       No_Dynamic_Allocation,
       Restricted_Access_Type,
@@ -1121,6 +1122,19 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Constrain the argument to the type's valid position range, " &
             "or correct the literal that was entered incorrectly."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Value_Conversion_Failure =>
+        (Name        => To_Unbounded_String
+           ("Known_Value_Conversion_Failure"),
+         Description => To_Unbounded_String
+           ("Find 'Value attribute calls whose static string literal " &
+            "argument can never denote a value of the prefix integer or " &
+            "enumeration type."),
+         Guidance    => To_Unbounded_String
+           ("Correct the string literal to a value the target type " &
+            "actually accepts, or handle the malformed input explicitly " &
+            "instead of relying on 'Value to raise Constraint_Error."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
       Potentially_Blocking_Operation =>

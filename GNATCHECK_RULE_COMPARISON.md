@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This is a **documentation-based** comparison: AdaLang Analyzer's 113 checks
+This is a **documentation-based** comparison: AdaLang Analyzer's 114 checks
 (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -20,14 +20,14 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 113 checks:
+Of AdaLang Analyzer's 114 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
 | Direct | 18 | Same check, essentially the same semantics |
 | Close | 14 | Same intent, minor scope difference |
 | Partial | 18 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
-| No GNATcheck counterpart | 63 | Nothing in the predefined catalog does this |
+| No GNATcheck counterpart | 64 | Nothing in the predefined catalog does this |
 
 GNATcheck's own catalog runs to roughly 180 predefined rules; large families
 of it (identifier casing/prefixes/readability, OOP-depth metrics,
@@ -99,7 +99,7 @@ cover a different-shaped case than the nearest predefined rule.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-62 of AdaLang's 112 rules do something GNATcheck's predefined catalog does
+64 of AdaLang's 114 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -107,7 +107,8 @@ CodePeer territory, not GNATcheck's syntactic/semantic rule matching):
 Known_Precondition_Failure, Known_Postcondition_Failure,
 Known_Assertion_Failure, Known_Range_Check_Failure, Known_Index_Check_Failure,
 Known_Overflow_Failure, Known_Discriminant_Check_Failure,
-Known_Enum_Val_Failure, Succ_Pred_Boundary_Overflow.
+Known_Enum_Val_Failure, Known_Value_Conversion_Failure,
+Succ_Pred_Boundary_Overflow.
 
 **SPARK contract consistency** (Global/Depends contracts checked against
 actual code behavior, not just presence):

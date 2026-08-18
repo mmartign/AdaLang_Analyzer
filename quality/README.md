@@ -125,7 +125,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (254 cases; the tally below itemizes the threshold and
+Current coverage (260 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
@@ -382,6 +382,26 @@ instead of being re-itemized here):
   placeholder rather than one node per position, so this check excludes
   those three predefined types entirely rather than risk a false positive
   on every ordinary use of them.
+
+- 6 cases for `Known_Value_Conversion_Failure`, added alongside the new
+  check: `Integer'Value ("N/A")` must fire, since `N`, `/`, and the space
+  can never appear in a valid Ada numeric literal regardless of the
+  target type's range (`finding`); `Integer'Value ("123")` must not fire
+  (clean, well-formed); `Color'Value ("Reed")` on a 3-literal enumeration
+  must fire, a typo of `"Red"` that names no literal of the type
+  (`finding`); `Color'Value ("green")` must not fire, since enumeration
+  literal matching is case-insensitive (clean); a `'Value` argument that
+  is not a static string literal (a subprogram parameter) must not fire,
+  the same "never assume what cannot be proved" discipline as
+  `Known_Enum_Val_Failure`; and `Character'Value (...)` must not fire for
+  the same `Standard.Character`-modeling reason `Known_Enum_Val_Failure`
+  excludes it. The integer-side check deliberately only flags a string
+  containing a character that can never appear in any Ada numeral (e.g.
+  a stray letter outside `a`-`f`, punctuation, or an embedded space) —
+  it does not attempt a full literal-grammar or range check, so a
+  malformed-but-superficially-plausible string (say, unbalanced `#`
+  delimiters) can still slip through uncaught; that's an accepted
+  false-negative gap, not a false-positive risk.
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
