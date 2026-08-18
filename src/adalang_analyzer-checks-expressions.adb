@@ -235,6 +235,23 @@ package body Adalang_Analyzer.Checks.Expressions is
               Right_Text);
       end if;
 
+      if Rule_States (Known_Negative_Exponent_Failure) = Enabled
+        and then Op = Libadalang.Common.Ada_Op_Pow
+        and then Right_Int.Known
+        and then Right_Int.Value < 0
+        and then Is_Integer_Expression (Expr.F_Left)
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Known_Negative_Exponent_Failure,
+            "exponent " & Right_Int.Value'Image &
+            " is negative on an integer base",
+            Explanation =>
+              "Ada's predefined '**' operator for an integer base takes " &
+              "an exponent of subtype Natural; a negative value fails " &
+              "that range check before the exponentiation runs.",
+            Evidence => "exponent => " & Right_Text);
+      end if;
+
       if Rule_States (Floating_Equality) = Enabled
         and then Op in Libadalang.Common.Ada_Op_Eq
           | Libadalang.Common.Ada_Op_Neq

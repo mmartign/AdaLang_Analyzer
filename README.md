@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 114 checks spanning coding policy, data/control-flow defects, and
+At a glance: 116 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -97,7 +97,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 114 checks fall into five broad groups:
+AdaLang Analyzer's 116 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -147,6 +147,8 @@ The analyzer currently provides the following checks:
 | Arithmetic | `Division_By_Zero` | Reliability | Blocker | Reports statically detectable division, `mod`, or `rem` by zero. |
 | Arithmetic | `Integer_Division_Before_Multiplication` | Reliability | Medium | Reports integer multiplications whose left operand is an unparenthesized integer division. |
 | Arithmetic | `Excessive_Shift_Amount` | Reliability | High | Reports `Interfaces` shift/rotate calls whose static amount is not less than the operand type's bit width. |
+| Arithmetic | `Known_Negative_Shift_Amount_Failure` | Reliability | High | Reports `Interfaces` shift/rotate calls whose static amount is negative. |
+| Arithmetic | `Known_Negative_Exponent_Failure` | Reliability | High | Reports `**` exponentiations on an integer base whose static exponent is negative. |
 | Arithmetic | `Succ_Pred_Boundary_Overflow` | Reliability | Blocker | Reports `'Succ` applied to `'Last` or `'Pred` applied to `'First` of the same scalar type. |
 | Arithmetic | `Reversed_Range` | Reliability | Medium | Reports static ranges whose lower bound exceeds their upper bound. |
 | Assignment | `Self_Assignment` | Reliability | Medium | Reports assignments whose target and value designate the same object, including through simple renames. |

@@ -15,6 +15,14 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - `Known_Value_Conversion_Failure` check: flags `'Value` attribute calls
   whose static string literal argument can never denote a value of the
   prefix integer or enumeration type (always raises `Constraint_Error`).
+- `Known_Negative_Shift_Amount_Failure` check: flags `Interfaces`
+  shift/rotate calls whose statically known amount is negative (always
+  raises `Constraint_Error`, since every such function's `Amount`
+  parameter is subtype `Natural`).
+- `Known_Negative_Exponent_Failure` check: flags `**` exponentiations on
+  an integer base whose statically known exponent is negative (always
+  raises `Constraint_Error`, since the predefined integer `**` operator's
+  exponent is subtype `Natural`).
 
 ## [1.0.0] - 2026-08-18
 

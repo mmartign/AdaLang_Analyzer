@@ -125,7 +125,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (260 cases; the tally below itemizes the threshold and
+Current coverage (267 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
@@ -402,6 +402,38 @@ instead of being re-itemized here):
   malformed-but-superficially-plausible string (say, unbalanced `#`
   delimiters) can still slip through uncaught; that's an accepted
   false-negative gap, not a false-positive risk.
+
+- 3 cases for `Known_Negative_Shift_Amount_Failure`, added alongside the
+  new check: `Shift_Left` on an `Interfaces.Unsigned_8` value with a
+  static amount of `-1` must fire, since every `Interfaces` shift/rotate
+  function's `Amount` parameter is subtype `Natural` (`finding`);
+  `Shift_Left` with a static amount of `0` must not fire (clean); and a
+  shift amount that is not statically known (a subprogram parameter)
+  must not fire. Confirmed by direct compilation (not just documentation)
+  that GNAT accepts `Shift_Left (X, -1)` with only a warning, not a
+  compile error — it's a genuine runtime `Constraint_Error`, the same
+  category as `Division_By_Zero`. This check cannot reuse
+  `Excessive_Shift_Amount`'s callee-resolution path: a negative actual
+  disqualifies every `Shift_Left` overload from Libadalang's own
+  candidate filtering (unlike an in-range-but-too-large amount, which
+  still resolves fine), leaving `P_Referenced_Decl` null — confirmed by
+  a debug trace showing the qualified-name lookup never runs for the
+  negative case. Detected instead from the first actual's own resolved
+  type (independent of the call's own resolution) plus a syntactic name
+  match on the callee.
+
+- 4 cases for `Known_Negative_Exponent_Failure`, added alongside the new
+  check: `2 ** (-1)` on an `Integer` base must fire, since Ada's
+  predefined `**` for an integer base takes an exponent of subtype
+  `Natural` (`finding`); `2 ** 3` must not fire (clean); `2.0 ** (-1)` on
+  a `Float` base must not fire, since a negative exponent is a legal
+  reciprocal power for floating-point and fixed-point bases (clean); and
+  an exponent that is not statically known (a subprogram parameter) must
+  not fire. Also confirmed by direct compilation that GNAT accepts this
+  with only a warning. Unlike the shift-amount check, this one reuses the
+  exponent's already-computed `Right_Int` value directly (no separate
+  evaluation needed) since `Analyze_Binary_Expression` computes it for
+  every binary operator up front.
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:

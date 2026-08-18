@@ -1575,6 +1575,74 @@ package body Adalang_Analyzer.Checks is
                end if;
             end;
          end if;
+
+         --  A negative shift/rotate amount fails Libadalang's own
+         --  overload-candidate filtering: every Interfaces shift/rotate
+         --  function's Amount parameter is subtype Natural, so a
+         --  statically-negative actual disqualifies *every* overload,
+         --  leaving Call.F_Name.P_Referenced_Decl null -- the very
+         --  Qualified_Name lookup Excessive_Shift_Amount above relies on
+         --  never succeeds for this case (confirmed by direct testing, not
+         --  just documentation). Detected here independently of callee
+         --  resolution: the first actual's own type (Value_Expr, resolved
+         --  on its own) already pins this down to a genuine Interfaces
+         --  shift/rotate call precisely enough that a syntactic name match
+         --  on the callee carries negligible false-positive risk.
+         if Rule_States (Known_Negative_Shift_Amount_Failure) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Node.As_Call_Expr.F_Suffix.Kind in
+             Libadalang.Common.Ada_Basic_Assoc_List
+           and then Node.As_Call_Expr.F_Suffix.Children_Count = 2
+           and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
+             Libadalang.Common.Ada_Param_Assoc
+           and then Node.As_Call_Expr.F_Suffix.Child (2).Kind =
+             Libadalang.Common.Ada_Param_Assoc
+         then
+            declare
+               Call        : constant Libadalang.Analysis.Call_Expr :=
+                 Node.As_Call_Expr;
+               Callee_Name : constant String :=
+                 (if Call.F_Name.Kind = Libadalang.Common.Ada_Identifier
+                  then Normalize_Rule_Name (Node_Text (Call.F_Name))
+                  elsif Call.F_Name.Kind = Libadalang.Common.Ada_Dotted_Name
+                  then Normalize_Rule_Name
+                      (Node_Text (Call.F_Name.As_Dotted_Name.F_Suffix))
+                  else "");
+            begin
+               if Callee_Name in
+                 "shift-left" | "shift-right" | "shift-right-arithmetic" |
+                 "rotate-left" | "rotate-right"
+               then
+                  declare
+                     Value_Expr  : constant Libadalang.Analysis.Expr :=
+                       Call.F_Suffix.Child (1).As_Param_Assoc.F_R_Expr;
+                     Amount_Expr : constant Libadalang.Analysis.Expr :=
+                       Call.F_Suffix.Child (2).As_Param_Assoc.F_R_Expr;
+                     Width       : constant Natural :=
+                       Interfaces_Shift_Rotate_Bit_Width
+                         (Value_Expr.P_Expression_Type);
+                     Amount_Val  : constant Abstract_Int :=
+                       Integer_Value (Amount_Expr);
+                  begin
+                     if Width > 0
+                       and then Amount_Val.Known
+                       and then Amount_Val.Value < 0
+                     then
+                        Report_Rule_Violation
+                          (Unit, Node, Known_Negative_Shift_Amount_Failure,
+                           "shift/rotate amount " & Amount_Val.Value'Image &
+                           " is negative",
+                           Explanation =>
+                             "Every Interfaces shift/rotate function's " &
+                             "Amount parameter is subtype Natural; a " &
+                             "negative actual fails that range check " &
+                             "before the shift/rotate runs.");
+                     end if;
+                  end;
+               end if;
+            end;
+         end if;
+
          if Rule_States (No_Controlled_Type) = Enabled
            and then Node.Kind in Libadalang.Common.Ada_Base_Type_Decl
            and then Is_Controlled_Type (Node)

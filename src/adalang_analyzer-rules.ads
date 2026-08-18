@@ -51,6 +51,8 @@ package Adalang_Analyzer.Rules is
       Division_By_Zero,
       Integer_Division_Before_Multiplication,
       Excessive_Shift_Amount,
+      Known_Negative_Shift_Amount_Failure,
+      Known_Negative_Exponent_Failure,
       Succ_Pred_Boundary_Overflow,
       Reversed_Range,
       Self_Assignment,
@@ -510,6 +512,30 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Correct the shift amount, or reduce it modulo the operand's " &
             "bit width if the wraparound is intentional."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Negative_Shift_Amount_Failure =>
+        (Name        => To_Unbounded_String
+           ("Known_Negative_Shift_Amount_Failure"),
+         Description => To_Unbounded_String
+           ("Find Interfaces shift/rotate calls whose statically known " &
+            "amount is negative."),
+         Guidance    => To_Unbounded_String
+           ("Correct the shift amount to a non-negative value; the " &
+            "Amount parameter of every Interfaces shift/rotate function " &
+            "is subtype Natural."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Known_Negative_Exponent_Failure =>
+        (Name        => To_Unbounded_String
+           ("Known_Negative_Exponent_Failure"),
+         Description => To_Unbounded_String
+           ("Find '**' exponentiations on an integer base whose " &
+            "statically known exponent is negative."),
+         Guidance    => To_Unbounded_String
+           ("Correct the exponent to a non-negative value, or convert the " &
+            "base to a floating-point or fixed-point type if a negative " &
+            "exponent (reciprocal power) is actually intended."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
       Succ_Pred_Boundary_Overflow =>
