@@ -44,6 +44,8 @@ package Adalang_Analyzer.Rules is
       Overlapping_Case_Ranges,
       Infinite_Loop,
       Duplicate_Boolean_Operand,
+      Redundant_Abs,
+      Redundant_Unary_Minus,
       Exception_Swallowed,
       Cyclomatic_Complexity,
       Constant_Condition,
@@ -65,6 +67,7 @@ package Adalang_Analyzer.Rules is
       Empty_Exception_Handler,
       Unreachable_Branch,
       Contradictory_Condition,
+      Contradictory_Range_Condition,
       Identical_Branches,
       Repeated_Statement,
       Ineffective_Operation,
@@ -441,6 +444,28 @@ package Adalang_Analyzer.Rules is
             "probably copied incorrectly."),
          Quality     => Quality_Reliability,
          Severity    => Severity_Medium),
+      Redundant_Abs =>
+        (Name        => To_Unbounded_String ("Redundant_Abs"),
+         Description => To_Unbounded_String
+           ("Find 'abs' applied to an operand that is itself an 'abs' " &
+            "expression."),
+         Guidance    => To_Unbounded_String
+           ("Remove the outer 'abs'; applying it twice never changes the " &
+            "result."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Redundant_Unary_Minus =>
+        (Name        => To_Unbounded_String ("Redundant_Unary_Minus"),
+         Description => To_Unbounded_String
+           ("Find unary negation applied to an operand that is itself a " &
+            "unary negation."),
+         Guidance    => To_Unbounded_String
+           ("Remove both negations; they cancel out (and share the same " &
+            "overflow behavior as the operand alone, so removing them " &
+            "does not change whether the expression can raise " &
+            "Constraint_Error)."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
       Exception_Swallowed =>
         (Name        => To_Unbounded_String ("Exception_Swallowed"),
          Description => To_Unbounded_String
@@ -652,6 +677,18 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Correct the copied or negated operand, or replace the " &
             "expression with the intended constant value."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Contradictory_Range_Condition =>
+        (Name        => To_Unbounded_String ("Contradictory_Range_Condition"),
+         Description => To_Unbounded_String
+           ("Find 'and'/'and then' conditions combining two relational " &
+            "comparisons on the same expression whose statically known " &
+            "bounds cannot both hold."),
+         Guidance    => To_Unbounded_String
+           ("Correct the comparison operators or bounds, or replace one " &
+            "operator with 'or'/'or else' if either condition alone was " &
+            "intended."),
          Quality     => Quality_Reliability,
          Severity    => Severity_High),
       Identical_Branches =>

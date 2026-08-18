@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This is a **documentation-based** comparison: AdaLang Analyzer's 116 checks
+This is a **documentation-based** comparison: AdaLang Analyzer's 119 checks
 (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -20,14 +20,14 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 116 checks:
+Of AdaLang Analyzer's 119 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
 | Direct | 18 | Same check, essentially the same semantics |
 | Close | 14 | Same intent, minor scope difference |
 | Partial | 18 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
-| No GNATcheck counterpart | 66 | Nothing in the predefined catalog does this |
+| No GNATcheck counterpart | 69 | Nothing in the predefined catalog does this |
 
 GNATcheck's own catalog runs to roughly 180 predefined rules; large families
 of it (identifier casing/prefixes/readability, OOP-depth metrics,
@@ -99,7 +99,7 @@ cover a different-shaped case than the nearest predefined rule.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-66 of AdaLang's 116 rules do something GNATcheck's predefined catalog does
+69 of AdaLang's 119 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -126,7 +126,7 @@ Overlapping_Case_Ranges, Constant_Condition, Unreachable_Code,
 Division_By_Zero, Integer_Division_Before_Multiplication,
 Excessive_Shift_Amount, Known_Negative_Shift_Amount_Failure,
 Known_Negative_Exponent_Failure, Reversed_Range,
-Self_Assignment, Contradictory_Condition,
+Self_Assignment, Contradictory_Condition, Contradictory_Range_Condition,
 Repeated_Statement, Ineffective_Operation, Constant_Result_Operation,
 Empty_Loop, Unnecessary_Else_After_Return, Redundant_Type_Conversion,
 Handler_Order.
@@ -141,7 +141,8 @@ No_Select, No_Requeue, No_Asynchronous_Transfer, No_Dispatching_Call,
 No_Classwide_Type, Unused_Variable, No_Unchecked_Access,
 Duplicate_With_Clause, Reraise_Discards_Occurrence,
 Duplicate_Exception_Choice, Redundant_If_Boolean_Return,
-Redundant_Final_Return, Entry_Barrier_Side_Effect.
+Redundant_Final_Return, Entry_Barrier_Side_Effect, Redundant_Abs,
+Redundant_Unary_Minus.
 
 (Several of these -- Unused_Parameter, Unused_Variable, Shadowed_Declaration,
 Missing_Overriding_Indicator, Dead_Store -- are things GNAT itself reports as

@@ -23,6 +23,14 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   an integer base whose statically known exponent is negative (always
   raises `Constraint_Error`, since the predefined integer `**` operator's
   exponent is subtype `Natural`).
+- `Redundant_Abs` check: flags `abs` applied to an operand that is itself
+  an `abs` expression.
+- `Redundant_Unary_Minus` check: flags unary negation applied to an
+  operand that is itself a unary negation.
+- `Contradictory_Range_Condition` check: flags `and`/`and then`
+  conditions combining two relational comparisons on the same expression
+  whose statically known bounds cannot both hold (e.g. `X > 10 and then
+  X < 5`).
 
 ## [1.0.0] - 2026-08-18
 

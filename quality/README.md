@@ -125,7 +125,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (267 cases; the tally below itemizes the threshold and
+Current coverage (274 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged
@@ -434,6 +434,25 @@ instead of being re-itemized here):
   exponent's already-computed `Right_Int` value directly (no separate
   evaluation needed) since `Analyze_Binary_Expression` computes it for
   every binary operator up front.
+
+- 4 cases for `Redundant_Abs` and `Redundant_Unary_Minus`, added together
+  alongside these two new checks: `abs (abs (X))` must fire (`finding`);
+  a single `abs (X)` must not fire (clean); `-(-X)` must fire (`finding`);
+  and a single `-X` must not fire (clean).
+
+- 3 cases for `Contradictory_Range_Condition`, added alongside the new
+  check: `X > 10 and then X < 5` must fire, since no integer value is
+  both greater than 10 and less than 5 (`finding`); `X > 10 and then
+  X < 20` must not fire, since the two ranges overlap (clean); and `X >
+  10 and then Y < 5` must not fire, since the two comparisons are on
+  different expressions and their bounds don't interact (clean). Found
+  during implementation, not from documentation alone: the first attempt
+  matched on `Ada_Bin_Op` for both comparison sub-expressions and
+  silently found nothing, because Libadalang represents a relational
+  comparison (`>`, `<`, `=`, ...) as the distinct `Ada_Relation_Op` kind,
+  not `Ada_Bin_Op` -- a derived kind that shares `Ada_Bin_Op`'s fields but
+  fails an exact `Kind =` test. Fixed by matching the `Ada_Bin_Op_Range`
+  subtype, which spans both kinds.
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:

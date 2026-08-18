@@ -156,6 +156,59 @@ package body Adalang_Analyzer.Checks.Expressions is
       end case;
    end Interesting_Same_Operand_Op;
 
+   type Comparison_Range is record
+      Known : Boolean := False;
+      Lo    : Long_Long_Integer := Long_Long_Integer'First;
+      Hi    : Long_Long_Integer := Long_Long_Integer'Last;
+   end record;
+
+   --  For a relational Bin_Op of the form "Var op Const" (Const statically
+   --  evaluable via Integer_Value), the inclusive [Lo, Hi] range Var must
+   --  fall in for the comparison to hold. Known => False for an
+   --  unsupported operator, a non-static Const, or a Const already at a
+   --  Long_Long_Integer extreme (so "Const +/- 1" would overflow this
+   --  evaluator's own arithmetic rather than the analyzed program's --
+   --  conservatively skipped rather than risking a wrong bound). Backs
+   --  Contradictory_Range_Condition.
+   function Relational_Bound
+     (Cmp : Libadalang.Analysis.Bin_Op'Class) return Comparison_Range
+   is
+      Const : constant Abstract_Int := Integer_Value (Cmp.F_Right);
+   begin
+      if not Const.Known then
+         return (Known => False, others => <>);
+      end if;
+
+      case Cmp.F_Op is
+         when Libadalang.Common.Ada_Op_Eq =>
+            return (Known => True, Lo => Const.Value, Hi => Const.Value);
+         when Libadalang.Common.Ada_Op_Gte =>
+            return
+              (Known => True, Lo => Const.Value,
+               Hi    => Long_Long_Integer'Last);
+         when Libadalang.Common.Ada_Op_Lte =>
+            return
+              (Known => True, Lo => Long_Long_Integer'First,
+               Hi    => Const.Value);
+         when Libadalang.Common.Ada_Op_Gt =>
+            if Const.Value = Long_Long_Integer'Last then
+               return (Known => False, others => <>);
+            end if;
+            return
+              (Known => True, Lo => Const.Value + 1,
+               Hi    => Long_Long_Integer'Last);
+         when Libadalang.Common.Ada_Op_Lt =>
+            if Const.Value = Long_Long_Integer'First then
+               return (Known => False, others => <>);
+            end if;
+            return
+              (Known => True, Lo => Long_Long_Integer'First,
+               Hi    => Const.Value - 1);
+         when others =>
+            return (Known => False, others => <>);
+      end case;
+   end Relational_Bound;
+
    procedure Analyze_Binary_Expression  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Expr : Libadalang.Analysis.Bin_Op)
@@ -337,6 +390,58 @@ package body Adalang_Analyzer.Checks.Expressions is
               "; right operand => " & Right_Text);
       end if;
 
+      if Rule_States (Contradictory_Range_Condition) = Enabled
+        and then Op in Libadalang.Common.Ada_Op_And
+          | Libadalang.Common.Ada_Op_And_Then
+        and then not Libadalang.Analysis.Is_Null (Expr.F_Left)
+        and then not Libadalang.Analysis.Is_Null (Expr.F_Right)
+        and then Expr.F_Left.Kind in Libadalang.Common.Ada_Bin_Op_Range
+        and then Expr.F_Right.Kind in Libadalang.Common.Ada_Bin_Op_Range
+      then
+         declare
+            L : constant Libadalang.Analysis.Bin_Op := Expr.F_Left.As_Bin_Op;
+            R : constant Libadalang.Analysis.Bin_Op :=
+              Expr.F_Right.As_Bin_Op;
+         begin
+            if L.F_Op in Libadalang.Common.Ada_Op_Eq
+                 | Libadalang.Common.Ada_Op_Gt
+                 | Libadalang.Common.Ada_Op_Gte
+                 | Libadalang.Common.Ada_Op_Lt
+                 | Libadalang.Common.Ada_Op_Lte
+              and then R.F_Op in Libadalang.Common.Ada_Op_Eq
+                 | Libadalang.Common.Ada_Op_Gt
+                 | Libadalang.Common.Ada_Op_Gte
+                 | Libadalang.Common.Ada_Op_Lt
+                 | Libadalang.Common.Ada_Op_Lte
+              and then not Libadalang.Analysis.Is_Null (L.F_Left)
+              and then Canonical_Text (L.F_Left) /= ""
+              and then Canonical_Text (L.F_Left) = Canonical_Text (R.F_Left)
+            then
+               declare
+                  LB : constant Comparison_Range := Relational_Bound (L);
+                  RB : constant Comparison_Range := Relational_Bound (R);
+               begin
+                  if LB.Known and then RB.Known
+                    and then (LB.Lo > RB.Hi or else RB.Lo > LB.Hi)
+                  then
+                     Report_Rule_Violation
+                       (Unit, Expr, Contradictory_Range_Condition,
+                        "condition is always false: no value satisfies " &
+                        "both comparisons",
+                        Explanation =>
+                          "The two comparisons share the same left-hand " &
+                          "expression, and their statically known bounds " &
+                          "do not overlap, so no value can satisfy both " &
+                          "at once.",
+                        Evidence =>
+                          "left operand => " & Left_Text &
+                          "; right operand => " & Right_Text);
+                  end if;
+               end;
+            end if;
+         end;
+      end if;
+
       if Rule_States (Duplicate_Boolean_Operand) = Enabled
         and then Op in Libadalang.Common.Ada_Op_And
           | Libadalang.Common.Ada_Op_And_Then
@@ -423,6 +528,26 @@ package body Adalang_Analyzer.Checks.Expressions is
          Report_Rule_Violation
            (Unit, Expr, Duplicate_Boolean_Operand,
             "double negation can be simplified");
+      end if;
+
+      if Rule_States (Redundant_Abs) = Enabled
+        and then Expr.F_Op = Libadalang.Common.Ada_Op_Abs
+        and then Inner.Kind = Libadalang.Common.Ada_Un_Op
+        and then Inner.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Abs
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Redundant_Abs,
+            "nested 'abs' can be simplified to a single 'abs'");
+      end if;
+
+      if Rule_States (Redundant_Unary_Minus) = Enabled
+        and then Expr.F_Op = Libadalang.Common.Ada_Op_Minus
+        and then Inner.Kind = Libadalang.Common.Ada_Un_Op
+        and then Inner.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Minus
+      then
+         Report_Rule_Violation
+           (Unit, Expr, Redundant_Unary_Minus,
+            "double negation can be simplified to the operand itself");
       end if;
    end Analyze_Unary_Expression;
 

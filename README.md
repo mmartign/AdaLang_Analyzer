@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 116 checks spanning coding policy, data/control-flow defects, and
+At a glance: 119 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -97,7 +97,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 116 checks fall into five broad groups:
+AdaLang Analyzer's 119 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -140,6 +140,8 @@ The analyzer currently provides the following checks:
 | Case analysis | `Overlapping_Case_Ranges` | Reliability | High | Reports intersecting statically evaluable integer choices. |
 | Control flow | `Infinite_Loop` | Reliability | High | Reports unconditional loops without an exit, return, or raise. |
 | Expression | `Duplicate_Boolean_Operand` | Reliability | Medium | Reports repeated boolean operands and double negations. |
+| Expression | `Redundant_Abs` | Maintainability | Low | Reports `abs` applied to an operand that is itself an `abs` expression. |
+| Expression | `Redundant_Unary_Minus` | Maintainability | Low | Reports unary negation applied to an operand that is itself a unary negation. |
 | Exception handling | `Exception_Swallowed` | Reliability | High | Reports empty or null-only `when others` handlers. |
 | Complexity | `Cyclomatic_Complexity` | Maintainability | Medium | Reports subprograms exceeding the configured complexity threshold. |
 | Control flow | `Constant_Condition` | Reliability | Medium | Reports conditions that are statically always true or false. |
@@ -161,6 +163,7 @@ The analyzer currently provides the following checks:
 | Exception handling | `Duplicate_Exception_Choice` | Maintainability | Low | Reports an exception handler whose own choice list names the same exception more than once. |
 | Control flow | `Unreachable_Branch` | Reliability | Medium | Reports branches excluded by earlier static conditions. |
 | Conditional | `Contradictory_Condition` | Reliability | High | Reports expressions such as `X and not X` or `X or not X`. |
+| Conditional | `Contradictory_Range_Condition` | Reliability | High | Reports `and`/`and then` conditions combining two relational comparisons on the same expression whose statically known bounds cannot both hold. |
 | Conditional | `Identical_Branches` | Reliability | Medium | Reports adjacent conditional branches with identical bodies. |
 | Assignment | `Repeated_Statement` | Reliability | Medium | Reports identical consecutive assignments. |
 | Expression | `Ineffective_Operation` | Maintainability | Low | Reports operations containing an identity operand that has no effect. |
