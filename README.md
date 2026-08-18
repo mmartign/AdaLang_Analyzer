@@ -39,6 +39,7 @@ proof statuses, are defined in
 - [DO178C_COMPLIANCE_MATRIX.md](DO178C_COMPLIANCE_MATRIX.md) — `--do178c`
   rule-by-rule mapping to DO-178C Annex A Table A-5
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution workflow
+- [CHANGELOG.md](CHANGELOG.md) — release history
 
 ## Why AdaLang Analyzer Exists
 
