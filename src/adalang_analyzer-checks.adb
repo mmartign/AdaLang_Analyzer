@@ -1736,14 +1736,20 @@ package body Adalang_Analyzer.Checks is
                        (Unit, Node, Address_Clause, "address clause used");
                   end if;
                end;
-            elsif Node.Kind = Libadalang.Common.Ada_Aspect_Assoc
-              and then Normalize_Rule_Name
-                (Node_Text (Node.As_Aspect_Assoc.F_Id)) = "address"
+            elsif (Node.Kind = Libadalang.Common.Ada_Aspect_Assoc
+                    and then Normalize_Rule_Name
+                      (Node_Text (Node.As_Aspect_Assoc.F_Id)) = "address")
+              or else Node.Kind = Libadalang.Common.Ada_At_Clause
             then
-               --  The same hazard expressed via aspect syntax ("with ...,
-               --  Address => ...;") rather than a separate attribute
-               --  definition clause -- semantically identical, and
+               --  Two other forms of the same hazard. Aspect syntax
+               --  ("with ..., Address => ...;") is semantically identical
+               --  to a separate attribute definition clause and
                --  increasingly the more common form in modern Ada.
+               --  Ada_At_Clause is the obsolescent "for X use at ADDR;"
+               --  form (RM 13.5.1), superseded by "for X'Address use
+               --  ADDR;" but still legal; unlike Attribute_Def_Clause, it
+               --  has no attribute name to check -- the clause itself is
+               --  unconditionally an address specification.
                Report_Rule_Violation
                  (Unit, Node, Address_Clause, "address clause used");
             end if;
