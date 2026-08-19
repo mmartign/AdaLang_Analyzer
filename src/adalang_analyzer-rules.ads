@@ -906,8 +906,10 @@ package Adalang_Analyzer.Rules is
       Missing_Global_Contract =>
         (Name        => To_Unbounded_String ("Missing_Global_Contract"),
          Description => To_Unbounded_String
-           ("Find SPARK subprograms that access global state without an " &
-            "explicit Global contract."),
+           ("Find subprograms that access global state without an " &
+            "explicit Global contract, the SPARK aspect for documenting " &
+            "global effects; fires even before SPARK_Mode is adopted, as " &
+            "a readiness check for it."),
          Guidance    => To_Unbounded_String
            ("Add a Global aspect that classifies every global object as " &
             "Input, Output, In_Out, or Proof_In."),
@@ -916,8 +918,8 @@ package Adalang_Analyzer.Rules is
       Global_Contract_Mismatch =>
         (Name        => To_Unbounded_String ("Global_Contract_Mismatch"),
          Description => To_Unbounded_String
-           ("Find global reads or writes that are omitted from a SPARK " &
-            "Global contract or declared with an incompatible mode."),
+           ("Find global reads or writes that are omitted from a Global " &
+            "contract or declared with an incompatible mode."),
          Guidance    => To_Unbounded_String
            ("Make the Global contract agree with the implementation's " &
             "actual reads and writes."),
@@ -926,8 +928,10 @@ package Adalang_Analyzer.Rules is
       Missing_Depends_Contract =>
         (Name        => To_Unbounded_String ("Missing_Depends_Contract"),
          Description => To_Unbounded_String
-           ("Find SPARK subprograms with outputs but no explicit Depends " &
-            "contract."),
+           ("Find subprograms with outputs but no explicit Depends " &
+            "contract, the SPARK aspect for documenting " &
+            "input-to-output dependencies; fires even before SPARK_Mode " &
+            "is adopted, as a readiness check for it."),
          Guidance    => To_Unbounded_String
            ("Add a Depends aspect documenting the inputs on which each " &
             "output depends."),
@@ -937,7 +941,7 @@ package Adalang_Analyzer.Rules is
         (Name        => To_Unbounded_String ("Incomplete_Depends_Contract"),
          Description => To_Unbounded_String
            ("Find writable parameters or global outputs omitted from a " &
-            "SPARK Depends contract."),
+            "Depends contract."),
          Guidance    => To_Unbounded_String
            ("Add a dependency association for every output, using null " &
             "when its value is independent of all inputs."),

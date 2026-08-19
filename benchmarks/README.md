@@ -444,16 +444,20 @@ approximate, the qualitative findings below as the reliable part.)
   GNATcheck rules are scoped narrowly to callback/`Export`/task
   boundaries only — confirmed against both checks' own descriptions, a
   real scope-breadth gap the "Close" label undersold, not a
-  reporting-location artifact. Also found, and deliberately *not* fixed
-  this run pending a maintainer decision: `Missing_Global_Contract` (and
+  reporting-location artifact. Also found: `Missing_Global_Contract` (and
   six sibling checks sharing the same gating function) fires on ordinary
   Ada with **zero** `SPARK_Mode` markings anywhere in the corpus, because
   `Effective_SPARK_Enabled`'s fallback treats "no SPARK_Mode found
-  anywhere in the ancestor chain" as SPARK-enabled by default rather than
-  disabled — see the results file for why this may be intentional (guiding
-  ordinary Ada toward SPARK adoption under the `--spark` preset) rather
-  than a bug, and why changing it needs to happen deliberately, not as a
-  side effect of a benchmark run. What matched cleanly, at real-code
+  anywhere in the ancestor chain" as SPARK-enabled by default. A follow-up
+  session investigated changing this and confirmed it's intentional, not a
+  bug: `tests/run_bug_findings.sh` has a dedicated regression proving the
+  `--spark` preset is meant to fire on unmarked code too (a "readiness"
+  check nudging ordinary Ada toward SPARK adoption, not a check restricted
+  to code that already adopted it) — see the results file for the full
+  trail, including two reverted code-change attempts before this was
+  confirmed. `-list-checks` wording for the four checks that overclaimed
+  "SPARK subprograms" was corrected; no behavior changed. What matched
+  cleanly, at real-code
   volume: `Naming_Convention`/`min_identifier_length` reproduced sparknacl's
   loop-index/parameter-name split; `Magic_Number`/`numeric_literals` held
   at 89% (vs. sparknacl's 91%); `No_Access_To_Subp_Def`/`subprogram_access`

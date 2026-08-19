@@ -64,7 +64,7 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Address_Clause | At_Representation_Clauses, Address_Specifications_For_* | Close |
 | Empty_If_Body | Null_Paths | Close |
 | Redundant_Boolean_Comparison | Redundant_Boolean_Expressions, Boolean_Negations | Close |
-| Missing_Global_Contract | SPARK_Procedures_Without_Globals | Close |
+| Missing_Global_Contract | SPARK_Procedures_Without_Globals | Close (AdaLang deliberately also fires pre-SPARK-adoption, as a readiness check; GNATcheck's rule only examines code already under SPARK_Mode — confirmed intentional, see `benchmarks/aws/RESULTS_gnatcheck_2026-08-19.md`) |
 | Uninitialized_Output | Unassigned_OUT_Parameters | Close |
 | Identical_Case_Alternative | Duplicate_Branches | Close (case-alternative-specific) |
 | Exception_Propagation | Exception_Propagation_From_Callbacks/Export/Tasks | Close |

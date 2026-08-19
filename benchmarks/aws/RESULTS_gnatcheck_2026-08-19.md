@@ -144,32 +144,47 @@ specific cases, not a peer of them. Worth a note in
 `GNATCHECK_RULE_COMPARISON.md` that this pairing understates the scope gap
 more than the "Close" label for other rows there does.
 
-## Finding 3: `Missing_Global_Contract` fires on code with zero `SPARK_Mode` markings — a design question, not fixed this run
+## Finding 3: `Missing_Global_Contract` fires on code with zero `SPARK_Mode` markings — confirmed intentional, not a gap
 
 827 AdaLang findings, 0 GNATcheck matches (GNATcheck's
 `spark_procedures_without_globals` found 0 on this corpus at all). AWS has
 **zero** `SPARK_Mode` occurrences anywhere in its `src/` tree (`grep -rl
-SPARK_Mode` : no matches), yet `Missing_Global_Contract` — documented in
-`-list-checks` as "Find **SPARK** subprograms that access global state
-without an explicit Global contract" — fired 827 times. Traced to
-`Effective_SPARK_Enabled` in `src/adalang_analyzer-spark_readiness.adb`:
-when no `SPARK_Mode` pragma/aspect is found anywhere in a subprogram's own
-declaration or its full lexical-ancestor chain, the function's fallback
-(and its `others =>` exception handler) both `return True` — i.e. code
-with **no SPARK annotation anywhere** is treated as SPARK-enabled by
-default, not SPARK-disabled. This same function gates six other checks
-(`Global_Contract_Mismatch`, `Missing_Depends_Contract`,
-`Incomplete_Depends_Contract`, `Uninitialized_Output`,
-`Aliasing_Between_Parameters`, `Potentially_Blocking_Operation`), so this
-is a broader design question than one check's finding count. **Not
-changed this run** — flipping the default to `False` (or to inherit a
-project-level default some other way) would meaningfully change output
-for seven checks across the whole analyzer and needs the project
-maintainer's call, not a benchmark-run-driven unilateral fix, particularly
-since it may be an intentional choice (guide ordinary Ada toward SPARK
-readiness proactively, under the `--spark` preset these checks normally
-run behind) rather than an oversight. Flagged here as the most actionable
-finding of this run either way.
+SPARK_Mode` : no matches), yet `Missing_Global_Contract` fired 827 times.
+Traced to `Effective_SPARK_Enabled` in
+`src/adalang_analyzer-spark_readiness.adb`: when no `SPARK_Mode`
+pragma/aspect is found anywhere in a subprogram's own declaration or its
+full lexical-ancestor chain, the function's fallback (and its `others =>`
+exception handler) both `return True` — i.e. code with **no SPARK
+annotation anywhere** is treated as SPARK-enabled by default. This same
+function gates six other checks (`Global_Contract_Mismatch`,
+`Missing_Depends_Contract`, `Incomplete_Depends_Contract`,
+`Uninitialized_Output`, `Aliasing_Between_Parameters`,
+`Potentially_Blocking_Operation`).
+
+**Investigated as a possible defect in a follow-up session and confirmed
+intentional, not a gap.** `tests/run_bug_findings.sh` has a dedicated
+regression block that runs `--spark` (and bare `-checks=`) on
+`tests/spark_readiness_findings.adb` — a fixture with zero `SPARK_Mode`
+markings, explicitly commented "positive regression fixture for SPARK
+Bronze/**readiness** diagnostics" — and asserts `Missing_Global_Contract`
+and its five siblings still fire. That is a deliberate, pre-existing test
+proving the "readiness" framing: the check is meant to flag, on ordinary
+Ada that has not yet adopted SPARK, what a Global contract would need to
+say if it did — the tool nudging code toward SPARK adoption, not a
+compliance check that only applies once adoption has already happened.
+GNATcheck's `spark_procedures_without_globals`, by contrast, only examines
+code already under `SPARK_Mode`; the two checks measure genuinely
+different things by design, the same shape as Finding 2 above, not a
+coverage gap. A code-level fix was attempted and reverted twice during
+that follow-up session (first a shared-default flip, which broke 12
+precision-corpus assertions across four unrelated checks; then a
+narrower fix scoped to just `Missing_Global_Contract`, which still broke
+the `run_bug_findings.sh` regression above) before this conclusion was
+reached. Resolution: `-list-checks` wording for the four checks that
+overclaimed "SPARK subprograms" (`Missing_Global_Contract`,
+`Global_Contract_Mismatch`, `Missing_Depends_Contract`,
+`Incomplete_Depends_Contract`) was corrected to describe the actual,
+broader scope instead; no behavior changed.
 
 ## What matched cleanly
 
