@@ -394,6 +394,11 @@ pattern as its GNATprove `run.sh`.
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
 | [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md) | 1557 | 1334 (85.7%) | 1758 | 1334 (75.9%) |
+| [aws](aws/RESULTS_gnatcheck_2026-08-19.md) | 6288 | 3294 (52.4%) | 11356 | 3283 (28.9%) |
+
+(GNATcheck's own findings show real run-to-run variance on this from-source
+build — see each corpus's caveats section; treat exact counts as
+approximate, the qualitative findings below as the reliable part.)
 
 - **[sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) —
   the first real run. `recursive_subprograms` (paired with `No_Recursion`)
@@ -419,6 +424,40 @@ pattern as its GNATprove `run.sh`.
   `No_Goto`/`No_Abort`, show zero violations on either side here); a
   real-code corpus (`aws`, `ada_drivers_library`) is the natural next run
   to actually exercise them.
+- **[aws](aws/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) — the first
+  real-code run, and it needed a real infrastructure fix first: the
+  GNATcheck runtime environment's own `GPR_PROJECT_PATH` was shadowing
+  AWS's real `gnatcoll_core`/`xmlada` dependencies with gnatcheck's
+  headers-stripped internal build of the same names, breaking project
+  loading outright; fixed by running the AdaLang lane before sourcing
+  that environment and appending (not prepending) its paths for the
+  GNATcheck lane — a durable fix, not an AWS-specific workaround. Once
+  working, this corpus surfaced two effects the rule-name-level comparison
+  didn't predict, not the same-flavor scope nuances sparknacl found:
+  (1) `Too_Many_Parameters`/`maximum_parameters` both agree, per spot check,
+  on which subprograms have too many parameters — they just cite the
+  *specification* line (GNATcheck) vs. the *body* line (AdaLang) when a
+  subprogram has both, which line-exact matching can't reconcile, so the
+  pair's "0% matched" headline is a comparator-design artifact, not a
+  detection disagreement; (2) `Exception_Propagation` checks *every*
+  subprogram lacking an exception boundary, while its three mapped
+  GNATcheck rules are scoped narrowly to callback/`Export`/task
+  boundaries only — confirmed against both checks' own descriptions, a
+  real scope-breadth gap the "Close" label undersold, not a
+  reporting-location artifact. Also found, and deliberately *not* fixed
+  this run pending a maintainer decision: `Missing_Global_Contract` (and
+  six sibling checks sharing the same gating function) fires on ordinary
+  Ada with **zero** `SPARK_Mode` markings anywhere in the corpus, because
+  `Effective_SPARK_Enabled`'s fallback treats "no SPARK_Mode found
+  anywhere in the ancestor chain" as SPARK-enabled by default rather than
+  disabled — see the results file for why this may be intentional (guiding
+  ordinary Ada toward SPARK adoption under the `--spark` preset) rather
+  than a bug, and why changing it needs to happen deliberately, not as a
+  side effect of a benchmark run. What matched cleanly, at real-code
+  volume: `Naming_Convention`/`min_identifier_length` reproduced sparknacl's
+  loop-index/parameter-name split; `Magic_Number`/`numeric_literals` held
+  at 89% (vs. sparknacl's 91%); `No_Access_To_Subp_Def`/`subprogram_access`
+  matched 100% (112/112) — the cleanest direct-match result in either run.
 
 ## What these benchmarks have found, in total
 

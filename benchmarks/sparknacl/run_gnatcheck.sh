@@ -19,6 +19,31 @@ if [ "$actual_sparknacl" != "$expected_sparknacl" ]; then
    exit 1
 fi
 
+mkdir -p "$results_dir"
+project=$sparknacl_root/sparknacl.gpr
+
+#  Build the two rule-argument lists from the shared map. recursive_subprograms
+#  is excluded: this locally-built gnatcheck's global call-graph analysis
+#  stack-overflows on it even with a raised ulimit (see RESULTS_gnatcheck_*.md).
+adalang_checks=$(awk -F'\t' 'NR>1 && $1!="No_Recursion"{print $1}' "$rule_map" | sort -u | tr '\n' ',' | sed 's/,$//')
+gc_rule_args=$(awk -F'\t' 'NR>1 && $2!="recursive_subprograms"{print $2}' "$rule_map" | sort -u | awk '{printf "-r %s ", $0}')
+
+#  Run the AdaLang lane FIRST, before GNATCHECK_ENV is sourced below: that
+#  env carries its own trimmed, runtime-only GPR_PROJECT_PATH (see
+#  project_gnatcheck_acquisition.md) which can silently shadow whatever
+#  project-dependency .gpr files AdaLang's own `-P` parsing needs to
+#  resolve, on corpora that (unlike this self-contained one) actually have
+#  external project dependencies -- see benchmarks/aws/run_gnatcheck.sh's
+#  comment for the failure mode this caused there.
+status=0
+"$analyzer" "-P$project" "-checks=$adalang_checks" --format=json -q \
+  --output="$results_dir/adalang-gnatcheck-compare.json" \
+  2>"$results_dir/adalang-gnatcheck-compare.stderr" || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang gnatcheck-compare lane failed with status $status" >&2
+   exit "$status"
+fi
+
 #  gnatcheck has no Alire package and no prebuilt download; it must be built
 #  from source (see project_gnatcheck_acquisition.md in this session's
 #  memory, or GNATCHECK_RULE_COMPARISON.md's intro, for the full bootstrap).
@@ -38,24 +63,6 @@ fi
 if [ -z "$gnatcheck" ]; then
    echo "GNATcheck lane skipped: executable not found (set GNATCHECK or GNATCHECK_ENV)" >&2
    exit 1
-fi
-
-mkdir -p "$results_dir"
-project=$sparknacl_root/sparknacl.gpr
-
-#  Build the two rule-argument lists from the shared map. recursive_subprograms
-#  is excluded: this locally-built gnatcheck's global call-graph analysis
-#  stack-overflows on it even with a raised ulimit (see RESULTS_gnatcheck_*.md).
-adalang_checks=$(awk -F'\t' 'NR>1 && $1!="No_Recursion"{print $1}' "$rule_map" | sort -u | tr '\n' ',' | sed 's/,$//')
-gc_rule_args=$(awk -F'\t' 'NR>1 && $2!="recursive_subprograms"{print $2}' "$rule_map" | sort -u | awk '{printf "-r %s ", $0}')
-
-status=0
-"$analyzer" "-P$project" "-checks=$adalang_checks" --format=json -q \
-  --output="$results_dir/adalang-gnatcheck-compare.json" \
-  2>"$results_dir/adalang-gnatcheck-compare.stderr" || status=$?
-if [ "$status" -gt 1 ]; then
-   echo "AdaLang gnatcheck-compare lane failed with status $status" >&2
-   exit "$status"
 fi
 
 status=0
