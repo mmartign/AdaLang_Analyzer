@@ -2,7 +2,7 @@
 
 This directory validates AdaLang Analyzer against real, independently
 authored Ada/SPARK codebases — not the hand-constructed fixtures in
-`quality/precision_corpus.tsv`. Two kinds of validation live here:
+`quality/precision_corpus.tsv`. Three kinds of validation live here:
 
 - **Independent-oracle comparisons**: on a SPARK corpus GNATprove can fully
   prove, GNATprove's verdict becomes a trustworthy ground truth. Each
@@ -16,6 +16,14 @@ authored Ada/SPARK codebases — not the hand-constructed fixtures in
   GNATprove findings of its own) — these corpora instead exercise breadth
   (a large real project) or specific checks (concurrency-prohibition rules
   against real tasking code) that synthetic fixtures don't reach.
+- **GNATcheck oracle comparison**: for the ~32 AdaLang rules with a
+  direct/close GNATcheck counterpart (`GNATCHECK_RULE_COMPARISON.md`),
+  GNATcheck's own findings on the same corpus become ground truth — an
+  AdaLang finding with no matching GNATcheck finding at the same
+  `(file, line)` is a potential false positive, and vice versa a potential
+  false negative. Unlike the proof-obligation comparison above, this is
+  matching two independently-implemented rule linters against each other,
+  not verification results.
 
 Every benchmark here is a `run.sh` + `README.md` (setup, toolchain notes,
 pinned revision) + dated `RESULTS_*.md` (the actual numbers). Re-running one
@@ -357,6 +365,60 @@ No false-positive class turned up in `Duplicate_Subprogram` itself across
 any of the ten corpora -- every sampled finding, in every corpus, pointed
 at a real, explainable duplication. That's a materially stronger basis
 than the original self-analysis-only evidence it shipped with.
+
+## GNATcheck oracle comparison
+
+Tracked as an open item in `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`'s gap
+register ("independent-oracle (e.g. GNATcheck) tests with measured
+false-positive and false-negative results") and prepared for at the
+rule-name level in `GNATCHECK_RULE_COMPARISON.md`, which found 18 direct
+and 14 close AdaLang/GNATcheck rule-name matches from documentation alone,
+explicitly *not* a substitute for running both tools. This section is that
+run. GNATcheck has no Alire package and no prebuilt download — the binary
+used here was built entirely from source (no AdaCore account/license), a
+real multi-hour undertaking on its own; see `project_gnatcheck_acquisition.md`
+in this session's memory for the full recipe and every macOS-specific
+workaround it needed. It exists only on the machine it was built on, is
+not committed anywhere, and reproducing a run elsewhere means rebuilding
+it first.
+
+Shared infrastructure for every corpus's GNATcheck lane:
+`benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map, expanded from
+`GNATCHECK_RULE_COMPARISON.md`'s tables to 39 individual pairs across 31
+AdaLang rules) and `benchmarks/gnatcheck_compare.awk` (the comparator,
+matching on `(basename(file), line, rule pair)` — same line-granularity
+convention as the GNATprove `compare.awk`). Each corpus adds its own
+`run_gnatcheck.sh`, following the same pinned-revision-verification
+pattern as its GNATprove `run.sh`.
+
+| Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
+| --- | ---: | ---: | ---: | ---: |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md) | 1557 | 1334 (85.7%) | 1758 | 1334 (75.9%) |
+
+- **[sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) —
+  the first real run. `recursive_subprograms` (paired with `No_Recursion`)
+  reliably crashes this from-source GNATcheck build with a native stack
+  overflow doing whole-program call-graph analysis, even at the maximum
+  `ulimit -s` macOS allows; excluded from this and future runs until
+  resolved. Investigated the three largest divergences directly against
+  source rather than just reporting the numbers: AdaLang's
+  `Non_Short_Circuit_Condition` is deliberately scoped to executable
+  statement conditions and doesn't examine `Pre =>`/`Post =>` contract
+  aspects the way GNATcheck's `non_short_circuit_operators` does (99% of
+  this run's GNATcheck-only findings); `Naming_Convention` and
+  `min_identifier_length` check different, only partially-overlapping
+  populations of "short identifier" (AdaLang exempts loop indices,
+  GNATcheck doesn't; GNATcheck doesn't flag short parameter names, AdaLang
+  does); and `maximum_parameters`'/`metrics_cyclomatic_complexity`'s
+  GNATcheck-only findings are almost entirely a default-threshold gap (3
+  vs. AdaLang's 6 for parameter count), not a logic difference. On the
+  large, non-threshold-configurable `Magic_Number`/`numeric_literals`
+  pair, the two independently-implemented tools agreed at 91% — the
+  strongest positive signal in this run. Only one corpus so far, and a
+  small, disciplined SPARK one at that (many direct-match rules, e.g.
+  `No_Goto`/`No_Abort`, show zero violations on either side here); a
+  real-code corpus (`aws`, `ada_drivers_library`) is the natural next run
+  to actually exercise them.
 
 ## What these benchmarks have found, in total
 

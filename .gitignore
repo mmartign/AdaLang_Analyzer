@@ -24,3 +24,11 @@
 /config/adalang_analyzer_config.h
 
 /CLAUDE.md
+
+# Default report artifacts GNATcheck writes to the current directory when
+# run manually against this project's own sources (e.g. for the GNATcheck
+# oracle comparison work in benchmarks/) without an explicit -o/--output.
+gnatcheck.out
+gnatcheck-source-list.out
+gnatcheck-rule-list.out
+gnatcheck-log*.TMP

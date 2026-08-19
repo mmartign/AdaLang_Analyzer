@@ -115,3 +115,13 @@ length/predicate/tag checks AdaLang doesn't model).
   in each dated `RESULTS_*.md` for reproducibility.
 
 See the latest `RESULTS_*.md` in this directory for recorded runs.
+
+## GNATcheck oracle lane
+
+`run_gnatcheck.sh` runs a separate comparison: AdaLang's rule findings
+against GNATcheck's, for the rule pairs in `benchmarks/gnatcheck_rule_map.tsv`.
+Needs `GNATCHECK` or `GNATCHECK_ENV` set (see `benchmarks/README.md`'s
+GNATcheck section — there is no Alire package for it, so this is a
+separately-built local binary, not something `alr exec` resolves on its
+own). See `RESULTS_gnatcheck_2026-08-19.md` for the first run and its
+caveats.
