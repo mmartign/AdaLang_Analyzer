@@ -114,10 +114,23 @@ prior two runs.
 pattern as gnatcoll-core's Finding 2: AdaLang reports once per subprogram
 (e.g. `stm32-dma.adb:361`), GNATcheck reports once per excess `return`
 statement, producing a much larger raw count and near-zero line-exact
-overlap despite substantive agreement. `null_paths` (`Empty_If_Body`) shows
-a related shape (50 GNATcheck findings, 0 AdaLang-mapped matches — `Empty_
-If_Body` itself found 0 on this corpus) — not investigated further given
-low volume.
+overlap despite substantive agreement. **`null_paths`/`Empty_If_Body` (50 GNATcheck findings, 0 AdaLang) —
+resolved (2026-08-19, follow-up session): explained by a documented scope
+difference, not a bug.** Sampled directly: `stm32-dac.adb:591` and `:641`
+are both `when No_Wave_Generation => null;` — an empty `case` alternative,
+not an `if` statement at all. `Empty_If_Body`'s own description is
+explicit about its scope: *"if statements with no elsif or else part
+whose then branch has no substantive statements"* — by name and by design
+it only ever looks at plain `if...end if;` with no `elsif`/`else`.
+GNATcheck's `null_paths` is broader (any empty branch, including `case`
+alternatives and `if`/`elsif` chains with an empty leg), which the rule
+map's "Close" label undersells — same "Close undersells the gap" pattern
+already established for `Exception_Propagation` on both AWS and cubedos.
+Not fixed: silently broadening `Empty_If_Body` to also cover `case`
+alternatives would go beyond what its name and current documentation
+promise; a real fix here would be a new, separately-named check (e.g.
+`Null_Case_Alternative`), which is a scope decision for the maintainer,
+not something to add unprompted.
 
 ## What matched cleanly (with real tasking exercised for the first time)
 

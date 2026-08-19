@@ -1716,25 +1716,37 @@ package body Adalang_Analyzer.Checks is
               (Unit, Node, Library_Level_Initialization,
                "library-level initializer contains a call");
          end if;
-         if Rule_States (Address_Clause) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Attribute_Def_Clause
-         then
-            declare
-               Clause     : constant Libadalang.Analysis.Attribute_Def_Clause :=
-                 Node.As_Attribute_Def_Clause;
-               Attr_Expr  : constant Libadalang.Analysis.Name :=
-                 Clause.F_Attribute_Expr;
-            begin
-               if not Libadalang.Analysis.Is_Null (Attr_Expr)
-                 and then Attr_Expr.Kind = Libadalang.Common.Ada_Attribute_Ref
-                 and then Normalize_Rule_Name
-                   (Node_Text (Attr_Expr.As_Attribute_Ref.F_Attribute)) =
-                   "address"
-               then
-                  Report_Rule_Violation
-                    (Unit, Node, Address_Clause, "address clause used");
-               end if;
-            end;
+         if Rule_States (Address_Clause) = Enabled then
+            if Node.Kind = Libadalang.Common.Ada_Attribute_Def_Clause then
+               declare
+                  Clause     : constant
+                    Libadalang.Analysis.Attribute_Def_Clause :=
+                    Node.As_Attribute_Def_Clause;
+                  Attr_Expr  : constant Libadalang.Analysis.Name :=
+                    Clause.F_Attribute_Expr;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Attr_Expr)
+                    and then Attr_Expr.Kind =
+                      Libadalang.Common.Ada_Attribute_Ref
+                    and then Normalize_Rule_Name
+                      (Node_Text (Attr_Expr.As_Attribute_Ref.F_Attribute)) =
+                      "address"
+                  then
+                     Report_Rule_Violation
+                       (Unit, Node, Address_Clause, "address clause used");
+                  end if;
+               end;
+            elsif Node.Kind = Libadalang.Common.Ada_Aspect_Assoc
+              and then Normalize_Rule_Name
+                (Node_Text (Node.As_Aspect_Assoc.F_Id)) = "address"
+            then
+               --  The same hazard expressed via aspect syntax ("with ...,
+               --  Address => ...;") rather than a separate attribute
+               --  definition clause -- semantically identical, and
+               --  increasingly the more common form in modern Ada.
+               Report_Rule_Violation
+                 (Unit, Node, Address_Clause, "address clause used");
+            end if;
          end if;
          if Rule_States (Duplicate_With_Clause) = Enabled
            and then Node.Kind = Libadalang.Common.Ada_With_Clause

@@ -135,9 +135,22 @@ reaches and AdaLang's doesn't), not a logic disagreement.
 - Same rule-map caveats as the prior two runs: `No_Pragma`/
   `Forbidden_Pragmas` excluded, rule pairs are name-level matches from
   `GNATCHECK_RULE_COMPARISON.md`, not proven semantic equivalence.
-- `Address_Clause`/its three GNATcheck counterparts: 5 AdaLang findings, 0
-  matched, all 5 GNATcheck-mapped rules also show non-zero unmatched counts
-  (`address_specifications_for_local_objects` 6) — not investigated in
-  detail this run given the small volume; flagged here rather than left
-  silent in case a future, larger-address-clause corpus makes this worth a
-  closer look.
+- **Resolved (2026-08-19, follow-up session).** `Address_Clause`/its three
+  GNATcheck counterparts originally showed 5 AdaLang findings, 6 GNATcheck
+  findings, zero overlap in either direction. Investigated directly: five
+  of the six were a reporting-location convention difference already
+  established for other rule pairs (GNATcheck's
+  `address_specifications_for_local_objects` reports at the object
+  declaration's own line — e.g. `gnatcoll-email-utils.adb:1514` — AdaLang
+  at the `for X'Address use ...;` clause's line a few lines later, e.g.
+  `:1517`) — not a bug. The sixth, `gnatcoll-os-fs.adb:166`
+  (`Result : T with Import, Convention => Ada, Address => Buffer'Address;`),
+  was a genuine miss: that address specification uses aspect syntax
+  (`with ..., Address => ...;`), which `Address_Clause` never handled,
+  only the `for X'Address use ...;` clause form. Fixed in
+  `src/adalang_analyzer-checks.adb` (logged as `FP-054` in
+  `quality/known_analysis_issues.tsv`), with two new precision-corpus
+  regression cases. Re-running this corpus post-fix: the previously-missed
+  finding now appears at the exact same line GNATcheck reports, turning a
+  total miss into an exact match; the other five remain an unresolved
+  reporting-location caveat (not this fix's target).
