@@ -5,7 +5,7 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0] - 2026-08-19
 
 ### Added
 
@@ -40,6 +40,20 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - `Empty_Elsif_Body` check: flags an `elsif` branch whose body has no
   effect (only `null;` and/or pragmas). The elsif-branch counterpart of
   `Empty_If_Body`, closing another `null_paths`/`Empty_If_Body` scope gap.
+
+### Fixed
+
+- `Has_Exception_Boundary` (`Exception_Propagation`'s boundary check)
+  did not stop at a task body the same way it already stopped at a
+  subprogram body, so a task body declared inside a nested `declare`
+  block could incorrectly inherit an enclosing scope's exception
+  handler as its own boundary, even though a task runs on its own
+  thread of control (`FP-053`).
+- `Address_Clause` missed the aspect-syntax form of an address
+  specification (`with Address => ...;`), reporting only the legacy
+  `for X'Address use ...;` clause form (`FP-054`).
+- `Address_Clause` missed the obsolescent `for X use at ADDR;` clause
+  form (`FP-055`).
 
 ## [1.0.0] - 2026-08-18
 
