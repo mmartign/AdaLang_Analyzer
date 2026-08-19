@@ -1015,7 +1015,7 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
             | Libadalang.Common.Ada_Goto_Stmt =>
             return (State => State, Falls_Through => False);
 
-         when Libadalang.Common.Ada_Null_Stmt
+         when Libadalang.Common.Ada_Null_Stmt  --  adalang-analyzer: ignore Null_Case_Alternative
             | Libadalang.Common.Ada_Label
             | Libadalang.Common.Ada_Pragma_Node
             | Libadalang.Common.Ada_Exit_Stmt =>

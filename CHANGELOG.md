@@ -31,6 +31,12 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   conditions combining two relational comparisons on the same expression
   whose statically known bounds cannot both hold (e.g. `X > 10 and then
   X < 5`).
+- `Null_Case_Alternative` check: flags a case alternative naming a
+  specific choice whose body has no effect (only `null;` and/or pragmas).
+  The case-statement counterpart of `Empty_If_Body`, which is deliberately
+  scoped to plain `if` statements and does not see case alternatives. Does
+  not flag a catch-all `when others => null;`, a common, deliberate Ada
+  idiom.
 
 ## [1.0.0] - 2026-08-18
 

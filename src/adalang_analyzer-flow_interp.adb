@@ -2786,7 +2786,7 @@ package body Adalang_Analyzer.Flow_Interp is
                case Case_Alternative_Match_Result (Alt, Selector, State) is
                   when Match =>
                      return Interpret_Statements (Unit, Alt.F_Stmts, State);
-                  when No_Match =>
+                  when No_Match =>  --  adalang-analyzer: ignore Null_Case_Alternative -- rationale: keep scanning
                      null;  --  adalang-analyzer: ignore Null_Statement
                   when Unknown_Match =>
                      exit;
@@ -4268,7 +4268,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                              True_Target := Edge.To;
                                           when CFG.False_Edge =>
                                              False_Target := Edge.To;
-                                          when CFG.Exceptional_Edge
+                                          when CFG.Exceptional_Edge  --  adalang-analyzer: ignore Null_Case_Alternative
                                              | CFG.Raise_Edge =>
                                              null;
                                           when others =>

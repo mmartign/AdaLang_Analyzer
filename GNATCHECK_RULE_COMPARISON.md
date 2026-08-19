@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This started as a **documentation-based** comparison: AdaLang Analyzer's 119
+This started as a **documentation-based** comparison: AdaLang Analyzer's 120
 checks (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's
 predefined-rule catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -27,12 +27,12 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 119 checks:
+Of AdaLang Analyzer's 120 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
 | Direct | 18 | Same check, essentially the same semantics |
-| Close | 14 | Same intent, minor scope difference |
+| Close | 15 | Same intent, minor scope difference |
 | Partial | 18 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
 | No GNATcheck counterpart | 69 | Nothing in the predefined catalog does this |
 
@@ -69,7 +69,8 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Duplicate_Boolean_Operand | Same_Operands, Redundant_Boolean_Expressions | Close |
 | Exception_Swallowed | Silent_Exception_Handlers, Trivial_Exception_Handlers | Close |
 | Address_Clause | At_Representation_Clauses, Address_Specifications_For_* | Close (confirmed 2026-08-19 via `gnatcoll-core`: `Address_Specifications_For_*` mostly agrees but reports at the object declaration's line, not the clause's, so line-exact comparators show 0% despite real agreement — see `benchmarks/gnatcoll/RESULTS_gnatcheck_2026-08-19.md`. AdaLang previously missed the aspect-syntax form (`with Address => ...;`) and the obsolescent `for X use at ADDR;` form entirely; fixed as `FP-054` and `FP-055` respectively — none of this project's ten corpora happen to exercise the latter, so `FP-055` was confirmed with a minimal reproduction rather than a live corpus finding) |
-| Empty_If_Body | Null_Paths | Close (undersells the gap, confirmed 2026-08-19 via `ada_drivers_library`: `Empty_If_Body` is deliberately scoped to plain `if` statements with no `elsif`/`else`, by its own documented description; `Null_Paths` also flags empty `case` alternatives and `if`/`elsif` legs, which `Empty_If_Body` was never designed to see — see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md`) |
+| Empty_If_Body | Null_Paths | Close (undersells the gap, confirmed 2026-08-19 via `ada_drivers_library`: `Empty_If_Body` is deliberately scoped to plain `if` statements with no `elsif`/`else`, by its own documented description; `Null_Paths` also flags empty `case` alternatives and `if`/`elsif` legs, which `Empty_If_Body` was never designed to see — see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md`. The case-alternative half of that gap is now covered separately by `Null_Case_Alternative`, added 2026-08-19) |
+| Null_Case_Alternative | Null_Paths | Close (case-alternative-specific; added 2026-08-19 to close the `null_paths`/`Empty_If_Body` case-alternative gap identified above. Two deliberate scope narrowings versus `Null_Paths`: it does not flag empty `if`/`elsif` legs, same open gap `Empty_If_Body` already has; and it does not flag a catch-all `when others => null;`, since that is a common, deliberate Ada idiom, confirmed noisy on this analyzer's own source during implementation and logged as `FP-056` in `quality/known_analysis_issues.tsv` — see `quality/README.md`'s precision-corpus entry for this check) |
 | Redundant_Boolean_Comparison | Redundant_Boolean_Expressions, Boolean_Negations | Close |
 | Missing_Global_Contract | SPARK_Procedures_Without_Globals | Close (AdaLang deliberately also fires pre-SPARK-adoption, as a readiness check; GNATcheck's rule only examines code already under SPARK_Mode — confirmed intentional, see `benchmarks/aws/RESULTS_gnatcheck_2026-08-19.md`) |
 | Uninitialized_Output | Unassigned_OUT_Parameters | Close |
@@ -106,7 +107,7 @@ cover a different-shaped case than the nearest predefined rule.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-69 of AdaLang's 119 rules do something GNATcheck's predefined catalog does
+69 of AdaLang's 120 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/

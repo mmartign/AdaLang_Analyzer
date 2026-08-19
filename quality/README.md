@@ -454,6 +454,22 @@ instead of being re-itemized here):
   fails an exact `Kind =` test. Fixed by matching the `Ada_Bin_Op_Range`
   subtype, which spans both kinds.
 
+- 3 cases for `Null_Case_Alternative`, added alongside the new check (the
+  case-alternative counterpart of `Empty_If_Body`, closing a gap the
+  GNATcheck oracle comparison found in `Empty_If_Body`'s own scope -- see
+  `GNATCHECK_RULE_COMPARISON.md`'s `null_paths` row): a case alternative
+  naming a specific choice whose body is only `null;` must fire
+  (`finding`), even while a sibling alternative in the same statement does
+  real work; the same shape with a real assignment instead of `null;` must
+  not fire (clean); and a catch-all `when others => null;` must not fire
+  either (clean) -- found during implementation, not from documentation
+  alone: this analyzer's own source uses that exact "explicit no-op default"
+  idiom throughout its `Ada_Node_Kind_Type` dispatch code (confirmed by
+  running the first, unscoped version of the check against `--recommended`'s
+  self-analysis gate, which surfaced 9 genuine instances), so the check
+  deliberately does not flag a bare `others` alternative the way GNATcheck's
+  broader `null_paths` does.
+
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 

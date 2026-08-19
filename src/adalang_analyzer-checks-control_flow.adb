@@ -209,6 +209,39 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       end loop;
    end Report_Identical_Case_Alternatives;
 
+   --  Reports Null_Case_Alternative when a case alternative's body has no
+   --  substantive statement (only null statements and/or pragmas), so the
+   --  alternative has no effect. The case-statement counterpart of
+   --  Empty_If_Body, which is deliberately scoped to plain if statements
+   --  and does not see case alternatives. Deliberately does not flag a
+   --  catch-all "when others => null;": that is a common, intentional Ada
+   --  idiom for "every other choice needs no handling here" (confirmed by
+   --  this analyzer's own source, which uses that exact idiom throughout
+   --  its own Ada_Node_Kind_Type dispatch code) -- unlike an empty
+   --  alternative naming a specific choice, which usually signals a
+   --  forgotten implementation.
+   procedure Report_Null_Case_Alternatives
+     (Unit         : Libadalang.Analysis.Analysis_Unit;
+      Alternatives : Libadalang.Analysis.Case_Stmt_Alternative_List)
+   is
+   begin
+      if Rule_States (Null_Case_Alternative) /= Enabled then
+         return;
+      end if;
+
+      for Alt of Alternatives loop
+         if not Has_Substantive_Statement (Alt.F_Stmts)
+           and then Alt.F_Choices.Children_Count > 0
+           and then Alt.F_Choices.Child (1).Kind /=
+             Libadalang.Common.Ada_Others_Designator
+         then
+            Report_Rule_Violation
+              (Unit, Alt, Null_Case_Alternative,
+               "case alternative has no effect because its body is empty");
+         end if;
+      end loop;
+   end Report_Null_Case_Alternatives;
+
    --  The if-expression counterpart of Report_Identical_Statement_Branches.
    procedure Report_Identical_Expression_Branches
      (Unit : Libadalang.Analysis.Analysis_Unit;
@@ -762,6 +795,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
         Stmt.F_Alternatives;
    begin
       Report_Identical_Case_Alternatives (Unit, Alternatives);
+      Report_Null_Case_Alternatives (Unit, Alternatives);
 
       if Rule_States (Unreachable_Case_Alternative) /= Enabled
         and then Rule_States (Overlapping_Case_Ranges) /= Enabled

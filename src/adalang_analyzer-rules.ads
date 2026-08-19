@@ -82,6 +82,7 @@ package Adalang_Analyzer.Rules is
       Deep_Nesting,
       Unused_Variable,
       Empty_If_Body,
+      Null_Case_Alternative,
       Unnecessary_Else_After_Return,
       Redundant_If_Boolean_Return,
       Function_Side_Effect,
@@ -833,6 +834,18 @@ package Adalang_Analyzer.Rules is
             "effect."),
          Guidance    => To_Unbounded_String
            ("Remove the if statement or implement the missing branch body."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Null_Case_Alternative =>
+        (Name        => To_Unbounded_String ("Null_Case_Alternative"),
+         Description => To_Unbounded_String
+           ("Find case statement alternatives naming a specific choice " &
+            "with no substantive statements, so the alternative has no " &
+            "effect. A catch-all `others => null;` is not flagged, since " &
+            "that is a common, deliberate idiom."),
+         Guidance    => To_Unbounded_String
+           ("Implement the alternative's body, or merge its choice into " &
+            "another alternative if it truly needs no distinct handling."),
          Quality     => Quality_Maintainability,
          Severity    => Severity_Low),
       Unnecessary_Else_After_Return =>

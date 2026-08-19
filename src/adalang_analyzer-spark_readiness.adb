@@ -1954,7 +1954,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
                case Choice_Match_Result (Choice, Value_Text, Value_Int) is
                   when Match =>
                      return Libadalang.Analysis.Variant (V);
-                  when No_Match =>
+                  when No_Match =>  --  adalang-analyzer: ignore Null_Case_Alternative
                      null;  --  adalang-analyzer: ignore Null_Statement
                   when Unknown_Match =>
                      return Libadalang.Analysis.No_Variant;
