@@ -686,7 +686,16 @@ package body Adalang_Analyzer.Checks is
            and then Current.As_Handled_Stmts.F_Exceptions.Children_Count > 0
          then
             return True;
-         elsif Current.Kind = Libadalang.Common.Ada_Subp_Body then
+         elsif Current.Kind in Libadalang.Common.Ada_Subp_Body
+                              | Libadalang.Common.Ada_Task_Body
+         then
+            --  A task runs on its own thread of control: an exception
+            --  handler lexically enclosing the task body (e.g. on a
+            --  declare block or subprogram the task type/object happens
+            --  to be declared within) can never catch an exception raised
+            --  during the task's own independent execution, so the walk
+            --  must not cross this boundary the way it legitimately does
+            --  for ordinary nested scopes.
             return False;
          end if;
          Current := Current.Parent;

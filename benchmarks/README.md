@@ -425,24 +425,42 @@ tracking as a quality issue in the from-source GNATcheck build itself
 (`project_gnatcheck_acquisition.md`), separate from any AdaLang/GNATcheck
 rule-logic question.
 
-**Two open items surfaced by this pass, needing a maintainer decision or
-follow-up:**
-1. `cubedos`'s `Exception_Propagation` found **zero** findings on task
-   bodies GNATcheck's `exception_propagation_from_tasks` flags 8 times, on
-   genuinely `SPARK_Mode (On)` code — unlike the AWS/gnatcoll-core
-   `Exception_Propagation` gap (which is *broader* than GNATcheck by
-   design), this looks like the opposite: a possible real coverage miss
-   specific to `task body` constructs. Not yet root-caused; see
-   [cubedos's results](cubedos/RESULTS_gnatcheck_2026-08-19.md#finding-worth-maintainer-attention-exception_propagation-finds-nothing-on-task-bodies-gnatcheck-flags).
-2. `coap_spark/README.md`'s documented SPARKlib `GPR_PROJECT_PATH` override
-   no longer works as written on this machine's current `alr`/`gpr2`
-   (directory-less `with` resolution now checks the with-ing project's own
-   directory before `GPR_PROJECT_PATH`, so the pinned checkout's own
-   `sparklib.gpr` always wins regardless of ordering) — worked around for
-   this GNATcheck run only by relocating the throwaway clone's own
-   `sparklib.gpr`, but `coap_spark/run.sh` (the GNATprove comparison) was
-   not touched and likely hits the same failure unmodified now; see
-   [coap_spark's results](coap_spark/RESULTS_gnatcheck_2026-08-19.md#environment-fix-required-beyond-what-readmemd-documents).
+**One item resolved, one open, from this pass:**
+1. **Resolved.** `cubedos`'s `Exception_Propagation` found **zero**
+   findings on task bodies GNATcheck's `exception_propagation_from_tasks`
+   flags 8 times, on genuinely `SPARK_Mode (On)` code. Root-caused by
+   reading both the check's implementation and the corpus source directly:
+   `Exception_Propagation` only fires on a call proven, by tracing an
+   explicit `raise` statement through AdaLang's own call-graph summaries,
+   to reach the callee — and `grep -rn "raise\b" src/` across the entire
+   corpus returns **zero matches**, so there is nothing explicit anywhere
+   for it to trace. Not a coverage bug: GNATcheck's task-specific rule is
+   evidently scoped more broadly (flagging unguarded task-body calls
+   regardless of provable explicit-raise reachability), the same "different
+   tools, different definition of guarded" family as AWS's `Exception_
+   Propagation` finding and coap_spark's `Depends`-without-`Global` finding
+   below. A related but separately-realizable soundness gap was found
+   during this investigation and has since been fixed (`Has_Exception_
+   Boundary` now also stops at `Ada_Task_Body`, with a new
+   precision-corpus regression pair confirming it) — see
+   [cubedos's results](cubedos/RESULTS_gnatcheck_2026-08-19.md#resolved-exception_propagation-finds-nothing-on-task-bodies-gnatcheck-flags--explained-not-a-bug)
+   for the full trace.
+2. **Fixed.** `coap_spark/README.md`'s documented SPARKlib
+   `GPR_PROJECT_PATH` override no longer works as written on this machine's
+   current `alr`/`gpr2` (directory-less `with` resolution now checks the
+   with-ing project's own directory before `GPR_PROJECT_PATH`, so the
+   pinned checkout's own `sparklib.gpr` always wins regardless of
+   ordering). `coap_spark/run.sh` (the GNATprove-comparison runner) now
+   applies the same idempotent `sparklib.gpr` relocation
+   `run_gnatcheck.sh` already used, before setting `GPR_PROJECT_PATH`.
+   Verified directly: re-ran `run.sh` against the same pinned checkout —
+   the project loads and both lanes execute (`--verify` completed cleanly
+   in 18s; GNATprove proceeded past project loading into real per-check
+   proof attempts, not erroring the way it did before the fix) — not
+   re-run to full completion, since confirming the environment issue is
+   fixed didn't require regenerating a new dated results file. See
+   [coap_spark's results](coap_spark/RESULTS_gnatcheck_2026-08-19.md#environment-fix-required-beyond-what-readmemd-documents)
+   for the original diagnosis.
 
 - **[sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) —
   the first real run. `recursive_subprograms` (paired with `No_Recursion`)
@@ -537,7 +555,8 @@ follow-up:**
   effective results until suppressed with `--ignore-project-switches` to
   keep this run's rule set consistent with every other corpus. Otherwise
   confirmed the established spec/body and threshold-gap effects, plus
-  surfaced the `Exception_Propagation`/task-body gap noted above.
+  surfaced and resolved the `Exception_Propagation`/task-body gap noted
+  above (explained, not a bug — see the resolution above).
 - **[coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19)
   — second fully-SPARK corpus, and the largest by GNATcheck finding volume
   (7,629). Needed the environment fix noted above before either lane could

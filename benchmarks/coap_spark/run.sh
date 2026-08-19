@@ -46,6 +46,27 @@ if [ ! -f "$sparklib_root/sparklib.gpr" ]; then
 fi
 mkdir -p "$sparklib_root/sparklib_lib" "$sparklib_root/sparklib_obj"
 
+#  Environment-drift fix, discovered via benchmarks/coap_spark/run_gnatcheck.sh:
+#  on this machine's current alr/gpr2 versions, GNAT project "with"
+#  resolution for a directory-less name ("with \"sparklib.gpr\";") checks
+#  the with-ing project's OWN directory before ever consulting
+#  GPR_PROJECT_PATH -- confirmed by direct experiment (gprls/
+#  adalang_analyzer both fail identically, deterministically, with
+#  GPR_PROJECT_PATH set exactly per the override below). Since
+#  coap_spark_root already contains its own sparklib.gpr (the broken
+#  14.1.1-era wrapper the comment below describes), it always wins over the
+#  sparklib_root override regardless of GPR_PROJECT_PATH order, and
+#  coap_spark.gpr fails to load ("extended project file
+#  sparklib_external.gpr not found") every time -- not the intermittent
+#  behavior the comment below originally assumed. coap_spark_root is a
+#  throwaway checkout (not this repository), so the pinned checkout's own
+#  sparklib.gpr is moved aside once, idempotently, so the "with" clause has
+#  nothing local to find and must fall through to GPR_PROJECT_PATH's
+#  override.
+if [ -f "$coap_spark_root/sparklib.gpr" ]; then
+   mv "$coap_spark_root/sparklib.gpr" "$coap_spark_root/sparklib.gpr.orig"
+fi
+
 #  coap_spark's own root sparklib.gpr wrapper `extends "sparklib_external"`,
 #  a project name that only exists inside Alire's *old* per-crate release
 #  layout for the gnatprove=14.1.1 dependency coap_spark's own alire.toml
