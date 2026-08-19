@@ -172,9 +172,11 @@ slightly stronger than, the pattern established on all four prior corpora.
 
 ## Caveats
 
-- **`Exception_Propagation` finding above is a real open question**, not
-  yet investigated to a root cause — flagged for maintainer follow-up
-  rather than resolved here.
+- ~~`Exception_Propagation` finding above is a real open question, not yet
+  investigated to a root cause~~ — **resolved** (see "Resolved:
+  `Exception_Propagation`..." above): root-caused to a genuine, confirmed
+  scope difference between the two tools, not an analyzer defect. This
+  caveat was left stale from before that section was written.
 - **`--ignore-project-switches` changes this run's methodology slightly
   from a "real CubedOS CI GNATcheck invocation"** — deliberate, for
   cross-corpus consistency (see above), but means this run does not
