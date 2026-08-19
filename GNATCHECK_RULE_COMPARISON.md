@@ -1,18 +1,25 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This is a **documentation-based** comparison: AdaLang Analyzer's 119 checks
-(`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's predefined-rule
-catalog as described in the [GNATcheck Reference
+This started as a **documentation-based** comparison: AdaLang Analyzer's 119
+checks (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's
+predefined-rule catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
-and the [gnatcheck repository](https://github.com/AdaCore/gnatcheck). No
-`gnatcheck` binary was run to produce this table -- getting one built was
-attempted and shelved (no Alire package; source build is a 6+ AdaCore-repo
-bootstrap prone to version-mismatch failures across the seams). Running both
-tools on the same corpus and comparing actual findings remains the open item
-tracked in `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`'s roadmap
+and the [gnatcheck repository](https://github.com/AdaCore/gnatcheck), built
+before a `gnatcheck` binary was available to actually run (no Alire package;
+source build is a 6+ AdaCore-repo bootstrap prone to version-mismatch
+failures across the seams -- see `project_gnatcheck_acquisition.md` in this
+session's memory for the recipe that eventually got one built). Running both
+tools on the same corpus and comparing actual findings, once tracked as the
+open item in `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`'s roadmap
 ("independent-oracle (e.g. GNATcheck) tests with measured false-positive and
-false-negative results"); this document is the rule-name-level groundwork for
-that, not a substitute for it.
+false-negative results"), is now done: `benchmarks/README.md`'s "GNATcheck
+oracle comparison" section runs both tools against all ten of this project's
+external validation corpora. This document remains the rule-name-level
+groundwork -- which pairs to compare and why -- but is no longer the only
+evidence; several of the "Close" annotations below now cite specific,
+measured findings from that run, including two real AdaLang coverage gaps
+it found and fixed (`FP-053`, `FP-054` in
+`quality/known_analysis_issues.tsv`).
 
 Rule names and one-line descriptions for GNATcheck come from the reference
 manual page; they were not cross-checked against the gnatcheck source, so
@@ -61,13 +68,13 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Infinite_Loop | Simple_Loop_Statements | Close |
 | Duplicate_Boolean_Operand | Same_Operands, Redundant_Boolean_Expressions | Close |
 | Exception_Swallowed | Silent_Exception_Handlers, Trivial_Exception_Handlers | Close |
-| Address_Clause | At_Representation_Clauses, Address_Specifications_For_* | Close |
-| Empty_If_Body | Null_Paths | Close |
+| Address_Clause | At_Representation_Clauses, Address_Specifications_For_* | Close (confirmed 2026-08-19 via `gnatcoll-core`: `Address_Specifications_For_*` mostly agrees but reports at the object declaration's line, not the clause's, so line-exact comparators show 0% despite real agreement — see `benchmarks/gnatcoll/RESULTS_gnatcheck_2026-08-19.md`. AdaLang previously missed the aspect-syntax form (`with Address => ...;`) entirely; fixed as `FP-054`. `At_Representation_Clauses` — the obsolescent `for X use at ADDR;` form — is still never checked by AdaLang at all, a distinct and so-far-unexercised gap in our corpora) |
+| Empty_If_Body | Null_Paths | Close (undersells the gap, confirmed 2026-08-19 via `ada_drivers_library`: `Empty_If_Body` is deliberately scoped to plain `if` statements with no `elsif`/`else`, by its own documented description; `Null_Paths` also flags empty `case` alternatives and `if`/`elsif` legs, which `Empty_If_Body` was never designed to see — see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md`) |
 | Redundant_Boolean_Comparison | Redundant_Boolean_Expressions, Boolean_Negations | Close |
 | Missing_Global_Contract | SPARK_Procedures_Without_Globals | Close (AdaLang deliberately also fires pre-SPARK-adoption, as a readiness check; GNATcheck's rule only examines code already under SPARK_Mode — confirmed intentional, see `benchmarks/aws/RESULTS_gnatcheck_2026-08-19.md`) |
 | Uninitialized_Output | Unassigned_OUT_Parameters | Close |
 | Identical_Case_Alternative | Duplicate_Branches | Close (case-alternative-specific) |
-| Exception_Propagation | Exception_Propagation_From_Callbacks/Export/Tasks | Close |
+| Exception_Propagation | Exception_Propagation_From_Callbacks/Export/Tasks | Close (undersells the gap in both directions, confirmed across two corpora, 2026-08-19: on `aws`, AdaLang is *broader* — it checks every subprogram lacking an exception boundary, not just callback/`Export`/task boundaries, so most of AdaLang's findings have no GNATcheck counterpart at all — see `benchmarks/aws/RESULTS_gnatcheck_2026-08-19.md`. On `cubedos`, GNATcheck's task-specific rule is *broader* in a different way — it flags unguarded calls from task bodies without requiring proof of an explicit raise, while AdaLang only fires when it can trace an explicit `raise` transitively through its own call-graph summaries — see `benchmarks/cubedos/RESULTS_gnatcheck_2026-08-19.md`) |
 | Library_Level_Initialization | Calls_Outside_Elaboration | Close |
 | Naming_Convention | Min_Identifier_Length | Close |
 

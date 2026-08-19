@@ -124,18 +124,30 @@ AdaLang's defensible distinction is a curated combination of rules,
 flow-sensitive defect findings, safety profiles, and SPARK-readiness feedback
 in one inspectable implementation.
 
-`GNATCHECK_RULE_COMPARISON.md` maps AdaLang's 99 checks against GNATcheck's
-predefined-rule catalog by name and intent (a documentation-based comparison,
-not a same-corpus run of both tools -- see that file's own caveats on why no
-`gnatcheck` binary was available to run one). Of the 99, 18 are a direct
+`GNATCHECK_RULE_COMPARISON.md` maps AdaLang's 119 checks against GNATcheck's
+predefined-rule catalog by name and intent. Of the 119, 18 are a direct
 match, 14 close, 18 overlap only through a GNATcheck generic mechanism
-(`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), and 49 have no
+(`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), and 69 have no
 predefined-rule counterpart at all -- mostly the flow-sensitive defect,
 SPARK-contract-consistency, and DO-178C-traceability checks that are
 AdaLang's actual differentiator. The reverse direction is larger still:
 GNATcheck's catalog has entire unmatched families (identifier casing/
 readability, OOP-depth metrics, portability, "prefer this modern Ada
 construct" style suggestions) that AdaLang does not attempt.
+
+This started as a documentation-only comparison (no `gnatcheck` binary was
+available -- see `project_gnatcheck_acquisition.md` in this session's
+memory for the from-source build that changed that) but has since been
+backed by an actual same-corpus run: `benchmarks/README.md`'s "GNATcheck
+oracle comparison" section runs both tools against all ten of this
+project's external validation corpora and measures real agreement/
+disagreement rates per rule pair, not just name-level intent. That run
+found two genuine AdaLang coverage gaps this documentation-only comparison
+could not have caught (`FP-053`, `FP-054` in
+`quality/known_analysis_issues.tsv`) and confirmed several of the "Close"
+labels above understate a real scope difference rather than a reporting
+artifact -- see the annotations in `GNATCHECK_RULE_COMPARISON.md` itself
+for specifics.
 
 ### GNATtest
 
