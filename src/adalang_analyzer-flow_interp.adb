@@ -4241,7 +4241,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                 Interpret_Statement
                                   (Unit, Source, State).State;
                            end;
-                        elsif Node_Info.Kind in
+                        elsif Node_Info.Kind in  --  adalang-analyzer: ignore Empty_Elsif_Body
                           CFG.Statement_Node | CFG.Merge_Node
                         then
                            null;

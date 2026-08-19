@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This started as a **documentation-based** comparison: AdaLang Analyzer's 120
+This started as a **documentation-based** comparison: AdaLang Analyzer's 121
 checks (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's
 predefined-rule catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -27,14 +27,14 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 120 checks:
+Of AdaLang Analyzer's 121 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
-| Direct | 18 | Same check, essentially the same semantics |
-| Close | 15 | Same intent, minor scope difference |
-| Partial | 18 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
-| No GNATcheck counterpart | 69 | Nothing in the predefined catalog does this |
+| Direct | 19 | Same check, essentially the same semantics |
+| Close | 16 | Same intent, minor scope difference |
+| Partial | 19 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
+| No GNATcheck counterpart | 67 | Nothing in the predefined catalog does this |
 
 GNATcheck's own catalog runs to roughly 180 predefined rules; large families
 of it (identifier casing/prefixes/readability, OOP-depth metrics,
@@ -63,14 +63,16 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Aliasing_Between_Parameters | Parameters_Aliasing, Potential_Parameters_Aliasing | Direct |
 | No_Controlled_Type | Controlled_Type_Declarations | Direct |
 | Dependency_Limit | Too_Many_Dependencies | Direct |
+| Missing_Overriding_Indicator | Overriding_Indicators | Direct (found 2026-08-19 while cross-checking this document against `gnatcheck --list-rules`'s real output, not available when this comparison was first written; was previously miscategorized as "no GNATcheck counterpart") |
 | No_Pragma | Forbidden_Pragmas | Close (GNATcheck needs an explicit list; AdaLang flags every pragma) |
 | Magic_Number | Numeric_Literals | Close |
 | Infinite_Loop | Simple_Loop_Statements | Close |
 | Duplicate_Boolean_Operand | Same_Operands, Redundant_Boolean_Expressions | Close |
 | Exception_Swallowed | Silent_Exception_Handlers, Trivial_Exception_Handlers | Close |
 | Address_Clause | At_Representation_Clauses, Address_Specifications_For_* | Close (confirmed 2026-08-19 via `gnatcoll-core`: `Address_Specifications_For_*` mostly agrees but reports at the object declaration's line, not the clause's, so line-exact comparators show 0% despite real agreement — see `benchmarks/gnatcoll/RESULTS_gnatcheck_2026-08-19.md`. AdaLang previously missed the aspect-syntax form (`with Address => ...;`) and the obsolescent `for X use at ADDR;` form entirely; fixed as `FP-054` and `FP-055` respectively — none of this project's ten corpora happen to exercise the latter, so `FP-055` was confirmed with a minimal reproduction rather than a live corpus finding) |
-| Empty_If_Body | Null_Paths | Close (undersells the gap, confirmed 2026-08-19 via `ada_drivers_library`: `Empty_If_Body` is deliberately scoped to plain `if` statements with no `elsif`/`else`, by its own documented description; `Null_Paths` also flags empty `case` alternatives and `if`/`elsif` legs, which `Empty_If_Body` was never designed to see — see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md`. The case-alternative half of that gap is now covered separately by `Null_Case_Alternative`, added 2026-08-19) |
-| Null_Case_Alternative | Null_Paths | Close (case-alternative-specific; added 2026-08-19 to close the `null_paths`/`Empty_If_Body` case-alternative gap identified above. Two deliberate scope narrowings versus `Null_Paths`: it does not flag empty `if`/`elsif` legs, same open gap `Empty_If_Body` already has; and it does not flag a catch-all `when others => null;`, since that is a common, deliberate Ada idiom, confirmed noisy on this analyzer's own source during implementation and logged as `FP-056` in `quality/known_analysis_issues.tsv` — see `quality/README.md`'s precision-corpus entry for this check) |
+| Empty_If_Body | Null_Paths | Close (undersells the gap, confirmed 2026-08-19 via `ada_drivers_library`: `Empty_If_Body` is deliberately scoped to plain `if` statements with no `elsif`/`else`, by its own documented description; `Null_Paths` also flags empty `case` alternatives and `if`/`elsif` legs, which `Empty_If_Body` was never designed to see — see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md`. The case-alternative half of that gap is now covered separately by `Null_Case_Alternative`, and the elsif-branch half by `Empty_Elsif_Body`, both added 2026-08-19) |
+| Empty_Elsif_Body | Null_Paths | Close (elsif-branch-specific; added 2026-08-19 to close the `null_paths`/`Empty_If_Body` elsif-branch gap identified above. Confirmed noisy on this analyzer's own source during implementation, same "deliberate no-op branch" idiom as `Null_Case_Alternative`'s `FP-056`, logged as `FP-057` in `quality/known_analysis_issues.tsv` and fixed with an inline suppression rather than a broader exemption, since an elsif chain has no `others`-equivalent to exempt by construction. Does not flag a bare `if`'s then-branch when an elsif/else is present, or an empty `else` branch — those remain open, narrower-still gaps against `Null_Paths`, deliberately not chased in the same pass) |
+| Null_Case_Alternative | Null_Paths | Close (case-alternative-specific; added 2026-08-19 to close the `null_paths`/`Empty_If_Body` case-alternative gap identified above. Two deliberate scope narrowings versus `Null_Paths`: it does not flag empty `if`/`elsif` legs (now `Empty_Elsif_Body`'s scope, not this check's); and it does not flag a catch-all `when others => null;`, since that is a common, deliberate Ada idiom, confirmed noisy on this analyzer's own source during implementation and logged as `FP-056` in `quality/known_analysis_issues.tsv` — see `quality/README.md`'s precision-corpus entry for this check) |
 | Redundant_Boolean_Comparison | Redundant_Boolean_Expressions, Boolean_Negations | Close |
 | Missing_Global_Contract | SPARK_Procedures_Without_Globals | Close (AdaLang deliberately also fires pre-SPARK-adoption, as a readiness check; GNATcheck's rule only examines code already under SPARK_Mode — confirmed intentional, see `benchmarks/aws/RESULTS_gnatcheck_2026-08-19.md`) |
 | Uninitialized_Output | Unassigned_OUT_Parameters | Close |
@@ -102,12 +104,13 @@ cover a different-shaped case than the nearest predefined rule.
 | Volatile_Atomic_Consistency | Volatile_Objects_Without_Address_Clauses | Related but checks a different consistency condition |
 | Representation_Clause_Policy | Representation_Specifications, Misplaced_Representation_Items | Different framing (presence/placement vs. AdaLang's policy-centralization check) |
 | Generic_Instantiation_Limit | Too_Many_Generic_Dependencies, Deeply_Nested_Instantiations | Related metrics, different thresholded quantity |
-| No_Compiler_Extensions | Forbidden_Pragmas, Forbidden_Aspects | Only via explicit configured lists |
+| No_Compiler_Extensions | Forbidden_Pragmas, Forbidden_Aspects, Forbidden_Attributes | Only via explicit configured lists (`Forbidden_Attributes` added 2026-08-19, missed in the original documentation-based pass) |
 | No_Runtime_Check_Suppression | Restrictions / Forbidden_Pragmas | Only via generic wrappers, not a dedicated suppression-policy rule |
+| Entry_Barrier_Side_Effect | Non_Component_In_Barriers | Related construct (protected entry barrier expressions), different specific defect: GNATcheck flags a barrier referencing something other than a protected-object component, AdaLang flags a barrier calling a function with an `out`/`in out` parameter (found 2026-08-19 while cross-checking this document against `gnatcheck --list-rules`'s real output; was previously miscategorized as "no GNATcheck counterpart") |
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-69 of AdaLang's 120 rules do something GNATcheck's predefined catalog does
+67 of AdaLang's 121 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -142,19 +145,21 @@ Handler_Order.
 **Everything else** (no close GNATcheck family at all):
 No_Label, Unused_Parameter, Wrong_Parameter_Mode, Swappable_Parameters,
 Assertion_Side_Effect, Shadowed_Declaration,
-Missing_Overriding_Indicator, Inefficient_String_Concatenation,
+Inefficient_String_Concatenation,
 Circular_Package_Dependency, Duplicate_Subprogram, Missing_Loop_Variant,
 Potentially_Blocking_Operation, No_Explicit_Dereference, No_Rendezvous,
 No_Select, No_Requeue, No_Asynchronous_Transfer, No_Dispatching_Call,
 No_Classwide_Type, Unused_Variable, No_Unchecked_Access,
 Duplicate_With_Clause, Reraise_Discards_Occurrence,
 Duplicate_Exception_Choice, Redundant_If_Boolean_Return,
-Redundant_Final_Return, Entry_Barrier_Side_Effect, Redundant_Abs,
+Redundant_Final_Return, Redundant_Abs,
 Redundant_Unary_Minus.
 
 (Several of these -- Unused_Parameter, Unused_Variable, Shadowed_Declaration,
-Missing_Overriding_Indicator, Dead_Store -- are things GNAT itself reports as
-compiler warnings, just not as a GNATcheck rule.)
+Dead_Store -- are things GNAT itself reports as compiler warnings, just not
+as a GNATcheck rule. `Missing_Overriding_Indicator` was formerly listed here
+too, but is a `Direct` match on `Overriding_Indicators` -- see the table
+above.)
 
 ## GNATcheck rule families with no AdaLang Analyzer counterpart
 

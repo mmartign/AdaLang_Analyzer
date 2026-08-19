@@ -470,12 +470,29 @@ instead of being re-itemized here):
   deliberately does not flag a bare `others` alternative the way GNATcheck's
   broader `null_paths` does.
 
+- 2 cases for `Empty_Elsif_Body`, added alongside the new check (the
+  elsif-branch counterpart of `Empty_If_Body`, closing another gap the
+  GNATcheck oracle comparison found in `Empty_If_Body`'s own scope -- see
+  `GNATCHECK_RULE_COMPARISON.md`'s `null_paths` row): an elsif branch whose
+  body is only `null;` must fire (`finding`), even while the earlier then
+  branch does real work; the same shape with a real assignment instead of
+  `null;` must not fire (clean). One genuine instance of the same
+  "deliberate no-op branch" idiom found on `--recommended`'s self-analysis
+  gate as `Null_Case_Alternative`'s launch, just spelled with `elsif`
+  instead of `case`/`others` (`flow_interp.adb:4244`, a dispatch over CFG
+  node kinds where two kinds are deliberately skipped) -- suppressed with
+  this codebase's standard inline `adalang-analyzer: ignore` comment rather
+  than adding a broader exemption, logged as `FP-057`. Deliberately does not
+  (yet) cover a bare `if`'s then-branch when an elsif/else is present, or an
+  empty `else` branch -- both remain open, narrower gaps against GNATcheck's
+  `null_paths`, left for a future check rather than chased in this pass.
+
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 
 - More boundary/negative cases for checks without a numeric threshold (e.g.
   suspicious-but-legitimate constructs that resemble a violation without
-  being one) — 91 of the 99 `Rule_Kind` values now have at least one
+  being one) — 112 of the 120 `Rule_Kind` values now have at least one
   dedicated fixture, leaving 8 remaining: the seven `Known_*_Failure` checks,
   which only fire under `--verify` and so need a bounded proof-obligation
   fixture rather than a plain `Rule_Kind` boundary (see the "Precision

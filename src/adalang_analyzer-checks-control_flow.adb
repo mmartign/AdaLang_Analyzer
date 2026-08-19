@@ -1050,6 +1050,14 @@ package body Adalang_Analyzer.Checks.Control_Flow is
             elsif Value = Bool_True then
                Previous_Always_True := True;  --  adalang-analyzer: ignore Dead_Store
             end if;
+
+            if Rule_States (Empty_Elsif_Body) = Enabled
+              and then not Has_Substantive_Statement (Alt.F_Stmts)
+            then
+               Report_Rule_Violation
+                 (Unit, Alt, Empty_Elsif_Body,
+                  "elsif branch has no effect because its body is empty");
+            end if;
          end;
       end loop;
 

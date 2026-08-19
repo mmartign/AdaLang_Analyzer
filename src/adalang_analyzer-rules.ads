@@ -82,6 +82,7 @@ package Adalang_Analyzer.Rules is
       Deep_Nesting,
       Unused_Variable,
       Empty_If_Body,
+      Empty_Elsif_Body,
       Null_Case_Alternative,
       Unnecessary_Else_After_Return,
       Redundant_If_Boolean_Return,
@@ -834,6 +835,15 @@ package Adalang_Analyzer.Rules is
             "effect."),
          Guidance    => To_Unbounded_String
            ("Remove the if statement or implement the missing branch body."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Empty_Elsif_Body =>
+        (Name        => To_Unbounded_String ("Empty_Elsif_Body"),
+         Description => To_Unbounded_String
+           ("Find elsif branches with no substantive statements, so the " &
+            "branch has no effect."),
+         Guidance    => To_Unbounded_String
+           ("Remove the elsif branch or implement its missing body."),
          Quality     => Quality_Maintainability,
          Severity    => Severity_Low),
       Null_Case_Alternative =>

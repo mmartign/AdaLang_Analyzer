@@ -37,6 +37,9 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   scoped to plain `if` statements and does not see case alternatives. Does
   not flag a catch-all `when others => null;`, a common, deliberate Ada
   idiom.
+- `Empty_Elsif_Body` check: flags an `elsif` branch whose body has no
+  effect (only `null;` and/or pragmas). The elsif-branch counterpart of
+  `Empty_If_Body`, closing another `null_paths`/`Empty_If_Body` scope gap.
 
 ## [1.0.0] - 2026-08-18
 
