@@ -46,9 +46,16 @@ jobs:
       # frozen this as the macOS-resolved "system:gmp", which does not exist
       # as an apt package. That lockfile is no longer committed (see
       # .gitignore), so this step is just a speed/determinism nicety.
+      # `timeout` plus Acquire::*::Timeout/Retries bound this step to a few
+      # minutes: seen in practice (2026-08-19) hanging for the full 60-minute
+      # job timeout with no output after fetching the noble-security
+      # InRelease file from the Azure mirror, which otherwise silently burns
+      # the whole CI budget on a transient infra stall.
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgmp-dev
+        run: |
+          timeout 120 sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+          sudo apt-get install -y libgmp-dev
 
       # --verify's SMT backend needs cvc5 and z3 on PATH or under Alire's
       # standard GNATprove installation prefix (~/.alire/libexec/spark/bin);
