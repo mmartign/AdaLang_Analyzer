@@ -395,10 +395,54 @@ pattern as its GNATprove `run.sh`.
 | --- | ---: | ---: | ---: | ---: |
 | [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md) | 1557 | 1334 (85.7%) | 1758 | 1334 (75.9%) |
 | [aws](aws/RESULTS_gnatcheck_2026-08-19.md) | 6288 | 3294 (52.4%) | 11356 | 3283 (28.9%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-19.md) | 1870 | 1044 (55.8%) | 2665 | 1042 (39.1%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md) | 849 | 367 (43.2%) | 943 | 367 (38.9%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-08-19.md) | 182 | 156 (85.7%) | 617 | 156 (25.3%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-19.md) | 779 | 641 (82.3%) | 7629 | 641 (8.4%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-19.md) | 1460 | 1224 (83.8%) | 1354 | 1224 (90.4%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-08-19.md) | 157 | 96 (61.1%) | 120 | 96 (80.0%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-08-19.md) | 225 | 165 (73.3%) | 263 | 165 (62.7%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-08-19.md) | 596 | 444 (74.5%) | 1602 | 425 (26.5%) |
 
+All ten corpora tracked by `benchmarks/README.md`'s GNATprove comparison
+now have a GNATcheck-oracle counterpart run; this pass is complete.
 (GNATcheck's own findings show real run-to-run variance on this from-source
 build — see each corpus's caveats section; treat exact counts as
 approximate, the qualitative findings below as the reliable part.)
+
+**Recurring crash class, now seen on 6 of 10 corpora — reads as a build
+defect, not a per-corpus issue.** The `STORAGE_ERROR: stack overflow`
+("unparsable worker output") first seen on `aws` recurred on
+`ada_drivers_library`, `cubedos`, `libkeccak` (twice), `saatana`, and
+`project_bias` — independent of corpus size (it hit `saatana`'s ~1,200-line,
+5-unit corpus exactly as it hit the multi-thousand-line real-code corpora),
+domain, or SPARK-vs-ordinary-Ada status. `gnatcoll-core`, `coap_spark`, and
+`tokeneer` are the only clean runs. Every occurrence lets the batch continue
+(consistent with a single parallel worker crashing, not the whole invocation
+aborting), and the exact triggering rule/file has never been isolated from
+the interleaved parallel output across any of the six occurrences. Worth
+tracking as a quality issue in the from-source GNATcheck build itself
+(`project_gnatcheck_acquisition.md`), separate from any AdaLang/GNATcheck
+rule-logic question.
+
+**Two open items surfaced by this pass, needing a maintainer decision or
+follow-up:**
+1. `cubedos`'s `Exception_Propagation` found **zero** findings on task
+   bodies GNATcheck's `exception_propagation_from_tasks` flags 8 times, on
+   genuinely `SPARK_Mode (On)` code — unlike the AWS/gnatcoll-core
+   `Exception_Propagation` gap (which is *broader* than GNATcheck by
+   design), this looks like the opposite: a possible real coverage miss
+   specific to `task body` constructs. Not yet root-caused; see
+   [cubedos's results](cubedos/RESULTS_gnatcheck_2026-08-19.md#finding-worth-maintainer-attention-exception_propagation-finds-nothing-on-task-bodies-gnatcheck-flags).
+2. `coap_spark/README.md`'s documented SPARKlib `GPR_PROJECT_PATH` override
+   no longer works as written on this machine's current `alr`/`gpr2`
+   (directory-less `with` resolution now checks the with-ing project's own
+   directory before `GPR_PROJECT_PATH`, so the pinned checkout's own
+   `sparklib.gpr` always wins regardless of ordering) — worked around for
+   this GNATcheck run only by relocating the throwaway clone's own
+   `sparklib.gpr`, but `coap_spark/run.sh` (the GNATprove comparison) was
+   not touched and likely hits the same failure unmodified now; see
+   [coap_spark's results](coap_spark/RESULTS_gnatcheck_2026-08-19.md#environment-fix-required-beyond-what-readmemd-documents).
 
 - **[sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) —
   the first real run. `recursive_subprograms` (paired with `No_Recursion`)
@@ -462,6 +506,71 @@ approximate, the qualitative findings below as the reliable part.)
   loop-index/parameter-name split; `Magic_Number`/`numeric_literals` held
   at 89% (vs. sparknacl's 91%); `No_Access_To_Subp_Def`/`subprogram_access`
   matched 100% (112/112) — the cleanest direct-match result in either run.
+- **[gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19)
+  — second ordinary-Ada, real-code corpus; ran clean end-to-end with no
+  crash. Confirmed both of AWS's headline findings independently (the
+  spec-vs-body `Too_Many_Parameters`/`maximum_parameters` split; the
+  zero-`SPARK_Mode` `Missing_Global_Contract` behavior, already established
+  as intentional) and surfaced a new variant: `No_Multiple_Return`/
+  `improper_returns` shows the same "both tools agree, comparator can't see
+  it" shape as the spec/body split, but from reporting *granularity*
+  instead — AdaLang reports once per subprogram, GNATcheck once per excess
+  `return` statement, so even findings in the *same file* land on unrelated
+  lines. `Magic_Number`/`numeric_literals` held its usual ~97% AdaLang-side
+  agreement.
+- **[ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md)**
+  (2026-08-19) — first embedded/driver corpus, and the first that needed a
+  real methodology adaptation before GNATcheck could run at all: this
+  driver subtree has no single project file GNATcheck can load (six
+  mutually-exclusive board-variant directory pairs redeclare the same
+  package basename, which a GNAT project closure can't contain
+  simultaneously, unlike Libadalang's file-list provider which AdaLang
+  uses here). Fixed by hand-partitioning the 90 files into two disjoint
+  synthetic GPR projects, verified exact against a flat file listing. Two
+  `STORAGE_ERROR` crashes occurred (see the recurring-crash note above);
+  `Dependency_Limit`/`too_many_dependencies` reads as uninformative on this
+  corpus for both tools, since the driver subtree intentionally excludes
+  units it `with`s, breaking dependency counting generically.
+- **[cubedos](cubedos/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) —
+  first corpus with its own project-embedded GNATcheck rule configuration
+  (`cubedos.gpr`'s `package Check`), which silently changed several rules'
+  effective results until suppressed with `--ignore-project-switches` to
+  keep this run's rule set consistent with every other corpus. Otherwise
+  confirmed the established spec/body and threshold-gap effects, plus
+  surfaced the `Exception_Propagation`/task-body gap noted above.
+- **[coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19)
+  — second fully-SPARK corpus, and the largest by GNATcheck finding volume
+  (7,629). Needed the environment fix noted above before either lane could
+  load the project at all. Produced the series' first 100%/100% match at
+  real volume — `No_Goto`/`goto_statements`, 136/136 — on RecordFlux's
+  generated `goto`-heavy state-dispatch code, and a new rule-pair variant:
+  `Missing_Global_Contract` doesn't fire when a subprogram has an explicit
+  `Depends` aspect (from which `Global` is inferable) even without an
+  explicit `Global` aspect, while GNATcheck's `spark_procedures_without_
+  globals` still requires `Global` explicitly.
+- **[libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) —
+  third SPARK corpus, and the best-agreeing run of the entire series: 83.8%
+  AdaLang-side / 90.4% GNATcheck-side, both series highs. `Magic_Number`/
+  `numeric_literals` reached 100% GNATcheck-side match at four-figure
+  volume (1054/1054) — the first rule pair in the series to hit 100% in
+  that direction at real scale.
+- **[saatana](saatana/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) — the
+  smallest corpus in the series (~1,200 lines), included specifically to
+  test whether the recurring crash class was scale-dependent; it wasn't
+  (see above). Second-best GNATcheck-side match rate (80.0%) despite the
+  small sample.
+- **[project_bias](project_bias/RESULTS_gnatcheck_2026-08-19.md)**
+  (2026-08-19) — a floating-point-heavy entropy engine; gave two rule pairs
+  their first large, clean two-way matches in the series:
+  `Floating_Equality`/`float_equality_checks` (31/31) and
+  `Redundant_Boolean_Comparison`/`redundant_boolean_expressions` (14/14).
+- **[tokeneer](tokeneer/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) —
+  tenth and final run of this pass; a mature, fully-GNATprove-verified
+  security-critical system, and one of only three clean (no-crash) runs.
+  `Exception_Swallowed` and `Empty_Exception_Handler` both matched 100%
+  (19/19) at real volume, and `Non_Short_Circuit_Condition` reached 89% —
+  the best showing for that pair on hand-written (non-generated) code in
+  the series.
 
 ## What these benchmarks have found, in total
 
