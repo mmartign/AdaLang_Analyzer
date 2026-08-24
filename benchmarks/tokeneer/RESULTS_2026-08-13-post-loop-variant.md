@@ -160,3 +160,15 @@ the GNATprove oracle. Wall-clock time increases in both lanes are best
 read as host contention (GNATprove's own oracle output is unchanged) with
 a plausible smaller contribution from genuinely more solver work on the
 AdaLang side; not separable from this single run.
+
+## Follow-up re-verification, 2026-08-24: elsif/else chain support (`23b920c`)
+
+Re-verified against the same Tokeneer checkout, isolating the
+`elsif`/`else` chain extension to loop-invariant preservation
+(`23b920c`) via a same-checkout comparison against the immediately
+prior commit (`0b9bb93`). **No change**: `Proved_Safe` (1,933),
+`Definite_Error` (0), `Unproved` (4,432), `Unsupported` (332), and the
+total (6,697) are identical between the two binaries. A
+precisely-attributable null result: a direct scan for a loop body that
+combines a leading `Loop_Invariant` pragma with an `elsif` in the same
+loop found zero matches in this corpus.
