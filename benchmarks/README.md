@@ -394,22 +394,48 @@ pattern as its GNATprove `run.sh`.
 
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md) | 1557 | 1334 (85.7%) | 1758 | 1334 (75.9%) |
-| [aws](aws/RESULTS_gnatcheck_2026-08-19.md) | 6288 | 3294 (52.4%) | 11356 | 3283 (28.9%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-19.md) | 1870 | 1044 (55.8%) | 2665 | 1042 (39.1%) |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-24.md) | 1557 | 1332 (85.5%) | 1629 | 1332 (81.8%) |
+| [aws](aws/RESULTS_gnatcheck_2026-08-24.md) | 6343 | 3258 (51.4%) | 10205 | 3248 (31.8%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-24.md) | 1891 | 982 (51.9%) | 2197 | 980 (44.6%) |
 | [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md) | 859 | 378 (44.0%) | 1071 | 378 (35.3%) |
-| [cubedos](cubedos/RESULTS_gnatcheck_2026-08-19.md) | 182 | 156 (85.7%) | 617 | 156 (25.3%) |
-| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-19.md) | 779 | 641 (82.3%) | 7629 | 641 (8.4%) |
-| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-19.md) | 1460 | 1224 (83.8%) | 1354 | 1224 (90.4%) |
-| [saatana](saatana/RESULTS_gnatcheck_2026-08-19.md) | 157 | 96 (61.1%) | 120 | 96 (80.0%) |
-| [project_bias](project_bias/RESULTS_gnatcheck_2026-08-19.md) | 225 | 165 (73.3%) | 263 | 165 (62.7%) |
-| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-08-19.md) | 596 | 444 (74.5%) | 1602 | 425 (26.5%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-08-24.md) | 182 | 149 (81.9%) | 491 | 149 (30.3%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-24.md) | 784 | 641 (81.8%) | 7629 | 641 (8.4%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-24.md) | 1460 | 1244 (85.2%) | 1556 | 1244 (79.9%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-08-24.md) | 158 | 96 (60.8%) | 120 | 96 (80.0%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-08-24.md) | 225 | 168 (74.7%) | 299 | 168 (56.2%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-08-24.md) | 599 | 444 (74.1%) | 1602 | 425 (26.5%) |
 
 All ten corpora tracked by `benchmarks/README.md`'s GNATprove comparison
 now have a GNATcheck-oracle counterpart run; this pass is complete.
 (GNATcheck's own findings show real run-to-run variance on this from-source
 build — see each corpus's caveats section; treat exact counts as
 approximate, the qualitative findings below as the reliable part.)
+
+**Re-run across all ten corpora, 2026-08-24, after `Empty_Then_Body`/
+`Empty_Else_Body` joined the rule map.** Purpose: give the two new checks
+the same live-corpus treatment every other rule already had, rather than
+shipping them with only self-analysis and hand-written precision-corpus
+evidence. Found and fixed one real bug on the first corpus tried
+(`ada_drivers_library`): `Empty_Else_Body` treated a branch containing only
+`pragma Assert (False);` — a deliberate "must never happen" guard — as
+empty, the same as a bare `null;`. The bug was in a helper shared by all
+five `null_paths`-family checks (`Empty_If_Body`, `Empty_Elsif_Body`,
+`Empty_Then_Body`, `Empty_Else_Body`, `Null_Case_Alternative`), fixed by
+special-casing `pragma Assert`, and logged as `FP-059` — see
+`ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md` for the full
+writeup. The remaining nine corpora corroborated the fix (post-fix,
+`Empty_Then_Body`/`Empty_Else_Body` show 0/0 or a benign mismatch
+everywhere, no repeat of `FP-059`) and surfaced one new, non-bug
+observation: GNATcheck's `null_paths` reports at the empty statement's own
+line, while this project's whole `null_paths`-family convention reports at
+the branch/alternative's start line — a reporting-location gap of the same
+kind already documented for `Too_Many_Parameters` (spec vs. body line) and
+`No_Multiple_Return` (subprogram vs. statement granularity), not a defect,
+confirmed systematically (every one of 69 family findings across the batch
+checked against GNATcheck's own output, all within 5 lines) rather than by
+sampling. Full per-corpus detail in each corpus's own
+`RESULTS_gnatcheck_2026-08-24.md`; `tokeneer/RESULTS_gnatcheck_2026-08-24.md`
+carries the batch-wide summary since it was the last run.
 
 **Recurring crash class, now seen on 6 of 10 corpora — reads as a build
 defect, not a per-corpus issue.** The `STORAGE_ERROR: stack overflow`
