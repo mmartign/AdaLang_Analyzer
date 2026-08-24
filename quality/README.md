@@ -41,7 +41,12 @@ for this fix itself (same-day, same file-count-unchanged shape as above):
 the message wording change ("identical to 'Y's at ..." to "identical to
 'Y' ...", with the location now separate) altered the fingerprint of all
 17 `Duplicate_Subprogram` self-findings at once, not just the one that
-motivated the fix.
+motivated the fix. Logged as `FP-058` in `quality/known_analysis_issues.tsv`
+despite not being a check-correctness issue in that file's usual sense (the
+underlying finding was always correct) -- a baseline fingerprint-stability
+bug that makes an unchanged finding present as if it were new is
+functionally a false "new finding" the same way an unbaselined regression
+would look, so it is tracked there rather than left undocumented.
 
 `Duplicate_Subprogram` joined `--recommended` on 2026-08-17, growing the
 baseline from 121 to 138. External-corpus validation first (all ten

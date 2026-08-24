@@ -29,7 +29,7 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   this project's own documented fingerprint-stability guarantee for this
   one check. The file:line now lives in the finding's `Evidence` field
   instead, which is displayed the same way but deliberately excluded from
-  the fingerprint.
+  the fingerprint (`FP-058`).
 
 ## [1.1.0] - 2026-08-19
 
