@@ -20,6 +20,7 @@ for test_script in \
   tests/run_circular_dependencies.sh \
   tests/run_clone_detection.sh \
   tests/run_cli_robustness.sh \
+  tests/run_alire_gnatls_fallback.sh \
   tests/run_cli_parameter_effects.sh \
   tests/run_config_file.sh \
   tests/run_reporting.sh \
