@@ -9,6 +9,59 @@ intentional: the baseline records occurrences, not only unique shapes. The
 gate fails when a new non-baselined finding appears; removing an old finding
 does not fail the gate.
 
+`Use_After_Free`, `Unclosed_File_Handle`, and `Unused_With_Clause` joined
+`--recommended` on 2026-08-24: three new checks in the flow-sensitive
+defect/hygiene family this project's `GNATCHECK_RULE_COMPARISON.md`
+identifies as its actual differentiator (GNATcheck's own unmatched
+catalog is mostly deliberate-scope style/naming/OOP-metric rules, not
+gaps to close). `Use_After_Free` reuses `Data_Flow.First_Access`
+(the same primitive behind `Uninitialized_Read`) anchored on a call to
+the procedure an `Ada.Unchecked_Deallocation` instantiation introduces,
+rather than a declaration. `Unclosed_File_Handle` is a new structural
+interpreter over `Ada.Text_IO`/`Ada.Streams.Stream_IO` `Open`/`Create`/
+`Close` calls, modeled directly on `Uninitialized_Output`'s
+all-paths-including-exception-handlers `Interpret_Initialization`
+pattern (`Spark_Readiness`/`Subprogram_Summaries`). `Unused_With_Clause`
+reuses `Duplicate_With_Clause`'s context-clause walk together with a new
+semantic "was anything from unit U referenced" primitive
+(`Declarations.Any_Reference_To_Unit`), deliberately resolving each name
+rather than matching spelling, so a reference reached only through a
+`use` clause still counts.
+
+Running the new checks against this project's own self-analysis gate
+(`tests/run_recommended_gate.sh`) before release, per this project's
+established practice, found and fixed two real false positives in
+`Unclosed_File_Handle`, both in the idiomatic "close a file that might
+already be closed" pattern -- logged as `FP-060` in
+`known_analysis_issues.tsv`: (1) `if Ada.Text_IO.Is_Open (File) then
+Ada.Text_IO.Close (File); end if;` (seen in this project's own
+`Report.Load_Baseline`), where the interpreter's missing-`else` merge
+pessimistically assumed the untaken branch left the file open; and (2)
+the more general "opened and closed behind the identical boolean guard"
+idiom (seen in `Report.Write_Compliance_Report`'s `if To_File then ...
+end if;` pairs), the same defect for a plain condition instead of an
+`Is_Open` call. Both are now recognized: the first via a dedicated
+`Guards_Is_Open` predicate, the second via a threaded `Open_Guard`
+condition-text comparison, so a Close reachable only through the same
+textual guard that gated the Open is credited as safe on both branches.
+Self-analysis is otherwise clean for all three checks; the two `Merge`/
+helper-function `Swappable_Parameters` findings the new code itself
+triggers are baselined, consistent with the identical `Merge (Left,
+Right : ...)` shape already accepted elsewhere in this codebase (e.g.
+`Spark_Readiness`'s own `Init_Result` merge).
+
+`Unclosed_File_Handle`'s v1 scope is deliberately narrow, matching this
+project's habit of shipping a check narrow and widening it later
+(`Address_Clause`'s `FP-054`/`FP-055` history is the precedent): only
+`Ada.Text_IO`/`Ada.Streams.Stream_IO` (`Ada.Direct_IO`/
+`Ada.Sequential_IO`, generic and instantiated per element type like
+`Ada.Unchecked_Deallocation`, are a documented follow-up); an `Open`/
+`Create` call lexically inside a loop is skipped entirely (mirrors
+`Dead_Store`'s own loop bailout); and a loop appearing *after* the open
+credits a `Close` found anywhere in its body without proving the loop
+executes, a false-negative-biased simplification rather than
+`Uninitialized_Output`'s heavier array-coverage loop proofs.
+
 Adding `Empty_Then_Body`/`Empty_Else_Body` on 2026-08-24 (see below) required
 regenerating `recommended.baseline` even though neither new check produced an
 unsuppressed self-analysis finding: `Duplicate_Subprogram`'s own message text

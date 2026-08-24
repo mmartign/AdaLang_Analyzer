@@ -152,6 +152,54 @@ package body Adalang_Analyzer.Checks.Declarations is
          return True;
    end References_Named_Declaration;
 
+   --  True when some Name under Node resolves to a declaration owned by
+   --  the unit at Target_Filename. Unresolved names are only treated as a
+   --  conservative "possible reference" when their spelling matches
+   --  Simple_Name (the with'd unit's own relative name) -- unlike
+   --  References_Named_Declaration's blanket "unresolved means used"
+   --  fallback, since here almost every identifier in the file is
+   --  irrelevant to any one with clause, and treating every resolution
+   --  failure as a use would make the check never fire.
+   function Any_Reference_To_Unit
+     (Node            : Libadalang.Analysis.Ada_Node'Class;
+      Target_Filename : String;
+      Simple_Name     : String) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Identifier then
+         declare
+            Referenced : constant Libadalang.Analysis.Basic_Decl :=
+              Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+         begin
+            if (not Libadalang.Analysis.Is_Null (Referenced)
+                and then Referenced.Unit.Get_Filename = Target_Filename)
+              or else
+                (Libadalang.Analysis.Is_Null (Referenced)
+                 and then Canonical_Text (Node) = Simple_Name)
+            then
+               return True;
+            end if;
+         end;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if Any_Reference_To_Unit (Node.Child (I), Target_Filename, Simple_Name)
+         then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   exception
+      when others =>
+         --  A resolution failure that raises rather than returning null is
+         --  treated the same as the explicit null-and-spelling-match case
+         --  above: conservatively count this subtree as a possible use.
+         return True;
+   end Any_Reference_To_Unit;
+
    --  The current scope is deliberately skipped: this rule only diagnoses
    --  hiding across a lexical-scope boundary. Each lookup visits the usually
    --  tiny scope stack and performs an O(1) hashed-set query at every level.

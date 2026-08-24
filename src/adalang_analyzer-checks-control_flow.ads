@@ -95,4 +95,12 @@ private package Adalang_Analyzer.Checks.Control_Flow is
    --  body, and Exception_Swallowed specifically for a "when others"
    --  handler with no substantive body.
 
+   procedure Analyze_Resource_Lifecycle
+     (Unit       : Libadalang.Analysis.Analysis_Unit;
+      Subprogram : Libadalang.Analysis.Subp_Body);
+   --  Reports Unclosed_File_Handle for a local Ada.Text_IO or
+   --  Ada.Streams.Stream_IO File_Type object opened by this subprogram
+   --  with no Close reachable on every normal-return or
+   --  exception-handler path.
+
 end Adalang_Analyzer.Checks.Control_Flow;

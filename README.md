@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 123 checks spanning coding policy, data/control-flow defects, and
+At a glance: 126 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -97,7 +97,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 123 checks fall into five broad groups:
+AdaLang Analyzer's 126 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -241,6 +241,9 @@ The analyzer currently provides the following checks:
 | DO-178C support | `Missing_Requirement_Trace` | Reliability | High | Reports subprogram bodies without a nearby low-level requirement identifier. |
 | DO-178C support | `Malformed_Requirement_Trace` | Maintainability | Medium | Reports requirement annotations with no identifier. |
 | DO-178C support | `Suppression_Without_Rationale` | Maintainability | High | Reports analyzer suppressions that do not record a reviewable rationale. |
+| Safety | `Use_After_Free` | Security | High | Reports a local access object read after `Ada.Unchecked_Deallocation` frees it, with no intervening assignment. |
+| Data flow | `Unclosed_File_Handle` | Reliability | Medium | Reports a local `Ada.Text_IO`/`Ada.Streams.Stream_IO` file opened with `Open`/`Create` and not demonstrably closed on every normal-return or exception-handler path. |
+| Data flow | `Unused_With_Clause` | Maintainability | Low | Reports a with clause naming a unit never referenced elsewhere in the file. |
 
 Run `./bin/adalang_analyzer -list-checks` to see the authoritative list together
 with a description and guidance for every check.

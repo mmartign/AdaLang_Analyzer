@@ -32,6 +32,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Analysis.Basic_Decl;
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Adalang_Analyzer.Checks.Data_Flow.Access_Kind;
 
    function Has_Substantive_Statement
      (List : Libadalang.Analysis.Stmt_List) return Boolean is
@@ -695,12 +696,622 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       end if;
    end Analyze_Assignment;
 
+   type Resource_Op is (Not_A_Resource_Call, Opens_Resource, Closes_Resource);
+
+   type Resource_Call is record
+      Op   : Resource_Op := Not_A_Resource_Call;
+      Decl : Libadalang.Analysis.Basic_Decl := Libadalang.Analysis.No_Basic_Decl;
+   end record;
+
+   --  The first Param_Assoc actual expression among Call's suffix
+   --  children, or No_Expr. Shared by Classify_Resource_Call (the object
+   --  actual of an Open/Create/Close call) and Guards_Is_Open below (the
+   --  object actual of an Is_Open call).
+   function First_Param_Assoc_Actual
+     (Call : Libadalang.Analysis.Call_Expr) return Libadalang.Analysis.Expr
+   is
+      Suffix : constant Libadalang.Analysis.Ada_Node := Call.F_Suffix;
+   begin
+      for Index in 1 .. Suffix.Children_Count loop
+         declare
+            Child : constant Libadalang.Analysis.Ada_Node :=
+              Suffix.Child (Index);
+         begin
+            if Child.Kind = Libadalang.Common.Ada_Param_Assoc then
+               return Child.As_Param_Assoc.F_R_Expr;
+            end if;
+         end;
+      end loop;
+      return Libadalang.Analysis.No_Expr;
+   end First_Param_Assoc_Actual;
+
+   --  Classifies Stmt as an Open/Create or Close call on an
+   --  Ada.Text_IO/Ada.Streams.Stream_IO File_Type object, resolving the
+   --  File_Type actual (the first parameter of every one of these
+   --  subprograms) to its declaration. v1 scope, matching Address_Clause's
+   --  own precedent of adding coverage incrementally: only these two
+   --  non-generic packages; Ada.Direct_IO/Ada.Sequential_IO, generic and
+   --  instantiated per element type the same way Ada.Unchecked_Deallocation
+   --  is, are a documented follow-up rather than in scope here.
+   function Classify_Resource_Call
+     (Stmt : Libadalang.Analysis.Call_Stmt) return Resource_Call
+   is
+      Call : constant Libadalang.Analysis.Name := Stmt.F_Call;
+   begin
+      if Call.Kind /= Libadalang.Common.Ada_Call_Expr then
+         return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+      end if;
+
+      declare
+         Callee : constant Libadalang.Analysis.Basic_Decl :=
+           Call.As_Call_Expr.F_Name.P_Referenced_Decl
+             (Imprecise_Fallback => True);
+      begin
+         if Libadalang.Analysis.Is_Null (Callee) then
+            return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+         end if;
+
+         declare
+            Full_Name : constant String := Langkit_Support.Text.To_UTF8
+              (Callee.P_Canonical_Fully_Qualified_Name);
+            Op        : Resource_Op;
+         begin
+            if Full_Name in "ada.text_io.open" | "ada.text_io.create"
+              | "ada.streams.stream_io.open" | "ada.streams.stream_io.create"
+            then
+               Op := Opens_Resource;
+            elsif Full_Name in "ada.text_io.close"
+              | "ada.streams.stream_io.close"
+            then
+               Op := Closes_Resource;
+            else
+               return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+            end if;
+
+            declare
+               Actual : constant Libadalang.Analysis.Expr :=
+                 First_Param_Assoc_Actual (Call.As_Call_Expr);
+            begin
+               if Libadalang.Analysis.Is_Null (Actual)
+                 or else Actual.Kind /= Libadalang.Common.Ada_Identifier
+               then
+                  return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+               end if;
+
+               return (Op => Op, Decl => Data_Flow.Referenced_Declaration (Actual));
+            end;
+         end;
+      end;
+   exception
+      when others =>
+         return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+   end Classify_Resource_Call;
+
+   --  True when Cond is a call to Ada.Text_IO.Is_Open or
+   --  Ada.Streams.Stream_IO.Is_Open on Decl -- the standard
+   --  "if Is_Open (File) then Close (File); end if;" idiom for closing a
+   --  file that might already be closed (calling Close on an unopened or
+   --  already-closed File_Type raises Status_Error, so this guard is the
+   --  correct, common way to write an idempotent close). Recognized so
+   --  Interpret_Closure can treat the missing "else" branch as safe too,
+   --  rather than pessimistically inheriting whatever state came before
+   --  the if -- without this, the idiom itself (used correctly in this
+   --  project's own Report.Load_Baseline) false-positives every time.
+   function Guards_Is_Open
+     (Cond : Libadalang.Analysis.Expr;
+      Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Cond)
+        or else Cond.Kind /= Libadalang.Common.Ada_Call_Expr
+      then
+         return False;
+      end if;
+
+      declare
+         Callee : constant Libadalang.Analysis.Basic_Decl :=
+           Cond.As_Call_Expr.F_Name.P_Referenced_Decl
+             (Imprecise_Fallback => True);
+      begin
+         if Libadalang.Analysis.Is_Null (Callee) then
+            return False;
+         end if;
+
+         declare
+            Full_Name : constant String := Langkit_Support.Text.To_UTF8
+              (Callee.P_Canonical_Fully_Qualified_Name);
+         begin
+            if Full_Name /= "ada.text_io.is_open"
+              and then Full_Name /= "ada.streams.stream_io.is_open"
+            then
+               return False;
+            end if;
+         end;
+
+         declare
+            Actual : constant Libadalang.Analysis.Expr :=
+              First_Param_Assoc_Actual (Cond.As_Call_Expr);
+         begin
+            return not Libadalang.Analysis.Is_Null (Actual)
+              and then Actual.Kind = Libadalang.Common.Ada_Identifier
+              and then Data_Flow.Referenced_Declaration (Actual) = Decl;
+         end;
+      end;
+   exception
+      when others =>
+         return False;
+   end Guards_Is_Open;
+
+   --  When Node sits directly in the then-branch statement list of a bare
+   --  "if <Cond> then ... end if;" (no elsif, no else), returns that
+   --  condition's canonical text; otherwise "". Used to recognize the
+   --  "opened only when <Cond>, closed later only when <Cond>" idiom (seen
+   --  in this project's own Compliance_Mapping report writer, guarded by
+   --  "To_File") as symmetric with Guards_Is_Open: if the same textual
+   --  guard shields both the open and a later close, the untaken branch on
+   --  either side means the file was never opened, which is just as safe
+   --  as having closed it.
+   function Enclosing_Bare_If_Guard
+     (Node : Libadalang.Analysis.Ada_Node'Class) return String
+   is
+      Parent : constant Libadalang.Analysis.Ada_Node := Node.Parent;
+   begin
+      if Libadalang.Analysis.Is_Null (Parent)
+        or else Libadalang.Analysis.Is_Null (Parent.Parent)
+        or else Parent.Parent.Kind /= Libadalang.Common.Ada_If_Stmt
+      then
+         return "";
+      end if;
+
+      declare
+         Stmt : constant Libadalang.Analysis.If_Stmt :=
+           Parent.Parent.As_If_Stmt;
+      begin
+         if Libadalang.Analysis.Ada_Node (Stmt.F_Then_Stmts) /= Parent
+           or else not Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
+           or else Stmt.F_Alternatives.Children_Count /= 0
+         then
+            return "";
+         end if;
+         return Canonical_Text (Stmt.F_Cond_Expr);
+      end;
+   exception
+      when others =>
+         return "";
+   end Enclosing_Bare_If_Guard;
+
+   --  Whole-subtree search used for the conservative loop-body fallback
+   --  below: True when some statement anywhere under Node closes Decl,
+   --  without proving it happens on every, or even one, iteration.
+   function References_Close
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt then
+         declare
+            Info : constant Resource_Call :=
+              Classify_Resource_Call (Node.As_Call_Stmt);
+         begin
+            if Info.Op = Closes_Resource and then Info.Decl = Decl then
+               return True;
+            end if;
+         end;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if References_Close (Node.Child (I), Decl) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   exception
+      when others =>
+         return False;
+   end References_Close;
+
+   type Close_Result is record
+      Can_Fall_Through : Boolean := True;
+      Safe             : Boolean := True;
+      --  Safe: the tracked File_Type object is not currently open, either
+      --  because Open_At hasn't been reached yet or because a matching
+      --  Close already ran. False means it is open and unclosed.
+   end record;
+
+   function Merge (Left, Right : Close_Result) return Close_Result is
+   begin
+      if not Left.Can_Fall_Through then
+         return Right;
+      elsif not Right.Can_Fall_Through then
+         return Left;
+      else
+         return
+           (Can_Fall_Through => True,
+            Safe             => Left.Safe and then Right.Safe);
+      end if;
+   end Merge;
+
+   function Interpret_Closure
+     (Node        : Libadalang.Analysis.Ada_Node'Class;
+      Decl        : Libadalang.Analysis.Basic_Decl;
+      Open_At     : Libadalang.Analysis.Ada_Node;
+      Open_Guard  : String;
+      Initial     : Boolean;
+      Bad_Exit    : in out Boolean) return Close_Result;
+
+   function Interpret_Closure_List
+     (List        : Libadalang.Analysis.Ada_Node'Class;
+      Decl        : Libadalang.Analysis.Basic_Decl;
+      Open_At     : Libadalang.Analysis.Ada_Node;
+      Open_Guard  : String;
+      Initial     : Boolean;
+      Bad_Exit    : in out Boolean) return Close_Result
+   is
+      Result : Close_Result := (Can_Fall_Through => True, Safe => Initial);
+   begin
+      for I in 1 .. List.Children_Count loop
+         exit when not Result.Can_Fall_Through;
+         Result := Interpret_Closure
+           (List.Child (I), Decl, Open_At, Open_Guard, Result.Safe, Bad_Exit);
+      end loop;
+      return Result;
+   end Interpret_Closure_List;
+
+   --  Structural recursive interpreter modeled on
+   --  Adalang_Analyzer.Spark_Readiness's Interpret_Initialization (the
+   --  engine behind Uninitialized_Output): same Can_Fall_Through/state
+   --  record shape and the same If/Case/Decl_Block statement-list merge,
+   --  but tracking "is the file currently open" (Safe = False) rather than
+   --  "is the parameter initialized." Reaching Open_At itself flips Safe to
+   --  False; a matching Close flips it back to True. Bad_Exit mirrors
+   --  Uninitialized_Output's Bad_Return: a Return/Raise/Goto reached while
+   --  unsafe is itself a violation, independent of what sibling branches
+   --  do, so it cannot be captured by Merge alone (Merge is only about the
+   --  state carried into whatever code follows this construct).
+   function Interpret_Closure
+     (Node        : Libadalang.Analysis.Ada_Node'Class;
+      Decl        : Libadalang.Analysis.Basic_Decl;
+      Open_At     : Libadalang.Analysis.Ada_Node;
+      Open_Guard  : String;
+      Initial     : Boolean;
+      Bad_Exit    : in out Boolean) return Close_Result
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return (True, Initial);
+      elsif Libadalang.Analysis.Ada_Node (Node) = Open_At then
+         return (True, False);
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt then
+         declare
+            Info : constant Resource_Call :=
+              Classify_Resource_Call (Node.As_Call_Stmt);
+         begin
+            if Info.Op = Closes_Resource and then Info.Decl = Decl then
+               return (True, True);
+            end if;
+         end;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Return_Stmt
+            | Libadalang.Common.Ada_Extended_Return_Stmt
+            | Libadalang.Common.Ada_Raise_Stmt
+            | Libadalang.Common.Ada_Goto_Stmt =>
+            Bad_Exit := Bad_Exit or else not Initial;
+            return (False, Initial);
+
+         when Libadalang.Common.Ada_If_Stmt =>
+            declare
+               Stmt        : constant Libadalang.Analysis.If_Stmt :=
+                 Node.As_If_Stmt;
+               Then_Result : constant Close_Result := Interpret_Closure_List
+                 (Stmt.F_Then_Stmts, Decl, Open_At, Open_Guard, Initial,
+                  Bad_Exit);
+            begin
+               if Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
+                 and then Stmt.F_Alternatives.Children_Count = 0
+                 and then Then_Result.Can_Fall_Through
+                 and then Then_Result.Safe
+                 and then (Guards_Is_Open (Stmt.F_Cond_Expr, Decl)
+                           or else
+                             (Open_Guard /= ""
+                              and then Canonical_Text (Stmt.F_Cond_Expr) =
+                                Open_Guard))
+               then
+                  return Then_Result;
+               end if;
+
+               declare
+                  Result : Close_Result := Then_Result;
+               begin
+                  for Alt of Stmt.F_Alternatives loop
+                     Result := Merge
+                       (Result,
+                        Interpret_Closure_List
+                          (Alt.F_Stmts, Decl, Open_At, Open_Guard, Initial,
+                           Bad_Exit));
+                  end loop;
+                  if Libadalang.Analysis.Is_Null (Stmt.F_Else_Part) then
+                     Result := Merge (Result, (True, Initial));
+                  else
+                     Result := Merge
+                       (Result,
+                        Interpret_Closure_List
+                          (Stmt.F_Else_Part.F_Stmts, Decl, Open_At,
+                           Open_Guard, Initial, Bad_Exit));
+                  end if;
+                  return Result;
+               end;
+            end;
+
+         when Libadalang.Common.Ada_Case_Stmt =>
+            declare
+               First  : Boolean := True;
+               Result : Close_Result := (False, Initial);
+            begin
+               for Alt of Node.As_Case_Stmt.F_Alternatives loop
+                  declare
+                     Branch : constant Close_Result := Interpret_Closure_List
+                       (Alt.F_Stmts, Decl, Open_At, Open_Guard, Initial,
+                        Bad_Exit);
+                  begin
+                     if First then
+                        Result := Branch;
+                        First := False;
+                     else
+                        Result := Merge (Result, Branch);
+                     end if;
+                  end;
+               end loop;
+               return Result;
+            end;
+
+         when Libadalang.Common.Ada_Decl_Block =>
+            return Interpret_Closure_List
+              (Node.As_Decl_Block.F_Stmts.F_Stmts, Decl, Open_At, Open_Guard,
+               Initial, Bad_Exit);
+
+         when Libadalang.Common.Ada_While_Loop_Stmt
+            | Libadalang.Common.Ada_Loop_Stmt
+            | Libadalang.Common.Ada_For_Loop_Stmt =>
+            --  Conservative simplification, deliberately narrower than
+            --  Uninitialized_Output's array-coverage loop proofs (not
+            --  applicable here): credit the resource as closed if a
+            --  matching Close call appears anywhere in the loop body,
+            --  without proving the loop actually executes. False-negative
+            --  biased, so a loop that legitimately closes the resource on
+            --  some or all iterations is never flagged.
+            if not Initial
+              and then References_Close (Node.As_Base_Loop_Stmt.F_Stmts, Decl)
+            then
+               return (True, True);
+            end if;
+            return (True, Initial);
+
+         when others =>
+            return (True, Initial);
+      end case;
+   end Interpret_Closure;
+
+   --  Runs the interpreter above once for one Open/Create call site
+   --  (Open_At, resolved to Decl), over the whole subprogram body plus,
+   --  separately and conservatively (Initial => False: an exception could
+   --  strike between Open and Close), every exception handler -- the same
+   --  two-pass structure Uninitialized_Output uses for its own all-paths
+   --  check.
+   procedure Check_Closed_On_Every_Path
+     (Unit       : Libadalang.Analysis.Analysis_Unit;
+      Subprogram : Libadalang.Analysis.Subp_Body;
+      Decl       : Libadalang.Analysis.Basic_Decl;
+      Open_At    : Libadalang.Analysis.Ada_Node)
+   is
+      Open_Guard    : constant String := Enclosing_Bare_If_Guard (Open_At);
+      Bad_Exit      : Boolean := False;
+      Body_Result   : constant Close_Result := Interpret_Closure_List
+        (Subprogram.F_Stmts.F_Stmts, Decl, Open_At, Open_Guard, True,
+         Bad_Exit);
+      Report_Needed : Boolean :=
+        Bad_Exit
+          or else (Body_Result.Can_Fall_Through
+                    and then not Body_Result.Safe);
+   begin
+      if not Report_Needed then
+         for Handler of Subprogram.F_Stmts.F_Exceptions loop
+            if Handler.Kind = Libadalang.Common.Ada_Exception_Handler then
+               declare
+                  Handler_Bad_Exit : Boolean := False;
+                  Handler_Result   : constant Close_Result :=
+                    Interpret_Closure_List
+                      (Handler.As_Exception_Handler.F_Stmts, Decl, Open_At,
+                       Open_Guard, False, Handler_Bad_Exit);
+               begin
+                  if Handler_Bad_Exit
+                    or else (Handler_Result.Can_Fall_Through
+                             and then not Handler_Result.Safe)
+                  then
+                     Report_Needed := True;
+                     exit;
+                  end if;
+               end;
+            end if;
+         end loop;
+      end if;
+
+      if Report_Needed then
+         Report_Rule_Violation
+           (Unit, Open_At, Unclosed_File_Handle,
+            "file opened here is not demonstrably closed on every " &
+              "path out of this subprogram, including exception " &
+              "handlers");
+      end if;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping unresolved resource-lifecycle analysis: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Check_Closed_On_Every_Path;
+
+   --  Unclosed_File_Handle entry point: for every local File_Type object
+   --  opened outside a loop (loop-scoped opens are out of v1's scope, the
+   --  same bailout Dead_Store applies), checks that every reachable normal
+   --  and exception-handler path closes it. One independent interpreter
+   --  run per Open/Create call site, so a File_Type reopened more than
+   --  once is checked separately for each occurrence.
+   procedure Analyze_Resource_Lifecycle
+     (Unit       : Libadalang.Analysis.Analysis_Unit;
+      Subprogram : Libadalang.Analysis.Subp_Body)
+   is
+      procedure Scan (Node : Libadalang.Analysis.Ada_Node'Class);
+
+      procedure Scan (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         end if;
+
+         if Node.Kind = Libadalang.Common.Ada_Call_Stmt then
+            begin
+               declare
+                  Info : constant Resource_Call :=
+                    Classify_Resource_Call (Node.As_Call_Stmt);
+               begin
+                  if Info.Op = Opens_Resource
+                    and then not Libadalang.Analysis.Is_Null (Info.Decl)
+                    and then Info.Decl.Kind in
+                      Libadalang.Common.Ada_Object_Decl_Range
+                    and then Is_Local_To_Subprogram (Info.Decl, Subprogram)
+                    and then not Renames_Nonlocal_Object
+                      (Info.Decl, Subprogram)
+                    and then not Is_Inside_Loop (Node)
+                  then
+                     Check_Closed_On_Every_Path
+                       (Unit, Subprogram, Info.Decl,
+                        Libadalang.Analysis.Ada_Node (Node));
+                  end if;
+               end;
+            exception
+               when Exc : others =>
+                  --  An unresolved call profile is conservatively skipped.
+                  Log_Verbose_Once
+                    ("skipping unresolved resource-open candidate: " &
+                     Ada.Exceptions.Exception_Message (Exc));
+            end;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            Scan (Node.Child (I));
+         end loop;
+      end Scan;
+   begin
+      if Rule_States (Unclosed_File_Handle) /= Enabled then
+         return;
+      end if;
+      Scan (Subprogram.F_Stmts.F_Stmts);
+   end Analyze_Resource_Lifecycle;
+
+   --  Use_After_Free: Stmt is a call to a Free-like procedure introduced by
+   --  an Ada.Unchecked_Deallocation instantiation (recognized the same way
+   --  No_Unchecked_Deallocation recognizes the instantiation itself, via
+   --  Checks.Is_Ada_Unchecked_Deallocation, but resolved from the call's
+   --  own callee declaration instead of an instantiation node). When the
+   --  freed actual is a simple local object, First_Access finds the first
+   --  read or write of it anywhere at or after the call: a write (typically
+   --  "P := null;") makes the object safe again and is not reported, while
+   --  a read with no intervening write is a use-after-free. Inherits
+   --  First_Access's documented source-order (not branch-sensitive)
+   --  boundary, the same tradeoff Uninitialized_Read already accepts.
+   procedure Analyze_Deallocation_Call
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Stmt : Libadalang.Analysis.Call_Stmt;
+      Call : Libadalang.Analysis.Call_Expr)
+   is
+      Callee_Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+   begin
+      if Libadalang.Analysis.Is_Null (Callee_Decl)
+        or else Callee_Decl.Kind /=
+          Libadalang.Common.Ada_Generic_Subp_Instantiation
+        or else not Adalang_Analyzer.Checks.Is_Ada_Unchecked_Deallocation
+          (Callee_Decl.As_Generic_Subp_Instantiation.F_Generic_Subp_Name)
+      then
+         return;
+      end if;
+
+      declare
+         Suffix : constant Libadalang.Analysis.Ada_Node := Call.F_Suffix;
+         Actual : Libadalang.Analysis.Expr := Libadalang.Analysis.No_Expr;
+      begin
+         for Index in 1 .. Suffix.Children_Count loop
+            declare
+               Child : constant Libadalang.Analysis.Ada_Node :=
+                 Suffix.Child (Index);
+            begin
+               if Child.Kind = Libadalang.Common.Ada_Param_Assoc then
+                  Actual := Child.As_Param_Assoc.F_R_Expr;
+                  exit;
+               end if;
+            end;
+         end loop;
+
+         if Libadalang.Analysis.Is_Null (Actual)
+           or else Actual.Kind /= Libadalang.Common.Ada_Identifier
+         then
+            return;
+         end if;
+
+         declare
+            Decl       : constant Libadalang.Analysis.Basic_Decl :=
+              Data_Flow.Referenced_Declaration (Actual);
+            Subprogram : constant Libadalang.Analysis.Subp_Body :=
+              Data_Flow.Enclosing_Subprogram (Stmt);
+         begin
+            if Libadalang.Analysis.Is_Null (Decl)
+              or else Decl.Kind not in Libadalang.Common.Ada_Object_Decl_Range
+              or else Libadalang.Analysis.Is_Null (Subprogram)
+              or else not Is_Local_To_Subprogram (Decl, Subprogram)
+              or else Renames_Nonlocal_Object (Decl, Subprogram)
+            then
+               return;
+            end if;
+
+            declare
+               Result : constant Data_Flow.Access_Result :=
+                 Data_Flow.First_Access (Subprogram, Decl, Stmt);
+            begin
+               if Result.Kind = Data_Flow.Read_Access then
+                  Report_Rule_Violation
+                    (Unit, Result.Node, Use_After_Free,
+                     "reads " & Canonical_Text (Actual) &
+                       ", which was freed by an earlier call to " &
+                       "Ada.Unchecked_Deallocation, with no intervening " &
+                       "assignment");
+               end if;
+            end;
+         end;
+      end;
+   exception
+      when Exc : others =>
+         --  An unresolved call profile is conservatively skipped.
+         Log_Verbose_Once
+           ("skipping unresolved deallocation call: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Analyze_Deallocation_Call;
+
    procedure Analyze_Call_Statement
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Call_Stmt)
    is
       Call : constant Libadalang.Analysis.Name := Stmt.F_Call;
    begin
+      if Rule_States (Use_After_Free) = Enabled
+        and then Call.Kind = Libadalang.Common.Ada_Call_Expr
+      then
+         Analyze_Deallocation_Call (Unit, Stmt, Call.As_Call_Expr);
+      end if;
+
       if Rule_States (Dead_Store) /= Enabled
         or else Call.Kind /= Libadalang.Common.Ada_Call_Expr
       then

@@ -387,6 +387,7 @@ package body Adalang_Analyzer.Checks is
 
          when Libadalang.Common.Ada_Subp_Body =>
             Declarations.Analyze_Subprogram (Unit, Node.As_Subp_Body);
+            Control_Flow.Analyze_Resource_Lifecycle (Unit, Node.As_Subp_Body);
 
          when Libadalang.Common.Ada_Classic_Subp_Decl =>
             Declarations.Analyze_Subprogram_Declaration
@@ -988,6 +989,47 @@ package body Adalang_Analyzer.Checks is
                        " with-clause dependencies; threshold is " &
                        To_Decimal (Dependency_Threshold));
                end if;
+            end;
+         end if;
+         if Rule_States (Unused_With_Clause) = Enabled
+           and then Node.Kind = Libadalang.Common.Ada_Compilation_Unit
+         then
+            declare
+               CU        : constant Libadalang.Analysis.Compilation_Unit :=
+                 Node.As_Compilation_Unit;
+               Body_Root : constant Libadalang.Analysis.Ada_Node := CU.F_Body;
+            begin
+               for Item of CU.F_Prelude loop
+                  if Item.Kind = Libadalang.Common.Ada_With_Clause then
+                     for Pkg_Name of Item.As_With_Clause.F_Packages loop
+                        declare
+                           Target : constant Libadalang.Analysis.Basic_Decl :=
+                             Pkg_Name.P_Referenced_Decl
+                               (Imprecise_Fallback => True);
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Target)
+                             and then not Declarations.Any_Reference_To_Unit
+                               (Body_Root, Target.Unit.Get_Filename,
+                                Canonical_Text (Pkg_Name.P_Relative_Name))
+                           then
+                              Report_Rule_Violation
+                                (Unit, Pkg_Name, Unused_With_Clause,
+                                 "with clause names a unit never " &
+                                 "referenced elsewhere in this file");
+                           end if;
+                        exception
+                           when Exc : others =>
+                              --  Target could not be resolved (e.g. a unit
+                              --  outside the analyzed source closure);
+                              --  never flag an unresolvable target.
+                              Log_Verbose_Once
+                                ("skipping unresolvable with clause " &
+                                 "target: " &
+                                 Ada.Exceptions.Exception_Message (Exc));
+                        end;
+                     end loop;
+                  end if;
+               end loop;
             end;
          end if;
       end if;

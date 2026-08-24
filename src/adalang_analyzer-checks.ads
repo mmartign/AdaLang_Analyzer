@@ -38,4 +38,16 @@ package Adalang_Analyzer.Checks is
    --  Adalang_Analyzer.Report.Skipped_Nodes rather than aborting analysis
    --  of the rest of the file.
 
+private
+
+   function Is_Ada_Unchecked_Deallocation
+     (Name : Libadalang.Analysis.Name'Class) return Boolean;
+   --  True when Name denotes Ada.Unchecked_Deallocation, either by its
+   --  fully qualified spelling or, for an unqualified
+   --  "Unchecked_Deallocation", by resolving the name and checking its
+   --  fully qualified declaration. Declared here (rather than only in the
+   --  body) so Checks.Control_Flow's Use_After_Free implementation can
+   --  reuse the same resolution to recognize a call to the user-named
+   --  procedure a Generic_Subp_Instantiation of it introduces.
+
 end Adalang_Analyzer.Checks;

@@ -56,4 +56,15 @@ private package Adalang_Analyzer.Checks.Declarations is
    --  declaration (as opposed to a body acting as its own declaration,
    --  which Analyze_Subprogram covers instead).
 
+   function Any_Reference_To_Unit
+     (Node            : Libadalang.Analysis.Ada_Node'Class;
+      Target_Filename : String;
+      Simple_Name     : String) return Boolean;
+   --  True when some name under Node resolves to a declaration owned by the
+   --  analysis unit at Target_Filename, or (conservatively, when resolution
+   --  itself fails) spells Simple_Name. Used by Unused_With_Clause to
+   --  decide whether a with'd unit is referenced anywhere in the
+   --  compilation unit's body -- semantic rather than spelling-based so a
+   --  reference reached only through a "use" clause still counts.
+
 end Adalang_Analyzer.Checks.Declarations;

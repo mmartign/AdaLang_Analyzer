@@ -146,7 +146,10 @@ package Adalang_Analyzer.Rules is
       No_Runtime_Check_Suppression,
       Missing_Requirement_Trace,
       Malformed_Requirement_Trace,
-      Suppression_Without_Rationale
+      Suppression_Without_Rationale,
+      Use_After_Free,
+      Unclosed_File_Handle,
+      Unused_With_Clause
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -1503,7 +1506,39 @@ package Adalang_Analyzer.Rules is
          Guidance => To_Unbounded_String
            ("Append ' -- rationale: <reason>' to every " &
             "'adalang-analyzer: ignore <rule>' suppression."),
-         Quality => Quality_Maintainability, Severity => Severity_High)
+         Quality => Quality_Maintainability, Severity => Severity_High),
+      Use_After_Free =>
+        (Name        => To_Unbounded_String ("Use_After_Free"),
+         Description => To_Unbounded_String
+           ("Find a local access object read or dereferenced after it was " &
+            "passed to an instantiation of Ada.Unchecked_Deallocation, " &
+            "with no intervening assignment."),
+         Guidance    => To_Unbounded_String
+           ("Assign the object (typically to null) immediately after " &
+            "freeing it, and before any further use."),
+         Quality     => Quality_Security,
+         Severity    => Severity_High),
+      Unclosed_File_Handle =>
+        (Name        => To_Unbounded_String ("Unclosed_File_Handle"),
+         Description => To_Unbounded_String
+           ("Find a local Ada.Text_IO or Ada.Streams.Stream_IO File_Type " &
+            "object opened with Open or Create that is not demonstrably " &
+            "closed on every normal-return or exception-handler path out " &
+            "of the enclosing subprogram."),
+         Guidance    => To_Unbounded_String
+           ("Call Close on every path that leaves the subprogram after " &
+            "the file is opened, including exception handlers."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Unused_With_Clause =>
+        (Name        => To_Unbounded_String ("Unused_With_Clause"),
+         Description => To_Unbounded_String
+           ("Find with clauses naming a unit never referenced elsewhere " &
+            "in the compilation unit."),
+         Guidance    => To_Unbounded_String
+           ("Remove the unused with clause."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low)
    );
 
    function Lookup_Rule_Kind

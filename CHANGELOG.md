@@ -9,6 +9,15 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `Use_After_Free` check: flags a local access object read or dereferenced
+  after it was passed to an instantiation of `Ada.Unchecked_Deallocation`,
+  with no intervening assignment.
+- `Unclosed_File_Handle` check: flags a local `Ada.Text_IO`/
+  `Ada.Streams.Stream_IO` `File_Type` object opened with `Open`/`Create`
+  that is not demonstrably closed on every normal-return or
+  exception-handler path out of the enclosing subprogram.
+- `Unused_With_Clause` check: flags a with clause naming a unit never
+  referenced elsewhere in the compilation unit.
 - `Empty_Then_Body` check: flags an if statement's then branch whose body
   has no effect (only `null;` and/or non-`Assert` pragmas), even when a
   later `elsif` or `else` does real work. Unlike `Empty_If_Body`, not
@@ -21,6 +30,13 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `Unclosed_File_Handle` (new this release) initially false-positived on
+  the idiomatic "close a file that might already be closed" pattern --
+  `if Ada.Text_IO.Is_Open (File) then Ada.Text_IO.Close (File); end if;`,
+  and the more general "opened and closed behind the identical boolean
+  guard" idiom -- both found via this project's own `--recommended`
+  self-analysis gate before release. Both idioms are now recognized as
+  safe (`FP-060`).
 - `Duplicate_Subprogram`'s finding message embedded the earlier
   occurrence's file:line as literal text, so a finding's `--baseline`
   fingerprint (which hashes the message) could shift whenever unrelated
