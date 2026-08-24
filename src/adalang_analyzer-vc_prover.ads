@@ -101,6 +101,19 @@ package Adalang_Analyzer.VC_Prover is
       Flow                   : Adalang_Analyzer.Flow_Domain.Flow_State;
       Merge_Tag              : Positive) return Symbolic_State;
 
+   --  As Join_On_Condition, but for a case-statement alternative: the ite
+   --  selector is a range-membership predicate ("Selector is within
+   --  Bounds") over the case's own selector expression, rather than a
+   --  boolean condition -- the counterpart Advance's case-alternative
+   --  right-fold uses in place of Join_On_Condition's if/elsif fork.
+   function Join_On_Range
+     (True_Side, False_Side : Symbolic_State;
+      Pre_Fork_Side          : Symbolic_State;
+      Selector                : Libadalang.Analysis.Expr'Class;
+      Bounds                  : Adalang_Analyzer.Flow_Domain.Abstract_Range;
+      Flow                    : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Merge_Tag               : Positive) return Symbolic_State;
+
    function Equal (Left, Right : Symbolic_State) return Boolean;
 
    function Havoc return Symbolic_State is (Empty_Symbolic_State);

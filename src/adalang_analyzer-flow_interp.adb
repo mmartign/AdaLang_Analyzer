@@ -4217,6 +4217,27 @@ package body Adalang_Analyzer.Flow_Interp is
                  and then Enclosing_If_Stmt (Candidate) = Root;
             end Continues_Same_If_Chain;
 
+            --  The Case_Stmt a case-selector expression belongs to, or
+            --  No_Ada_Node for anything else. Simpler than
+            --  Enclosing_If_Stmt: a case statement never nests at the CFG
+            --  level (Build_Statement's Ada_Case_Stmt case lowers to one
+            --  Condition_Node per case statement, never a chain), so no
+            --  ancestry walk beyond the immediate parent is needed.
+            function Enclosing_Case_Stmt
+              (Source : Libadalang.Analysis.Ada_Node)
+               return Libadalang.Analysis.Ada_Node
+            is
+               use Libadalang.Common;
+            begin
+               if Libadalang.Analysis.Is_Null (Source)
+                 or else Libadalang.Analysis.Is_Null (Source.Parent)
+                 or else Source.Parent.Kind /= Ada_Case_Stmt
+               then
+                  return Libadalang.Analysis.No_Ada_Node;
+               end if;
+               return Source.Parent;
+            end Enclosing_Case_Stmt;
+
             --  Single-steps the CFG from Start under the same restricted
             --  rules Prove_Header has always enforced (exactly one
             --  non-exceptional outgoing edge per node; assign/pragma/
@@ -4248,6 +4269,168 @@ package body Adalang_Analyzer.Flow_Interp is
             is
                Current : CFG.Node_Id := Start;
                First   : Boolean := True;
+
+               --  Folds a case statement's alternatives into the same
+               --  ite-join machinery elsif chains use, via VC.Join_On_Range
+               --  in place of VC.Join_On_Condition. Supported subset: every
+               --  alternative but a trailing, explicit `others` must have
+               --  exactly one choice in F_Choices, with a statically known
+               --  interval (Choice_Interval.Known) -- a multi-choice
+               --  alternative ("when 1 | 3 =>") or a discontiguous range set
+               --  is rejected outright, never range-unioned, since a
+               --  covering range would unsoundly admit selector values
+               --  belonging to a different (or no) alternative. Each
+               --  alternative's own body is walked with Allow_Branch =>
+               --  False, exactly like an if/elsif arm, so a nested
+               --  if/case inside any alternative, or a second sequential
+               --  conditional following the case statement, is rejected
+               --  the same way an unsupported node kind always was.
+               --  Right-folds from the trailing `others` (the base case,
+               --  needing no selector, mirroring elsif's own bare trailing
+               --  else) back to the first alternative, one Join_On_Range
+               --  call per non-`others` alternative.
+               function Advance_Case
+                 (Case_Condition        : CFG.Node_Id;
+                  Case_Condition_Source : Libadalang.Analysis.Ada_Node)
+                  return Boolean
+               is
+                  use Libadalang.Common;
+
+                  Case_Stmt_Node : constant Libadalang.Analysis.Ada_Node :=
+                    Enclosing_Case_Stmt (Case_Condition_Source);
+               begin
+                  if Libadalang.Analysis.Is_Null (Case_Stmt_Node) then
+                     return False;
+                  end if;
+
+                  declare
+                     CS : constant Libadalang.Analysis.Case_Stmt :=
+                       Case_Stmt_Node.As_Case_Stmt;
+                     N  : constant Positive := CS.F_Alternatives.Children_Count;
+
+                     function Alt
+                       (I : Positive)
+                        return Libadalang.Analysis.Case_Stmt_Alternative
+                     is (CS.F_Alternatives.Child (I).As_Case_Stmt_Alternative);
+
+                     function Target_For
+                       (A : Libadalang.Analysis.Case_Stmt_Alternative)
+                        return CFG.Node_Id
+                     is
+                     begin
+                        for Edge_Index in 1 .. CFG.Edge_Count (Graph) loop
+                           declare
+                              E : constant CFG.CFG_Edge :=
+                                CFG.Edge_At (Graph, Edge_Index);
+                           begin
+                              if E.From = Case_Condition
+                                and then E.Kind = CFG.Case_Edge
+                                and then E.Source =
+                                  Libadalang.Analysis.Ada_Node (A)
+                              then
+                                 return E.To;
+                              end if;
+                           end;
+                        end loop;
+                        return CFG.No_Node;
+                     end Target_For;
+
+                     Ranges  : array (1 .. N) of Abstract_Range;
+                     Targets : array (1 .. N) of CFG.Node_Id;
+                  begin
+                     for I in 1 .. N loop
+                        declare
+                           A : constant
+                             Libadalang.Analysis.Case_Stmt_Alternative :=
+                               Alt (I);
+                        begin
+                           if A.F_Choices.Children_Count /= 1 then
+                              return False;
+                           end if;
+                           declare
+                              Choice : constant Libadalang.Analysis.Ada_Node :=
+                                A.F_Choices.Child (1);
+                           begin
+                              if Choice.Kind = Ada_Others_Designator then
+                                 if I /= N then
+                                    return False;
+                                 end if;
+                              else
+                                 if I = N then
+                                    return False;
+                                 end if;
+                                 declare
+                                    Interval : constant Static_Interval :=
+                                      Choice_Interval (Choice, State);
+                                 begin
+                                    if not Interval.Known then
+                                       return False;
+                                    end if;
+                                    Ranges (I) :=
+                                      (Has_Low => True, Low => Interval.Low,
+                                       Has_High => True,
+                                       High => Interval.High);
+                                 end;
+                              end if;
+                           end;
+                           Targets (I) := Target_For (A);
+                           if Targets (I) = CFG.No_Node then
+                              return False;
+                           end if;
+                        end;
+                     end loop;
+
+                     declare
+                        Acc_State   : Flow_State := State;
+                        Acc_Symbols : VC.Symbolic_State := Symbols;
+                        Acc_Steps   : Natural := Steps;
+                        Acc_Back    : Boolean;
+                        Acc_OK      : constant Boolean :=
+                          Advance
+                            (Targets (N), False, Acc_State, Acc_Symbols,
+                             Acc_Steps, Acc_Back);
+                     begin
+                        if not Acc_OK or else not Acc_Back then
+                           return False;
+                        end if;
+
+                        for I in reverse 1 .. N - 1 loop
+                           declare
+                              Arm_State   : Flow_State := State;
+                              Arm_Symbols : VC.Symbolic_State := Symbols;
+                              Arm_Steps   : Natural := Steps;
+                              Arm_Back    : Boolean;
+                              Arm_OK      : constant Boolean :=
+                                Advance
+                                  (Targets (I), False, Arm_State,
+                                   Arm_Symbols, Arm_Steps, Arm_Back);
+                           begin
+                              if not Arm_OK or else not Arm_Back then
+                                 return False;
+                              end if;
+                              Acc_State :=
+                                Flow_Join (Arm_State, Acc_State);
+                              Acc_Symbols :=
+                                VC.Join_On_Range
+                                  (True_Side     => Arm_Symbols,
+                                   False_Side    => Acc_Symbols,
+                                   Pre_Fork_Side => Symbols,
+                                   Selector      => CS.F_Expr,
+                                   Bounds        => Ranges (I),
+                                   Flow          => Acc_State,
+                                   Merge_Tag     =>
+                                     Positive (Case_Condition) *
+                                       (CFG.Node_Count (Graph) + 1) + I);
+                           end;
+                        end loop;
+
+                        State := Acc_State;
+                        Symbols := Acc_Symbols;
+                        Reached_Back := True;
+                        return True;
+                     end;
+                  end;
+               end Advance_Case;
             begin
                Reached_Back := False;
                loop
@@ -4310,9 +4493,10 @@ package body Adalang_Analyzer.Flow_Interp is
                            end if;
 
                            declare
-                              True_Target  : CFG.Node_Id := CFG.No_Node;
-                              False_Target : CFG.Node_Id := CFG.No_Node;
-                              Other        : Natural := 0;
+                              True_Target   : CFG.Node_Id := CFG.No_Node;
+                              False_Target  : CFG.Node_Id := CFG.No_Node;
+                              Other         : Natural := 0;
+                              Is_Case_Shape : Boolean := False;
                            begin
                               for Edge_Index in
                                 1 .. CFG.Edge_Count (Graph)
@@ -4327,6 +4511,8 @@ package body Adalang_Analyzer.Flow_Interp is
                                              True_Target := Edge.To;
                                           when CFG.False_Edge =>
                                              False_Target := Edge.To;
+                                          when CFG.Case_Edge =>
+                                             Is_Case_Shape := True;
                                           when CFG.Exceptional_Edge  --  adalang-analyzer: ignore Null_Case_Alternative
                                              | CFG.Raise_Edge =>
                                              null;
@@ -4336,6 +4522,16 @@ package body Adalang_Analyzer.Flow_Interp is
                                     end if;
                                  end;
                               end loop;
+
+                              if Is_Case_Shape then
+                                 if Other > 0
+                                   or else True_Target /= CFG.No_Node
+                                   or else False_Target /= CFG.No_Node
+                                 then
+                                    return False;
+                                 end if;
+                                 return Advance_Case (Current, Source);
+                              end if;
 
                               if Other > 0
                                 or else True_Target = CFG.No_Node

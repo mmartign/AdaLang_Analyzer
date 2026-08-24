@@ -147,12 +147,15 @@ package body Adalang_Analyzer.Control_Flow_Graph is
       end Add_Node;
 
       procedure Add_Edge
-        (From : Node_Id; To : Node_Id; Kind : Edge_Kind) is
+        (From   : Node_Id; To : Node_Id; Kind : Edge_Kind;
+         Source : Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.No_Ada_Node) is
       begin
          if From = No_Node or else To = No_Node then
             raise Program_Error with "CFG edge has an unresolved endpoint";
          end if;
-         Result.Edges.Append ((From => From, To => To, Kind => Kind));
+         Result.Edges.Append
+           ((From => From, To => To, Kind => Kind, Source => Source));
       end Add_Edge;
 
       function Handles_Others
@@ -371,7 +374,10 @@ package body Adalang_Analyzer.Control_Flow_Graph is
                         Build_List
                           (Alternative.As_Case_Stmt_Alternative.F_Stmts,
                            Continuation, Exception_Target, Return_Target),
-                        Case_Edge);
+                        Case_Edge,
+                        Source =>
+                          Libadalang.Analysis.Ada_Node
+                            (Alternative.As_Case_Stmt_Alternative));
                   end loop;
                   Add_Edge (Choice, Exception_Target, Exceptional_Edge);
                   return Choice;

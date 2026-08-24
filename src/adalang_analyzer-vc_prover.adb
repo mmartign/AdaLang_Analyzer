@@ -1940,42 +1940,22 @@ package body Adalang_Analyzer.VC_Prover is
          return Havoc;
    end Join;
 
-   function Join_On_Condition
+   --  The generic tail of a branch-merge join: everything that doesn't
+   --  care how Selector was derived, shared between Join_On_Condition (an
+   --  if/elsif boolean condition) and Join_On_Range (a case alternative's
+   --  range-membership predicate). Extra_Roots carries whatever the
+   --  caller already resolved while computing Selector (a translated
+   --  condition's own free-variable roots, or one freshly-minted
+   --  anonymous placeholder root) so it can be folded into Result
+   --  alongside True_Side/False_Side's own roots.
+   function Join_On_Selector
      (True_Side, False_Side : Symbolic_State;
-      Pre_Fork_Side          : Symbolic_State;
-      Condition              : Libadalang.Analysis.Ada_Node'Class;
-      Flow                   : Domain.Flow_State;
-      Merge_Tag              : Positive) return Symbolic_State
+      Extra_Roots            : Symbolic_State;
+      Selector                : Unbounded_String;
+      Flow                    : Domain.Flow_State;
+      Merge_Tag               : Positive) return Symbolic_State
    is
       Result : Symbolic_State := Empty_Symbolic_State;
-
-      Cond_Context : Translation_Context :=
-        (State => Flow, Symbols => Pre_Fork_Side, others => <>);
-      Cond_Term : constant Unbounded_String :=
-        Boolean_Term (Condition, Cond_Context);
-      Cond_OK   : constant Boolean :=
-        Cond_Context.Supported and then Length (Cond_Term) > 0;
-
-      --  The ite selector for every disagreeing binding at this merge:
-      --  Cond_Term when Condition translates (correlating the selector
-      --  with any of Condition's own free variables that also appear
-      --  elsewhere in the surrounding proof obligation), or an anonymous,
-      --  totally unconstrained boolean symbol otherwise -- minted below,
-      --  keyed to Condition's own source location so it's deterministic
-      --  and unique per merge site, when Condition itself doesn't
-      --  translate (an unsupported shape, e.g. an indexed array read).
-      --  Sound regardless of what the selector "means": the ite VC is
-      --  checked for every possible value of its selector, so proving it
-      --  holds for an unconstrained placeholder proves it holds for
-      --  whatever the real (but here untranslated) condition actually is
-      --  too. A placeholder costs precision relative to a real,
-      --  correlated condition (nothing else in the VC can be related back
-      --  to it), but is strictly more precise than the fresh-symbol
-      --  fallback it replaces, since it still ties the merged value to
-      --  exactly the true-arm or false-arm term instead of discarding
-      --  both. Assigned exactly once, below, before either binding loop
-      --  reads it.
-      Selector : Unbounded_String;
 
       --  Exactly Join's fresh-symbol fallback, for one binding only. Used
       --  now only when a binding's sort itself disagrees between arms (an
@@ -2006,9 +1986,7 @@ package body Adalang_Analyzer.VC_Prover is
       end Missing_Term;
 
    begin
-      if not True_Side.Supported or else not False_Side.Supported
-        or else not Pre_Fork_Side.Supported
-      then
+      if not True_Side.Supported or else not False_Side.Supported then
          return Havoc;
       end if;
 
@@ -2018,26 +1996,9 @@ package body Adalang_Analyzer.VC_Prover is
       for Item of False_Side.Roots loop
          Include_Root (Result, Item);
       end loop;
-      if Cond_OK then
-         for Item of Cond_Context.Symbols.Roots loop
-            Include_Root (Result, Item);
-         end loop;
-         Selector := Cond_Term;
-      else
-         --  Condition itself doesn't translate: mint one anonymous,
-         --  totally unconstrained boolean symbol, keyed to Condition's
-         --  own source location so it's deterministic and unique per
-         --  merge site, to stand in for it as the ite selector below.
-         declare
-            Key  : constant Symbol_Key :=
-              Plain_Key (Libadalang.Analysis.Ada_Node (Condition));
-            Name : constant String :=
-              Root_Name (Key, "jc" & Natural_Image (Merge_Tag) & "_");
-         begin
-            Add_Root (Result, Name, Key, Boolean_Sort, Flow);
-            Selector := To_Unbounded_String (Name);
-         end;
-      end if;
+      for Item of Extra_Roots.Roots loop
+         Include_Root (Result, Item);
+      end loop;
 
       for Item of True_Side.Bindings loop
          declare
@@ -2104,6 +2065,75 @@ package body Adalang_Analyzer.VC_Prover is
          end loop;
       end loop;
       return Result;
+   exception
+      when others =>
+         return Havoc;
+   end Join_On_Selector;
+
+   function Join_On_Condition
+     (True_Side, False_Side : Symbolic_State;
+      Pre_Fork_Side          : Symbolic_State;
+      Condition              : Libadalang.Analysis.Ada_Node'Class;
+      Flow                   : Domain.Flow_State;
+      Merge_Tag              : Positive) return Symbolic_State
+   is
+      Cond_Context : Translation_Context :=
+        (State => Flow, Symbols => Pre_Fork_Side, others => <>);
+      Cond_Term : constant Unbounded_String :=
+        Boolean_Term (Condition, Cond_Context);
+      Cond_OK   : constant Boolean :=
+        Cond_Context.Supported and then Length (Cond_Term) > 0;
+
+      --  The ite selector for every disagreeing binding at this merge:
+      --  Cond_Term when Condition translates (correlating the selector
+      --  with any of Condition's own free variables that also appear
+      --  elsewhere in the surrounding proof obligation), or an anonymous,
+      --  totally unconstrained boolean symbol otherwise -- minted below,
+      --  keyed to Condition's own source location so it's deterministic
+      --  and unique per merge site, when Condition itself doesn't
+      --  translate (an unsupported shape, e.g. an indexed array read).
+      --  Sound regardless of what the selector "means": the ite VC is
+      --  checked for every possible value of its selector, so proving it
+      --  holds for an unconstrained placeholder proves it holds for
+      --  whatever the real (but here untranslated) condition actually is
+      --  too. A placeholder costs precision relative to a real,
+      --  correlated condition (nothing else in the VC can be related back
+      --  to it), but is strictly more precise than the fresh-symbol
+      --  fallback it replaces, since it still ties the merged value to
+      --  exactly the true-arm or false-arm term instead of discarding
+      --  both.
+      Selector    : Unbounded_String;
+      Extra_Roots : Symbolic_State := Empty_Symbolic_State;
+   begin
+      if not True_Side.Supported or else not False_Side.Supported
+        or else not Pre_Fork_Side.Supported
+      then
+         return Havoc;
+      end if;
+
+      if Cond_OK then
+         for Item of Cond_Context.Symbols.Roots loop
+            Include_Root (Extra_Roots, Item);
+         end loop;
+         Selector := Cond_Term;
+      else
+         --  Condition itself doesn't translate: mint one anonymous,
+         --  totally unconstrained boolean symbol, keyed to Condition's
+         --  own source location so it's deterministic and unique per
+         --  merge site, to stand in for it as the ite selector below.
+         declare
+            Key  : constant Symbol_Key :=
+              Plain_Key (Libadalang.Analysis.Ada_Node (Condition));
+            Name : constant String :=
+              Root_Name (Key, "jc" & Natural_Image (Merge_Tag) & "_");
+         begin
+            Add_Root (Extra_Roots, Name, Key, Boolean_Sort, Flow);
+            Selector := To_Unbounded_String (Name);
+         end;
+      end if;
+
+      return Join_On_Selector
+        (True_Side, False_Side, Extra_Roots, Selector, Flow, Merge_Tag);
    exception
       when others =>
          return Havoc;
@@ -2448,33 +2478,17 @@ package body Adalang_Analyzer.VC_Prover is
          return Unknown_Outcome;
    end Decide;
 
-   function Decide_Bounds
-     (Value   : Libadalang.Analysis.Expr'Class;
-      Bounds  : Domain.Abstract_Range;
-      State   : Domain.Flow_State;
-      Symbols : Symbolic_State) return VC_Outcome
+   --  The SMT goal string for "Term is within Bounds": shared between
+   --  Decide_Bounds's one-shot range-check decision and Join_On_Range's
+   --  case-alternative selector (the case-statement counterpart of a
+   --  boolean condition's own Boolean_Term translation). Empty when
+   --  neither bound is present.
+   function Range_Goal
+     (Term : Unbounded_String; Bounds : Domain.Abstract_Range)
+      return Unbounded_String
    is
-      Context : Translation_Context :=
-        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
-         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
-         Failure_Reason => No_Unsupported_Reason,
-         Failure_Node => Libadalang.Analysis.No_Ada_Node,
-         Inlining_Path => Null_Unbounded_String, Depth => 0);
-      Term : Unbounded_String;
       Goal : Unbounded_String;
    begin
-      Term := Integer_Term (Value, Context);
-      if not Context.Supported or else Length (Term) = 0
-        or else (not Bounds.Has_Low and then not Bounds.Has_High)
-      then
-         if Context.Supported then
-            Mark_Unsupported (Context, Value, Missing_Static_Bounds);
-         end if;
-         return
-           (Result => VC_Unsupported,
-            Provenance => Unsupported_Provenance_For (Context, Value));
-      end if;
-
       if Bounds.Has_Low then
          Goal := To_Unbounded_String
            ("(<= " & SMT_Integer (Bounds.Low) & " " & To_String (Term) & ")");
@@ -2491,12 +2505,93 @@ package body Adalang_Analyzer.VC_Prover is
                  ("(and " & To_String (Goal) & " " & High_Term & ")"));
          end;
       end if;
+      return Goal;
+   end Range_Goal;
 
-      return Decide_Goal (Goal, Context);
+   function Decide_Bounds
+     (Value   : Libadalang.Analysis.Expr'Class;
+      Bounds  : Domain.Abstract_Range;
+      State   : Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
+      Term : Unbounded_String;
+   begin
+      Term := Integer_Term (Value, Context);
+      if not Context.Supported or else Length (Term) = 0
+        or else (not Bounds.Has_Low and then not Bounds.Has_High)
+      then
+         if Context.Supported then
+            Mark_Unsupported (Context, Value, Missing_Static_Bounds);
+         end if;
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Value));
+      end if;
+
+      return Decide_Goal (Range_Goal (Term, Bounds), Context);
    exception
       when others =>
          return Unknown_Outcome;
    end Decide_Bounds;
+
+   function Join_On_Range
+     (True_Side, False_Side : Symbolic_State;
+      Pre_Fork_Side          : Symbolic_State;
+      Selector                : Libadalang.Analysis.Expr'Class;
+      Bounds                  : Domain.Abstract_Range;
+      Flow                    : Domain.Flow_State;
+      Merge_Tag               : Positive) return Symbolic_State
+   is
+      Context : Translation_Context :=
+        (State => Flow, Symbols => Pre_Fork_Side, others => <>);
+      Term  : constant Unbounded_String := Integer_Term (Selector, Context);
+      Goal_OK : constant Boolean :=
+        Context.Supported and then Length (Term) > 0
+        and then (Bounds.Has_Low or else Bounds.Has_High);
+      Sel         : Unbounded_String;
+      Extra_Roots : Symbolic_State := Empty_Symbolic_State;
+   begin
+      if not True_Side.Supported or else not False_Side.Supported
+        or else not Pre_Fork_Side.Supported
+      then
+         return Havoc;
+      end if;
+
+      if Goal_OK then
+         for Item of Context.Symbols.Roots loop
+            Include_Root (Extra_Roots, Item);
+         end loop;
+         Sel := Range_Goal (Term, Bounds);
+      else
+         --  Selector doesn't translate, or Bounds is empty (an
+         --  unresolved case choice): mint one anonymous, totally
+         --  unconstrained boolean symbol, keyed to Selector's own source
+         --  location, to stand in for "this alternative was taken" --
+         --  the same sound-but-imprecise fallback Join_On_Condition uses
+         --  for an untranslatable boolean condition.
+         declare
+            Key  : constant Symbol_Key :=
+              Plain_Key (Libadalang.Analysis.Ada_Node (Selector));
+            Name : constant String :=
+              Root_Name (Key, "jr" & Natural_Image (Merge_Tag) & "_");
+         begin
+            Add_Root (Extra_Roots, Name, Key, Boolean_Sort, Flow);
+            Sel := To_Unbounded_String (Name);
+         end;
+      end if;
+
+      return Join_On_Selector
+        (True_Side, False_Side, Extra_Roots, Sel, Flow, Merge_Tag);
+   exception
+      when others =>
+         return Havoc;
+   end Join_On_Range;
 
    function Decide_Nonzero
      (Value   : Libadalang.Analysis.Expr'Class;

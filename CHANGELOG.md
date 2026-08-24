@@ -38,9 +38,25 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   lexically nested `if`/`case` inside any arm -- as opposed to that arm's
   own `elsif`/`else` continuation of the same statement -- remains outside
   the supported subset, distinguished by walking the branch condition's AST
-  ancestry back to its owning `If_Stmt`. `case` statements remain
-  unsupported (a structurally different N-way selector rather than a chain
-  of binary conditions) and are left for a separate follow-on.
+  ancestry back to its owning `If_Stmt`.
+- `--verify`'s loop-invariant-preservation VC now also folds a `case`
+  statement into the branch-merge machinery, for the subset where every
+  alternative but a trailing, explicit `others` has exactly one
+  statically-known choice (a single value or a single `..` range -- never a
+  `|`-separated or discontiguous set, which would unsoundly widen the
+  alternative's own `ite` selector to cover values that belong to a
+  different, or no, alternative). Each alternative is merged via a new
+  `VC.Join_On_Range` entry point, using a range-membership predicate over
+  the case selector's own translated term as the `ite` selector instead of
+  a boolean condition, right-folded to mirror Ada's own alternative
+  precedence. `Join_On_Condition`'s own branch-merge logic (roots/bindings
+  reconciliation, the `ite`-building, the fresh-symbol fallback) was
+  extracted into a shared `Join_On_Selector` helper so `Join_On_Range`
+  reuses it verbatim rather than duplicating it. A multi-choice or
+  discontiguous alternative, a missing or non-final `others`, or a
+  lexically nested `if`/`case` inside any one alternative's own body all
+  remain outside the supported subset and conservatively bail to
+  `Unproved`, same as before.
 
 ### Fixed
 

@@ -56,9 +56,15 @@ package Adalang_Analyzer.Control_Flow_Graph is
    end record;
 
    type CFG_Edge is record
-      From : Node_Id := No_Node;
-      To   : Node_Id := No_Node;
-      Kind : Edge_Kind := Normal_Edge;
+      From   : Node_Id := No_Node;
+      To     : Node_Id := No_Node;
+      Kind   : Edge_Kind := Normal_Edge;
+      Source : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      --  Populated only for a Case_Edge: the originating
+      --  Case_Stmt_Alternative, so a case-alternative walk can recover
+      --  its own choices without relying on edge-insertion order.
+      --  No_Ada_Node for every other edge kind.
    end record;
 
    type Graph is private;

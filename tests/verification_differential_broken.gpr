@@ -12,6 +12,7 @@ project Verification_Differential_Broken is
       "verification_loop_variant_wrong_direction.adb",
       "verification_loop_branch_vc_broken.adb",
       "verification_loop_branch_elsif_vc_broken.adb",
+      "verification_loop_branch_case_vc_broken.adb",
       "verification_loop_branch_ite_unsafe.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;
