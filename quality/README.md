@@ -19,13 +19,29 @@ lines above that pair's earlier occurrence in `control_flow.adb` shifted the
 referenced line number and therefore the fingerprint -- one baseline entry
 changed, none added or removed (confirmed: `--write-baseline` before and
 after this change produce baselines of the same length, differing in exactly
-one hash). This narrowly contradicts this project's own documented guarantee
+one hash). This narrowly contradicted this project's own documented guarantee
 (README.md: "Fingerprints exclude line and column numbers, so inserting
 unrelated lines does not turn an existing finding into a new one") for the
-one check whose message text itself contains a location string; not fixed
-here, since it is orthogonal to the two new checks this baseline update was
-actually for, but worth a future look at excluding embedded locations from
-`Duplicate_Subprogram`'s own fingerprint contribution.
+one check whose message text itself contained a location string. Fixed the
+same day in `Adalang_Analyzer.Clone_Detection.Analyze`: the earlier
+occurrence's file:line moved out of `Message` (hashed by
+`Stable_Fingerprint`) and into `Report_Rule_Violation`'s `Evidence`
+parameter (displayed identically, in its own "evidence:" line, but
+deliberately excluded from the fingerprint -- the same mechanism every
+other check's supplementary detail already uses). Verified directly, not
+just by inspection: inserting three unrelated comment lines directly above
+the `Handles_Others` pair's earlier occurrence in `control_flow.adb` (so its
+reported line moved from 1235 to 1238) reproduced the original bug before
+the fix (one baseline mismatch, `Violations : 1`) and produced zero
+mismatches after it (`Violations : 0`, `Baseline matches: 138`), toggled
+both ways on the same input. `run_clone_detection.sh` now asserts the
+location lives in the evidence line, not the message, so this cannot
+regress silently again. `recommended.baseline` needed a second regeneration
+for this fix itself (same-day, same file-count-unchanged shape as above):
+the message wording change ("identical to 'Y's at ..." to "identical to
+'Y' ...", with the location now separate) altered the fingerprint of all
+17 `Duplicate_Subprogram` self-findings at once, not just the one that
+motivated the fix.
 
 `Duplicate_Subprogram` joined `--recommended` on 2026-08-17, growing the
 baseline from 121 to 138. External-corpus validation first (all ten

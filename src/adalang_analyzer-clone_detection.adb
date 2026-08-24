@@ -132,14 +132,16 @@ package body Adalang_Analyzer.Clone_Detection is
 
                --  F, not Unit.Get_Filename: Libadalang resolves the latter
                --  to an absolute path, which would bake the analyzing
-               --  machine's checkout location into the "matches X at Y"
-               --  half of Duplicate_Subprogram's message (and, through it,
-               --  into the finding's baseline fingerprint) -- passing a
-               --  baseline written on one machine or CI checkout to
-               --  another then desyncs every cross-file match. F is
-               --  whatever path was given on the command line, already
-               --  portable the same way the finding's own primary location
-               --  is.
+               --  machine's checkout location into the "earlier
+               --  occurrence: ..." Evidence text this file's Filename
+               --  eventually feeds. Evidence is excluded from
+               --  Stable_Fingerprint (unlike Message, see the "earlier
+               --  occurrence" Evidence text built below), so this no
+               --  longer affects --baseline portability the way it once
+               --  did when the location was still part of Message -- but
+               --  the display itself is still nicer read as whatever
+               --  portable path was given on the command line, the same as
+               --  the finding's own primary location.
                Collect (Unit.Root, To_Unbounded_String (F), Unit, Clones);
             end if;
          end;
@@ -161,12 +163,24 @@ package body Adalang_Analyzer.Clone_Detection is
                while J <= Clones.Last_Index
                  and then Clones (J).Signature = Clones (I).Signature
                loop
+                  --  The earlier occurrence's file:line is genuinely useful
+                  --  but must not be part of Message: Stable_Fingerprint
+                  --  hashes Message verbatim, and a raw line number shifts
+                  --  whenever unrelated code is inserted anywhere above that
+                  --  occurrence in its file, which would silently desync
+                  --  --baseline from a real, unmoved finding. Evidence is
+                  --  displayed the same way but deliberately excluded from
+                  --  the fingerprint, so it is the right home for it.
                   Report_Rule_Violation
                     (Clones (J).Unit, Clones (J).Subp_Node,
                      Duplicate_Subprogram,
                      "subprogram '" & To_String (Clones (J).Name) &
                        "' has a statement sequence identical to '" &
-                       To_String (Clones (I).Name) & "'s at " &
+                       To_String (Clones (I).Name) & "' (local " &
+                       "declarations not compared -- they may still " &
+                       "differ, e.g. a parameterizing constant)",
+                     Evidence =>
+                       "earlier occurrence: " &
 
                        --  The full filename, not just its simple name: two
                        --  files in different directories can share a
@@ -179,9 +193,7 @@ package body Adalang_Analyzer.Clone_Detection is
                        To_String (Clones (I).Filename) & ":" &
                        To_Decimal
                          (Natural
-                            (Clones (I).Subp_Node.Sloc_Range.Start_Line)) &
-                       " (local declarations not compared -- they may " &
-                       "still differ, e.g. a parameterizing constant)");
+                            (Clones (I).Subp_Node.Sloc_Range.Start_Line)));
                   J := J + 1;
                end loop;
                I := J;

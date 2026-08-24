@@ -19,6 +19,18 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   `Empty_If_Body`/`Empty_Elsif_Body`, closing the last open
   `null_paths`/`Empty_If_Body` scope gap.
 
+### Fixed
+
+- `Duplicate_Subprogram`'s finding message embedded the earlier
+  occurrence's file:line as literal text, so a finding's `--baseline`
+  fingerprint (which hashes the message) could shift whenever unrelated
+  code was inserted anywhere above that occurrence in its own file, even
+  though the duplication itself hadn't changed — narrowly contradicting
+  this project's own documented fingerprint-stability guarantee for this
+  one check. The file:line now lives in the finding's `Evidence` field
+  instead, which is displayed the same way but deliberately excluded from
+  the fingerprint.
+
 ## [1.1.0] - 2026-08-19
 
 ### Added
