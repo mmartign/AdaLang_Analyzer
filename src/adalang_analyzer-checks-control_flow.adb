@@ -41,10 +41,24 @@ package body Adalang_Analyzer.Checks.Control_Flow is
             Stmt : constant Libadalang.Analysis.Ada_Node := List.Child (I);
          begin
             if Libadalang.Analysis.Is_Null (Stmt)  --  adalang-analyzer: ignore Empty_Then_Body
-              or else Stmt.Kind = Libadalang.Common.Ada_Pragma_Node
               or else Stmt.Kind = Libadalang.Common.Ada_Null_Stmt
             then
                null;  --  adalang-analyzer: ignore Null_Statement
+            elsif Stmt.Kind = Libadalang.Common.Ada_Pragma_Node then
+
+               --  Most pragmas (Unreferenced, Warnings, Import, Inline,
+               --  ...) are purely declarative/informational and genuinely
+               --  leave a branch with no effect; pragma Assert is not one
+               --  of them -- "else pragma Assert (False); end if;" is a
+               --  deliberate "this must never happen" guard, not filler.
+               --  Found on real code, not just by inspection: a false
+               --  Empty_Else_Body on exactly this shape
+               --  (AdaCore/Ada_Drivers_Library,
+               --  stm32-dma2d-interrupt.adb's Interrupt) while running
+               --  this project's own GNATcheck oracle comparison.
+               if Canonical_Text (Stmt.As_Pragma_Node.F_Id) = "assert" then
+                  return True;
+               end if;
             else
                return True;
             end if;

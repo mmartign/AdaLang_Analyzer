@@ -554,6 +554,27 @@ instead of being re-itemized here):
   cases, this analyzer's own source has no deliberate-no-op `else null;`
   idiom, so no suppression or `FP-0NN` entry was needed for this check.
 
+- 5 cases added 2026-08-24 as the `FP-059` regression, one per check sharing
+  `Has_Substantive_Statement` (`Empty_If_Body`, `Empty_Elsif_Body`,
+  `Empty_Then_Body`, `Empty_Else_Body`, `Null_Case_Alternative`): a branch
+  or alternative whose body is only `pragma Assert (False);` must not fire
+  (clean) -- not found by inspection, but by finally running this
+  analyzer's own GNATcheck oracle comparison method against
+  `benchmarks/ada_drivers_library/` for `Empty_Then_Body`/`Empty_Else_Body`
+  for the first time since they were added, which surfaced a real false
+  positive on `stm32-dma2d-interrupt.adb:109`'s `else pragma Assert
+  (False); end if;` (a deliberate "must never happen" guard, not filler).
+  `Has_Substantive_Statement` had treated every pragma as non-substantive
+  filler with no exception, so the same false positive was independently
+  confirmed reachable through all five checks by direct construction of one
+  fixture per check, not just argued from code inspection -- fixed by
+  special-casing `pragma Assert` specifically to count as substantive,
+  every other pragma unaffected. See
+  `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md` for the
+  run that found it and `quality/known_analysis_issues.tsv`'s `FP-059` for
+  the full trace, including confirming each of the 5 fixtures would fail
+  against the pre-fix binary by toggling the fix off and re-running.
+
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:
 

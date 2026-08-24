@@ -10,13 +10,13 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 ### Added
 
 - `Empty_Then_Body` check: flags an if statement's then branch whose body
-  has no effect (only `null;` and/or pragmas), even when a later `elsif`
-  or `else` does real work. Unlike `Empty_If_Body`, not scoped to a bare
-  `if` with no `elsif`/`else`, closing another `null_paths`/`Empty_If_Body`
-  scope gap.
+  has no effect (only `null;` and/or non-`Assert` pragmas), even when a
+  later `elsif` or `else` does real work. Unlike `Empty_If_Body`, not
+  scoped to a bare `if` with no `elsif`/`else`, closing another
+  `null_paths`/`Empty_If_Body` scope gap.
 - `Empty_Else_Body` check: flags an `else` part whose body has no effect
-  (only `null;` and/or pragmas). The else-branch counterpart of
-  `Empty_If_Body`/`Empty_Elsif_Body`, closing the last open
+  (only `null;` and/or non-`Assert` pragmas). The else-branch counterpart
+  of `Empty_If_Body`/`Empty_Elsif_Body`, closing the last open
   `null_paths`/`Empty_If_Body` scope gap.
 
 ### Fixed
@@ -30,6 +30,13 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   one check. The file:line now lives in the finding's `Evidence` field
   instead, which is displayed the same way but deliberately excluded from
   the fingerprint (`FP-058`).
+- `Empty_If_Body`, `Empty_Elsif_Body`, `Empty_Then_Body`, `Empty_Else_Body`,
+  and `Null_Case_Alternative` treated a branch or alternative containing
+  only `pragma Assert (False);` as having no effect, the same as a bare
+  `null;` — but a solitary `pragma Assert` is a deliberate "this must
+  never happen" guard, not filler. Found via this analyzer's own GNATcheck
+  oracle comparison against `AdaCore/Ada_Drivers_Library`. `pragma Assert`
+  now counts as substantive; every other pragma is unaffected (`FP-059`).
 
 ## [1.1.0] - 2026-08-19
 

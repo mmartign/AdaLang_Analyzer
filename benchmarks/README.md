@@ -384,8 +384,9 @@ it first.
 
 Shared infrastructure for every corpus's GNATcheck lane:
 `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map, expanded from
-`GNATCHECK_RULE_COMPARISON.md`'s tables to 39 individual pairs across 31
-AdaLang rules) and `benchmarks/gnatcheck_compare.awk` (the comparator,
+`GNATCHECK_RULE_COMPARISON.md`'s tables to 43 individual pairs across 35
+AdaLang rules as of 2026-08-24's `Empty_Then_Body`/`Empty_Else_Body`
+addition) and `benchmarks/gnatcheck_compare.awk` (the comparator,
 matching on `(basename(file), line, rule pair)` — same line-granularity
 convention as the GNATprove `compare.awk`). Each corpus adds its own
 `run_gnatcheck.sh`, following the same pinned-revision-verification
@@ -396,7 +397,7 @@ pattern as its GNATprove `run.sh`.
 | [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-19.md) | 1557 | 1334 (85.7%) | 1758 | 1334 (75.9%) |
 | [aws](aws/RESULTS_gnatcheck_2026-08-19.md) | 6288 | 3294 (52.4%) | 11356 | 3283 (28.9%) |
 | [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-19.md) | 1870 | 1044 (55.8%) | 2665 | 1042 (39.1%) |
-| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md) | 849 | 367 (43.2%) | 943 | 367 (38.9%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md) | 859 | 378 (44.0%) | 1071 | 378 (35.3%) |
 | [cubedos](cubedos/RESULTS_gnatcheck_2026-08-19.md) | 182 | 156 (85.7%) | 617 | 156 (25.3%) |
 | [coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-19.md) | 779 | 641 (82.3%) | 7629 | 641 (8.4%) |
 | [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-19.md) | 1460 | 1224 (83.8%) | 1354 | 1224 (90.4%) |
@@ -549,6 +550,20 @@ rule-logic question.
   `Dependency_Limit`/`too_many_dependencies` reads as uninformative on this
   corpus for both tools, since the driver subtree intentionally excludes
   units it `with`s, breaking dependency counting generically.
+- **[ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md)**
+  (2026-08-24) — second run, specifically to give the newly-added
+  `Empty_Then_Body`/`Empty_Else_Body` checks the same live-corpus treatment
+  `Empty_If_Body`/`Empty_Elsif_Body` already got above, rather than shipping
+  them with only self-analysis and hand-written evidence. Found and fixed a
+  real bug: `Empty_Else_Body` flagged `stm32-dma2d-interrupt.adb:109`'s
+  `else pragma Assert (False); end if;` — a deliberate "must never happen"
+  guard, not filler — because the check family's shared
+  `Has_Substantive_Statement` helper treated every pragma as non-substantive
+  filler with no exception. The identical false positive was confirmed
+  reachable through all five checks sharing that helper (`Empty_If_Body`,
+  `Empty_Elsif_Body`, `Empty_Then_Body`, `Empty_Else_Body`,
+  `Null_Case_Alternative`), fixed by special-casing `pragma Assert`
+  specifically, and logged as `FP-059`.
 - **[cubedos](cubedos/RESULTS_gnatcheck_2026-08-19.md)** (2026-08-19) —
   first corpus with its own project-embedded GNATcheck rule configuration
   (`cubedos.gpr`'s `package Check`), which silently changed several rules'
@@ -593,7 +608,7 @@ rule-logic question.
 
 ## What these benchmarks have found, in total
 
-Ten real analyzer bugs, all discovered by running against independently
+Eleven real analyzer bugs, all discovered by running against independently
 authored code no one on this project wrote or reviewed for analyzer
 blind spots — the value external-corpus validation is meant to deliver
 (`quality/external_corpus_findings.md`), each fixed with a regression test:
@@ -610,6 +625,7 @@ blind spots — the value external-corpus validation is meant to deliver
 | `FP-045` | gnatcoll | Ada's `Low .. Low - 1` empty-array idiom flagged as a reversed range |
 | `FP-051` | aws | `Reraise_Discards_Occurrence` flagged `raise Foo with "<context>";` (a deliberate enrich-and-reraise idiom) the same as a bare `raise Foo;` (accidental occurrence loss) |
 | `FP-052` | ada_drivers_library | `Duplicate_Subprogram`'s matched-location message dropped the directory, so two files sharing a simple name in different directories read as a body reported as a duplicate of itself |
+| `FP-059` | ada_drivers_library | `Empty_Else_Body` (and, by the same shared helper, `Empty_If_Body`/`Empty_Elsif_Body`/`Empty_Then_Body`/`Null_Case_Alternative`) treated a branch containing only `pragma Assert (False);` as having no effect, the same as a bare `null;` |
 
 `FP-044`'s own two originating findings (gnatcoll-buffer.adb's
 `Current_Text_Position`) persist despite the fix, unlike every other row
