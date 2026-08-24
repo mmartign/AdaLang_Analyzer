@@ -43,6 +43,7 @@ status=0
   tests/verification_diff_runtime_relational.adb \
   tests/verification_loop_variant_increases.adb \
   tests/verification_loop_branch_clean.adb \
+  tests/verification_loop_branch_elsif_clean.adb \
   tests/verification_loop_branch_ite_precision.adb \
   tests/verification_loop_array_write_clean.adb || status=$?
 if [ "$status" -gt 1 ]; then
@@ -66,7 +67,7 @@ cat "$gnatprove_log"
 grep -F 'Success: all checks proved' "$gnatprove_log" >/dev/null
 
 summary=obj/verification_differential/gnatprove/gnatprove.out
-grep -F 'Analyzed 21 units' "$summary" >/dev/null
+grep -F 'Analyzed 22 units' "$summary" >/dev/null
 if grep -F ' skipped;' "$summary" >/dev/null; then
    echo "GNATprove skipped part of the differential corpus" >&2
    exit 1
@@ -90,6 +91,7 @@ status=0
   tests/verification_mutation_loop_initialization.adb \
   tests/verification_loop_variant_wrong_direction.adb \
   tests/verification_loop_branch_vc_broken.adb \
+  tests/verification_loop_branch_elsif_vc_broken.adb \
   tests/verification_loop_branch_ite_unsafe.adb || status=$?
 if [ "$status" -gt 1 ]; then
    echo "AdaLang Analyzer broken-corpus run failed with status $status" >&2
@@ -106,7 +108,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 11 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 12 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -114,6 +116,7 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_mutation_loop_initialization \
   verification_loop_variant_wrong_direction \
   verification_loop_branch_vc_broken \
+  verification_loop_branch_elsif_vc_broken \
   verification_loop_branch_ite_unsafe; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2

@@ -4165,20 +4165,79 @@ package body Adalang_Analyzer.Flow_Interp is
             Before_Symbols : VC.Symbolic_State := VC.Havoc;
             Steps     : Natural := 0;
 
+            --  The If_Stmt an elsif/else condition belongs to: Source
+            --  itself when Source.Parent is the If_Stmt (the chain's
+            --  first, top-level condition), or the If_Stmt reached by
+            --  walking Elsif_Stmt_Part -> Elsif_Stmt_Part_List -> If_Stmt
+            --  when Source.Parent is an Elsif_Stmt_Part. No_Ada_Node for
+            --  anything else (in particular, a top-level while/for/loop
+            --  condition, which never continues an elsif chain).
+            function Enclosing_If_Stmt
+              (Source : Libadalang.Analysis.Ada_Node)
+               return Libadalang.Analysis.Ada_Node
+            is
+               use Libadalang.Common;
+            begin
+               if Libadalang.Analysis.Is_Null (Source)
+                 or else Libadalang.Analysis.Is_Null (Source.Parent)
+               then
+                  return Libadalang.Analysis.No_Ada_Node;
+               elsif Source.Parent.Kind = Ada_If_Stmt then
+                  return Source.Parent;
+               elsif Source.Parent.Kind = Ada_Elsif_Stmt_Part
+                 and then not Libadalang.Analysis.Is_Null
+                   (Source.Parent.Parent)
+                 and then not Libadalang.Analysis.Is_Null
+                   (Source.Parent.Parent.Parent)
+                 and then Source.Parent.Parent.Parent.Kind = Ada_If_Stmt
+               then
+                  return Source.Parent.Parent.Parent;
+               else
+                  return Libadalang.Analysis.No_Ada_Node;
+               end if;
+            end Enclosing_If_Stmt;
+
+            --  True exactly when Candidate is an elsif condition
+            --  (Elsif_Stmt_Part.F_Cond_Expr) belonging to the same
+            --  If_Stmt as Root -- i.e. Candidate continues the same
+            --  if/elsif/else chain Root started, rather than being a
+            --  lexically distinct, genuinely nested If_Stmt reached via
+            --  Root's own False edge (an else body containing its own,
+            --  unrelated if statement).
+            function Continues_Same_If_Chain
+              (Root      : Libadalang.Analysis.Ada_Node;
+               Candidate : Libadalang.Analysis.Ada_Node) return Boolean
+            is
+               use Libadalang.Common;
+            begin
+               return not Libadalang.Analysis.Is_Null (Root)
+                 and then not Libadalang.Analysis.Is_Null (Candidate)
+                 and then not Libadalang.Analysis.Is_Null (Candidate.Parent)
+                 and then Candidate.Parent.Kind = Ada_Elsif_Stmt_Part
+                 and then Enclosing_If_Stmt (Candidate) = Root;
+            end Continues_Same_If_Chain;
+
             --  Single-steps the CFG from Start under the same restricted
             --  rules Prove_Header has always enforced (exactly one
             --  non-exceptional outgoing edge per node; assign/pragma/
             --  merge only). The one addition: at a Condition_Node with
-            --  Allow_Branch, fork into both arms (each walked with
-            --  Allow_Branch => False, so a second sequential or nested
-            --  branch is rejected the same way an unsupported node kind
-            --  always was) and, if both independently reach the loop's
-            --  own back edge, join their final states with the same
-            --  Flow_Join/VC.Join machinery Merge_Into already relies on
-            --  at ordinary CFG merge points. Reached_Back is True exactly
-            --  when the walk (directly, or via a successful fork-and-join)
-            --  reached the loop back edge; every successful return sets
-            --  it, so it never disagrees with the function result.
+            --  Allow_Branch, fork into both arms. The true arm is always
+            --  walked with Allow_Branch => False (an arm's own body never
+            --  gets to branch further). The false arm is walked with
+            --  Allow_Branch => True exactly when it continues the same
+            --  if/elsif/else chain (Continues_Same_If_Chain above) --
+            --  folding elsif/else parts of one If_Stmt into the same
+            --  fork-and-join this function already applies to a single
+            --  if/else -- and Allow_Branch => False otherwise, so a
+            --  second sequential conditional or a genuinely nested one is
+            --  rejected the same way an unsupported node kind always was.
+            --  If both arms independently reach the loop's own back edge,
+            --  their final states are joined with the same Flow_Join/
+            --  VC.Join machinery Merge_Into already relies on at ordinary
+            --  CFG merge points. Reached_Back is True exactly when the
+            --  walk (directly, or via a successful fork-and-join) reached
+            --  the loop back edge; every successful return sets it, so it
+            --  never disagrees with the function result.
             function Advance
               (Start        : CFG.Node_Id;
                Allow_Branch : Boolean;
@@ -4286,6 +4345,14 @@ package body Adalang_Analyzer.Flow_Interp is
                               end if;
 
                               declare
+                                 False_Continues : constant Boolean :=
+                                   CFG.Node_At (Graph, False_Target).Kind
+                                     = CFG.Condition_Node
+                                   and then Continues_Same_If_Chain
+                                     (Enclosing_If_Stmt (Source),
+                                      CFG.Node_At
+                                        (Graph, False_Target).Source);
+
                                  True_State   : Flow_State := State;
                                  True_Symbols : VC.Symbolic_State := Symbols;
                                  True_Steps   : Natural := Steps;
@@ -4302,9 +4369,9 @@ package body Adalang_Analyzer.Flow_Interp is
                                  False_Back    : Boolean;
                                  False_OK      : constant Boolean :=
                                    Advance
-                                     (False_Target, False, False_State,
-                                      False_Symbols, False_Steps,
-                                      False_Back);
+                                     (False_Target, False_Continues,
+                                      False_State, False_Symbols,
+                                      False_Steps, False_Back);
                               begin
                                  if not True_OK or else not False_OK
                                    or else not True_Back

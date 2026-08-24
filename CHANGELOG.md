@@ -27,6 +27,20 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   (only `null;` and/or non-`Assert` pragmas). The else-branch counterpart
   of `Empty_If_Body`/`Empty_Elsif_Body`, closing the last open
   `null_paths`/`Empty_If_Body` scope gap.
+- `--verify`'s loop-invariant-preservation VC now folds `elsif`/`else`
+  continuations of the same `if` statement into the existing branch-merge
+  machinery (previously a full `elsif` chain forced the invariant to
+  `Unproved`, even where a plain `if`/`else` of the same shape would have
+  discharged). Each additional arm is merged via its own
+  `(ite <selector> ...)` SMT term, built from one `Join_On_Condition` call
+  per chain link and right-folded to match Ada's own `elsif` desugaring, so
+  soundness and precision match the existing two-arm case exactly. A
+  lexically nested `if`/`case` inside any arm -- as opposed to that arm's
+  own `elsif`/`else` continuation of the same statement -- remains outside
+  the supported subset, distinguished by walking the branch condition's AST
+  ancestry back to its owning `If_Stmt`. `case` statements remain
+  unsupported (a structurally different N-way selector rather than a chain
+  of binary conditions) and are left for a separate follow-on.
 
 ### Fixed
 

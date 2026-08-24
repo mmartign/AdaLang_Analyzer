@@ -44,7 +44,10 @@ loop_vc_relational=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-relational.XXXXXX")
 loop_vc_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-vc-broken.XXXXXX")
 loop_branch_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-clean.XXXXXX")
 loop_branch_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-broken.XXXXXX")
-loop_branch_elsif=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif.XXXXXX")
+loop_branch_elsif_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif-clean.XXXXXX")
+loop_branch_elsif_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif-broken.XXXXXX")
+loop_branch_nested_if=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-nested-if.XXXXXX")
+loop_branch_elsif_nested_if=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif-nested-if.XXXXXX")
 loop_branch_ite_precision=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-ite-precision.XXXXXX")
 loop_branch_ite_unsafe=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-ite-unsafe.XXXXXX")
 loop_branch_ite_cond_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-ite-cond-unsupported.XXXXXX")
@@ -76,7 +79,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -482,15 +485,73 @@ if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
    exit 1
 fi
 
-#  elsif/case chains remain outside the supported subset -- only a single
-#  non-nested if/else reconverging on the loop back edge is handled. This
-#  documents that boundary rather than silently regressing it.
-run_json "$loop_branch_elsif" \
-  tests/verification_loop_branch_elsif_unsupported.adb
+#  An elsif/else chain folds into the same fork-and-join machinery as a
+#  single if/else: each Condition_Node in the chain is its own binary
+#  Join_On_Condition, right-folded into nested ite terms exactly matching
+#  Ada's own elsif desugaring (see SUPPORTED_VERIFICATION_SUBSET.md).
+#  Extra is untouched by the invariant, so every arm's merged symbolic
+#  state still lets the invariant/variant/postcondition discharge.
+run_json "$loop_branch_elsif_clean" \
+  tests/verification_loop_branch_elsif_clean.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_elsif_clean" >/dev/null
+grep -F '"kind": "loop-variant", "status": "proved-safe", "method": "external-prover"' \
+  "$loop_branch_elsif_clean" >/dev/null
+grep -F '"kind": "postcondition", "status": "proved-safe"' \
+  "$loop_branch_elsif_clean" >/dev/null
+
+#  Same three-arm elsif shape, but the invariant also constrains Extra,
+#  and the middle elsif arm genuinely disagrees with the other two -- a
+#  real defect, not analyzer imprecision. The chained ite-join must stay
+#  conservative: preservation (and, as a knock-on consequence of variant
+#  progress being gated on a discharged leading invariant, the variant
+#  too) must never become proved-safe.
+run_json "$loop_branch_elsif_broken" \
+  tests/verification_loop_branch_elsif_vc_broken.adb
 grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
-  "$loop_branch_elsif" >/dev/null
+  "$loop_branch_elsif_broken" >/dev/null
 grep -F '"kind": "loop-variant", "status": "unproved"' \
-  "$loop_branch_elsif" >/dev/null
+  "$loop_branch_elsif_broken" >/dev/null
+if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_elsif_broken" >/dev/null; then
+   echo "an elsif chain's disagreeing arms escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
+
+#  A lexically distinct, genuinely nested if inside an else arm -- as
+#  opposed to that arm's own elsif/else continuation of the same
+#  If_Stmt -- must still be rejected. This guards the AST-ancestry check
+#  (Continues_Same_If_Chain in flow_interp.adb) that distinguishes the
+#  two shapes: the nested if's disagreeing arms are crafted so a
+#  misclassification would show up as a false proof, not silent
+#  imprecision.
+run_json "$loop_branch_nested_if" \
+  tests/verification_loop_branch_nested_if_unsupported.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_branch_nested_if" >/dev/null
+grep -F '"kind": "loop-variant", "status": "unproved"' \
+  "$loop_branch_nested_if" >/dev/null
+if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_nested_if" >/dev/null; then
+   echo "a genuinely nested if escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
+
+#  Same guard, but the nested if lives inside an elsif arm's own body
+#  rather than the trailing else -- exercises the true-arm side of the
+#  fork, which Allow_Branch => False unconditionally, unchanged by the
+#  elsif-chain extension.
+run_json "$loop_branch_elsif_nested_if" \
+  tests/verification_loop_branch_elsif_nested_if_unsupported.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_branch_elsif_nested_if" >/dev/null
+grep -F '"kind": "loop-variant", "status": "unproved"' \
+  "$loop_branch_elsif_nested_if" >/dev/null
+if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_elsif_nested_if" >/dev/null; then
+   echo "a nested if inside an elsif arm escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
 
 #  A one-sided if (no else) that increments a counter only on the true
 #  arm, with the invariant bound genuinely following from the loop guard,
