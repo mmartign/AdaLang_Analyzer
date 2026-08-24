@@ -5,6 +5,20 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `Empty_Then_Body` check: flags an if statement's then branch whose body
+  has no effect (only `null;` and/or pragmas), even when a later `elsif`
+  or `else` does real work. Unlike `Empty_If_Body`, not scoped to a bare
+  `if` with no `elsif`/`else`, closing another `null_paths`/`Empty_If_Body`
+  scope gap.
+- `Empty_Else_Body` check: flags an `else` part whose body has no effect
+  (only `null;` and/or pragmas). The else-branch counterpart of
+  `Empty_If_Body`/`Empty_Elsif_Body`, closing the last open
+  `null_paths`/`Empty_If_Body` scope gap.
+
 ## [1.1.0] - 2026-08-19
 
 ### Added

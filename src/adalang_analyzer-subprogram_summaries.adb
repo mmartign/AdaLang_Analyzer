@@ -399,7 +399,7 @@ package body Adalang_Analyzer.Subprogram_Summaries is
                Decl : constant Libadalang.Analysis.Basic_Decl :=
                  Call_Declaration (Node);
             begin
-               if Node.Kind = Libadalang.Common.Ada_Call_Expr
+               if Node.Kind = Libadalang.Common.Ada_Call_Expr  --  adalang-analyzer: ignore Empty_Then_Body
                  and then Node.As_Call_Expr.P_Kind /= Libadalang.Common.Call
                then
                   null;

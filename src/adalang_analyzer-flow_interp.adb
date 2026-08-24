@@ -4354,7 +4354,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                  | CFG.Raise_Edge
                                  | CFG.Loop_Exit_Edge
                            then
-                              if Current = Header
+                              if Current = Header  --  adalang-analyzer: ignore Empty_Then_Body
                                 and then Edge.Kind not in
                                   CFG.True_Edge | CFG.Normal_Edge
                               then

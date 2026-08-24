@@ -10,7 +10,7 @@ source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
 reports rule violations with source locations, explanations, and remediation
 guidance.
 
-At a glance: 121 checks spanning coding policy, data/control-flow defects, and
+At a glance: 123 checks spanning coding policy, data/control-flow defects, and
 SPARK readiness; a bounded `--verify` mode that classifies individual scalar
 proof obligations as proved safe, definite error, unproved, unreachable, or
 unsupported; `--automotive` and `--do178c=<level>` verification-support
@@ -97,7 +97,7 @@ claims this project will and will not make is
 
 ## Checks
 
-AdaLang Analyzer's 121 checks fall into five broad groups:
+AdaLang Analyzer's 123 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -179,6 +179,8 @@ The analyzer currently provides the following checks:
 | Data flow | `Unused_Variable` | Maintainability | Low | Reports local objects that are never referenced. |
 | Style | `Empty_If_Body` | Maintainability | Low | Reports if statements with no elsif/else whose body has no effect. |
 | Style | `Empty_Elsif_Body` | Maintainability | Low | Reports elsif branches with no substantive statements. |
+| Style | `Empty_Then_Body` | Maintainability | Low | Reports an empty then branch even when an elsif or else follows. |
+| Style | `Empty_Else_Body` | Maintainability | Low | Reports else parts with no substantive statements. |
 | Style | `Null_Case_Alternative` | Maintainability | Low | Reports case alternatives with no substantive statements. |
 | Style | `Unnecessary_Else_After_Return` | Maintainability | Low | Reports else parts made redundant by an earlier unconditional return/raise/exit. |
 | Style | `Redundant_If_Boolean_Return` | Maintainability | Low | Reports an if statement whose then and else branches each return only an opposite boolean literal. |

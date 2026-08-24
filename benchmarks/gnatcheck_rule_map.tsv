@@ -29,6 +29,8 @@ Address_Clause	address_specifications_for_initialized_objects	close
 Address_Clause	address_specifications_for_local_objects	close
 Empty_If_Body	null_paths	close
 Empty_Elsif_Body	null_paths	close
+Empty_Then_Body	null_paths	close
+Empty_Else_Body	null_paths	close
 Null_Case_Alternative	null_paths	close
 Redundant_Boolean_Comparison	redundant_boolean_expressions	close
 Redundant_Boolean_Comparison	boolean_negations	close

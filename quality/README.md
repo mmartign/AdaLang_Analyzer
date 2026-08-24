@@ -9,6 +9,24 @@ intentional: the baseline records occurrences, not only unique shapes. The
 gate fails when a new non-baselined finding appears; removing an old finding
 does not fail the gate.
 
+Adding `Empty_Then_Body`/`Empty_Else_Body` on 2026-08-24 (see below) required
+regenerating `recommended.baseline` even though neither new check produced an
+unsuppressed self-analysis finding: `Duplicate_Subprogram`'s own message text
+embeds the sibling occurrence's file:line (e.g. "...identical to
+'Handles_Others's at src/adalang_analyzer-checks-control_flow.adb:1235"), and
+`Stable_Fingerprint` hashes the message verbatim, so inserting the ~19 new
+lines above that pair's earlier occurrence in `control_flow.adb` shifted the
+referenced line number and therefore the fingerprint -- one baseline entry
+changed, none added or removed (confirmed: `--write-baseline` before and
+after this change produce baselines of the same length, differing in exactly
+one hash). This narrowly contradicts this project's own documented guarantee
+(README.md: "Fingerprints exclude line and column numbers, so inserting
+unrelated lines does not turn an existing finding into a new one") for the
+one check whose message text itself contains a location string; not fixed
+here, since it is orthogonal to the two new checks this baseline update was
+actually for, but worth a future look at excluding embedded locations from
+`Duplicate_Subprogram`'s own fingerprint contribution.
+
 `Duplicate_Subprogram` joined `--recommended` on 2026-08-17, growing the
 baseline from 121 to 138. External-corpus validation first (all ten
 benchmark corpora in `benchmarks/`, ~950 files, run in isolation via
@@ -482,10 +500,38 @@ instead of being re-itemized here):
   instead of `case`/`others` (`flow_interp.adb:4244`, a dispatch over CFG
   node kinds where two kinds are deliberately skipped) -- suppressed with
   this codebase's standard inline `adalang-analyzer: ignore` comment rather
-  than adding a broader exemption, logged as `FP-057`. Deliberately does not
-  (yet) cover a bare `if`'s then-branch when an elsif/else is present, or an
-  empty `else` branch -- both remain open, narrower gaps against GNATcheck's
-  `null_paths`, left for a future check rather than chased in this pass.
+  than adding a broader exemption, logged as `FP-057`. Did not (yet) cover a
+  bare `if`'s then-branch when an elsif/else is present, or an empty `else`
+  branch -- both of those narrower gaps against GNATcheck's `null_paths` are
+  now closed by `Empty_Then_Body` and `Empty_Else_Body` below.
+
+- 3 cases for `Empty_Then_Body`, added alongside the new check (the
+  then-branch counterpart of `Empty_Elsif_Body`, closing the "bare if's
+  then-branch when an elsif/else is present" gap `Empty_Elsif_Body`'s own
+  entry above left open): a then branch whose body is only `null;` followed
+  by an elsif that does real work must fire (`finding`); the same shape with
+  a real assignment in the then branch instead of `null;` must not fire
+  (clean); and reusing the exact fixture that is `clean` for `Empty_If_Body`
+  (`precision_empty_if_body_with_else_clean.adb`: empty then-body, real
+  else) as a third case, expected `finding` here, demonstrates the precise
+  scope split between the two checks on one shared file. Four genuine
+  instances of the same "deliberate no-op branch" idiom as `Empty_Elsif_Body`'s
+  `FP-057` found on `--recommended`'s self-analysis gate
+  (`control_flow.adb:43`, `cli.adb:300`, `flow_interp.adb:4357`,
+  `subprogram_summaries.adb:402`, each a `then null; elsif/else <real
+  work>;` dispatch skipping one case explicitly) -- suppressed the same way
+  as `FP-057`, with this codebase's standard inline `adalang-analyzer:
+  ignore` comment at each site rather than a broader exemption.
+
+- 2 cases for `Empty_Else_Body`, added alongside the new check (the
+  else-branch counterpart of `Empty_If_Body`/`Empty_Elsif_Body`/
+  `Empty_Then_Body`, closing the last of the three `null_paths`/
+  `Empty_If_Body` scope gaps): an else part whose body is only `null;` must
+  fire (`finding`), even while the then branch does real work; the same
+  shape with a real assignment instead of `null;` must not fire (clean). No
+  self-analysis noise found on `--recommended`'s gate: unlike the then/elsif
+  cases, this analyzer's own source has no deliberate-no-op `else null;`
+  idiom, so no suppression or `FP-0NN` entry was needed for this check.
 
 This is a starting corpus, not a complete one. Still open, in roughly
 increasing order of effort:

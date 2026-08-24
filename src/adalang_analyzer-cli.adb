@@ -297,7 +297,7 @@ package body Adalang_Analyzer.CLI is
          Action : Rule_State := Enabled;
          First  : Positive := Item'First;
       begin
-         if Item = "" then
+         if Item = "" then  --  adalang-analyzer: ignore Empty_Then_Body
             null;  --  adalang-analyzer: ignore Null_Statement
          elsif Item = "*" then
             for R in Rule_Kind loop
@@ -366,6 +366,7 @@ package body Adalang_Analyzer.CLI is
          Contradictory_Condition, Identical_Branches, Repeated_Statement,
          Ineffective_Operation, Constant_Result_Operation, Empty_Loop,
          Unused_Variable, Empty_If_Body, Empty_Elsif_Body,
+         Empty_Then_Body, Empty_Else_Body,
          Null_Case_Alternative, Function_Side_Effect,
          Redundant_Boolean_Comparison, Uninitialized_Output,
          Uninitialized_Read, Known_Precondition_Failure,

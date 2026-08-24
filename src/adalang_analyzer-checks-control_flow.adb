@@ -40,7 +40,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          declare
             Stmt : constant Libadalang.Analysis.Ada_Node := List.Child (I);
          begin
-            if Libadalang.Analysis.Is_Null (Stmt)
+            if Libadalang.Analysis.Is_Null (Stmt)  --  adalang-analyzer: ignore Empty_Then_Body
               or else Stmt.Kind = Libadalang.Common.Ada_Pragma_Node
               or else Stmt.Kind = Libadalang.Common.Ada_Null_Stmt
             then
@@ -1078,6 +1078,29 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          Report_Rule_Violation
            (Unit, Stmt, Empty_If_Body,
             "if statement has no effect because its body is empty");
+      end if;
+
+      --  Unlike Empty_If_Body, deliberately not scoped to "no elsif and no
+      --  else": an empty then branch still has no effect on its own even
+      --  when a later elsif or else does real work, since the two are
+      --  mutually exclusive at runtime.
+      if Rule_States (Empty_Then_Body) = Enabled
+        and then (Alternatives.Children_Count > 0
+                  or else not Libadalang.Analysis.Is_Null (Stmt.F_Else_Part))
+        and then not Has_Substantive_Statement (Stmt.F_Then_Stmts)
+      then
+         Report_Rule_Violation
+           (Unit, Stmt, Empty_Then_Body,
+            "then branch has no effect because its body is empty");
+      end if;
+
+      if Rule_States (Empty_Else_Body) = Enabled
+        and then not Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
+        and then not Has_Substantive_Statement (Stmt.F_Else_Part.F_Stmts)
+      then
+         Report_Rule_Violation
+           (Unit, Stmt.F_Else_Part, Empty_Else_Body,
+            "else branch has no effect because its body is empty");
       end if;
 
       if Rule_States (Unnecessary_Else_After_Return) = Enabled

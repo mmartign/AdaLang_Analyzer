@@ -83,6 +83,8 @@ package Adalang_Analyzer.Rules is
       Unused_Variable,
       Empty_If_Body,
       Empty_Elsif_Body,
+      Empty_Then_Body,
+      Empty_Else_Body,
       Null_Case_Alternative,
       Unnecessary_Else_After_Return,
       Redundant_If_Boolean_Return,
@@ -844,6 +846,27 @@ package Adalang_Analyzer.Rules is
             "branch has no effect."),
          Guidance    => To_Unbounded_String
            ("Remove the elsif branch or implement its missing body."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Empty_Then_Body =>
+        (Name        => To_Unbounded_String ("Empty_Then_Body"),
+         Description => To_Unbounded_String
+           ("Find if statements whose then branch has no substantive " &
+            "statements even though an elsif or else follows, so the then " &
+            "branch has no effect (unlike Empty_If_Body, which is scoped " &
+            "to a bare if with no elsif or else)."),
+         Guidance    => To_Unbounded_String
+           ("Implement the then branch's missing body, or restructure the " &
+            "condition so the empty case is not a distinct branch."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Empty_Else_Body =>
+        (Name        => To_Unbounded_String ("Empty_Else_Body"),
+         Description => To_Unbounded_String
+           ("Find else parts with no substantive statements, so the else " &
+            "branch has no effect."),
+         Guidance    => To_Unbounded_String
+           ("Remove the else part or implement its missing body."),
          Quality     => Quality_Maintainability,
          Severity    => Severity_Low),
       Null_Case_Alternative =>
