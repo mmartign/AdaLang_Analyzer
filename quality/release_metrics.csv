@@ -51,3 +51,4 @@ version,open_known_false_positives,open_known_false_negatives,supported_verifica
 1.1.0,0,1,12,138,294
 1.1.0,0,1,12,140,302
 1.1.0,0,1,12,147,302
+1.1.0,1,1,12,147,302
