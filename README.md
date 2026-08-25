@@ -931,8 +931,12 @@ more per line:
 
 Blank lines and lines whose first non-blank character is `#` are comments,
 the same convention used by `--baseline` files. There is no separate
-key/value grammar: any flag the command line accepts also works here, so a
-newly added flag needs no config-file-specific support.
+key/value grammar: ordinary analyzer flags and positional arguments use the
+same syntax as the command line. Tokens are separated by spaces or tabs;
+shell-style quoting and escaping are not supported. The options that select
+configuration behavior, `--config` and `--no-config`, must be given on the
+real command line because they are processed before the configuration file
+is loaded.
 
 The config file's flags are treated as if they were typed first on the
 command line, and the real command-line flags are processed afterward. A
