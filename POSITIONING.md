@@ -18,8 +18,8 @@ only that enabled checks emitted no finding. `--verify` can prove individual
 supported obligations, but does not prove a subprogram or program free of
 defects.
 
-This document describes the position of the current `1.0.0` codebase. It
-does not promise features that are only proposed in the roadmap.
+This document describes the position of the current codebase. It does not
+promise features that are only proposed in the roadmap.
 
 ## Motivation
 
@@ -124,10 +124,10 @@ AdaLang's defensible distinction is a curated combination of rules,
 flow-sensitive defect findings, safety profiles, and SPARK-readiness feedback
 in one inspectable implementation.
 
-`GNATCHECK_RULE_COMPARISON.md` maps AdaLang's 121 checks against GNATcheck's
-predefined-rule catalog by name and intent. Of the 121, 19 are a direct
-match, 16 close, 19 overlap only through a GNATcheck generic mechanism
-(`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), and 67 have no
+`GNATCHECK_RULE_COMPARISON.md` maps AdaLang's 126 checks against GNATcheck's
+predefined-rule catalog by name and intent. Of the 126, 19 are a direct
+match, 18 close, 19 overlap only through a GNATcheck generic mechanism
+(`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), and 70 have no
 predefined-rule counterpart at all -- mostly the flow-sensitive defect,
 SPARK-contract-consistency, and DO-178C-traceability checks that are
 AdaLang's actual differentiator. The reverse direction is larger still:
@@ -136,8 +136,7 @@ readability, OOP-depth metrics, portability, "prefer this modern Ada
 construct" style suggestions) that AdaLang does not attempt.
 
 This started as a documentation-only comparison (no `gnatcheck` binary was
-available -- see `project_gnatcheck_acquisition.md` in this session's
-memory for the from-source build that changed that) but has since been
+available; a from-source build later changed that) but has since been
 backed by an actual same-corpus run: `benchmarks/README.md`'s "GNATcheck
 oracle comparison" section runs both tools against all ten of this
 project's external validation corpora and measures real agreement/
@@ -227,6 +226,19 @@ jgrivera67/HiRTOS (a SPARK RTOS kernel, chosen to diversify into a
 concurrency/systems domain), was set aside after GNATprove hard-errored on a
 genuine SPARK legality violation in its interrupt-handling code -- a real
 defect in that project, not an environment gap, and not pursued further.
+
+`benchmarks/tokeneer/` repeats the comparison on the SPARK 2014 port of the
+NSA-released Tokeneer ID Station (an access-control system, from
+AdaCore/spark2014's test suite): across 221 proof obligations both tools
+could evaluate at the same location, again zero possible unsoundness and
+zero false positives -- see `benchmarks/tokeneer/RESULTS_2026-08-25.md`.
+Tokeneer is this project's oldest external corpus, predating this benchmark
+directory's own run/compare convention; its earlier findings (the first
+four confirmed analyzer false positives, `FP-004`-`FP-007`) are recorded in
+`quality/external_corpus_findings.md` instead. Together with SPARKNaCl,
+Saatana, libkeccak, and coap_spark, it completes the five independently
+authored, fully-proved corpora behind the 2,277-obligation figure
+summarized in `benchmarks/README.md`.
 
 The intended workflow is:
 

@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This document maps AdaLang Analyzer's 121 checks
+This document maps AdaLang Analyzer's 126 checks
 (`src/adalang_analyzer-rules.ads`) against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -19,14 +19,14 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 121 checks:
+Of AdaLang Analyzer's 126 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
 | Direct | 19 | Same check, essentially the same semantics |
-| Close | 16 | Same intent, minor scope difference |
+| Close | 18 | Same intent, minor scope difference |
 | Partial | 19 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
-| No GNATcheck counterpart | 67 | Nothing in the predefined catalog does this |
+| No GNATcheck counterpart | 70 | Nothing in the predefined catalog does this |
 
 GNATcheck's own catalog runs to roughly 180 predefined rules; large families
 of it (identifier casing/prefixes/readability, OOP-depth metrics,
@@ -104,7 +104,7 @@ cover a different-shaped case than the nearest predefined rule.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-67 of AdaLang's 121 rules do something GNATcheck's predefined catalog does
+70 of AdaLang's 126 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -147,7 +147,8 @@ No_Classwide_Type, Unused_Variable, No_Unchecked_Access,
 Duplicate_With_Clause, Reraise_Discards_Occurrence,
 Duplicate_Exception_Choice, Redundant_If_Boolean_Return,
 Redundant_Final_Return, Redundant_Abs,
-Redundant_Unary_Minus.
+Redundant_Unary_Minus, Use_After_Free, Unclosed_File_Handle,
+Unused_With_Clause.
 
 (Several of these -- Unused_Parameter, Unused_Variable, Shadowed_Declaration,
 Dead_Store -- are things GNAT itself reports as compiler warnings, just not

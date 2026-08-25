@@ -157,4 +157,5 @@ Initial public release.
 - Alire packaging (`alire.toml`); submitted to the community index as
   `adalang_analyzer`.
 
+[1.1.0]: https://github.com/mmartign/AdaLang_Analyzer/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mmartign/AdaLang_Analyzer/releases/tag/v1.0.0

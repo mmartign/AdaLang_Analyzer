@@ -3,7 +3,7 @@
 This directory keeps the small, reviewable evidence used by the routine
 quality gate.
 
-`recommended.baseline` contains the 138 findings accepted after reviewing
+`recommended.baseline` contains the 147 findings accepted after reviewing
 the analyzer's own sources with `--recommended`. Duplicate fingerprints are
 intentional: the baseline records occurrences, not only unique shapes. The
 gate fails when a new non-baselined finding appears; removing an old finding
@@ -105,11 +105,10 @@ would look, so it is tracked there rather than left undocumented.
 baseline from 121 to 138. External-corpus validation first (all ten
 benchmark corpora in `benchmarks/`, ~950 files, run in isolation via
 `-checks="-*,Duplicate_Subprogram"`): 394 findings across nine of the ten
-corpora, no false-positive class found on inspection anywhere -- see
-`benchmarks/README.md`'s "Older-check corpus validation" section for the
-full breakdown (cross-platform duplicate implementations, generated
-protocol code, and a real "same statement shape, differing only in an
-uncompared local declaration" pattern, all genuine). That run also found
+corpora, no false-positive class found on inspection anywhere
+(cross-platform duplicate implementations, generated protocol code, and a
+real "same statement shape, differing only in an uncompared local
+declaration" pattern, all genuine). That run also found
 and fixed `FP-052`, a message-clarity bug the check's very first external
 corpus (AdaCore/Ada_Drivers_Library's per-chip-family driver layout)
 happened to trigger. The 17 findings on this project's own source --
@@ -217,7 +216,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-Current coverage (274 cases; the tally below itemizes the threshold and
+Current coverage (302 cases; the tally below itemizes the threshold and
 no-threshold boundary/negative campaigns explicitly, and folds in only the
 first 9 of the many regression-negative/positive rows added alongside
 individual false-positive fixes since — the rest of those rows are cataloged

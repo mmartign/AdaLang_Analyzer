@@ -2,9 +2,8 @@
 
 ## Supported Versions
 
-AdaLang Analyzer is pre-1.0 and moves quickly. Security fixes are applied to
-the most recent release only; there is no long-term support branch at this
-time.
+AdaLang Analyzer moves quickly. Security fixes are applied to the most
+recent release only; there is no long-term support branch at this time.
 
 | Version         | Supported          |
 |-----------------|---------------------|
