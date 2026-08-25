@@ -65,7 +65,7 @@ excludes only `aws-client-http_utils.adb`, the body that prevents unmodified
 GNATprove runs from completing project-wide preprocessing. That experiment is
 clearly separated from the primary, unmodified-source lanes and is opt-in.
 
-See [RESULTS_2026-08-02.md](RESULTS_2026-08-02.md) for the first recorded run.
+See [RESULTS_2026-08-25.md](RESULTS_2026-08-25.md) for the current recorded run.
 
 ## GNATcheck oracle lane
 
@@ -74,7 +74,7 @@ against GNATcheck's, for the rule pairs in `benchmarks/gnatcheck_rule_map.tsv`
 (see `benchmarks/README.md`'s GNATcheck section and
 `benchmarks/sparknacl/README.md`'s lane for the shared setup — needs
 `GNATCHECK`/`GNATCHECK_ENV` set the same way). See
-`RESULTS_gnatcheck_2026-08-19.md` for the first run: this corpus's real,
-non-SPARK, real-world code surfaced a systematic spec/body
+`RESULTS_gnatcheck_2026-08-24.md`: this corpus's real,
+non-SPARK, real-world code surfaces a systematic spec/body
 reporting-location mismatch and a genuine scope-breadth difference the
 rule-name-level comparison didn't predict.

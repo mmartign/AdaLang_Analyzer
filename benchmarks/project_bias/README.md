@@ -80,4 +80,4 @@ Outputs go to `benchmark-results/project_bias/` by default; override this with
 - Apache-2.0 permits this pinned external use. The corpus remains an external
   checkout; none of its source is vendored here.
 
-See [RESULTS_2026-08-11.md](RESULTS_2026-08-11.md) for the first recorded run.
+See [RESULTS_2026-08-25.md](RESULTS_2026-08-25.md) for the current recorded run.

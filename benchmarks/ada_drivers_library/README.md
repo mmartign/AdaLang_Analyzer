@@ -79,10 +79,9 @@ independent oracle (there is no GNATprove lane here to cross-check against):
    here would have missed.
 2. **Does anything else look wrong on a real, unfamiliar, register-bashing
    embedded codebase this project's own hand-constructed fixtures don't
-   resemble?** Yes: this benchmark's first run found `FP-042` (see
-   `RESULTS_2026-08-05.md`), a real false positive in
-   `Circular_Package_Dependency` on a `limited with` pair, fixed as part of
-   recording these results.
+   resemble?** Yes: this benchmark's first run found `FP-042`, a real false
+   positive in `Circular_Package_Dependency` on a `limited with` pair, fixed
+   as part of recording these results.
 
-See [RESULTS_2026-08-05.md](RESULTS_2026-08-05.md) for the first recorded
-run and its full finding breakdown by rule.
+See [RESULTS_2026-08-25.md](RESULTS_2026-08-25.md) for the most recent run
+and its finding breakdown by lane.

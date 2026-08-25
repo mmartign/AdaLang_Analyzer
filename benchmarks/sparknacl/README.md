@@ -123,5 +123,5 @@ against GNATcheck's, for the rule pairs in `benchmarks/gnatcheck_rule_map.tsv`.
 Needs `GNATCHECK` or `GNATCHECK_ENV` set (see `benchmarks/README.md`'s
 GNATcheck section — there is no Alire package for it, so this is a
 separately-built local binary, not something `alr exec` resolves on its
-own). See `RESULTS_gnatcheck_2026-08-19.md` for the first run and its
+own). See `RESULTS_gnatcheck_2026-08-24.md` for the latest run and its
 caveats.

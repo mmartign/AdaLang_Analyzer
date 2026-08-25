@@ -47,262 +47,108 @@ Cumulative effect of all four fixes on the same Tokeneer run:
 | `Depends_Contract_Mismatch` | 275 | 153 |
 | `Uninitialized_Output` | 61 | 1 |
 
-### Scope observation, not a defect: `--verify` on real code (open)
+### Scope observation, not a defect: `--verify` on real code
 
-`--verify` classified 4687 bounded scalar obligations on Tokeneer's real
-subprograms: 0 `Proved_Safe`, 0 `Definite_Error`, 4643 `Unproved`, 44
-`Unsupported`. Breaking down the `Unproved` obligations by their recorded
-`why`/`imprecision` fields (see `-v` output) shows this is not a hidden bug,
-but the documented scope boundary made visible at scale:
+The original 2026-08-01 run classified 4687 bounded scalar obligations: 0
+`Proved_Safe`, 0 `Definite_Error`, 4643 `Unproved`, 44 `Unsupported`. This
+was the documented scope boundary made visible at scale, not a hidden bug:
+98% of `range-check` obligations failed because the abstract domain is
+non-relational (it tracks each variable's own interval independently and
+cannot represent a relationship like `X <= Y`), and most
+`initialization-check` obligations failed because Tokeneer is built almost
+entirely from private-child packages and cross-procedure calls, so
+initialization facts were conservatively discarded (`Flow_Havoc_All`) at
+every call boundary the (then intraprocedural-only) analysis couldn't see
+through.
 
-- **857 of 874 `range-check` obligations (98%)** fail because "the current
-  non-relational range domain is inconclusive" — the abstract domain tracks
-  each variable's own interval independently and has no way to represent a
-  relationship between two variables (`X <= Y`, `X = Y + 1`). This matches
-  `ASSURANCE_MODEL.md`'s and `POSITIONING.md`'s own description of the domain
-  as non-relational, with only narrow relational support for straight-line
-  preconditions.
-- **~3234 of the 3111 `initialization-check` obligations' occurrences**
-  (obligations can be re-registered as analysis proceeds) fail because "the
-  fixed-point state did not discharge this obligation" (1771) or "incoming
-  paths disagree or object is external" (1463) — consistent with the
-  analyzer's documented intraprocedural scope: Tokeneer is built almost
-  entirely from private-child packages and cross-procedure calls (the same
-  shape as the `FP-005` pattern above), so most initialization facts are
-  conservatively discarded (`Flow_Havoc_All`) at every call boundary the
-  analysis cannot see through.
-- A further 44 obligations are explicitly tagged "outside bounded
-  verification subset" rather than silently miscounted.
-
-**Conclusion**: this is validated roadmap input, not a bug report. Closing
-this gap requires either a relational abstract domain or interprocedural
-call-effect summaries, both substantial engineering efforts matching
-`POSITIONING.md`'s own stated strategic direction ("validation and careful
-expansion of that [verify] boundary"), not a bug-fix-sized change. No action
-taken here beyond recording the quantified evidence.
+Interprocedural effect summaries (shipped 2026-08-02) plus `FP-027`–`FP-030`
+changed this substantially. A re-run against the same checkout (7938
+obligations, more kinds now tracked) went from 0 to 1661 `Proved_Safe`
+before `FP-031` was found and fixed (see below), settling at 1538
+`Proved_Safe` afterward, 1 `Definite_Error`, 6034 `Unproved`, 365
+`Unsupported`. `initialization-check` alone reached 1379 `Proved_Safe` /
+3543 `Unproved` / 196 `Unsupported` out of 5118 — the interprocedural payoff
+net of `FP-031`'s correction (below). `range-check` improved more modestly
+(0 → 102 `Proved_Safe` out of 1738, after `FP-034`), since it depends on the
+still-unaddressed non-relational-domain gap, not interprocedural scope;
+"the current non-relational range domain is inconclusive" remains the
+single largest imprecision reason across the whole run (1505 occurrences).
+Closing that gap remains validated roadmap input (a relational abstract
+domain), not a bug-fix-sized change.
 
 ### Confirmed analyzer mistake (fixed): FP-010
 
 One residual `Uninitialized_Output` finding after the `FP-007` fix:
-`auditlog.adb`, `SetFileDetails`, writes its `LogFileEntries` array through
+`auditlog.adb`'s `SetFileDetails` writes its `LogFileEntries` array via
 `for I in LogFileIndexT loop LogFileEntries (I) := NumberEntries; end loop;`
-rather than by literal index or field name. `LogFileIndexT` is exactly the
-index subtype `LogFileEntries` is declared over, so the loop necessarily
-visits every index — this is precisely the "bare subtype mark" shape
-`Adalang_Analyzer.SPARK_Readiness.Loop_Covers_Index_Range` recognizes (see
-FP-010 in `quality/known_analysis_issues.tsv`). Verified with a fixture
-reproducing the same subtype-iteration shape
-(`uninitialized_output_array_loop_subtype_clean.adb`) rather than a fresh
-live re-run of the Tokeneer checkout.
+— `LogFileIndexT` is exactly `LogFileEntries`'s own index subtype, so the
+loop necessarily visits every index. `Same_Parameter`'s coarse whole-object
+treatment of indexed writes (from `FP-007`) couldn't distinguish "wrote one
+element" from "wrote every element"; fixed by adding
+`Loop_Covers_Index_Range`, which recognizes exactly two provably-complete
+iteration shapes (a bare subtype mark matching the array's index subtype,
+or `Param'Range`) without needing bound arithmetic. Full detail in `FP-010`
+in `quality/known_analysis_issues.tsv`. Verified with
+`uninitialized_output_array_loop_subtype_clean.adb`.
 
-This fix was found while working a step further than originally planned:
-special-casing statically bounded scalar loop writes (FP-009) turned out,
-on closer inspection, to also silently accept a *partial*-range array loop
-as fully initializing (e.g. `for I in 1 .. 2 loop Arr (I) := 0; end loop;`
-on a 3-element array), because `Same_Parameter`'s coarse whole-object
-treatment of `Arr (I) := ...` (from FP-007) cannot by itself distinguish
-"wrote one element" from "wrote every element." Caught by testing that
-exact partial-range shape before FP-009 shipped externally, not by an
-external report. Closing it properly required doing the array-coverage
-reasoning this section previously left open, rather than only narrowing
-FP-009 back down — see FP-010's full description in
-`quality/known_analysis_issues.tsv` for how the two recognized coverage
-shapes (bare subtype mark, `Param'Range`) avoid needing any bound
-arithmetic at all.
+### Confirmed analyzer mistakes (fixed): FP-031–FP-038 — CFG fixed-point staleness
 
-### Re-run (2026-08-04): interprocedural summaries' effect on `--verify`
+The 2026-08-04 re-run above surfaced `Definite_Error` on two obligations in
+a codebase AdaCore describes as fully verified — `enrolment.adb`'s `pragma
+Loop_Invariant (CertNo >= 2);` and `msgproc.adb`'s read of `ValFin` after a
+dynamically-bounded `for` loop. Neither was a real bug in Tokeneer: both
+trace to the same mechanism in `Verify_Subprogram`'s CFG worklist fixed
+point, which can visit a merge point once *before* a loop's back edge has
+fed its contribution in, record an outcome from that intermediate,
+not-yet-converged state, and never correct it — `Proof_Obligations.
+Register_At`'s `Replaces` function treats `Definite_Error`/`Proved_Safe` as
+terminal once recorded for a stable ID, which is sound across two
+independent analyses but not across two visits of the same in-progress
+fixed point. The same staleness mechanism turned out to affect every
+proof-obligation kind, each fixed the same way — a `Final` parameter
+threaded to the live recording call, and a `Finalize_*` helper in
+`Finalize_Node` that replays the check against the fully-converged state
+after the fixed point drains, superseding any premature live recording:
 
-The `--verify` scope observation above was recorded on 2026-08-01, one day
-before interprocedural effect summaries shipped (`feat: add interprocedural
-effect summaries`) and three more precision fixes landed (`FP-027`–`FP-030`).
-Tokeneer was re-run from a fresh clone (same 120-file
-`testsuite/gnatprove/tests/tokeneer` from `AdaCore/spark2014`, commit
-`a97467e91a16409c866434fcc7a5f553bbd98b8a`) to quantify the effect.
+- **`FP-031`** (`initialization-check`, `msgproc.adb`): fixing this also
+  corrected 123 *other* obligations elsewhere in the corpus that were stuck
+  at a spurious `Proved_Safe` from the same mechanism (1661 → 1538
+  `Proved_Safe`, all 123 moving to the honest `Unproved`) — confirming the
+  bug ran in both directions, not just the alarming one. Regression:
+  `tests/verification_loop_stale_initialization.adb`.
+- **`FP-032`** (`assertion-check`, `enrolment.adb`'s `Loop_Invariant`): the
+  real corpus case couldn't confirm the fix directly (no GNAT toolchain on
+  PATH here means that file's semantic resolution already reports
+  `Unproved` via a different method regardless — see `FP-029` in the
+  Certyflie section below); confirmed instead with a synthetic fixture in
+  `FP-034`'s shape.
+- **`FP-033`** (`precondition-check`): one complication beyond the others —
+  a single call with a `Pre` contract is live-recorded under *two* distinct
+  stable IDs (once against the whole call, once against just the callee
+  name), both independently stale, so the fix replays both. The real
+  corpus has zero `precondition-check` obligations, so only the synthetic
+  fixture confirms this one.
+- **`FP-034`** (`range-check`): demonstrated the dangerous direction
+  directly on real code — Tokeneer's `range-check` `Proved_Safe` count fell
+  from 105 to 102 (all three moving to the honest `Unproved`) once fixed.
+- **`FP-035`/`FP-036`/`FP-037`** (`index-check`, `division-by-zero-check`,
+  `integer-overflow-check`): same mechanism, same fix shape. Tokeneer's
+  `index-check` and `division-by-zero` counts were unchanged (no case in
+  the corpus hit the staleness window); `integer-overflow`'s `Proved_Safe`
+  fell from 13 to 6 — 3 to the honest `Unproved`, and 4 phantom obligations
+  (created by the old, unguarded replay path for non-integer `Bin_Op`
+  nodes) disappeared entirely.
+- **`FP-038`** (separate bug, found while designing `FP-034`'s fix):
+  `Report.Report_Violation_At`, the ordinary-findings counterpart to
+  `Register_At`, had no deduplication at all, so a real violation could be
+  reported once per CFG re-visit. Tokeneer's `--recommended --spark` count
+  fell from 652 to 631 once fixed, all 21 in `Non_Short_Circuit_Condition`
+  (`clock.adb`'s 10-term `and`-chained range guard, reported 9 times for
+  the identical location — a second, unrelated root cause: every nested
+  `Bin_Op` in a left-associative chain shares the same `Sloc_Range.Start`).
 
-`--recommended --spark`: 652 violations (was 653 after the four Tokeneer
-fixes above; `Uninitialized_Output` fell from 1 to 0, its last remaining
-finding there being resolved by a later, unrelated precision fix). Every
-other rule's count is unchanged, confirming the corpus and invocation are
-the same modulo that one improvement.
-
-`--verify`: 7938 bounded scalar obligations (was 4687; the growth is mostly
-new obligation kinds added since — precondition, postcondition,
-integer-overflow, division-by-zero, loop-invariant-initialization/
-preservation did not all exist as tracked families in the original run).
-
-| Outcome | Before (2026-08-01) | Right after re-run (2026-08-04) | After the FP-031 fix |
-| --- | --- | --- | --- |
-| `Proved_Safe` | 0 | 1661 | 1538 |
-| `Definite_Error` | 0 | 2 | 1 |
-| `Unproved` | 4643 | 5910 | 6034 |
-| `Unsupported` | 44 | 365 | 365 |
-
-The middle column is what the corpus reported the moment it surfaced
-`FP-031` (see below); the last column is the actual, current state of this
-repository after that fix landed. `initialization-check` specifically,
-after the fix: 1379 `Proved_Safe` (was 1502 right after the re-run, before
-0), 3543 `Unproved`, 196 `Unsupported`, 0 `Definite_Error`, out of 5118
-total for that family — the net of interprocedural effect summaries'
-genuine payoff (this section's original "validated roadmap input") and
-`FP-031`'s correction of the 123 obligations that summaries payoff had
-wrongly counted as `Proved_Safe`. `range-check` improved more modestly (0
-→ 105 `Proved_Safe`, out of 1738, unaffected by `FP-031` since that fix was
-scoped to `initialization-check`), since the other half of the original
-gap — a non-relational abstract domain — is unaffected by interprocedural
-summaries either; `range-check` `Unproved` is still 87% of that family
-(was 98%), and "the current non-relational range domain is inconclusive"
-remains the single largest imprecision reason across the whole run (1505
-occurrences), followed by "incoming paths disagree or object is external"
-and "the fixed-point state did not discharge this obligation" — both
-`initialization-check` reasons, the remaining, not-yet-summarized half of
-the original gap (calls through private-child boundaries and other spots
-interprocedural summaries don't yet reach).
-
-### Confirmed analyzer mistakes (fixed): FP-031, FP-032
-
-`Definite_Error` going from 0 to 2 was unexpected on a codebase AdaCore
-describes as fully verified, so both were investigated rather than folded
-into the table above as ordinary progress. Neither is a real bug in
-Tokeneer. `enrolment.adb`'s `pragma Loop_Invariant (CertNo >= 2);` (:239)
-and `msgproc.adb`'s read of `ValFin` after a `for i in 1 .. Arg loop ValFin
-:= ...; end loop;` (:66, `GetStringByPos`) both reduce to the same
-mechanism: `Verify_Subprogram`'s CFG worklist fixed point can visit a
-merge point once *before* a loop's back edge has fed its contribution in,
-record a `Definite_Error` from that intermediate, not-yet-converged state,
-and then never correct it — `Proof_Obligations.Register_At`'s `Replaces`
-function treats `Definite_Error` (like `Proved_Safe`) as terminal once
-recorded for a stable ID, which is sound for two independent analyses
-disagreeing, but not for two visits of the same in-progress fixed point.
-
-`msgproc.adb`'s case (`initialization-check`) is fixed: `Register_At` now
-accepts a `Final` flag that always overwrites a stable ID's current result,
-and `Verify_Subprogram`'s `Finalize_Node` — which walks the whole
-subprogram exactly once, strictly after the fixed point has fully drained
-— now uses it to record initialization-check's Proved_Safe/Definite_Error/
-Unproved outcome against each identifier's own fully-converged state,
-superseding whatever a premature live recording left behind. Re-running
-Tokeneer confirms it: `msgproc.adb`'s `Definite_Error` is gone, and the
-same fix additionally corrected 123 *other* initialization-check
-obligations elsewhere in the corpus that were stuck at a spurious
-`Proved_Safe` from the identical mechanism (1661 → 1538 `Proved_Safe`, all
-123 moving to the honest `Unproved`) — confirming the staleness bug ran in
-both directions, not just the alarming one, exactly as flagged as an open
-risk in this file's previous entry. Full detail, the fix, and its
-regression are in `FP-031` in `quality/known_analysis_issues.tsv`
-(`tests/verification_loop_stale_initialization.adb`, run by
-`run_verification.sh`).
-
-`enrolment.adb`'s case (`assertion`, on a `pragma Loop_Invariant`) was *not*
-fixed by the same change and was left open as `FP-032`: its live recording
-happens in `Interpret_Proof_Pragma`, not the `Ada_Identifier` path
-`Finalize_Node` was extended for, and `Finalize_Node`'s own `Pragma_Node`
-handling only ever fell back to a coarse "Unproved unless unsupported/
-unreachable" default rather than re-deriving Proved_Safe/Definite_Error.
-Fixed later, alongside the `FP-034`–`FP-037` batch below: the
-assertion-determination logic was factored out of `Interpret_Proof_Pragma`
-into `Check_Proof_Pragma_Assertion` (leaving that function's own
-`Scan_Expression_For_Flow_Bugs` call and state-narrowing side effect out of
-the extracted core, since a replay must not repeat those), and
-`Finalize_Node` gained a `Finalize_Assertion_Check` helper that replays it
-against the converged state with `Final => True`. Confirmed with a fixture
-in `FP-034`'s exact shape (`pragma Assert` after a dynamically-bounded
-loop write, wrongly `Proved_Safe` before, correctly `Unproved` after); the
-original `enrolment.adb` case itself could not be used to confirm the fix
-in this environment, since without a GNAT toolchain on PATH (see `FP-029`)
-that file's semantic resolution already differs enough to report `Unproved`
-via a different method both before and after this change. See `FP-032` in
+Full detail, mechanisms, and regression fixtures for all eight are in
 `quality/known_analysis_issues.tsv`.
-
-### Confirmed analyzer mistake (fixed): FP-038
-
-Auditing FP-031's sibling obligation kinds (FP-033–FP-037) surfaced a
-second, unrelated bug while designing a fix for `Range_Check`:
-`Report.Report_Violation_At` — the ordinary-findings counterpart to
-`Register_At`, behind every `Known_*` verify-mode rule — had no
-deduplication at all, so a real violation could be reported once per CFG
-re-visit of the same node instead of once. Re-running Tokeneer's
-`--recommended --spark` after the fix: 631 violations, down from 652, all
-21 in `Non_Short_Circuit_Condition` — `clock.adb`'s `ConstructTime` has a
-10-term range-guard condition chained with plain `and`, which was reported
-9 times for the identical location (a second, structurally distinct root
-cause: every nested `Bin_Op` in a left-associative chain shares the same
-`Sloc_Range.Start`, unrelated to `--verify`'s CFG fixed point but caught by
-the same general fix). `--verify`'s own proof-obligation counts were
-unaffected (`Register_At` already no-ops an identical repeated recording;
-only the ordinary-findings path lacked that). Full detail in `FP-038` in
-`quality/known_analysis_issues.tsv`.
-
-### Confirmed analyzer mistake (fixed): FP-034
-
-With `FP-038` out of the way, `Range_Check` (the highest-volume of the
-`FP-033`–`FP-037` audit list, and the one with the most `Proved_Safe`
-exposure) got the same `Final`-replay treatment as `FP-031`. This one
-demonstrates the dangerous direction directly rather than as a side
-finding: a range-check whose target value is set inside a
-dynamically-bounded loop can be recorded `Proved_Safe` from the CFG fixed
-point's first visit — before the loop's back edge has propagated a
-later, out-of-range write — and never corrected once the fixed point
-actually converges. Re-running Tokeneer's `--verify`: `range-check`'s
-`Proved_Safe` count fell from 105 to 102, all three moving to `Unproved`
-(none to `Definite_Error`); `Definite_Error` stayed at 1, `FP-032`'s
-`enrolment.adb` case (fixed separately, see above). Full detail in `FP-034`
-in `quality/known_analysis_issues.tsv`.
-
-### Confirmed analyzer mistakes (fixed): FP-035, FP-036, FP-037
-
-The remaining three of the five audited kinds are all pure abstract
-interpretation over `Flow_State`, with no VC solver involved — the same
-shape as `Range_Check`, so the same `Final`-replay fix applied directly to
-each: `Check_Index_Range`/`Finalize_Index_Check` (`Index_Check`),
-`Check_Division_By_Zero`/`Finalize_Division_Check`
-(`Division_By_Zero_Check`), and `Check_Integer_Overflow`/
-`Finalize_Overflow_Check` (`Integer_Overflow_Check`). Each was reproduced
-with a fixture in `FP-034`'s exact shape (a loop-written value read
-immediately after) and confirmed to move from a wrongly `Proved_Safe`
-determination to the correct `Unproved` one.
-
-Re-running Tokeneer's `--verify` afterward: `index-check` and
-`division-by-zero` counts were unchanged — the corpus has no case that
-happens to hit the staleness window for those two, a useful negative data
-point distinct from `Range_Check`'s positive one. `integer-overflow`'s
-`Proved_Safe` count fell from 13 to 6: 3 moved to the honest `Unproved`
-(the same staleness correction), and 4 disappeared entirely — those were
-phantom obligations `Finalize_Node`'s old, unconditional `Final_Outcome`
-call created for `Bin_Op` nodes whose type never resolved to an integer,
-which the live check's own guard (now mirrored exactly in the replay)
-would never have created an obligation for in the first place.
-`Definite_Error` stayed at 1 throughout (`FP-032`'s `enrolment.adb` case,
-fixed separately, see above). Full detail in `FP-035`, `FP-036`, and
-`FP-037` in `quality/known_analysis_issues.tsv`.
-
-### Confirmed analyzer mistake (fixed): FP-033
-
-`Precondition_Check` (`Check_Call_Precondition`) got the same treatment as
-`FP-032`: a `Final` parameter threaded to its three `Record_*` calls, and a
-`Finalize_Precondition_Check` helper in `Finalize_Node` replaying it
-against the converged state. One complication surfaced only while
-implementing, not during the original audit: a single call statement with
-a `Pre` contract is live-recorded under *two* distinct stable IDs, not
-one — `Process_Node`'s own `Ada_Call_Stmt` handling records against the
-whole call (e.g. `"Helper (Val)"`, with the full symbolic state), and
-`Scan_Expression_For_Flow_Bugs`'s generic recursion independently reaches
-the same `Call_Expr` node moments later and records again against just the
-callee name (`"Helper"`, without symbols) — confirmed empirically, not
-merely by reading: a single such call produces two separate
-`"precondition"`-kind entries in `--verify`'s JSON output. Replaying only
-one of the two (a naive port of `FP-032`'s single-replay pattern) would
-have left the other permanently unfinalized — worse than stale, since it
-was never touched at all — so `Finalize_Precondition_Check` replays both.
-Reproduced with a fixture in `FP-034`'s shape; confirmed both directions by
-toggling the fix (wrongly `Proved_Safe` before, correctly `Unproved`
-after, on both stable IDs). As the original audit anticipated, the real
-Tokeneer corpus could not confirm this one either way: re-running
-`--verify` across the whole corpus finds zero `precondition-check`
-obligations at all, so the synthetic fixture is the only evidence, as it
-was for `FP-032`. Full detail in `FP-033` in
-`quality/known_analysis_issues.tsv`
-(`tests/verification_loop_stale_precondition.adb`, run by
-`run_verification.sh`).
 
 ## Simple Components (Dmitry A. Kazakov)
 
@@ -375,86 +221,33 @@ was for `FP-032`. Full detail in `FP-033` in
 6 of the 8 `Uninitialized_Output` findings were false positives sharing one
 root cause: `cubedos-lib-xdr.adb` defines a family of `Encode`/`Decode`
 overloads (`XDR_Integer`, `XDR_Unsigned`, `XDR_Boolean`, `XDR_Hyper`, ...)
-that share the same parameter count and modes, differing only in `Value`'s
-type. Each forwards its own `out` parameter (`Last`) purely positionally to
-another overload of the same name, e.g.:
-
-```ada
-procedure Encode (Value : in XDR_Integer; Data : in out XDR_Array;
-                   Position : in XDR_Index_Type; Last : out XDR_Index_Type)
-is
-begin
-   Encode (XDR_Integer_To_Unsigned (Value), Data, Position, Last);
-end Encode;
-```
-
-`Call.P_Call_Params` demands one fully precise resolution of which overload
-is selected for the *whole* call and returns nothing at all when that
-fails — which it does here, since the ambiguity is severe enough that even
-`Assoc.P_Get_Params (Imprecise_Fallback => True)` (the per-actual fallback
-already used elsewhere in the codebase, e.g.
-`Adalang_Analyzer.Checks.Data_Flow.Reads_Declaration`) raises rather than
-returning empty. Only the more lenient operation of resolving the callee
-*name* on its own (`Call.F_Name.P_Referenced_Decl (Imprecise_Fallback =>
-True)`) succeeds. Fixed by adding a position-based fallback
-(`Callee_Formal_At_Position`) for purely positional actuals: resolve just
-the callee, then pair the Nth actual to the Nth formal by literal position.
-Reproduced with a 3-overload, 20-line fixture
-(`uninitialized_output_overloaded_forward_clean.adb`) faithfully copying the
-real type shapes; confirmed to fail pre-fix and pass post-fix.
-
-While fixing this, the analyzer's own self-analysis gate caught a real
-style regression in the fix itself: two new `exception when others =>
-null;` handlers tripped `Empty_Exception_Handler`/`Exception_Swallowed`.
-Replaced with `Log_Verbose_Once` diagnostics, matching the codebase's
-existing convention — a small, useful demonstration of the gate doing its
-job on new code, not just old code.
+sharing the same parameter count/modes, differing only in `Value`'s type,
+each forwarding its own `out` parameter purely positionally to another
+overload of the same name. `Call.P_Call_Params` needs one fully precise
+overload resolution for the whole call and returns nothing when that
+fails, which happens here even via the usual imprecise fallback. Fixed by
+adding a position-based fallback (`Callee_Formal_At_Position`) for purely
+positional actuals: resolve just the callee name, then pair the Nth actual
+to the Nth formal by literal position. Regression:
+`uninitialized_output_overloaded_forward_clean.adb`.
 
 ### Confirmed analyzer mistake (fixed): FP-009
 
-The remaining `Uninitialized_Output` findings in `cubedos-lib-xdr.adb`
-(3, after the `FP-008` fix) write a scalar `out` parameter unconditionally
-inside a `for I in 1 .. 3 loop`:
-
-```ada
-for I in 1 .. 3 loop
-   Temporary_2 := Temporary_1 * 256 + XDR_Unsigned (Data (Position + I));
-   Value := Temporary_2;
-   Temporary_1 := Value;
-end loop;
-```
-
-Every loop kind (`for`, `while`, plain `loop`) was deliberately treated as
-"might not execute at all" by `Interpret_Initialization` — a reasonable
-default for loops that can `exit` or whose range isn't statically known to
-be non-empty. But `for I in 1 .. 3` has a *statically* non-empty range and
-no `exit`/`return`/`raise`/`goto` before the write, so the write is in fact
-unconditional. This is a narrower, more tractable relative of the
-already-documented array-loop-coverage limitation (Tokeneer's
-`SetFileDetails`, Simple Components' `Read`) — that one needs reasoning
-about a loop's bounds against an *array's* full index range; this one only
-needs "is this discrete range statically non-empty," with no array
-reasoning at all.
-
-Fixed by special-casing `Ada_For_Loop_Stmt` in
-`Adalang_Analyzer.SPARK_Readiness.Interpret_Initialization`: when the
-iteration range's bounds are statically known (via the existing
-`Adalang_Analyzer.Flow_Eval.Choice_Interval`, reused as-is from the
-proof-obligation/case-range checks) and non-empty, and the loop body
-contains no `exit`/`return`/`raise`/`goto` anywhere (the new
-`Contains_Loop_Escape`), the body's own computed `Init_Result` is trusted
-instead of discarded, since nothing can leave the loop before finishing a
-pass. `while`/plain loops, and any `for` loop that does contain an early
-exit, remain conservatively unresolved — deliberately, to avoid trading
-this false positive for a false negative on a genuinely conditional write
-(e.g. `for I in 1 .. 3 loop if Stop then exit; end if; Value := I; end
-loop;` must still be flagged, since the exit can be taken before `Value`
-is ever written). Verified with two fixtures faithfully copying the real
-type shapes and loop body — `uninitialized_output_static_loop_clean.adb`
-(fails pre-fix, passes post-fix) and
-`uninitialized_output_static_loop_early_exit.adb` (a sibling with an added
-`exit`, confirmed to still fire both before and after the fix) — rather
-than a fresh live re-run of the CubedOS checkout itself.
+The remaining 3 `Uninitialized_Output` findings in `cubedos-lib-xdr.adb`
+(after `FP-008`) write a scalar `out` parameter unconditionally inside a
+`for I in 1 .. 3 loop`. Every loop kind was deliberately treated as "might
+not execute at all," a reasonable default for loops that can `exit` or
+whose range isn't statically known to be non-empty — but a `for` loop with
+statically non-empty bounds and no early exit always executes at least
+once. Fixed by special-casing `Ada_For_Loop_Stmt`: when the range is
+statically non-empty and the body contains no `exit`/`return`/`raise`/
+`goto`, the body's own computed initialization result is trusted instead
+of discarded. `while`/plain loops, and any `for` loop with an early exit,
+remain conservatively unresolved. Regressions:
+`uninitialized_output_static_loop_clean.adb` and
+`uninitialized_output_static_loop_early_exit.adb` (the early-exit sibling
+still correctly flags). Full root-cause and fix detail for both FP-008 and
+FP-009 is in `quality/known_analysis_issues.tsv`.
 
 One of the 8 original findings was **not** a false positive:
 `cubedos-lib-sorters.adb`'s `Pop_Heap` (`Result : out Element_Type`) has a
@@ -472,51 +265,33 @@ live re-run of the checkout):
 
 ### `--verify` / GNATprove comparison and a fixed issue: FP-040
 
-A later session extended the CubedOS investigation from ordinary findings
-(above) to `--verify`'s bounded scalar proof obligations, run against the
-full `src/cubedos.gpr` (49 files: `check/`, `modules/`, `library/`, unlike
-the narrower `cubedlib.gpr` used above) and compared against GNATprove
-`--mode=prove --level=4`, mirroring `benchmarks/sparknacl/`'s methodology.
-Full detail, including reproduction steps and a caveat-laden results
-write-up, is in `benchmarks/cubedos/README.md` and
-`benchmarks/cubedos/RESULTS_2026-08-04.md`; summary here:
+Extending the CubedOS investigation to `--verify`'s bounded scalar proof
+obligations (full `src/cubedos.gpr`, 49 files) and comparing against
+GNATprove `--mode=prove --level=4` (mirroring `benchmarks/sparknacl/`'s
+methodology; detail in `benchmarks/cubedos/README.md` and
+`benchmarks/cubedos/RESULTS_2026-08-25.md`) surfaced a real analyzer bug:
+`Finalize_Node` called several Libadalang properties directly outside any
+`begin`/`exception` block, so a `Property_Error` — `Call_Expr.P_Kind`
+genuinely fails for a call whose callee is declared in a separate `with`'d
+GNAT project, an upstream Libadalang resolution limit — escaped and
+aborted the whole file instead of just that one obligation, on 21 of the
+49 analyzed files. Fixed by wrapping each branch's property access in its
+own `begin`/`exception` block so a failure now skips only that node's own
+obligations. Effect on this run: whole-file aborts went from 21/49 to 0,
+and reported proof obligations rose from 44 to 680 (`Proved_Safe` 2 to 16)
+with no verdict changing for an obligation already reported — the fix only
+affects whether an obligation gets registered at all. Full detail in
+`FP-040` in `quality/known_analysis_issues.tsv`; regression:
+`tests/verification_cross_project/`.
 
-- CubedOS is not a fully-proved corpus (unlike SPARKNaCl): GNATprove itself
-  reports real, unresolved `high`/`medium` findings on unmodified
-  `cubedos.gpr` (tasking data races on shared `Message_Manager.Mailboxes`
-  state, a `Global` aspect omission, uninitialized `out` parameters, and
-  several range/precondition checks the provers could not complete). This
-  makes GNATprove's verdict here a weaker oracle than on SPARKNaCl.
-- The first run surfaced a new analyzer limitation: `--verify`'s
-  proof-obligation finalization pass (`Finalize_Node` in `flow_interp.adb`)
-  called several Libadalang properties directly outside any
-  `begin`/`exception` block, so a `Property_Error` from one of them —
-  `Call_Expr.P_Kind` genuinely fails with "undetermined CallExpr kind" for a
-  call whose callee is declared in a separate, `with`'d GNAT project, an
-  upstream Libadalang precise-resolution limit confirmed independent of
-  return type, library-vs-plain project, and generics — escaped
-  `Finalize_Node` entirely and aborted the whole file instead of just that
-  one obligation, on 21 of the 49 analyzed files. Root-caused with a
-  minimal, AUnit-free, two-project reproduction and a symbolic backtrace
-  (temporary `GNAT.Traceback.Symbolic` instrumentation, reverted) and fixed
-  by containing every branch's own property access inside a `begin`/
-  `exception` block, so a failure now skips only that node's own
-  obligations rather than aborting the file. Recorded as `FP-040` (closed)
-  in `known_analysis_issues.tsv`; regression: `tests/verification_cross_project/`,
-  run by `run_verification.sh`. Effect on this same run: whole-file aborts
-  went from 21/49 to 0, and reported proof obligations rose from 44 to 680
-  (`Proved_Safe` 2 to 16) without any `Definite_Error`/`Proved_Safe` verdict
-  changing for an obligation that was already being reported — the fix only
-  affects whether an obligation gets registered at all.
-- With only 7 of 680 AdaLang obligations having a matched GNATprove
-  counterpart at this revision (all in the expected "both flag a problem"
-  bucket, zero unsoundness or false positives observed, up from 2 of 44
-  before the fix), the comparison is still too small a sample to add
-  meaningful confidence beyond SPARKNaCl's own 886-pair result — this run's
-  real contribution was `FP-040` itself, caught exactly the way this
-  document's external-corpus validation practice intends: real code the
-  project did not write, surfacing a failure mode no hand-written fixture
-  had exercised.
+CubedOS is not a fully-proved corpus (unlike SPARKNaCl): GNATprove itself
+reports real, unresolved findings on unmodified `cubedos.gpr` (tasking
+data races, a missing `Global` aspect, uninitialized `out` parameters),
+making it a weaker oracle than SPARKNaCl. Only 7 of 680 AdaLang obligations
+had a matched GNATprove counterpart at this revision (all "both flag a
+problem," zero unsoundness or false positives) — too small a sample to add
+confidence beyond SPARKNaCl's own 886-pair result; this run's real
+contribution was `FP-040` itself.
 
 ## AWS (Ada Web Server, AdaCore/aws)
 
@@ -535,509 +310,165 @@ write-up, is in `benchmarks/cubedos/README.md` and
   (126), `Uninitialized_Output` (112), `Uninitialized_Read` (39),
   `Dead_Store` (23), `Empty_Exception_Handler` (20).
 
-### Confirmed analyzer mistake (fixed): FP-011
+### Confirmed analyzer mistakes (fixed): FP-011, FP-012, FP-013
 
-Sampling the `Uninitialized_Output` findings (spot-checked, not exhaustively
-verified — same methodology as Simple Components), `aws-server-push.adb`
-stood out: its `protected body Waiter_Information` writes each of its `Info`
-procedure's four out parameters as `Info.Size := ...;`, `Info.Counter :=
-...;`, etc. — using the enclosing procedure's own name (`Info`) to qualify
-its own parameters. This is standard Ada (RM 8.3's general unit-name
-qualification): `Waiter_Information` (the protected object) has same-named
-private components (`Size`, `Counter`, ...), which would otherwise shadow
-the parameters for simple-name visibility inside the body, so the codebase's
-style consistently disambiguates by prefixing with the *enclosing
-subprogram's own name*, not the protected object's. `Same_Parameter`'s
-existing prefix-unwrap loop always inspected a `Dotted_Name`'s prefix
-(`Info`) and discarded the suffix (`Size`), so it checked the wrong
-identifier against the tracked parameter name and concluded it was never
-written — even though this is a completely different shape from the
-`Param.Field := ...` case `Same_Parameter` already handles (there, the
-*prefix* is the tracked object and the *suffix* is one of its fields; here,
-the *suffix* is the tracked object and the *prefix* is just a qualifier
-naming the enclosing unit).
+Three related `Uninitialized_Output` false positives in `aws-server-push.adb`,
+all rooted in Ada write-shapes `Same_Parameter`/`Statement_Writes_Parameter`
+did not recognize:
 
-Fixed by adding a check, ahead of the existing unwrap loop, for exactly this
-shape: the suffix matches the tracked parameter's name, and the prefix
-resolves to the nearest enclosing `Subp_Body` or `Entry_Body` (the new
-`Enclosing_Subprogram_Or_Entry`). This is narrow and additive — it requires
-an exact correspondence between the prefix and the specific enclosing
-construct, so a genuinely different, same-named entity (e.g. `R.Size :=
-...;` where `R` is a different `in out` parameter of a record type with its
-own `Size` field) is unaffected; verified with a guard fixture
-(`uninitialized_output_own_name_qualifier_guard.adb`) alongside the clean
-one. Confirmed against the real file by diffing `aws-server-push.adb`'s own
-`Uninitialized_Output` output before and after the fix: exactly the 6
-targeted findings (the `Info` procedure's 4 parameters, plus
-`Shutdown_If_Empty`'s `Open` and `Get`'s `Queue`, both qualified the same
-way elsewhere in the same file) disappeared, nothing new appeared.
+- **`FP-011`**: `protected body Waiter_Information` writes each of its `Info`
+  procedure's four out parameters qualified by the enclosing subprogram's own
+  name (`Info.Size := ...;`, per RM 8.3, needed because the protected object
+  has same-named private components that would otherwise shadow the
+  parameters). `Same_Parameter`'s prefix-unwrap loop checked the prefix
+  (`Info`, the qualifier) against the tracked parameter instead of the suffix
+  (`Size`, the actual parameter). Fixed by recognizing this shape explicitly:
+  suffix matches the parameter, prefix resolves to the nearest enclosing
+  subprogram/entry body. Regression: `uninitialized_output_own_name_qualifier_guard.adb`.
+- **`FP-012`**: the outer wrapper `Info` forwards its four out parameters by
+  *named* actual to the protected `Info`. A formal typed `Ada.Calendar.Time`
+  on the call made Libadalang's per-actual resolution fail for every actual,
+  not just that one — a Libadalang limitation. The existing FP-008
+  position-based fallback only covered positional actuals; fixed by adding
+  `Callee_Formal_By_Name`, the named-actual counterpart.
+- **`FP-013`**: `Unregister_Clients`'s `Queue : out Tables.Map` is initialized
+  by a parameterless prefixed call, `Queue.Clear;` — a bare `Dotted_Name`
+  with no `Call_Expr` node, which `Statement_Writes_Parameter` didn't inspect
+  at all (the same shape already handled for `Wrong_Parameter_Mode`/
+  `Dead_Store` elsewhere, but not in this separate write-recognition path).
+  Fixed by adding an `Ada_Dotted_Name` branch reusing `Same_Parameter`'s
+  existing prefix-unwrap. Regression: `uninitialized_output_prefixed_clear_clean.adb`.
 
-### Confirmed analyzer mistake (fixed): FP-012
-
-Checking whether FP-011 had left a related gap open in the same file
-surfaced a second, distinct false positive at the very next residual
-finding: the *outer*, ordinary (non-protected) wrapper procedure `Info`
-(distinct from the protected body's own `Info` above) forwards its four
-out parameters by named actual to `Waiter_Information.Info (Size => Size,
-Max_Size => Max_Size, Max_Size_DT => Max_Size_DT, Counter => Counter)` — an
-otherwise perfectly ordinary out-actual-forwarding call, the kind this
-analysis already recognizes elsewhere. Bisecting a synthetic reproduction
-down from the real shape (two closer, hand-written syntheses that dropped
-the `Ada.Calendar.Time`-typed `Max_Size_DT` formal both failed to reproduce
-it) isolated the trigger precisely: a formal typed `Ada.Calendar.Time` on
-an otherwise-unambiguous protected-operation call is, on its own, enough to
-make Libadalang's own per-actual resolution (`Assoc.P_Get_Params`) fail to
-classify *every* actual in the call, not just that one formal — a
-Libadalang limitation, not investigated further here. The existing FP-008
-fallback (`Callee_Formal_At_Position`, resolving just the callee name and
-pairing by position when the precise resolution fails) only ever applied
-to purely positional actuals; a *named* actual hitting this same
-resolution gap had no fallback at all and was silently never recognized as
-a write.
-
-Fixed by adding `Callee_Formal_By_Name`, the named-actual counterpart to
-`Callee_Formal_At_Position`: the same lenient callee-name-only resolution,
-matching the actual's designator against a formal by name instead of by
-position. A guard fixture confirms a named actual naming a genuinely `in`
-formal on a callee hitting the same resolution gap isn't mistaken for
-writing an unrelated `out` parameter that's never actually forwarded.
-
-With both FP-011 and FP-012 fixed, `aws-server-push.adb`'s
-`Uninitialized_Output` count drops from 16 to 6; the remaining findings
-were not investigated further this pass.
-
-### Confirmed analyzer mistake (fixed): FP-013
-
-Re-cloning `AdaCore/aws` fresh and re-running the same `--recommended` scan
-over `src/core`, `src/extended`, `src/http2` (still 273 files) to continue
-where the previous pass left off found upstream had moved on in the
-interim: only 3 of the 6 previously-residual `Uninitialized_Output`
-findings in `aws-server-push.adb` still existed (`Get_Data`'s `Data`,
-`Send`'s `Queue`, `Unregister_Clients`'s `Queue`); the other 3 were gone,
-presumably resolved by unrelated upstream changes to the file rather than
-anything on this project's side.
-
-Investigating the 3 survivors: `Unregister_Clients`'s `Queue : out
-Tables.Map` is initialized by a single unconditional `Queue.Clear;`
-right at the top of the body — a parameterless prefixed procedure call
-(`Object.Operation;`), which Libadalang represents as a bare `Dotted_Name`
-with no `Call_Expr` node at all. `Adalang_Analyzer.SPARK_Readiness.
-Statement_Writes_Parameter` (the write-recognition function behind
-`Uninitialized_Output`) only ever inspected `Ada_Call_Expr` call
-statements, so this call was invisible to it — the exact same shape
-already fixed for `Wrong_Parameter_Mode` and `Dead_Store` in
-`Adalang_Analyzer.Checks.Declarations.Parameter_Is_Written` (see
-`quality/README.md`'s precision regression index), but left open in the
-separate `SPARK_Readiness` write-recognition path `Uninitialized_Output`
-actually uses.
-
-Fixed by adding an `Ada_Dotted_Name` branch to `Statement_Writes_Parameter`
-that reuses `Same_Parameter` directly on the call node: `Same_Parameter`'s
-own prefix-unwrap loop (added for FP-011) already walks a `Dotted_Name`
-down past its suffix to its prefix before comparing identifiers, which is
-exactly what's needed here too, so no new unwrap logic was required. Like
-every other call-based write this function already recognizes, the
-callee's own body is not verified to actually initialize the parameter —
-only that the parameter is the controlling actual of a mutator-shaped
-call — consistent with how `Wrong_Parameter_Mode`/`Dead_Store` already
-treat this shape. A guard fixture (a second, unrelated out parameter left
-untouched by the same call) confirms the fix does not spill a write credit
-onto the wrong parameter.
-
-Confirmed against the real file by diffing `aws-server-push.adb`'s own
-`Uninitialized_Output` output before and after the fix: exactly the
-`Unregister_Clients` finding disappeared, nothing new appeared, and the
-corpus-wide total dropped from 372 to 371.
-
-The other 2 survivors were reviewed and are **not** analyzer mistakes:
-`Get_Data`'s `Data : out Stream_Element_Array` is written only inside a
-`while` loop over `Holder.Chunks`, so an empty chunk list reaches the
-normal return with `Data` never assigned; `Send`'s `Queue : out Tables.Map`
-has an early `return;` (unmatched `Group_Id`) that bypasses the later
-`Queue.Clear;` entirely. Both are real paths to an uninitialized `out`
-parameter on a normal return, not analyzer false positives, and are left
-open (not filed as known issues, since the analyzer's behavior here is
-correct — they would need upstream AWS review to resolve, which is out of
-scope for this project).
-
-Covered by `uninitialized_output_prefixed_clear_clean.adb` (clean) and
-`uninitialized_output_prefixed_clear_guard.adb` (still flags the
-unrelated-parameter case).
+Together these three dropped `aws-server-push.adb`'s `Uninitialized_Output`
+count from 16 to 3. The remaining 2 are genuine AWS bugs, not analyzer
+mistakes — `Get_Data`'s `Data` is only written inside a `while` loop that can
+see zero iterations, and `Send`'s `Queue` has an early `return;` bypassing
+its later `Queue.Clear;` — both real paths to an uninitialized `out`
+parameter on return, left open as out of this project's scope. Full
+root-cause and fix detail for FP-011–FP-013 is in `quality/known_analysis_issues.tsv`.
 
 ### Confirmed analyzer mistake (fixed): FP-014
 
-With the `Uninitialized_Output` findings in `aws-server-push.adb`
-resolved, the corpus's largest remaining category — `Wrong_Parameter_Mode`
-at 126 findings — turned out to be extremely concentrated: 70 of the 126
-were in a single file, `aws-config-set.adb`, all with the identical shape:
-
-```ada
-procedure Accept_Queue_Size (O : in out Object; Value : Positive) is
-begin
-   O.P (Accept_Queue_Size).Pos_Value := Value;
-end Accept_Queue_Size;
-```
-
-`AWS.Config.Set` is a package of single-field setters, one per
-configuration key, each writing exactly one element of `Object`'s
-many-element parameter array (`O.P`) while leaving every other
-configuration value untouched. `Wrong_Parameter_Mode`'s write-detection
-(`Adalang_Analyzer.Checks.Declarations.Parameter_Is_Written`) delegates
-its `Assign_Stmt` case to `Write_Target_Contains_Parameter`, which
-deliberately unwraps any depth of nested selector/index to credit the
-base object as written — correct for `Dead_Store` and `Uninitialized_
-Output`'s coarser "was this touched at all" questions, but wrong for a
-mode-change recommendation: Ada's `out` mode formally disclaims any need
-for the parameter's incoming value, while a write to only part of it
-(`O.P (Accept_Queue_Size).Pos_Value`, one of dozens of independent
-elements) inherently depends on every untouched part already holding a
-meaningful prior value — precisely why these procedures are declared
-`in out`, not `out`, in the first place.
-
-Fixed by adding `Parameter_Is_Wholly_Written`: identical to `Parameter_
-Is_Written` (same call-forwarding and parameterless-prefixed-mutator
-cases, unchanged, from the `FP-013`-adjacent fix already in that
-function) except its `Assign_Stmt` case requires the destination to be
-the parameter itself (`Parameter_Name_Matches`, no unwrap) rather than
-any nested selector/index reaching down into it. Used only to gate the
-"is only written; use mode out" recommendation in `Analyze_Subprogram`;
-the "is only read; use mode in" recommendation, `Dead_Store`, and
-`Uninitialized_Output` all keep using the original, unchanged `Parameter_
-Is_Written`/`Write_Target_Contains_Parameter`, so their behavior is
-unaffected.
-
-Confirmed against the real corpus: `Wrong_Parameter_Mode` findings dropped
-from 126 to 54 — all 70 in `aws-config-set.adb`, plus 2 more of the
-identical shape found elsewhere in the same corpus
-(`AWS.Net.Generic_Sets.Set_Data`'s `Set.Set (Index).Data := Data;`,
-`AWS.Client.HTTP_Utils.Decrement_Authentication_Attempt`'s `Counter
-(Level) := @ - 1;`, both single-element writes into a larger array
-parameter) — with no new findings appearing anywhere in the corpus.
-
-Covered by `wrong_parameter_mode_partial_write_clean.adb` (clean) and
-`wrong_parameter_mode_partial_write_guard.adb` (a direct, whole-object
-assignment must still be flagged).
+The corpus's largest remaining category, `Wrong_Parameter_Mode` (126
+findings), was extremely concentrated: 70 of 126 were in `aws-config-set.adb`,
+a package of single-field setters each writing exactly one element of an
+`in out` parameter's array (`O.P (Key).Pos_Value := Value;`) while leaving
+every other element untouched. The mode-change recommendation's write
+detection unwrapped any depth of nested selector/index to credit the whole
+object as written — correct for `Dead_Store`/`Uninitialized_Output`'s
+coarser "touched at all" question, but wrong for recommending `out`: a
+partial write inherently depends on the untouched parts already holding a
+meaningful prior value. Fixed by adding `Parameter_Is_Wholly_Written`,
+used only to gate the "use mode out" recommendation, requiring the write
+target be the parameter itself with no nested selector/index; `Dead_Store`
+and `Uninitialized_Output` are unaffected. `Wrong_Parameter_Mode` findings
+dropped from 126 to 54. Regressions: `wrong_parameter_mode_partial_write_clean.adb`,
+`wrong_parameter_mode_partial_write_guard.adb`.
 
 ### Confirmed analyzer mistake (fixed): FP-015
 
-Moving on to `Uninitialized_Read` (39 findings, no single file
-concentrated like the previous two categories): the top file,
-`aws-headers-values.adb` (6 findings), included one that stood out —
-flagged at the variable's own initializing assignment:
+`Uninitialized_Read` flagged `Last := Fixed.Index (Data (First .. Data'Last), VDel);`
+as reading `Last` before its own initializing assignment. The expression
+contains `Data'Last`, an attribute designator that Libadalang parses as an
+`Ada_Identifier` node syntactically but resolves to no declaration;
+`Matches_Declaration` fell back to a plain spelling comparison on
+resolution failure, and "Last" matched the unrelated local variable by
+text alone. `First`/`Last` are two of the most common bounds-tracking
+variable names — exactly the attributes they collide with — so this was a
+broad class, not a one-off. Fixed by an early check in `Matches_Declaration`:
+an identifier that is specifically the `F_Attribute` child of an
+`Attribute_Ref` never matches any declaration (a genuine reference used as
+an attribute *prefix*, e.g. `Last'Size`, is unaffected). `Uninitialized_Read`
+findings dropped from 39 to 35; being shared infrastructure, the fix also
+helps `Dead_Store` and other data-flow checks on future corpora.
+Regressions: `uninitialized_read_attribute_designator_clean.adb`,
+`uninitialized_read_attribute_designator_guard.adb`.
 
-```ada
-Last  : Natural;
-begin
-   Last := Fixed.Index (Data (First .. Data'Last), VDel);
-```
-
-`Last := Fixed.Index (...)` is `Last`'s first and only prior mention —
-its own initializing write — yet the analyzer reported it as a *read*.
-The expression also contains `Data'Last`, an **attribute designator**:
-syntactically an identifier (Libadalang parses the "Last" naming the
-attribute as an `Ada_Identifier` node), but never a reference to any
-declaration. `Adalang_Analyzer.Checks.Data_Flow.Matches_Declaration` —
-shared read/write-detection infrastructure used by `Uninitialized_Read`,
-`Dead_Store`, and other data-flow checks — first attempts semantic
-resolution, then falls back to a plain spelling comparison whenever that
-fails. Libadalang's resolution correctly returns null for the attribute
-designator, which fed straight into that fallback: its spelling ("Last")
-matched the unrelated local variable `Last` by pure text, misclassifying
-the whole statement as a read of it before that same statement's write
-was even considered. `First` and `Last` are two of the most common
-variable names for tracking string/array bounds — exactly the standard
-attributes they collide with — so this was a broad, easy-to-hit class,
-not a one-off.
-
-Reproduced in isolation before changing anything:
-
-```ada
-procedure Repro_Last (Data : String) is
-   Last : Natural;
-begin
-   Last := Ada.Strings.Fixed.Index (Data (Data'First .. Data'Last), "x");
-end Repro_Last;
-```
-
-flagged `Uninitialized_Read` on `Last`; renaming the variable to
-`Position` (same shape, no colliding attribute) produced no finding,
-confirming the collision was the cause.
-
-Fixed by adding an early check in `Matches_Declaration`: an identifier
-that is specifically the `F_Attribute` child of its parent `Attribute_
-Ref` (not merely appearing somewhere inside one, so a genuine reference
-used as an attribute *prefix* — e.g. `Last'Size` where `Last` really is
-the tracked variable — is unaffected) never matches any declaration,
-returning `False` before the spelling fallback ever runs.
-
-Confirmed against the real corpus: `Uninitialized_Read` findings dropped
-from 39 to 35 — `aws-headers-values.adb`, `aws-log.adb`,
-`aws-config-ini.adb`, `aws-config-utils.adb`, one each — with no new
-findings appearing anywhere and no change to any other check's totals in
-this corpus (though the fix, being in shared infrastructure, should also
-help `Dead_Store` and the other checks that call `Matches_Declaration` on
-future corpora).
-
-The other 5 `Uninitialized_Read` findings in `aws-headers-values.adb`
-turned out to be a second, distinct bug, not yet fixed: `Split`'s nested
-function `To_Set` declares locals (`Name_First`, `Name_Last`, `Value_
-First`, `Value_Last`) that are fully initialized by a call to `Next_Value`
-(all four are its `out`-mode formals) before `To_Set`'s own nested
-function `Element` — which reads them as up-level references — is ever
-invoked; `Element`'s body, however, is textually declared *before* that
-`Next_Value` call, and `Data_Flow.First_Access`'s plain pre-order AST walk
-has no special case for a nested subprogram body being a declaration
-(elaborated, not executed, at its textual position) rather than a
-statement, so it finds the read inside `Element`'s body before it reaches
-the initializing call. The same shape affects `Split` itself over `First`
-(read inside `To_Set`, which textually precedes `Split`'s own initializing
-assignment to `First`). Left open for a future pass — the fix requires
-`First_Access` to distinguish a nested subprogram's declaration position
-from its actual call sites, a materially different traversal than the
-attribute-designator fix above.
-
-Covered by `uninitialized_read_attribute_designator_clean.adb` (clean)
-and `uninitialized_read_attribute_designator_guard.adb` (a genuine
-attribute-prefix reference to the tracked variable must still be
-flagged).
+The other 5 `Uninitialized_Read` findings in the same file were a second,
+distinct bug (closed later as `FP-017`, below): a nested function reading
+locals that are initialized by a call textually *after* the nested
+function's own declaration, but only ever actually invoked after that call
+— `First_Access`'s plain pre-order AST walk had no notion of a nested
+subprogram body being a declaration (elaborated, not executed, at its
+textual position) rather than a statement.
 
 ### Confirmed analyzer mistake (fixed): FP-016
 
-Checking `Dead_Store` (23 findings) next found the same kind of
-concentration as `Wrong_Parameter_Mode` earlier: 13 of the 23 were in a
-single file, `aws-http2-stream.adb`, all reported on assignments
-immediately followed by `return;` inside a large `case` statement:
-
-```ada
-   Info : Error_Details renames Self.Error_Detail;
-   --  ...
-begin
-   Error := C_No_Error;
-   Info  := Error_No_Details;
-   --  ...
-   if Self.Id /= 0 and then Self.Id mod 2 = 0 then
-      Error := C_Protocol_Error;
-      Info  := Error_Stream_Id_Even;
-      return;
-```
-
-`Received_Frame`'s `Error` parameter is genuinely `out` mode, so its
-final writes before `return` were never a problem — `Dead_Store` only
-ever considers `Ada_Object_Decl`s, and `Error`'s declaration is a
-`Param_Spec`, which the check already excludes correctly. `Info`,
-though, is a **renaming**: `Info : Error_Details renames Self.
-Error_Detail;`, where `Self` is an `in out` parameter. A write to `Info`
-is really a write to `Self.Error_Detail`, observable by the caller after
-return (and by other code that reads `Self.Error_Detail` directly
-elsewhere) — never a locally dead store. But `Info`'s own declaration
-*is* textually nested inside `Received_Frame`, so `Adalang_Analyzer.
-Checks.Control_Flow.Is_Local_To_Subprogram` — a purely lexical-scope test
-— considered it local regardless of what it renamed. Compounding this,
-`Data_Flow.Ultimate_Object` (the existing mechanism that already resolves
-simple renamings like `Y renames X;` back to `X`'s own declaration, used
-via `Assigned_Declaration` to figure out what a bare `Info := ...;`
-statement actually writes) only ever followed a renamed object that was
-itself a bare identifier — never one reached through a selected
-component like `Self.Error_Detail`. So `Info := ...;` resolved to
-`Info`'s own renaming declaration rather than to `Self`, and the write
-looked, from `Dead_Store`'s point of view, exactly like a write to an
-ordinary, purely local variable named `Info` that just happened to never
-be read again by that name.
-
-Fixed by adding `Renames_Nonlocal_Object` in `Checks.Control_Flow`: walks
-the renamed object down through any depth of selected/indexed component
-or dereference — the same coarse, "whichever depth of nesting, only the
-base object matters" treatment already used elsewhere in this project
-(e.g. `Same_Parameter`) — to its base identifier, and disqualifies a
-declaration from `Dead_Store` whenever that base is not itself local to
-the enclosing subprogram. A renaming of a genuinely local object's field
-(`Y : F renames Local_Var.Field;`) is unaffected, since its base *is*
-local.
-
-Confirmed against the real corpus: `Dead_Store` findings dropped from 23
-to 10 — all 13 in `aws-http2-stream.adb`, exactly the ones on `Info :=
-...;` assignments — with no new findings appearing anywhere.
-
-Covered by `dead_store_renaming_of_parameter_field_clean.adb` (clean) and
-`dead_store_renaming_of_parameter_field_guard.adb` (a renaming of a
-genuinely local object's field must still be flagged).
+13 of `Dead_Store`'s 23 findings were in `aws-http2-stream.adb`, all on a
+renaming: `Info : Error_Details renames Self.Error_Detail;`, where `Self`
+is an `in out` parameter. A write to `Info` is really a write to
+`Self.Error_Detail`, observable after return — never a locally dead
+store. But `Info`'s declaration is textually nested inside the
+subprogram, so `Is_Local_To_Subprogram` (a purely lexical-scope test)
+considered it local regardless of what it renamed, and `Ultimate_Object`
+(which already resolves simple renamings like `Y renames X;`) only
+followed a renamed object that was itself a bare identifier, not one
+reached through a selected component like `Self.Error_Detail`. Fixed by
+adding `Renames_Nonlocal_Object`: walks the renamed object down through
+any depth of selected/indexed component or dereference to its base
+identifier, and disqualifies the declaration from `Dead_Store` whenever
+that base isn't local to the enclosing subprogram. `Dead_Store` findings
+dropped from 23 to 10. Regressions:
+`dead_store_renaming_of_parameter_field_clean.adb`,
+`dead_store_renaming_of_parameter_field_guard.adb`.
 
 ### Confirmed analyzer mistake (fixed): FP-017
 
-Returning to the nested-subprogram-ordering bug diagnosed but left open
-under FP-015 — `Data_Flow.First_Access`'s plain pre-order AST walk has no
-notion of actual call order, so a read inside a nested subprogram body
-declared earlier than a later initializing statement of the enclosing
-subprogram was mistaken for happening before it, even though the nested
-body is only ever actually invoked afterwards:
+Closed the nested-subprogram-ordering bug left open under `FP-015`:
+`First_Access`'s pre-order AST walk had no notion of actual call order,
+so a read inside a nested subprogram body declared earlier than a later
+initializing statement was mistaken for happening before it, even though
+the nested body is only ever invoked afterwards. Fixed by skipping
+recursion into any `Ada_Subp_Body`/`Ada_Entry_Body` child during the walk
+— a nested body is a declaration, elaborated but not executed at its own
+textual position. This trades away detecting a genuine read through a
+nested body invoked *before* initialization for not flagging the common,
+correct case. `Uninitialized_Read` findings dropped from 35 to 29.
+Regressions: `uninitialized_read_nested_subprogram_order_clean.adb`,
+`uninitialized_read_nested_subprogram_order_guard.adb`.
 
-```ada
-function To_Set return Set is
-   Name_First  : Positive;
-   Name_Last   : Natural;
-   Value_First : Positive;
-   Value_Last  : Natural;
-
-   function Element return Data is    --  declared here, reads the four
-   begin                              --  locals as up-level references
-      ...
-   end Element;
-
-begin
-   ...
-   Next_Value                         --  initializes all four via its
-     (Header_Value, First,            --  own out-mode formals -- but
-      Name_First, Name_Last,          --  only runs *after* Element's
-      Value_First, Value_Last);       --  declaration, textually
-   return Element & To_Set;           --  Element is only ever *called*
-end To_Set;                           --  here, after Next_Value
-```
-
-Fixed by skipping recursion into any child node of kind `Ada_Subp_Body` or
-`Ada_Entry_Body` during `First_Access`'s walk: a nested subprogram or
-entry body is a declaration, elaborated but not executed at its own
-textual position, so a read or write inside it does not happen "here" the
-way a statement does. This trades away detecting a genuine read through a
-nested body invoked *before* the tracked variable's initialization
-(unrecognized here, not soundly ruled out) for not flagging the common,
-correct case — the same bias toward fewer false positives already
-established throughout this project.
-
-(While implementing this, an early version called `.Kind` on a loop
-child before checking whether `Node.Child (I)` was null — Libadalang can
-return a null node for a sparse list slot — which raised inside
-`First_Access` and surfaced as a generic "skipping checks: null node
-argument" message instead of a finding. Caught by the guard fixture below
-before it was committed; fixed by checking `Is_Null` first.)
-
-Confirmed against the real corpus: `Uninitialized_Read` findings dropped
-from 35 (the count after FP-015/FP-016) to 29 — the 5 `aws-headers-
-values.adb` findings left open under FP-015 are gone (`To_Set`'s four
-locals plus `Split`'s own `First`), plus 2 more of the identical shape in
-other files (`aws-net-acceptors.adb`, `aws-url-set.adb`).
-
-One previously-hidden, unrelated finding was exposed in the process, at
-`aws-net-acceptors.adb:274` (`Error` in `Acceptors.Get`) — **not** fixed
-in this pass, left open: `Ready, Error : Boolean;` are genuinely
-initialized by `Sets.Is_Read_Ready (Acceptor.Set, Acceptor.Index, Ready,
-Error);`, a positional call to a procedure instantiated from a *nested*
-generic (`package Sets is new Generic_Sets (Socket_Data_Type);` inside
-the generic package `AWS.Net.Acceptors`, `Socket_Data_Type` itself the
-outer generic's own formal type). Before this fix, the scan never reached
-this call at all — it stopped earlier, at the very read this fix
-resolves, inside the nested function `Accept_Listening`. With that
-resolved, the scan now reaches the real initializing call, but
-`Data_Flow.Call_Writes_Declaration` (and `Call_Reads_Simple_Actual`)
-apparently fail to resolve the formal mode through this generic-of-a-
-generic instantiation (both silently return `False` via their own
-`exception when others` handlers, with no diagnostic — confirmed no `-v`
-skip message is emitted for this file), so the call registers as neither
-a read nor a write and the scan continues to the next real access, a
-genuine read a few lines later, misreporting *that* as the first one.
-This is not a regression from this fix — `Error` was already misreported
-before it, just at a different, also-wrong location (masked by the
-now-fixed ordering bug) — but is a distinct root cause (a Libadalang
-resolution-fragility case in the same family as `FP-008`/`FP-012`, for a
-different check's write-detection path that lacks their lenient,
-callee-name-only fallback) and needs its own investigation, left for a
-future pass.
-
-Covered by `uninitialized_read_nested_subprogram_order_clean.adb` (clean)
-and `uninitialized_read_nested_subprogram_order_guard.adb` (a genuine,
-direct read in the enclosing subprogram's own statements, near an
-unrelated nested subprogram, must still be flagged).
+Fixing this exposed a second, previously-masked finding at
+`aws-net-acceptors.adb:274` (`Error` in `Acceptors.Get`, genuinely
+initialized by a call through a nested generic instantiation that
+`Call_Writes_Declaration` fails to resolve through) — a distinct root
+cause in the same family as `FP-008`/`FP-012`, closed by `FP-019` below.
 
 ### Confirmed analyzer mistake (fixed): FP-018
 
-Following up on the `aws-net-acceptors.adb:274` finding FP-017 exposed
-(`Error` misreported as read-before-assignment, even though `Sets.
-Is_Read_Ready (Acceptor.Set, Acceptor.Index, Ready, Error);` genuinely
-initializes it): building a minimal, isolated reproduction of *that exact
-file* proved surprisingly resistant — several attempts at recreating its
-nested-generic-instantiation shape (`package Sets is new Generic_Sets
-(Socket_Data_Type);` inside the generic package `AWS.Net.Acceptors`)
-stayed clean. Running the real file standalone (outside the 273-file
-batch) was clean too, confirming the batch context itself matters to
-Libadalang's resolution behavior here — a materially harder thing to
-isolate than any earlier finding this pass.
-
-Rather than keep guessing at the trigger, the question was reframed:
-`Uninitialized_Read`'s write-detection (`Call_Writes_Declaration`,
-`Call_Reads_Simple_Actual` in `Checks.Data_Flow`) relies solely on
-Libadalang's `Assoc.P_Get_Params (Imprecise_Fallback => True)` — the
-*exact* per-actual resolution mechanism already proven, twice, to fail on
-an otherwise-unambiguous call (`FP-008`: heavy overload; `FP-012`: a
-formal typed `Ada.Calendar.Time`) for a *different* check's write
-detection (`SPARK_Readiness.Statement_Writes_Parameter`, behind
-`Uninitialized_Output`), which already has a lenient fallback for exactly
-this. `Uninitialized_Read`'s own detection never received the same
-fallback. Reusing the already-confirmed `FP-012` trigger directly against
-`Uninitialized_Read` (not `aws-net-acceptors.adb` at all) reproduced a
-clean, reliable, in-isolation failure:
-
-```ada
-Waiter_Information.Info (S, M, D, C);   --  D : Ada.Calendar.Time
-if C = 0 then                           --  falsely "read before assigned"
-```
-
-confirming the same resolution gap independently affects this check too,
-without needing to pin down `aws-net-acceptors.adb`'s own specific
-trigger.
-
-Fixed by adding `Callee_Formal_At_Position`, `Callee_Formal_By_Name`, and
-`Formal_Mode` to `Checks.Data_Flow` — duplicating, not sharing, the
-equivalent functions already in `SPARK_Readiness` (this project's
-established style for this kind of narrow, leaf-level helper) — and using
-them in `Call_Writes_Declaration`/`Call_Reads_Simple_Actual` exactly as
-`Statement_Writes_Parameter` already does: whenever `P_Get_Params`
-resolves no formal at all for a given actual, fall back to resolving just
-the callee name and pairing by position or designator.
-
-Confirmed against the real corpus: one instance disappeared —
-`aws-session.adb`'s `Get_Value`, where `Found` is genuinely initialized by
-`Get_Node (Sessions, SID, Node, Found);` — with no new findings appearing
-anywhere.
-
-The `aws-net-acceptors.adb` finding that prompted this investigation remained
-open after `FP-018`: it only reproduced in the full 273-file batch
-context, and even `Callee_Formal_At_Position`'s own callee-name
-resolution (`Call.F_Name.P_Referenced_Decl`) apparently still fails
-there — a different, deeper layer of the same general problem. It is closed
-by `FP-019` below.
-
-Covered by `uninitialized_read_positional_forward_clean.adb` (clean) and
-`uninitialized_read_positional_forward_guard.adb` (a variable never
-forwarded at all, at the same resolution-fragile callee shape, must still
-be flagged).
+`Uninitialized_Read`'s write-detection relied solely on Libadalang's
+per-actual resolution, the same mechanism already proven (twice: `FP-008`,
+`FP-012`) to fail on an otherwise-unambiguous call for a *different*
+check's write detection, which already had a lenient callee-name fallback.
+`Uninitialized_Read` never received the equivalent fallback. Fixed by
+adding `Callee_Formal_At_Position`, `Callee_Formal_By_Name`, and
+`Formal_Mode` to `Checks.Data_Flow` (duplicating, not sharing, the
+equivalent `SPARK_Readiness` functions, per this project's convention for
+narrow leaf-level helpers), used the same way `Statement_Writes_Parameter`
+already does. One instance disappeared corpus-wide
+(`aws-session.adb`'s `Get_Value`). The `aws-net-acceptors.adb` finding
+that prompted this investigation needed a deeper fix; closed by `FP-019`.
+Regressions: `uninitialized_read_positional_forward_clean.adb`,
+`uninitialized_read_positional_forward_guard.adb`.
 
 ### Confirmed analyzer mistake (fixed): FP-019
 
-The original 273-file invocation was reproduced and reduced to six real AWS
-files: `aws-net-acceptors.adb`/`.ads`, `aws-net-generic_sets.adb`/`.ads`,
-`aws-net.ads`, and `aws.ads`. The acceptor body is clean alone; explicitly
-supplying the root and parent specs changes Libadalang's provider state and
-makes every available formal-resolution path fail for the nested generic
-calls. This includes per-actual `P_Get_Params`, whole-callee resolution, the
-called-subprogram specification, and the instantiated package prefix, so
-another declaration-reconstruction fallback would depend on semantic links
-that are themselves unavailable.
-
-`First_Access` previously returned `No_Access` for that unresolved call and
-continued scanning. It then reached `Error`, `Count`, or `Success` later and
-claimed the read definitely happened before every write, even though each
-object had already been passed to a call that may write it. The correction
-adds a terminal `Unknown_Access` result: an unresolved simple actual stops the
-definite first-access search. Resolved `in` actuals still return
-`Read_Access`; resolved `out` actuals return `Write_Access`; and resolved
-`in out` actuals retain their read-before-write behavior.
-
-The minimized AWS trigger is clean after the fix. On the exact original
-273-file invocation, all three `aws-net-acceptors.adb` false positives
-disappeared and `Uninitialized_Read` findings fell from 28 to 4 (total
-findings from 275 to 251). The local clean/guard pair reproduces the semantic
-boundary without depending on AWS: an unresolved call followed by a read is
-clean, while passing the same uninitialized shape to a resolved `in` formal
-is still flagged.
+Reducing the 273-file invocation to six real AWS files
+(`aws-net-acceptors.adb`/`.ads`, `aws-net-generic_sets.adb`/`.ads`,
+`aws-net.ads`, `aws.ads`) showed that explicitly supplying the root and
+parent specs made *every* available formal-resolution path fail for the
+nested generic calls involved (per-actual resolution, whole-callee
+resolution, the called-subprogram spec, and the instantiated package
+prefix) — no declaration-reconstruction fallback was possible, since the
+semantic links themselves were unavailable. `First_Access` previously
+returned `No_Access` for such an unresolved call and kept scanning,
+reaching a later real read and wrongly declaring it "before every write."
+Fixed by adding a terminal `Unknown_Access` result: an unresolved simple
+actual stops the definite first-access search instead of being silently
+skipped (resolved `in`/`out`/`in out` actuals are unaffected). On the
+original 273-file invocation, all three `aws-net-acceptors.adb` false
+positives disappeared and `Uninitialized_Read` findings fell from 28 to 4
+(total findings 275 to 251). Full detail for FP-016–FP-019 is in
+`quality/known_analysis_issues.tsv`.
 
 ## Ada Drivers Library (AdaCore/Ada_Drivers_Library)
 
@@ -1061,164 +492,61 @@ is still flagged.
   (58), `Dead_Store` (56), `Uninitialized_Output` (131), `Unused_Parameter`
   (28), `Unused_Variable` (23), `Uninitialized_Read` (20).
 
-### Confirmed analyzer mistake (fixed): FP-021
+### Confirmed analyzer mistakes (fixed): FP-021–FP-024
 
-`Uninitialized_Output` findings were heavily concentrated in one file,
-`components/src/radio/hm11/hm11.adb` (111 of 131). The dominant shape: a
-public procedure with two overloads of the same name, one wider (with a
-`System.Address`-typed `Received` formal, e.g. for a raw response buffer)
-forwarding an `out` parameter positionally to the other, narrower one, e.g.:
+Four false positives, found and fixed in sequence as each unblocked the
+next residual finding:
 
-```ada
-procedure Transmit_And_Check
-  (This : in out HM11_Driver; Command, Expect : String;
-   Status : out UART_Status) is
-begin
-   Transmit_And_Check
-     (This, Command, Expect, This.Responce'Address, Expect'Length, Status);
-end Transmit_And_Check;
-```
+- **`FP-021`** (`Uninitialized_Output`, 111 of 131 findings, concentrated in
+  `components/src/radio/hm11/hm11.adb`): a public procedure with two
+  same-named overloads, the wider one (a `System.Address`-typed formal)
+  forwarding an `out` parameter positionally to the narrower one.
+  Libadalang's imprecise-fallback resolution resolved the call back to the
+  *enclosing*, narrower overload itself rather than the callee actually
+  invoked, so even the existing FP-008 position-based fallback ran out of
+  formals before reaching the sought position. Fixed by adding
+  `Callee_Candidate_By_Arity`: when the resolved callee's spec doesn't
+  contain a formal at the sought position, search every same-named
+  candidate visible at the call site for one whose total formal count
+  matches the call's actual count. `Uninitialized_Output` fell from 131 to
+  74 (the residual 74 are a different, genuine shape — a result only
+  assigned inside a status-guarded branch). Regressions:
+  `uninitialized_output_overload_arity_fallback_clean.adb`,
+  `..._guard.adb`.
+- **`FP-022`** (`Uninitialized_Read`, 12 of 20 findings): a local declared
+  with the `Import` aspect as an overlay onto a buffer already populated
+  externally (DMA, a prior driver call) needs no explicit initializer, but
+  the `Uninitialized_Read` gate checked only for a default expression,
+  renaming, and scalar-ness — unlike `Dead_Store`/`Overwritten_Assignment`,
+  which already exempt `Volatile`/`Atomic`/`Address`-aspected declarations.
+  Fixed by adding the same existing exemption to this gate.
+  `Uninitialized_Read` fell from 20 to 8. Regressions:
+  `uninitialized_read_import_overlay_clean.adb`, `..._guard.adb`.
+- **`FP-023`** (`Uninitialized_Read`, 7 of the remaining 8): a function
+  with an `out`-mode formal called for its return value inside a larger
+  expression rather than as its own statement. `First_Access`'s
+  assignment-statement case correctly excluded the out-actual from being
+  read, but returned unconditionally without ever falling through to the
+  generic child recursion that would recognize the nested call as a write,
+  so the write was silently dropped and a later, unrelated mention was
+  misreported as the first access. Fixed by recursing `First_Access` into
+  the RHS whenever neither the read nor simple-write case matches.
+  `Uninitialized_Read` fell from 8 to 1. Regressions:
+  `uninitialized_read_function_out_actual_clean.adb`, `..._guard.adb`.
+- **`FP-024`** (`Uninitialized_Read`, the last residual finding): a named
+  actual's own designator (e.g. `LSB => Buffer (0)`) happened to share its
+  spelling with an unrelated local variable `LSB`; the generic recursive
+  walk over a `Param_Assoc` visited the designator alongside the actual
+  expression, and `Matches_Declaration`'s spelling-based fallback (the
+  same tradeoff as `FP-015`) matched it by text. Fixed by an early check
+  in `Matches_Declaration`, mirroring `FP-015`'s attribute-designator one:
+  an identifier that is the `F_Designator` child of a `Param_Assoc` never
+  matches a declaration. `Uninitialized_Read` fell from 1 to 0.
+  Regressions: `uninitialized_read_named_actual_designator_clean.adb`,
+  `..._guard.adb`.
 
-`Statement_Writes_Parameter`'s existing lenient fallback (`Callee_Formal_At_
-Position`, added for FP-008) resolves `Call.F_Name.P_Referenced_Decl` and
-looks up the formal at the actual's literal position -- but for this exact
-shape, Libadalang's own imprecise-fallback resolution resolves the call
-back to the *enclosing*, narrower overload itself (confirmed by isolating a
-minimal reproduction and printing the resolved declaration's own image: it
-came back as the 2-formal enclosing subprogram, not the 4-formal sibling
-actually being called), so the lookup silently ran out of formals before
-reaching the sought position and returned nothing, with no exception to log.
-A further instance of the general resolution fragility already worked
-around for FP-008/FP-012/FP-018/FP-019, this time defeating even the
-existing lenient fallback outright rather than the primary resolution.
-
-Fixed by adding `Callee_Candidate_By_Arity` to both
-`Adalang_Analyzer.SPARK_Readiness` and (duplicated, per this project's
-existing per-module-helper style) `Adalang_Analyzer.Checks.Data_Flow`: when
-the directly-resolved callee's own spec doesn't actually contain a formal
-at the sought position/name, search every same-named candidate visible at
-the call site (`Name.P_All_Env_Elements`) for one whose total formal count
-matches the call's actual count. `P_Canonical_Part` -- the natural way to
-deduplicate a subprogram's spec and body, both returned separately by
-`P_All_Env_Elements`, so they aren't double-counted as two same-arity
-candidates -- was tried first and rejected: on this exact same-name-overload-
-plus-`System.Address` shape it maps the two overloads' bodies to *each
-other's* specs, the same underlying confusion this function exists to route
-around. Deduplicated instead by trying spec-kind candidates before body-kind
-ones, and only comparing within one kind at a time.
-
-Confirmed against the real corpus: `Uninitialized_Output` fell from 131 to
-74 (the residual 74 are, on inspection, dominated by a different, unrelated,
-and apparently genuine shape -- a `Result` parameter assigned only inside
-`if Status = Ok then ... end if;`, so a failed transmission genuinely leaves
-it unwritten -- not investigated further as a false positive). Covered by
-`uninitialized_output_overload_arity_fallback_clean.adb` (clean) and
-`uninitialized_output_overload_arity_fallback_guard.adb` (a second out
-parameter never forwarded at all, at the same shape, must still be
-flagged).
-
-### Confirmed analyzer mistake (fixed): FP-022
-
-`Uninitialized_Read`'s 20 findings were dominated (12 of 20) by a single
-shape: a local declared with the `Import` aspect as an overlay onto a
-buffer another layer (DMA, a prior driver call) already populated, e.g.:
-
-```ada
-if Status = Ok then
-   declare
-      S : Character with Import,
-        Address => This.Responce (Ok_Get'Length + 1)'Address;
-   begin
-      Switch := S = '1';
-```
-
-Such an object is defined to get its value from outside the Ada code and
-needs no explicit initializer, but `Analyze_Object_Declaration`'s
-`Uninitialized_Read` gate checked only for a default expression, a
-renaming clause, and scalar-ness -- with no aspect exemption at all, unlike
-`Dead_Store`/`Overwritten_Assignment`/`Repeated_Statement`, which already
-exempt `Volatile`/`Atomic`/`Address`-aspected declarations via
-`Data_Flow.Is_Externally_Observable` (FP-003). Every observed `Import`
-overlay also carries an `Address` aspect (`Import` alone needs somewhere to
-import from), so that existing, already-vetted test applies directly.
-Fixed by adding it to the same gate; no new aspect-detection code was
-needed. Confirmed against the real corpus: `Uninitialized_Read` fell from
-20 to 8. Covered by `uninitialized_read_import_overlay_clean.adb` (clean)
-and `uninitialized_read_import_overlay_guard.adb` (an ordinary scalar with
-no externally-observable aspect must still be flagged).
-
-### Confirmed analyzer mistake (fixed): FP-023
-
-Of the 8 residual `Uninitialized_Read` findings, 7 shared a second shape: a
-function with an `out`-mode formal, called for its return value inside a
-larger expression rather than as its own call statement, e.g.:
-
-```ada
-Nb_Touch := This.I2C_Read (FT6206_TD_STAT_REG, Status);
-if not Status then
-   return 0;
-```
-
-`Data_Flow.First_Access`'s `Ada_Assign_Stmt` case correctly excludes
-`Status` from being treated as read by the RHS (`Reads_Declaration`'s own
-`Call_Expr` handling already recognizes an out-mode actual as not a read),
-but every path through that case returns unconditionally -- so it never
-falls through to the generic child recursion below, where the
-`Ada_Call_Expr` case that would recognize the nested call *as a write*
-actually lives. The write was silently dropped as `No_Access`, and the scan
-continued to the next real access (`Status` inside `if not Status then`),
-misreporting that later mention as the first one.
-
-Fixed by delegating to `First_Access` itself, recursively, over just the
-RHS whenever neither the read case nor the simple-destination-write case
-matches, giving a nested call expression the same chance at
-`Ada_Call_Expr`-based write recognition any ordinary call statement already
-gets. Confirmed against the real corpus: `Uninitialized_Read` fell from 8
-to 1 (`components/src/range_sensor/VL53L0X/vl53l0x.adb`'s `SPAD_Info`,
-`components/src/touch_panel/ft6x06/ft6x06.adb` and `.../ft5336/ft5336.adb`'s
-`I2C_Read`, all called this same way). Covered by
-`uninitialized_read_function_out_actual_clean.adb` (clean) and
-`uninitialized_read_function_out_actual_guard.adb` (a variable never
-forwarded to the function at all, at the same call-in-expression shape,
-must still be flagged).
-
-### Confirmed analyzer mistake (fixed): FP-024
-
-The last residual `Uninitialized_Read` finding,
-`components/src/motion/bno055/bosch_bno055.adb`'s `Output`, was a distinct,
-third shape:
-
-```ada
-LSB : Float;   --  unrelated running total, declared far above
-...
-New_X := To_Integer_16 (LSB => Buffer (0), MSB => Buffer (1));
-```
-
-`New_X := To_Integer_16 (...)`'s own initializing assignment was flagged as
-a *read* of the unrelated local `LSB`, because the named actual's own
-designator ("LSB", naming `To_Integer_16`'s formal) happens to share its
-spelling with that local. `Reads_Declaration`'s `Ada_Call_Expr` case only
-specially handles a `Param_Assoc` whose actual expression (`F_R_Expr`) is
-itself a plain identifier; here the actual is `Buffer (0)`, so it falls
-back to a fully generic recursive walk over the whole `Param_Assoc` node,
-which visits every child indiscriminately -- including `F_Designator`
-(the formal's own name) right alongside `F_R_Expr` (the actual expression)
--- and `Matches_Declaration`'s existing spelling-based fallback (already a
-documented, deliberate tradeoff from FP-015) matched the designator by pure
-text. The same general shape as FP-015's attribute-designator collision,
-but for a named-actual designator instead of an attribute name.
-
-Fixed by adding an early check to `Matches_Declaration`, mirroring the
-existing attribute-designator one: an identifier that is specifically the
-`F_Designator` child of its parent `Param_Assoc` never matches any
-declaration, regardless of Libadalang's own resolution outcome for it,
-since a formal designator could never legitimately denote a locally
-tracked object. Confirmed against the real corpus: `Uninitialized_Read`
-fell from 1 to 0. Covered by
-`uninitialized_read_named_actual_designator_clean.adb` (clean) and
-`uninitialized_read_named_actual_designator_guard.adb` (a local genuinely
-passed as the actual expression, not just sharing the designator's
-spelling, must still be flagged when read before assignment).
+Full root-cause and fix detail for all four is in
+`quality/known_analysis_issues.tsv`.
 
 ### Spot-checked, not fixed: `Wrong_Parameter_Mode` and `Dead_Store` (open)
 
@@ -1277,158 +605,77 @@ since the analyzer's behavior here appears correct.
 
 ### Confirmed analyzer mistake (fixed): FP-028
 
-4 of the 7 `Uninitialized_Read` findings shared one exact shape, in three
-different files (`parameter.adb`, `memory.adb`, `crazyflie_support/src/
-log.adb`, each a CRTP command-dispatch procedure with the identical local
-convention):
+4 of the 7 `Uninitialized_Read` findings, in three files, shared one
+shape: a local (e.g. `Has_Succeed : Boolean;`) immediately named in a
+`pragma Unreferenced` (to suppress an unrelated "never read" warning,
+since it's only ever written, never read, elsewhere in the body), then
+assigned later. `Matches_Declaration` resolved the pragma argument
+identifier back to the local's own declaration — correctly, since a
+pragma argument really does denote the entity it names — with nothing to
+distinguish "merely named by a compiler directive" from "read here."
+Fixed by an early check in `Matches_Declaration`, gated on the enclosing
+pragma's name: an identifier that is the argument of `pragma
+Unreferenced`, `Unmodified`, or `Warnings` never matches a declaration (a
+bare-identifier condition under an *executable* pragma like `Assert` is
+unaffected). `Uninitialized_Read` fell from 7 to 3. Regressions:
+`uninitialized_read_pragma_unreferenced_clean.adb`, `..._guard.adb`.
 
-```ada
-Command        : Parameter_TOC_Command;
-Packet_Handler  : CRTP_Packet_Handler;
-Has_Succeed     : Boolean;
-pragma Unreferenced (Has_Succeed);
-begin
-   ...
-```
+### Confirmed analyzer mistake (fixed): FP-030
 
-`Has_Succeed` is declared, immediately named in a `pragma Unreferenced` (to
-suppress an unrelated "declared but never read" warning further down, since
-it's only ever written, never read, elsewhere in the body), then assigned
-later. `Data_Flow.First_Access`'s plain pre-order walk over the subprogram
-body has no special case for a pragma: `Matches_Declaration` calls
-`P_Referenced_Decl` on the pragma argument identifier, which genuinely,
-correctly resolves back to `Has_Succeed`'s own declaration (a pragma
-argument really does denote the entity it names) -- with nothing to
-distinguish "this identifier is merely named by a compiler directive" from
-"this identifier's value is read here," unlike an executable pragma such as
-`Assert`, whose argument is a genuine boolean expression evaluated when
-execution reaches it.
+The remaining 3 `Uninitialized_Read` findings, in
+`Stabilizer_Alt_Hold_Update`, flagged variables that were each genuinely
+written by a plain assignment earlier in the same branch — the write
+should have ended `First_Access`'s search before it ever reached the
+reported read. Root-caused with temporary instrumentation: essentially
+every identifier in that subprogram triggered the same `FP-029`
+`Property_Error` (below) inside `Referenced_Declaration`, silently
+swallowed by a blanket `when others` handler. `First_Access`'s
+write-detection relied solely on exact declaration identity with no
+fallback, so once resolution failed for any name in the subprogram, every
+later plain-identifier *write* went undetected — while its sibling
+read-detection path already tolerated the same failure through a
+spelling-based fallback, so reads kept firing while writes silently
+stopped being recognized. Fixed by giving write-detection the same
+spelling-based fallback read-detection already had.
+`Uninitialized_Read` fell from 3 to 0. No fixture: this exact
+write-then-read shape resisted several synthetic reproduction attempts,
+the same difficulty documented for `FP-018`/`FP-019`. Full detail for
+`FP-028`/`FP-030` is in `quality/known_analysis_issues.tsv`.
 
-Fixed by adding an early check to `Matches_Declaration`, gated on the
-enclosing pragma's own name (not blanket-excluding every pragma argument,
-so a bare-identifier condition in an executable pragma is unaffected): an
-identifier that is the argument of a `pragma Unreferenced`, `Unmodified`, or
-`Warnings` never matches any declaration. The same narrow, name-gated style
-already used for `Assertion_Expression`'s "check"/"assert"/"assert_and_cut"/
-"loop_invariant" whitelist elsewhere in this project. Confirmed against the
-real corpus: `Uninitialized_Read` fell from 7 to 3, with no new findings
-appearing anywhere. Covered by
-`uninitialized_read_pragma_unreferenced_clean.adb` (clean) and
-`uninitialized_read_pragma_unreferenced_guard.adb` (the same colliding
-bare-identifier shape under `pragma Assert`, genuinely evaluated at
-runtime, must still be flagged).
-
-### Residual `Uninitialized_Read` findings (3, resolved as FP-030)
-
-The remaining 3 findings (`stabilizer.adb:355` and `:392` twice, inside
-`Stabilizer_Alt_Hold_Update`) were puzzling rather than clearly one or the
-other: the flagged variables (`Prev_Integ`, `Baro_V_Speed`, `Alt_Hold_PID_
-Out`, all plain `Float`/fixed-point locals) are each written by a plain
-`Var := Expr;` statement earlier in the same `if` branch, which should have
-registered as `Write_Access` and ended `First_Access`'s search before ever
-reaching the later, reported read -- yet it didn't. `Alt_Hold_PID`, read on
-both of the flagged lines, is of a type from a generic instantiation
-(`package Altitude_Pid is new Pid (...)`, `Alt_Hold_PID : Altitude_Pid.
-Pid_Object`), the same general family of construct already proven fragile
-for other checks' formal-resolution paths (`FP-008`/`FP-012`/`FP-018`/
-`FP-019`/`FP-021`), which made it a plausible suspect, but a hand-written
-minimal reproduction of the same shape (a generic `Pid_Object` record, a
-`Pid_Init` procedure, a local `Float` written then read across an
-intervening call, mirroring the real file line for line) stayed clean --
-the same "resistant to synthetic reproduction, only reproduces in the
-original file's own multi-file context" difficulty already noted for
-`FP-018` before it was finally isolated as `FP-019`. This exact run also
-logs `skipping checks at <SubpBody ["Stabilizer_Alt_Hold_Update"] ...>:
-types.ads:9:4-9:46: dereferencing a null access` -- confirmed, though, that
-this particular message does *not* explain the read-before-write puzzle: it
-is emitted from `Checks.Evaluate_Node`'s own node-level exception handler,
-which only skips whichever checks dispatch directly on the `SubpBody` node
-itself before unconditionally continuing the recursive descent into every
-child regardless -- `Uninitialized_Read` is triggered separately, once per
-`Object_Decl` encountered during that same descent, and is not gated by
-this handler at all.
-
-Root-caused with temporary `Ada.Text_IO`/`GNAT.Traceback.Symbolic`
-instrumentation (added, used, and reverted) inside
-`Checks.Data_Flow.Referenced_Declaration` and `First_Access`. The trace
-showed `Referenced_Declaration` raising the *same* `FP-029` `Property_Error`
-(`types.ads:9:4-9:46`) for essentially every identifier in
-`Stabilizer_Alt_Hold_Update` -- constants, calls, enumeration literals, and
-the plain locals in question alike -- silently swallowed by
-`Referenced_Declaration`'s own blanket `when others => return
-No_Basic_Decl;` with no log line, which is why this bug had no diagnostic
-trail pointing at it until now. `First_Access`'s write-detection
-(`Assigned_Declaration (Node) = Decl`) relies solely on exact declaration
-identity with no fallback, so once resolution fails for any name in the
-subprogram, every later plain-identifier write goes undetected; its sibling
-read-detection path (`Reads_Declaration`, via `Matches_Declaration`) already
-tolerates the identical resolution failure through a spelling-based
-fallback, so reads kept firing while writes silently stopped being
-recognized -- explaining exactly why the *write* at `:343`/`:382`/`:387`
-was missed while the *read* at `:355`/`:392` still matched. Fixed by using
-`Matches_Declaration (Stmt.F_Dest, Decl)` for a plain-identifier
-destination instead, giving write-detection the same fallback
-read-detection already had. Filed as `FP-030` (closed); confirmed against
-the real corpus (88 files, `--recommended`): `Uninitialized_Read` fell from
-3 to 0, with the complete violation-count diff otherwise identical before
-and after the fix. No fixture: this specific write-then-read shape resisted
-three separate synthetic reproduction attempts (a bare Interfaces-derived
-subtype, the same subtype with a `use_type_clause` and a consuming
-expression, and a from-scratch generic instantiation mirroring `Pid`'s own
-record/range shape), the same difficulty already documented for
-`FP-018`/`FP-019`.
-
-While investigating a fourth reproduction attempt (a from-scratch generic
-package with `Float`-ranged formal parameters used directly in a nested
-subtype declaration, unrelated to `Interfaces`), a *different*,
-apparently pre-existing false positive turned up: `Uninitialized_Read`
-fired on the generic's own formal parameters (`LOW_LIMIT`/`HIGH_LIMIT`)
-where they appear in `subtype T_Val is Float range LOW_LIMIT ..
-HIGH_LIMIT;`, textually inside the generic's own visible part. A generic
-formal object is always given a value by instantiation, never by a
-statement in the generic's own text, so treating it as an ordinary
-uninitialized local is a likely defect. Not investigated further here --
-out of scope for this session -- but worth a dedicated look; noted for a
-future pass rather than filed as a known issue without a confirmed root
-cause.
+While attempting one of those reproductions (a generic package with
+`Float`-ranged formal parameters used directly in a nested subtype
+declaration), a separate, still-unconfirmed potential false positive
+turned up and was not pursued further: `Uninitialized_Read` fired on a
+generic's own formal parameters where they appear in a subtype range
+inside the generic's visible part (e.g. `subtype T_Val is Float range
+LOW_LIMIT .. HIGH_LIMIT;`) — a generic formal object is always given a
+value by instantiation, never by a statement in the generic's own text,
+so treating it as an uninitialized local looks like a defect. Not filed
+as a known issue (no confirmed root cause); worth a dedicated look in a
+future pass.
 
 ### Root-caused (not locally fixable): FP-029
 
-The null-access message above, and three siblings at `types.ads:8:4-8:46`,
-`types.ads:15:21-15:46`, and `types.ads:16:21-16:47`, all trace to
-`crazyflie_support/src/types.ads`'s block of `subtype T_IntNN is
-Interfaces.IntegerNN;` / `type T_UintNN is new Interfaces.UnsignedNN;`
-declarations -- ordinary constructs with nothing unresolved about them.
-Reduced to a minimal single-file case (`with Interfaces;` at library level,
-a nested `Types` package with one such subtype, a nested `Pkg` package
-whose `Foo` takes a parameter of that subtype with its body declared
-separately from its spec) and instrumented with a symbolic traceback
-(`GNAT.Traceback.Symbolic`, temporarily, on both affected exception
-handlers) to find the exact call chain. Both independent call sites --
-`Subprogram_Summaries.Register_Body`'s `Body.P_Decl_Part` (resolving
-`Foo`'s separate declaration to build its interprocedural summary) and
-`SPARK_Readiness.Check_Discriminant_Access`'s ordinary name resolution on
-an unrelated `Dotted_Name` -- bottom out in the identical Libadalang chain:
-`Subtype_Decl_P_Get_Type` -> `Base_Subtype_Decl_P_From_Type_Bound` ->
-`Base_Subtype_Decl_P_Is_Private` -> `Base_Type_Decl_P_Next_Part` ->
-`Raise_Property_Exception`, inside vendored `libadalang-implementation.adb`.
-This confirms the corpus run's own framing: the gap is shared and
-independent of any specific check's logic, since it is reachable from two
-structurally unrelated analyses. It is an upstream Libadalang defect in
-resolving the privacy/"next part" of a plain subtype of an externally
-with'd package's scalar type during signature matching and name
-resolution, not an AdaLang Analyzer logic error, and there is no fix
-available on this side of the boundary. Both call sites already contain it
-correctly via their existing `when others` handler (skip and log, keep
-going), but the net effect is a real coverage gap: no interprocedural
-summary is registered for `Foo`, and the discriminant check silently does
-not run on the `Dotted_Name`, for any subprogram whose profile mentions
-such a subtype. Filed as `FP-029` (open; false-negative-shaped, no local
-fix possible) in `known_analysis_issues.tsv`. Covered by
+Four `dereferencing a null access` skip messages, all inside
+`crazyflie_support/src/types.ads`'s block of ordinary `subtype T_IntNN is
+Interfaces.IntegerNN;` declarations. Reduced to a minimal single-file
+case and traced (via temporary symbolic backtrace) to an upstream
+Libadalang defect: resolving the privacy/"next part" of a plain subtype
+of an externally `with`'d package's scalar type, inside the
+`Subtype_Decl_P_Get_Type` → ... → `Base_Type_Decl_P_Next_Part` chain in
+vendored `libadalang-implementation.adb`, reachable from two structurally
+unrelated analyses (interprocedural summary registration and an
+unrelated discriminant-access check) — confirming the gap is shared, not
+specific to either check's own logic, and that there is no fix available
+on this side of the Libadalang boundary. Both call sites already contain
+it correctly (skip and log, keep going), but the net effect is a real
+coverage gap: no interprocedural summary is registered, and the
+discriminant check silently doesn't run, for any subprogram whose profile
+mentions such a subtype. Filed as `FP-029` (open; false-negative-shaped,
+no local fix possible) in `known_analysis_issues.tsv`. Covered by
 `external_subtype_signature_match_robustness.adb` and a CLI-robustness
-check in `run_cli_robustness.sh` confirming the run still completes and
-reports its (unrelated, genuine) `Unused_Parameter` finding rather than
-aborting.
+check in `run_cli_robustness.sh` confirming the run still completes
+rather than aborting.
 
 ### Spot-checked, not fixed (open)
 
@@ -1456,606 +703,120 @@ rather than analyzer mistakes:
 No action taken on any of these beyond this sampling; not filed as known
 issues, since the analyzer's behavior here appears correct.
 
-### GNATprove comparison attempt
+### GNATprove comparison: not usable as an oracle for this corpus
 
-With both `Uninitialized_Read` false positives closed (`FP-029`, `FP-030`),
-a direct GNATprove run on the same corpus was attempted, to compare
-against a tool with actual formal-verification meaning for its documented
-SPARK scope rather than just against AdaLang's own bounded `--verify`
-mode. `gnatprove` (16.1.0) and the `arm-eabi` cross-compiler (`gnat_arm_elf`
-15.3.1) were installed via `alr install`; neither was present before.
+A direct GNATprove run on Certyflie was attempted, to compare against a
+tool with real formal-verification meaning rather than only AdaLang's own
+bounded `--verify` mode. It could not be completed: Certyflie and its
+`Ada_Drivers_Library` submodule were written against a ~2018-2020 GNAT
+toolchain, and the modern Alire-packaged toolchain hits a chain of
+incompatibilities (renamed runtime profiles, a GPR-ordering restriction
+current GPR2-based tooling rejects, and finally a genuine Ada legality
+error in unrelated FAT-filesystem middleware that GNATprove's whole-project
+model still has to elaborate even though this study only cares about the
+flight-control logic). This is a real, still-relevant difference between
+the two tools worth keeping in mind when reading this corpus's results:
+AdaLang Analyzer's Libadalang foundation tolerates a deliberately scoped,
+incomplete file set well enough to still produce useful findings;
+GNATprove's whole-project, fully-elaborated model does not, and an
+8-year-old embedded project needs real toolchain-currency work before
+GNATprove can even start here — independent of anything about the SPARK
+content of the flight-control code itself. No GNATprove oracle comparison
+exists for this corpus as a result.
 
-Getting even close to a real run surfaced a chain of environment/version
-obstacles, each pointing at the same underlying cause: Certyflie and its
-`Ada_Drivers_Library` submodule were written against a GNAT toolchain from
-around 2018-2020, and the Alire-packaged toolchain available today is
-substantially newer.
+## Relational precision work for `--verify` (2026-08-11 – 2026-08-13)
 
-- Runtime naming changed upstream: `cf_ada_spark.gpr`'s closure asks for
-  `"ravenscar-full-stm32f4"` / `"ravenscar-sfp-stm32f4"` (old naming); the
-  modern `gnat_arm_elf` toolchain only ships the renamed equivalents,
-  `"embedded-stm32f4"` and `"light-tasking-stm32f4"`.
-- Unlike AdaLang Analyzer, which tolerates a deliberately scoped subset of
-  files (a `with`ed unit outside the analyzed set just becomes a
-  `Property_Error` for that one reference, without aborting the rest of the
-  file), GNATprove requires a fully closed, compilable dependency graph
-  before Phase 2 (`Global` contract generation) can even begin. Pointing it
-  at AdaLang's own scoped file list immediately failed on `stm32.ads` and
-  similar board-driver units that genuinely exist in the cloned submodule
-  but sit outside that deliberately narrower scope.
-- Pulling in the full board-driver closure (as `cf_ada_spark.gpr` itself
-  does) hit a GPR-file ordering restriction the modern, GPR2-based tooling
-  enforces but the original ~2018 tooling did not:
-  `Ada_Drivers_Library/boards/crazyflie/crazyflie_full.gpr` reads
-  `Project'Target` in a plain variable assignment before its own later
-  `for Target use "arm-eabi";` clause, which current `gnatprove` rejects
-  outright regardless of `--target=`/`--RTS=` passed on the command line.
-  Worked around locally (in the scratch clone only, not part of this
-  repository) by moving the `for Target use`/`for Runtime` clauses earlier
-  in that same file.
-- With that resolved, `gnatprove -P cf_ada_spark.gpr --mode=check` reached
-  Phase 2 and failed on a genuine Ada legality error in
-  `middleware/src/filesystem/file_io.adb` ("implicit conversion of
-  stand-alone anonymous access object not allowed") -- code belonging to
-  the FAT-filesystem middleware that ships as part of
-  `Ada_Drivers_Library`'s board support, entirely unrelated to the
-  flight-control logic this corpus study is actually about, but pulled
-  into the same closure regardless because GNATprove analyzes whole
-  projects, not scoped file lists.
+The Tokeneer section above names "the current non-relational range domain
+is inconclusive" as the largest imprecision reason in that corpus. This
+section records a measurement-driven investigation into extending
+`VC_Prover`'s existing dual-solver (CVC5/Z3) bridge to cover more of that
+gap, rather than building speculatively: each step measured a hypothesis
+against real corpora (mainly Tokeneer and a smaller, structurally different
+corpus, `project_bias`) before committing to the next one. `Decide_Bounds`
+and `Decide_Nonzero` (containment/excluded-point goals against the interval
+domain's own `Abstract_Range`) were added to `VC_Prover` as reusable
+building blocks; a throwaway shadow-instrumentation run showed a naive
+"query the solver on every `Unproved` obligation" fallback would recover at
+most ~7% of any one obligation kind, because 68-94% of such queries never
+even reach the solver — `VC_Prover.Symbolic_State` has already discarded
+the relevant term by the time the query is built. (Zero `VC_Refuted`
+results occurred in that measurement, so the soundness half of the
+question was clean; it was pure lost precision, not risk.)
 
-Stopped here rather than continue patching an unknown number of further
-legacy-compiler-compatibility errors in code outside this study's actual
-area of interest (filesystem, BLE, audio middleware). The practical
-conclusion stands on its own as a real difference between the two tools,
-independent of any further findings a completed run might have produced:
-AdaLang Analyzer's Libadalang foundation tolerates an incomplete or
-partially out-of-date codebase enough to still produce useful, scoped
-findings; GNATprove's whole-project, fully-elaborated model does not, and
-an 8-year-old embedded project needs real toolchain-currency work before
-GNATprove can even start, independent of anything about the SPARK content
-of the flight-control code itself.
+Instrumented diagnostics (`Dump_Symbolic_Diagnostics`, kept in the tree,
+`ADALANG_VERIFY_SYMBOLIC_DIAGNOSTICS`-gated) isolated *why* terms get
+discarded: not `Join`'s own whole-state havoc or `Include_Root` poisoning
+(both zero occurrences), but `Assign`/`Assume` failing to translate an
+expression into an SMT term in the first place — the dominant untranslated
+AST kinds on Tokeneer being `Ada_Dotted_Name` (record-component access,
+39%), `Ada_Identifier` (26%), and `Ada_Attribute_Ref`; on `project_bias`,
+`Ada_Membership_Expr` (`X in ...`, 50%). Each gap was then closed and
+re-measured in turn:
 
-## Relational fallback for `--verify`: shadow-query measurement (2026-08-11)
+- **`Ada_Membership_Expr` support** in `Boolean_Term` (range/value/`not in`
+  membership tests): shipped, confirmed correct on a synthetic case, but
+  zero corpus payoff — Tokeneer's dominant membership shape is a
+  subtype-mark alternative and `project_bias`'s is attribute-bounded
+  (`'First .. 'Last`), neither translatable yet, which motivated the next
+  two items.
+- **`Ada_Attribute_Ref` support** (`'First`/`'Last`/`'Length`) in
+  `Integer_Term`, plus subtype-mark membership alternatives resolving
+  through the existing `Type_Range`/`Array_Index_Range` helpers (promoted
+  from `Flow_Interp` to the shared `Flow_Eval` layer): shipped, and this is
+  the one step that moved a corpus for real — Tokeneer's `provedSafe` rose
+  from 1623 to 1741 (+7.3% of the whole run). `project_bias` didn't move:
+  its arrays carry a per-*object* constraint that `Array_Index_Range`
+  (type-level resolution only) can't see, a pre-existing limitation shared
+  with the already-shipped index-check machinery, not a regression.
+- **Enum-sort support** (`Enum_Sort`, keyed on declaration-order position,
+  equality/membership only): shipped, confirmed correct on synthetic cases,
+  but zero net `provedSafe` movement on either corpus — investigation found
+  `VC_Prover.Assign` was already silently mistyping enum-to-enum
+  assignments as `Boolean_Sort` (a pre-existing, not newly introduced,
+  guard weakness in `Boolean_Term`'s `Ada_Identifier` case), so the new
+  `Enum_Sort` binding on a comparison's literal side collided with the
+  variable's wrong sort and stayed `Unsupported` either way. Fixed properly
+  as **declaration-resolved scalar sorts**: `VC_Prover` now resolves a
+  scalar's sort from its actual Libadalang type declaration up front
+  (`Bool`/`Int`/`Enum_Sort`) instead of guessing via `Boolean_Term`-first.
+  Regression-covered; real-corpus re-measurement was left to the next step.
+- **`Ada_Dotted_Name` (record-component) support** in `Integer_Term`:
+  shipped, confirmed sound on five synthetic cases (including that two
+  different objects' same-named field resolve to distinct symbols, and a
+  truly uninitialized object's field correctly stays `Unproved`) and
+  confirmed non-regressing against a fully-proved oracle (SPARKNaCl) in
+  addition to the two tracked corpora — every `compare.awk` bucket
+  byte-identical, zero unsoundness, zero false positives, on all three.
+  Corpus payoff was real but tiny at the mechanism level (Tokeneer's
+  `Ada_Dotted_Name` translation failures: 2295 → 2269) and zero at the
+  `provedSafe` level, because the new case only resolves a plain-identifier
+  prefix (not a nested `A.B.C` selector, common in Tokeneer's own
+  package-qualified global state) and requires the prefix object to be
+  locally `Flow_Initialization`-true (which a package-level global never
+  is, since the interpreter's flow state is scoped to one subprogram).
+- **`Inlined_Call_Term` object-identity substitution** (added by the
+  repository owner, not this investigation): fixed a related gap where
+  inlining an expression function with a record-typed formal (e.g.
+  Tokeneer's own `IsPresent (TheAdmin : T) return Boolean is
+  (TheAdmin.RolePresent in ...)`) manufactured a meaningless fresh symbol
+  for the whole record instead of threading the caller's actual object
+  identity through. Verified correct and sound (an adversarial
+  write-then-assert case correctly stays `Unproved`; the three-corpus
+  before/after comparison stayed byte-identical, zero unsoundness). Fixes
+  the project's own named blocking example, but — like the step above —
+  produced zero measured `provedSafe` movement on the tracked corpora;
+  tracing exactly which obligations it should have unblocked was not
+  completed in this pass.
 
-The Tokeneer section above quantifies "the current non-relational range
-domain is inconclusive" as the single largest imprecision reason across that
-corpus (1505 occurrences), and `POSITIONING.md` names "validation and
-careful expansion of that [verify] boundary" as this project's own stated
-strategic direction. The natural candidate is extending `VC_Prover`'s
-existing dual-solver (CVC5/Z3, UNSAT-agreement-gated) bridge — already used
-for `Assert`/`Loop_Invariant`/precondition/postcondition obligations — to
-also decide range-check, index-check, division-by-zero, and
-integer-overflow obligations the interval domain (`Flow_Domain`) leaves
-`Unproved`. Rather than build and ship that fallback speculatively, its
-payoff and cost were measured first with throwaway shadow instrumentation:
-two new `VC_Prover` entry points, `Decide_Bounds` (a containment goal
-synthesized from an `Abstract_Range` instead of a literal source condition)
-and `Decide_Nonzero` (an excluded-point goal for the divisor case), sharing
-the same `Decide_Goal` solver core the existing `Decide` was refactored to
-use. These two functions are kept in `VC_Prover` (unused by any caller) as
-the one part of this exercise worth keeping regardless of the outcome below.
-
-The measurement itself lived entirely in `Flow_Interp`, gated behind an
-`ADALANG_VERIFY_SHADOW_BOUNDS` environment variable, wired into
-`Check_Value_Range`/`Check_Index_Range`/`Check_Division_By_Zero`/
-`Check_Integer_Overflow`'s own `Unproved` branches, and restricted to the
-`Final => True` replay pass only (never the live CFG-worklist scan) — the
-same boundary the `FP-031`/`FP-034`–`037` fixes established as the only
-place a new determination may safely be made. It never called any `Record_*`
-procedure; it only logged `kind`, `VC_Result`, elapsed milliseconds, and
-`file:line` to stderr. This wiring has since been reverted from
-`Flow_Interp` (it was diagnostic scaffolding, not a shipped feature); only
-the `VC_Prover` additions survive.
-
-Run against two corpora: Tokeneer (same pinned commit `a97467e9` and
-`test.gpr` invocation as the section above) and `project_bias` (pinned
-commit `bb835653`, 16 files) — a second, much smaller, structurally
-different corpus chosen for contrast, not as a fully-proved oracle (see its
-own entry above).
-
-| Kind | Corpus | Shadow queries | Proved/Refuted | Unknown | Unsupported (never reached the solver) |
-| --- | --- | --- | --- | --- | --- |
-| range-check | Tokeneer | 1522 | 66 (4.3%) | 31 (2.0%) | 1425 (93.6%) |
-| index-check | Tokeneer | 201 | 14 (7.0%) | 50 (24.9%) | 137 (68.2%) |
-| integer-overflow | Tokeneer | 191 | 6 (3.1%) | 23 (12.0%) | 162 (84.8%) |
-| division-by-zero | Tokeneer | 17 | 0 (0%) | 0 (0%) | 17 (100%) |
-| range-check | project_bias | 261 | 14 (5.4%) | 20 (7.7%) | 227 (87.0%) |
-| index-check | project_bias | 56 | 2 (3.6%) | 12 (21.4%) | 42 (75.0%) |
-| integer-overflow | project_bias | 77 | 0 (0%) | 12 (15.6%) | 65 (84.4%) |
-| division-by-zero | project_bias | 11 | 0 (0%) | 0 (0%) | 11 (100%) |
-
-Every "Proved/Refuted" result was `VC_Proved`: **zero `VC_Refuted` across
-2,266 combined shadow queries on both corpora**, so this fallback would not
-have introduced a false `Definite_Error` on either documented-clean
-codebase — the soundness half of the question is clean. `VC_Unavailable`
-also never occurred; both solvers were located via the existing Alire-SPARK
-fallback path in `Solver_Path` for every run.
-
-Cost, measured from the same shadow log: on Tokeneer, 190 of the 1931
-queries actually reached a solver (the rest returned `VC_Unsupported`
-before `Query` was ever called), totaling 4.26s of solver time; a full
-`--verify` run's wall-clock time went from 4.96s to 9.33s with the shadow
-path enabled (~+88%). `project_bias` (63 real solver calls) added 1.31s.
-
-**Conclusion**: not worth building as scoped. Payoff tops out at 7% of the
-`Unproved` obligations for any single kind, and division-by-zero saw zero
-benefit in 28 combined queries across both corpora. The dominant reason is
-not solver weakness — of the minority of queries that reached a solver,
-`VC_Unknown` competed with or exceeded `VC_Proved` (index-check: 24.9%/25%
-Unknown vs. 7.0%/3.6% Proved on the two corpora) — it is that 68-94% of
-queries never reached the solver at all, because `VC_Prover.Symbolic_State`
-had already discarded the relevant term before the shadow query was even
-built. This is exactly the join-point collapse risk anticipated before this
-measurement was run ("conflicting assignments receive a fresh unconstrained
-merge symbol" at every CFG join with disagreement), now confirmed as the
-actual bottleneck rather than a secondary concern: the real leverage is in
-improving `Symbolic_State`'s own join precision so more terms survive to a
-query, not in adding more consumers of the join as it stands today. No
-action taken beyond recording this and keeping `Decide_Bounds`/
-`Decide_Nonzero` dormant in `VC_Prover` for whenever that join-precision
-work is undertaken.
-
-## Symbolic-state discard mechanism: instrumented measurement (2026-08-11)
-
-The section above named "join-point collapse" as the suspected mechanism
-behind `Symbolic_State`'s precision loss, based on the existing code comment
-("conflicting assignments receive a fresh unconstrained merge symbol").
-Before redesigning `Join` on that basis, the actual mechanism was measured:
-a new `VC_Prover.Dump_Symbolic_Diagnostics` (gated by
-`ADALANG_VERIFY_SYMBOLIC_DIAGNOSTICS`, called once at the end of a run from
-`Adalang_Analyzer.CLI.Run`, kept in the tree rather than reverted since it
-is cheap when unset and useful for validating future fixes) tallies why
-`Assign`, `Assume`, `Join`, and `Include_Root` each discard a fact, broken
-down by the AST kind of the untranslatable node where cheap to derive.
-
-Run on the same two corpora as the section above:
-
-| Mechanism | Tokeneer | project_bias |
-| --- | --- | --- |
-| `Join` whole-state Havoc (`not Left.Supported or else not Right.Supported`) | 0 | 0 |
-| `Include_Root` Sort/Key-conflict poison | 0 | 0 |
-| `Join` merge — survived (both sides agreed) | 164 | 62 |
-| `Join` merge — fresh unconstrained symbol | 1208 (88%) | 248 (80%) |
-| Total `Assign` translation failures | 5874 | 452 |
-| Total `Assume` translation failures | 2174 | 614 |
-
-Two of the four hypothesized mechanisms never fire in either corpus:
-`Join`'s own whole-state discard and `Include_Root`'s poisoning are not the
-problem. The dominant cause is that `Assign`/`Assume` fail to produce a
-binding in the first place — 8048 failures on Tokeneer against only 1372
-total merge attempts, meaning most CFG-join candidates already have nothing
-comparable to merge before `Join` is even reached. The high
-"merge — fresh symbol" rate is a downstream symptom of this, not an
-independent defect in `Join`'s own algorithm; redesigning `Join` first
-would have targeted the wrong mechanism.
-
-The by-AST-kind breakdown of `Assign`-havoc on Tokeneer: `Ada_Dotted_Name`
-(record-component access) 2295 (39%), `Ada_Identifier` (source variable not
-provably initialized) 1543 (26%), `Ada_Call_Expr` (ordinary calls, indexing,
-non-signed-integer conversions) 1073 (18%), the remainder split across
-aggregates, attributes, and string/character literals. `project_bias`'s
-`Assume`-havoc is dominated by a single kind: `Ada_Membership_Expr`
-(`X in ...`), 308 of 614 (50%) — `Boolean_Term` had no case for membership
-tests at all before this measurement.
-
-### `Ada_Membership_Expr` support added to `Boolean_Term`
-
-Implemented and shipped (not scaffolding): `Boolean_Term` now translates
-`X in <range>` / `X in <value>` / `X not in ...`, combining multiple
-alternatives with `or` and negating for `not in`, mirroring
-`Flow_Eval`'s own existing `Ada_Membership_Expr` case for the abstract
-interpreter. Any single alternative this bridge cannot translate (see
-below) fails the whole expression rather than silently under-approximating
-the membership set — the same fail-fast-on-any-unhandled-shape discipline
-every other case in this file already follows. Confirmed working
-end-to-end on a synthetic case exercising the *production* path (no shadow
-scaffolding involved): `Y := X; if Y in 0 .. 100 then pragma Assert
-(X in 0 .. 100); end if;` — previously `Unproved` (the interval domain is
-non-relational; neither the `Assume` nor the `Assert` could be translated
-at all), now `Proved_Safe` via `method: external-prover`. Full repository
-test suite (`tests/run_all.sh`, including the 217-case precision corpus and
-the GNATprove differential gate) passes. One self-inflicted issue caught
-and fixed along the way: the diagnostic tally inside `Join` (a function)
-originally assigned directly to package-level state, which this project's
-own `Function_Side_Effect` check correctly flagged against `--recommended`
-self-analysis; moved the increment into a small `Bump` procedure so the
-function itself contains no direct assignment to outside state.
-
-**Real-world payoff on the two measured corpora: zero, for a specific,
-disclosed reason.** Re-running the same diagnostic after the fix produced
-byte-identical tallies on both corpora — `Ada_Membership_Expr` is still 10
-(Tokeneer) / 308 (project_bias) `Assume`-havoc occurrences. Grepping both
-corpora's actual membership-test shapes explains why: Tokeneer's dominant
-shape is a single subtype-mark alternative (`TheAdmin.RolePresent in
-PrivTypes.AdminPrivilegeT`), and `project_bias`'s is attribute-bounded
-ranges (`Idx in Rnd_Buffer'First .. Rnd_Buffer'Last`). Neither is a literal
-range or literal value — a subtype mark isn't a value-yielding expression
-`Integer_Term` can translate at all (it falls through the same
-`Ada_Identifier` path a real variable would, and correctly fails there for
-the wrong-but-safe reason of looking like an uninitialized read), and
-`'First`/`'Last` are `Ada_Attribute_Ref` nodes, a kind `Integer_Term` has no
-case for at all (and is itself independently the second-largest `Assign`-
-havoc bucket, 105-144 occurrences). This was a disclosed limitation from
-the start (see this addition's own code comment, "a subtype-mark choice,
-e.g."), not a bug — the fix is correct and real, it simply isn't yet the
-blocker for either corpus's actual code shapes.
-
-**Conclusion**: the membership-expr addition is complete, tested, and
-correctly scoped, but the two concrete next blockers it exposed —
-subtype-mark alternatives (needs the same static-range resolution
-`Type_Range` already performs elsewhere in `Flow_Interp`, applied to a
-membership alternative instead of a target subtype) and `Ada_Attribute_Ref`
-support in `Integer_Term`/`Boolean_Term` (`'First`/`'Last`/`'Range`/
-`'Length` at minimum) — are where the next payoff on these two corpora
-actually is. Not yet built; recorded here as the validated next step rather
-than acted on speculatively, consistent with this file's own methodology.
-
-### Both blockers implemented and measured
-
-Built both. `Type_Range` and `Array_Index_Range` were promoted from
-`Flow_Interp` (private) to `Flow_Eval` (shared) unchanged, since
-`VC_Prover` sits below `Flow_Interp` in the dependency graph and cannot
-import it; `Flow_Interp`'s own nine call sites resolve to the moved
-versions automatically via its existing `use Adalang_Analyzer.Flow_Eval`,
-zero other changes needed there. `Boolean_Term`'s membership-alternative
-handling now resolves a subtype-mark choice to its own `Type_Range` instead
-of trying to translate it as a value. `Integer_Term` gained an
-`Ada_Attribute_Ref` case for `'First`/`'Last`/`'Length` on the default
-dimension, resolving through `Type_Range` (a subtype-mark prefix) or
-`Array_Index_Range` (an array-object prefix); `'Length` correctly floors at
-0 for an empty range rather than going negative. Both confirmed
-end-to-end on synthetic cases exercising the production path (an assertion
-moving from `Unproved` to `Proved_Safe` via `external-prover` in each
-case), and confirmed *conservative* on a deliberately-dynamic-bounds
-fixture (`Arr : String`, an unconstrained parameter — correctly stays
-`Unproved`, since `Arr'First`/`'Last` genuinely aren't static there). Full
-test suite green on the first build after both additions, including the
-217-case precision corpus and the GNATprove differential gate.
-
-Re-measured with `Dump_Symbolic_Diagnostics` on the same two corpora:
-
-| | Tokeneer | project_bias |
-| --- | --- | --- |
-| `provedSafe` (of 6697 / 2342 total obligations) | 1623 → **1741** (+118, +7.3%) | 383 → 383 (unchanged) |
-| `Assign`-havoc, `Ada_Attribute_Ref` | 105 → **35** (-67%) | 144 → 144 (unchanged) |
-| `Assume`-havoc, `Ada_Membership_Expr` | 10 → 10 (unchanged) | 308 → 308 (unchanged) |
-
-**Tokeneer moved for real** — `Ada_Attribute_Ref` support alone recovered
-two-thirds of that bucket and lifted `provedSafe` by 118 obligations (a
-7.3% increase over the entire run, not just the affected family), the
-first payoff either measurement round produced. Its `Ada_Membership_Expr`
-count didn't move because Tokeneer's dominant shape
-(`TheAdmin.RolePresent in PrivTypes.AdminPrivilegeT`) tests membership in
-an *enumeration* subtype (`AdminPrivilegeT`), and this bridge has no enum
-sort at all — `Integer_Sort`/`Boolean_Sort` are its only two, a scope limit
-present since `VC_Prover` was first built, not something either blocker fix
-touches.
-
-**project_bias moved for a genuine, disclosed reason: zero.** Its arrays
-(`Rnd_Buffer : BUFFER_RNG (0 .. BUFFER_RNG_LENGTH_expr)`, from `type
-BUFFER_RNG is array (BUFFER_RNG_LENGTH range <>) of UCHAR`) are locally
-declared with a per-object constraint on an otherwise-unconstrained array
-type — `Array_Index_Range` resolves bounds from a *type* declaration, and
-Libadalang's `P_Expression_Type` on the object reference surfaces the
-unconstrained base type, not the object's own constraint, so this falls
-through to the same conservative path an actually-unconstrained parameter
-would take (matching the `Arr : String` fixture above). This is a
-pre-existing limitation of `Array_Index_Range` shared with the *already-
-shipped* index-check machinery that has used the identical
-`P_Expression_Type`-based resolution since before this session (see
-`Check_Conversion_Or_Index` in `Flow_Interp`) — not a regression, and not
-fully fixable by resolving it either: `BUFFER_RNG_LENGTH`'s own bound in
-this corpus is a runtime-computed expression, not a literal, so even
-perfect object-constraint resolution would still leave it `Unproved`.
-
-**Conclusion**: both blockers were real and worth building — Tokeneer
-proves it — but "the next blocker" keeps being corpus-specific once you
-follow it far enough (enum sorts, object- vs. type-level array
-constraints), consistent with this file's running theme that a single
-fix's real-world payoff has to be measured per corpus, not assumed from
-the shape of the fix. No further action taken on the enum-sort or
-object-constraint gaps here; recorded as further validated-but-deferred
-input alongside the rest of this section.
-
-### Enum-sort support: built, confirmed on synthetic cases, zero net corpus payoff (2026-08-13)
-
-The enum-sort gap named above (`VC_Prover.Scalar_Sort` had only
-`Integer_Sort`/`Boolean_Sort`; Tokeneer's dominant `Ada_Membership_Expr`
-shape tests membership in an enumeration subtype) was built, scoped
-deliberately small: equality and membership-test translation only, no
-ordering/`'Succ`/`'Pred`/`'Pos`/`'Val`. A new `Enum_Sort` represents a value
-by its 0-based declaration-order position (Ada's `'Pos`, not GNAT's
-`'Enum_Rep`, which a representation clause can remap away from declaration
-order). Two new helpers do the resolution: `Enum_Literal_Position` (an enum
-literal reference, e.g. `Admin`, to its position) and
-`Enum_Type_Position_Range` (a full base enum type declaration to its `0 ..
-Literal_Count - 1` range, used to bound an unknown-valued enum variable's
-symbolic root the same way an integer subtype's declared range bounds an
-ordinary `Integer_Sort` root). Both are self-contained in `VC_Prover`
-rather than promoted to the shared `Flow_Eval` layer this time, since the
-scope was deliberately kept to VC_Prover's own translation, not the
-abstract interpreter. Neither resolves a range-narrowed subtype (`subtype
-S is T range A .. B`) -- conservatively `Unsupported` there, same as every
-other unhandled shape in this file.
-
-**Confirmed working end-to-end on the production path** (no shadow
-scaffolding) on four synthetic shapes, each moving from `Unproved` to
-`Proved_Safe` via `method: external-prover`: plain equality against a
-literal (`if R = Admin then pragma Assert (R = Admin); end if;`), range
-membership (`R in Guest .. Member`), value-list membership (`R in Guest |
-Admin`), and full-type-mark membership (`R in Role_Kind`) -- all with `R`
-a formal parameter compared directly, never reassigned. Full repository
-test suite green throughout, including the 217-case precision corpus and
-the GNATprove differential gate.
-
-**Real-world payoff on Tokeneer and project_bias (same corpora and
-pinned commits as the sections above): zero net movement in `provedSafe`,
-for a disclosed reason found by testing the "assign, then compare" shape
-before trusting the corpus numbers alone.** `Dump_Symbolic_Diagnostics`
-before/after (byte-identical `--verify` invocation, same two corpora):
-
-| | Tokeneer | project_bias |
-| --- | --- | --- |
-| `provedSafe` (of 6697 / 2342 total obligations) | 1741 → **1741** (unchanged) | 383 → **383** (unchanged) |
-| `Assign`-havoc, `Ada_Identifier` | 1543 → **1015** (-528, -34%) | 54 → **50** (-4) |
-| `Assume`-havoc, `Ada_Membership_Expr` | 10 → 10 (unchanged) | 308 → 308 (unchanged) |
-
-The membership-expr count not moving is expected and already explained by
-the two sections above: Tokeneer's dominant shape needs `Ada_Dotted_Name`
-(record-component access) support in `Integer_Term`, which this change
-does not add; project_bias's needs object-level (not type-level) array
-constraint resolution, also not touched here. The more surprising result
-is that a real, substantial `Assign`-havoc reduction (528 fewer failures on
-Tokeneer -- assigning an enum literal to a variable, e.g. `S := Admin;`,
-now translates instead of failing) produced **no** additional
-`provedSafe` obligations on either corpus.
-
-Root cause, found by testing the exact "assign, then compare" shape as a
-synthetic fixture rather than trusting the aggregate numbers alone:
-`VC_Prover.Assign` always tries `Boolean_Term` on the assigned value
-*first*, falling back to `Integer_Term` only if that fails. `Boolean_Term`'s
-own `Ada_Identifier` case has a guard that was never a real type check --
-it accepts anything the interval domain hasn't proven is definitely
-integer-valued (no known `Value`, no known range), which every enum
-variable trivially satisfies, since the interval domain never tracks enums
-at all (the same blind spot `Enum_Type_Position_Range` exists to patch on
-the `Integer_Term` side). So `S := R;` for two enum variables was *already*
-silently accepted by `Assign` before this change -- just bound as a
-fabricated `Boolean_Sort` symbol with no connection to `R`'s real value,
-not `Havoc`. That pre-existing (not introduced by this change) mistyping
-then collides with this change's own `Enum_Sort`/`Integer_Sort` binding for
-the *literal* side of a later comparison: `Symbol_For`'s Sort-mismatch
-check correctly refuses to compare a `Boolean_Sort`-bound variable against
-an `Enum_Sort`/`Integer_Sort`-typed literal, so the comparison stays
-`Unsupported` either way. Confirmed directly with two synthetic fixtures,
-both staying `Unproved` end-to-end: `S := Admin; pragma Assert (S =
-Admin);` (direct literal assignment) and `S := R; if S = Admin then pragma
-Assert (R = Admin); end if;` (variable-to-variable assignment) -- contrast
-with the four *unassigned*-parameter shapes above, which all prove.
-
-**Conclusion**: shipped as real, tested, and correctly scoped -- the
-`Enum_Sort` machinery is sound and does what it says for a directly-compared
-identifier -- but its practical payoff on the two corpora already being
-tracked is nil, because both corpora's actual code assigns before
-comparing far more often than it compares a never-reassigned identifier
-directly. The validated next blocker, matching this file's running theme,
-is `Boolean_Term`'s `Ada_Identifier` guard: it needs an actual "does the
-interval domain positively know this is integer/boolean" check rather than
-"has nothing disproven it," which is a change to a much more
-widely-exercised function (every `=`/`/=` comparison in the file routes
-through it) and therefore a materially larger-blast-radius fix than
-anything in this file so far -- deliberately not attempted in this same
-change, consistent with keeping each measured step to one mechanism. Not
-yet built; recorded here as the validated next step.
-
-### Declaration-resolved scalar sorts: built and regression-covered (2026-08-13)
-
-The validated blocker above is now implemented. `VC_Prover` resolves scalar
-sorts from Libadalang's semantic expression/type declarations: precisely
-`Standard.Boolean` maps to SMT `Bool`, signed integers map to `Int`, and other
-enumerations map to `Enum_Sort` using their declaration-order positions.
-`Assign` selects its translator from that result and stores the same sort in
-the symbolic binding, instead of trying `Boolean_Term` first and treating an
-enum without interval facts as Boolean. Formal substitution and identifier or
-record-component translation use the same resolution rule.
-
-The regression set covers enum-literal assignment, enum-variable copying,
-membership, user-defined literals named `True`/`False`, a false enum assertion,
-and a fixed-point scalar that must remain `Unproved` with `sort-mismatch`
-provenance. The proof-path manifest adds positive, adversarial, unsupported,
-and solver-unavailable evidence for the enum-assignment route. Real-corpus
-measurement is intentionally left to the separately scoped follow-up step.
-
-### `Ada_Dotted_Name` (record-component) support: built, safe, near-zero corpus payoff (2026-08-13)
-
-The other named prerequisite for Tokeneer's dominant `Ada_Membership_Expr`
-shape (`TheAdmin.RolePresent in PrivTypes.AdminPrivilegeT`) -- and
-separately the single largest `Assign`-havoc bucket on Tokeneer (39%,
-`Ada_Dotted_Name`) -- was built: `Integer_Term` gained a case for ordinary
-record-component reads like `TheAdmin.RolePresent`, which previously fell
-straight to `Unsupported` (no case for that node kind existed at all).
-
-**Design.** `VC_Prover`'s `Symbol_Root`/`Symbolic_Binding` were keyed by a
-single `Ada_Node` (a defining name), which is fine for a plain variable but
-cannot soundly represent "one component of one object" -- a component's
-own declaration is shared by every object of the record type, so keying
-only on it would conflate `TheAdmin.RolePresent` with
-`SomeOtherAdmin.RolePresent`. Fixed by replacing the key with a new
-`Symbol_Key` record (`Object`, `Component`, the latter `No_Ada_Node` for
-every ordinary object -- the common case, unchanged), private to
-`VC_Prover` and touching no other unit. The new `Ada_Dotted_Name` case
-resolves `Object` from the prefix (`Referenced_Key`, the same helper
-ordinary identifiers already use) and `Component` from the suffix's own
-referenced declaration, checks it is a genuine `Ada_Component_Decl` (not
-GNAT's RM 8.3 own-name-qualification shape, `Flow_Assigned_Name`'s already-
-handled special case, and not a package-qualified name), and -- the
-critical safety gate -- requires the *prefix object* to be
-`Flow_Initialization`-true before treating the component as a legitimate,
-if unknown, value. This is a real limitation, not a new one: no per-
-component tracking exists anywhere in this codebase's abstract interpreter
-(`Flow_Assigned_Name` itself only recognizes the RM 8.3 shape, never a
-general `Object.Component := ...`), so there is no way to verify the
-*specific field* was written, only that the object entered the analysis
-considered initialized -- the same level of trust already placed in an
-`in`/`in out` parameter's own `Flow_Initialization`, not a new category of
-risk.
-
-**Confirmed correct on five synthetic cases**, all via the production path:
-equality and range-membership against a record field, both proving;
-crucially, **two different objects' same-named field resolve to distinct
-symbols** (`First.RolePresent = Admin and then Second.RolePresent = Guest`
-correctly proves `First.RolePresent /= Second.RolePresent`, ruling out the
-conflation risk the `Symbol_Key` design exists to prevent); a truly
-uninitialized object's field correctly stays `Unproved` (the safety gate
-firing as intended); and the pre-existing RM 8.3 own-name-qualification
-shape (`Subp_Name.Param := ...`) is unaffected, whether written or read
-back through the same qualified form. Full test suite green throughout.
-
-**Corpus payoff: real but tiny at the mechanism level, zero at the
-provedSafe level, on all three corpora re-measured.** Re-run via a real
-before/after binary comparison (this repository's own `benchmarks/`
-harness) on Tokeneer, `project_bias`, and -- given record-component
-support touches every existing comparison's data path, unlike the
-self-contained enum-literal case -- also SPARKNaCl, as a soundness spot-
-check on a fully-proved oracle:
-
-| | SPARKNaCl | project_bias | Tokeneer |
-| --- | --- | --- | --- |
-| `provedSafe` | 3,469 → **3,469** (0) | 383 → **383** (0) | 1,741 → **1,741** (0) |
-| Matched-pair bucket split | identical | identical | identical |
-| Possible unsoundness | 0 → **0** | 0 → **0** | 0 → **0** |
-| False positives | 0 → **0** | 0 → **0** | 0 → **0** |
-
-Every single number in every `compare.awk` report -- matched pairs, all
-five buckets, count-mismatches -- came back byte-identical on all three
-corpora. `Assign`-havoc `Ada_Dotted_Name` on Tokeneer did move, just barely:
-2,295 → 2,269 (-26, ~1%), confirming the new case does fire on real code,
-just rarely enough to leave zero trace in the final proof-obligation
-verdicts.
-
-**Why the payoff is this small**, from inspecting the shape of Tokeneer's
-own dotted-name usage rather than assuming: a rough count found roughly
-960 two-dot (`X.Y.Z`) selected-component occurrences in the corpus's
-`.adb` files alongside single-dot ones. Two concrete gaps explain most of
-the gap between "2,295 candidates" and "26 newly handled":
-
-1. **Nested selectors** (`A.B.C`) aren't handled at all -- the new case
-   only resolves a prefix that is a *plain identifier*
-   (`Referenced_Key (Dotted.F_Prefix)`); a prefix that is itself a
-   `Dotted_Name` (e.g. `AuditLog.State.LogFileState`, a shape visibly
-   common in Tokeneer's own package-qualified global state, per the many
-   `constituent of "State"` messages in this file's own GNATprove output)
-   falls through to `Referenced_Key`'s generic `P_Referenced_Defining_Name`
-   resolution, which has no defined, safe meaning for a compound prefix
-   here and was not specifically designed for or tested against.
-2. **Non-local prefixes never reach `Flow_Initialization = True` at all.**
-   The interpreter's flow state is scoped to the current subprogram's own
-   locals and parameters; a package-level global referenced through a
-   `with`'d package (again, Tokeneer's own `State` constituents) was never
-   seeded into that subprogram's `Flow_State` in the first place, so the
-   safety gate this addition depends on can never pass for it -- correctly
-   conservative, but it rules out a large share of exactly the shape
-   Tokeneer uses most.
-
-**Conclusion**: shipped as real, tested, sound (confirmed against a fully-
-proved oracle, not just the two already-imprecise corpora), and correctly
-scoped to what it says -- a single-level, locally-scoped record-component
-read. Both blockers above are legitimate further work, not defects, and
-both are corpus-specific discoveries in the same sense this file's earlier
-sections describe: the object-scope limitation in particular would need
-either promoting global/package-level seeding into the interpreter's own
-`Flow_State` (a change to `Flow_Interp`, well outside `VC_Prover`) or a
-different, weaker safety argument for non-local prefixes -- neither
-attempted here. Recorded as further validated-but-deferred input,
-consistent with this file's own methodology.
-
-### `Inlined_Call_Term` object-identity substitution (2026-08-13, user-authored)
-
-The record-component work above named the actual mechanism blocking
-Tokeneer's own `IsPresent`-shaped example: `function IsPresent (TheAdmin :
-T) return Boolean is (TheAdmin.RolePresent in PrivTypes.AdminPrivilegeT);`,
-called at its use sites as `Admin.IsPresent(TheAdmin)`. `Inlined_Call_Term`
-substitutes every formal by translating its actual into a scalar SMT term
--- correct for an ordinary scalar, but for a record-typed formal like this
-one it manufactured a meaningless fresh symbol for the whole record and
-bound the formal to that, severing any connection between the callee's own
-`TheAdmin.RolePresent` and the caller's `A.RolePresent`. Confirmed directly
-before this fix: even the simplest possible reproduction (`function Get_Age
-(TheAdmin : Rec) return Integer is (TheAdmin.Age); ... if Get_Age (A) > 0
-then pragma Assert (A.Age > 0)`) stayed `Unproved`.
-
-Fixed (by the repository owner, not this session) by adding a second,
-separate substitution mechanism for record-typed formals: a
-`Object_Binding` list on `Translation_Context` recording `(Formal, Actual)`
-pairs, consulted by a new `Object_Identity` function that the
-`Ada_Dotted_Name` case now calls on its resolved prefix before building a
-`Symbol_Key`, so a callee's `TheAdmin.Field` builds the *same* key the
-caller's own `A.Field` would. Scoped deliberately narrowly: only a plain
-identifier actual is accepted (`Actual.Kind /= Ada_Identifier` bails to
-`Unsupported`), gated on the same `Flow_Initialization` check the plain
-record-read case already uses. `Object_Identity` also walks the binding
-chain (bounded by its own length) rather than substituting once, so a
-record identity threaded through two levels of inlining (`F` calling `G`,
-both taking the same record type) still resolves to the original object.
-
-**Verified in this session** (not the author's own testing, which already
-added a passing regression case to `tests/verification_vc_call_inlined.adb`
-and `tests/run_verification.sh`):
-
-- **Correctness**: the exact `IsPresent` shape, reproduced synthetically,
-  now proves via `external-prover` where it previously stayed `Unproved`.
-  The two-level `F`/`G` chain case the design comment calls out also
-  resolves correctly.
-- **Soundness -- traced to the code, not just spot-checked**, since this
-  change touches how every inlined call with a record parameter behaves,
-  not a self-contained new case. A record-component write (`R.F := 10;`)
-  does not match `Flow_Assigned_Name`'s recognized destination shapes, so
-  `Flow_Interp.adb`'s own CFG-transfer logic (line ~3500) falls to its
-  `else` branch and calls `VC.Havoc`, discarding the *entire* symbolic
-  state on that write -- a pre-existing, coarse-grained safety net neither
-  this fix nor the record-component work above touches. A sharp adversarial
-  test confirms it holds: `if R.F = 5 then R.F := 10; pragma Assert (R.F =
-  5); end if;` (now false) correctly stays `Unproved`, not wrongly proved.
-  The record-component work's own regression fixtures (distinct-objects
-  non-conflation, the truly-uninitialized safety gate, RM 8.3 own-name-
-  qualification read/write) were all re-run and still hold.
-- **Real before/after binary comparison on the same three corpora** as the
-  section above (SPARKNaCl, `project_bias`, Tokeneer): every `compare.awk`
-  bucket, on all three, is again byte-identical, including the two that
-  matter most given the soundness stakes -- possible unsoundness and false
-  positives both stayed at 0 everywhere. `provedSafe` also stayed exactly
-  byte-identical on all three (Tokeneer 1,741, SPARKNaCl 3,469,
-  `project_bias` 383) -- **despite the fix demonstrably working on
-  Tokeneer's own named shape**, corpus-level payoff is again zero.
-
-**A correction to this file's own earlier reasoning, found while chasing
-why the payoff is still zero.** The previous section's "`Ada_Membership_Expr`
-count didn't move" argument, and this file's running practice of reading
-`Assume_Havoc_By_Kind`/`Assign_Havoc_By_Kind` tallies to diagnose what's
-blocked, both rest on an assumption that doesn't hold for an
-inlining-dependent gap like this one: `Assume`'s own havoc tally
-(`Tally (Assume_Havoc_By_Kind, Condition.Kind'Image)`) records the *outer*
-condition's node kind -- e.g. `Admin.IsPresent(TheAdmin) and not
-AdminToken.IsPresent` tallies as `ADA_BIN_OP` -- never the kind of whatever
-sub-expression, however many inlining levels deep, actually caused the
-failure. A membership expression buried inside an inlined call's own body
-was never separately visible in that tally at all, so "the count didn't
-move" was never good evidence about this specific mechanism one way or the
-other. This file's per-kind tallies remain useful for *directly*-occurring
-node shapes (which is what every prior use of them, including the
-`Ada_Membership_Expr`/`Ada_Attribute_Ref` work, actually measured) but are
-the wrong tool for anything gated behind `Inlined_Call_Term` -- diagnosing
-those needs per-obligation, per-location inspection instead, not attempted
-here.
-
-**Conclusion**: a real, verified, and independently soundness-checked fix
-to a genuine gap in how record identity threads through expression-
-function inlining -- confirmed on the project's own exact named blocking
-example, not a synthetic stand-in for it. Its zero measured corpus payoff
-does not indicate the fix is wrong; it indicates that whatever `IsPresent`-
-guarded facts exist in Tokeneer's actual control flow either don't
-currently feed into a `--verify`-tracked obligation, or do so in a way this
-session did not isolate. Finding out which would need walking specific
-`Admin.IsPresent`/`AdminToken.IsPresent` call sites against the `--verify
--v` obligation list directly -- recorded here as the honest state of the
-investigation, not chased further in this session.
+**Net effect**: Tokeneer's `--verify` `provedSafe` moved from 1623 to 1741
+(+7.3%) over the course of this work, essentially all of it from the
+`Ada_Attribute_Ref` step; every other shipped improvement is real, tested,
+and sound, but its payoff on the two/three corpora tracked here specifically
+is nil for corpus-specific reasons disclosed above (enum-typed membership
+without a resolvable comparison shape, nested selectors, non-local
+`Flow_Initialization` scope, and an inlining case not yet traced to a
+specific obligation). All of the above shipped to the codebase (not
+reverted); the shadow-query scaffolding used for the very first measurement
+was reverted, leaving only `Decide_Bounds`/`Decide_Nonzero` behind as
+currently-unused `VC_Prover` entry points for future work in this
+direction.

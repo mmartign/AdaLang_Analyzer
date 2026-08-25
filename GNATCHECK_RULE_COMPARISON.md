@@ -1,22 +1,14 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This started as a **documentation-based** comparison: AdaLang Analyzer's 121
-checks (`src/adalang_analyzer-rules.ads`) mapped against GNATcheck's
-predefined-rule catalog as described in the [GNATcheck Reference
+This document maps AdaLang Analyzer's 121 checks
+(`src/adalang_analyzer-rules.ads`) against GNATcheck's predefined-rule
+catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
-and the [gnatcheck repository](https://github.com/AdaCore/gnatcheck), built
-before a `gnatcheck` binary was available to actually run (no Alire package;
-source build is a 6+ AdaCore-repo bootstrap prone to version-mismatch
-failures across the seams -- see `project_gnatcheck_acquisition.md` in this
-session's memory for the recipe that eventually got one built). Running both
-tools on the same corpus and comparing actual findings, once tracked as the
-open item in `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`'s roadmap
-("independent-oracle (e.g. GNATcheck) tests with measured false-positive and
-false-negative results"), is now done: `benchmarks/README.md`'s "GNATcheck
-oracle comparison" section runs both tools against all ten of this project's
-external validation corpora. This document remains the rule-name-level
-groundwork -- which pairs to compare and why -- but is no longer the only
-evidence; several of the "Close" annotations below now cite specific,
+and the [gnatcheck repository](https://github.com/AdaCore/gnatcheck) —
+which pairs to compare and why. It is not just documentation-level
+groundwork: `benchmarks/README.md`'s "GNATcheck oracle comparison" section
+runs both tools against all ten of this project's external validation
+corpora, and several of the "Close" annotations below cite specific,
 measured findings from that run, including two real AdaLang coverage gaps
 it found and fixed (`FP-053`, `FP-054` in
 `quality/known_analysis_issues.tsv`).
@@ -69,17 +61,17 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Infinite_Loop | Simple_Loop_Statements | Close |
 | Duplicate_Boolean_Operand | Same_Operands, Redundant_Boolean_Expressions | Close |
 | Exception_Swallowed | Silent_Exception_Handlers, Trivial_Exception_Handlers | Close |
-| Address_Clause | At_Representation_Clauses, Address_Specifications_For_* | Close (confirmed 2026-08-19 via `gnatcoll-core`: `Address_Specifications_For_*` mostly agrees but reports at the object declaration's line, not the clause's, so line-exact comparators show 0% despite real agreement — see `benchmarks/gnatcoll/RESULTS_gnatcheck_2026-08-19.md`. AdaLang previously missed the aspect-syntax form (`with Address => ...;`) and the obsolescent `for X use at ADDR;` form entirely; fixed as `FP-054` and `FP-055` respectively — none of this project's ten corpora happen to exercise the latter, so `FP-055` was confirmed with a minimal reproduction rather than a live corpus finding) |
-| Empty_If_Body | Null_Paths | Close (undersells the gap, confirmed 2026-08-19 via `ada_drivers_library`: `Empty_If_Body` is deliberately scoped to plain `if` statements with no `elsif`/`else`, by its own documented description; `Null_Paths` also flags empty `case` alternatives and `if`/`elsif` legs, which `Empty_If_Body` was never designed to see — see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-19.md`. The case-alternative half of that gap is now covered separately by `Null_Case_Alternative`, and the elsif-branch half by `Empty_Elsif_Body`, both added 2026-08-19) |
+| Address_Clause | At_Representation_Clauses, Address_Specifications_For_* | Close (confirmed 2026-08-19 via `gnatcoll-core`: `Address_Specifications_For_*` mostly agrees but reports at the object declaration's line, not the clause's, so line-exact comparators show 0% despite real agreement. AdaLang previously missed the aspect-syntax form (`with Address => ...;`) and the obsolescent `for X use at ADDR;` form entirely; fixed as `FP-054` and `FP-055` respectively — none of this project's ten corpora happen to exercise the latter, so `FP-055` was confirmed with a minimal reproduction rather than a live corpus finding) |
+| Empty_If_Body | Null_Paths | Close (undersells the gap, confirmed 2026-08-19 via `ada_drivers_library`: `Empty_If_Body` is deliberately scoped to plain `if` statements with no `elsif`/`else`, by its own documented description; `Null_Paths` also flags empty `case` alternatives and `if`/`elsif` legs, which `Empty_If_Body` was never designed to see. The case-alternative half of that gap is now covered separately by `Null_Case_Alternative`, and the elsif-branch half by `Empty_Elsif_Body`, both added 2026-08-19) |
 | Empty_Elsif_Body | Null_Paths | Close (elsif-branch-specific; added 2026-08-19 to close the `null_paths`/`Empty_If_Body` elsif-branch gap identified above. Confirmed noisy on this analyzer's own source during implementation, same "deliberate no-op branch" idiom as `Null_Case_Alternative`'s `FP-056`, logged as `FP-057` in `quality/known_analysis_issues.tsv` and fixed with an inline suppression rather than a broader exemption, since an elsif chain has no `others`-equivalent to exempt by construction. Did not flag a bare `if`'s then-branch when an elsif/else is present, or an empty `else` branch — those two narrower-still gaps are now closed separately by `Empty_Then_Body` and `Empty_Else_Body`) |
 | Empty_Then_Body | Null_Paths | Close (then-branch-specific; closes the "bare if's then-branch when an elsif/else is present" gap left open by `Empty_If_Body` and `Empty_Elsif_Body` above. Same "deliberate no-op branch" idiom found noisy on this analyzer's own source during implementation as `Empty_Elsif_Body`'s `FP-057`; fixed the same way, with four inline suppressions rather than a broader exemption, since a then branch has no `others`-equivalent to exempt by construction either) |
 | Empty_Else_Body | Null_Paths | Close (else-branch-specific; closes the last of the three `null_paths`/`Empty_If_Body` scope gaps identified above. No self-analysis noise found: this analyzer's own source has no deliberate-no-op `else null;` idiom, unlike the then/elsif cases) |
 | Null_Case_Alternative | Null_Paths | Close (case-alternative-specific; added 2026-08-19 to close the `null_paths`/`Empty_If_Body` case-alternative gap identified above. Two deliberate scope narrowings versus `Null_Paths`: it does not flag empty `if`/`elsif` legs (now `Empty_Elsif_Body`'s/`Empty_Then_Body`'s scope, not this check's); and it does not flag a catch-all `when others => null;`, since that is a common, deliberate Ada idiom, confirmed noisy on this analyzer's own source during implementation and logged as `FP-056` in `quality/known_analysis_issues.tsv` — see `quality/README.md`'s precision-corpus entry for this check) |
 | Redundant_Boolean_Comparison | Redundant_Boolean_Expressions, Boolean_Negations | Close |
-| Missing_Global_Contract | SPARK_Procedures_Without_Globals | Close (AdaLang deliberately also fires pre-SPARK-adoption, as a readiness check; GNATcheck's rule only examines code already under SPARK_Mode — confirmed intentional, see `benchmarks/aws/RESULTS_gnatcheck_2026-08-19.md`) |
+| Missing_Global_Contract | SPARK_Procedures_Without_Globals | Close (AdaLang deliberately also fires pre-SPARK-adoption, as a readiness check; GNATcheck's rule only examines code already under SPARK_Mode — confirmed intentional) |
 | Uninitialized_Output | Unassigned_OUT_Parameters | Close |
 | Identical_Case_Alternative | Duplicate_Branches | Close (case-alternative-specific) |
-| Exception_Propagation | Exception_Propagation_From_Callbacks/Export/Tasks | Close (undersells the gap in both directions, confirmed across two corpora, 2026-08-19: on `aws`, AdaLang is *broader* — it checks every subprogram lacking an exception boundary, not just callback/`Export`/task boundaries, so most of AdaLang's findings have no GNATcheck counterpart at all — see `benchmarks/aws/RESULTS_gnatcheck_2026-08-19.md`. On `cubedos`, GNATcheck's task-specific rule is *broader* in a different way — it flags unguarded calls from task bodies without requiring proof of an explicit raise, while AdaLang only fires when it can trace an explicit `raise` transitively through its own call-graph summaries — see `benchmarks/cubedos/RESULTS_gnatcheck_2026-08-19.md`) |
+| Exception_Propagation | Exception_Propagation_From_Callbacks/Export/Tasks | Close (undersells the gap in both directions, confirmed across two corpora, 2026-08-19: on `aws`, AdaLang is *broader* — it checks every subprogram lacking an exception boundary, not just callback/`Export`/task boundaries, so most of AdaLang's findings have no GNATcheck counterpart at all. On `cubedos`, GNATcheck's task-specific rule is *broader* in a different way — it flags unguarded calls from task bodies without requiring proof of an explicit raise, while AdaLang only fires when it can trace an explicit `raise` transitively through its own call-graph summaries) |
 | Library_Level_Initialization | Calls_Outside_Elaboration | Close |
 | Naming_Convention | Min_Identifier_Length | Close |
 

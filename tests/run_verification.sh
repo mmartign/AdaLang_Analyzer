@@ -841,7 +841,7 @@ grep -F '"kind": "loop-variant", "status": "unproved"' \
 #  verification_loop_variant_increases.adb with its two pragmas swapped --
 #  Loop_Variant first, Loop_Invariant second, the dominant real-world style
 #  (e.g. every one of the EliAvila10/project_bias corpus's 26 loops; see
-#  benchmarks/project_bias/RESULTS_2026-08-13.md). Ada/SPARK attaches no
+#  benchmarks/project_bias/). Ada/SPARK attaches no
 #  meaning to that ordering, but a prior version of the leading-invariant
 #  check only tolerated preceding loop-invariant pragmas, not a preceding
 #  loop-variant, so this exact reordering used to leave the invariant
