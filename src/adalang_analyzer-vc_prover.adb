@@ -870,6 +870,55 @@ package body Adalang_Analyzer.VC_Prover is
                Call : constant Libadalang.Analysis.Call_Expr :=
                  Node.As_Call_Expr;
             begin
+               --  T'Succ(X)/T'Pred(X) on a discrete integer-valued
+               --  expression translates to plain +1/-1. Libadalang parses
+               --  this as a CallExpr whose F_Name is the bare attribute
+               --  ref (T'Succ, no args of its own) and whose F_Suffix
+               --  carries the single argument -- Call.P_Kind's five kinds
+               --  (Call/Array_Slice/Array_Index/Type_Conversion/Family_
+               --  Index) don't classify an attribute call at all, so this
+               --  is checked ahead of the P_Kind dispatch below rather
+               --  than folded into it. Anything other than this exact
+               --  shape (an enum 'Succ/'Pred, a missing/extra argument, a
+               --  non-integer result) falls through unchanged to the
+               --  P_Kind dispatch, which correctly marks it Unsupported.
+               if Call.F_Name.Kind = Libadalang.Common.Ada_Attribute_Ref then
+                  declare
+                     Attr_Name : constant String :=
+                       Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                         (Adalang_Analyzer.Ada_Text.Node_Text
+                            (Call.F_Name.As_Attribute_Ref.F_Attribute));
+                  begin
+                     if Attr_Name in "succ" | "pred" then
+                        declare
+                           Sort_Info : constant Sort_Resolution :=
+                             Expression_Sort (Node);
+                           Operand   : constant Libadalang.Analysis.Expr :=
+                             Single_Actual_Expr (Call.F_Suffix);
+                        begin
+                           if not Sort_Info.Supported
+                             or else Sort_Info.Sort /= Integer_Sort
+                             or else Libadalang.Analysis.Is_Null (Operand)
+                           then
+                              Mark_Unsupported
+                                (Context, Node, Unsupported_Attribute);
+                              return Null_Unbounded_String;
+                           end if;
+
+                           declare
+                              Term : constant String :=
+                                To_String (Integer_Term (Operand, Context));
+                           begin
+                              return To_Unbounded_String
+                                ((if Attr_Name = "succ"
+                                  then "(+ " else "(- ") &
+                                   Term & " 1)");
+                           end;
+                        end;
+                     end if;
+                  end;
+               end if;
+
                case Call.P_Kind is
                   when Libadalang.Common.Type_Conversion =>
                      declare
@@ -2697,6 +2746,21 @@ package body Adalang_Analyzer.VC_Prover is
 
       After_Term := Integer_Term (Value, After_Context);
       if not After_Context.Supported or else Length (After_Term) = 0 then
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For
+              (After_Context, Value));
+      end if;
+
+      --  An unsupported RHS translation upstream (e.g. VC.Assign's Havoc
+      --  fallback) can leave Before_Term and After_Term as the literal
+      --  same unconstrained placeholder symbol even though both sides
+      --  independently reported success -- turning "cannot judge
+      --  progress" into a tautological (> X X)/(< X X) goal that the
+      --  solver correctly reports UNSAT, which reads as a *proven*
+      --  variant violation instead of the translation gap it is (FP-061).
+      if Before_Term = After_Term then
+         Mark_Unsupported (After_Context, Value, Translation_Error);
          return
            (Result => VC_Unsupported,
             Provenance => Unsupported_Provenance_For
