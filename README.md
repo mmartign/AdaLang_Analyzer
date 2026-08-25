@@ -1,99 +1,197 @@
-# adalang_analyzer
+# AdaLang Analyzer
+
+<div align="center">
+
+### Ship safer Ada. Reach stronger verification sooner.
+
+**A transparent, CI-ready static analyzer for ordinary Ada and SPARK-bound
+codebases. Find defects, enforce engineering policy, and expose proof-readiness
+gaps while they are still inexpensive to fix.**
 
 [![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
-[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.1.0-5b4ee5.svg)](CHANGELOG.md)
+[![Checks](https://img.shields.io/badge/checks-126-0f766e.svg)](#checks)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
-`adalang_analyzer` is an independent command-line static analysis tool for Ada
-source code maintained by [Spazio IT](https://spazioit.com/). It parses Ada and
-reports rule violations with source locations, explanations, and remediation
-guidance.
+[Quick start](#quick-start) · [Capabilities](#one-analyzer-four-high-value-workflows) ·
+[Evidence](#evidence-you-can-inspect) · [Safety profiles](#safety-and-certification-support) ·
+[Commercial support](#commercial-support-from-spazio-it)
 
-At a glance: 126 checks spanning coding policy, data/control-flow defects, and
-SPARK readiness; a bounded `--verify` mode that classifies individual scalar
-proof obligations as proved safe, definite error, unproved, unreachable, or
-unsupported; `--automotive` and `--do178c=<level>` verification-support
-profiles; and text, JSON, and SARIF output for CI. Built on Libadalang, it is
-deliberately conservative — findings are predictable, and a result never
-speculates past what an analysis boundary can support.
+</div>
 
-The project's current competitive scope and permitted product claims are
-defined in [POSITIONING.md](POSITIONING.md). The meaning and limitations of
-analysis results, including the boundary between ordinary findings and bounded
-proof statuses, are defined in
-[ASSURANCE_MODEL.md](ASSURANCE_MODEL.md).
+---
 
-## Quick Links
+AdaLang Analyzer gives Ada teams a practical analysis layer between a compiler
+and full formal verification. It works on ordinary Ada, including scoped or
+partially complete source sets, and produces reviewable findings with source
+locations, rule guidance, explanations, and evidence. When stronger assurance
+is justified, its SPARK-readiness checks help teams spend proof effort on the
+code that is ready for it.
 
-- [POSITIONING.md](POSITIONING.md) — competitive scope and permitted product
-  claims
-- [ASSURANCE_MODEL.md](ASSURANCE_MODEL.md) — what a finding and a proof status
-  do and do not mean
-- [SUPPORTED_VERIFICATION_SUBSET.md](SUPPORTED_VERIFICATION_SUBSET.md) — the
-  precise `--verify` language, obligation, and proof boundary
-- [FALSE_SAFE_RESPONSE.md](FALSE_SAFE_RESPONSE.md) — response and release
-  policy for an incorrect `Proved_Safe` result
-- [AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md) —
-  `--automotive` rule-by-rule mapping to Ada/SPARK high-integrity guidance
-- [DO178C_COMPLIANCE_MATRIX.md](DO178C_COMPLIANCE_MATRIX.md) — `--do178c`
-  rule-by-rule mapping to DO-178C Annex A Table A-5
-- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution workflow
-- [CHANGELOG.md](CHANGELOG.md) — release history
+Built on [Libadalang](https://github.com/AdaCore/libadalang) and maintained by
+[Spazio IT](https://spazioit.com/), the analyzer combines **126 curated
+checks**, bounded scalar verification, safety-oriented profiles, stable
+baselines, and text/JSON/SARIF reporting in one open implementation.
 
-## Why AdaLang Analyzer Exists
+## The business case
 
-> AdaLang Analyzer is a lightweight quality and safety analyzer for ordinary
-> Ada that helps teams find defects, enforce project policies, and prepare
-> selected code for stronger verification.
->
-> — [POSITIONING.md](POSITIONING.md)
+Defects found late in a high-integrity program are rarely local: they ripple
+through reviews, traceability, tests, proof, and certification evidence.
+AdaLang Analyzer moves useful feedback closer to the developer without asking
+every file to be SPARK-ready first.
 
-Most Ada code is not, and may never be, in the SPARK subset. AdaLang fills the
-space between routine coding-standard enforcement and full formal
-verification: it catches defects and readiness gaps early, on ordinary code,
-before the cost of a GNATprove pass — and hands off the code that genuinely
-needs stronger guarantees rather than trying to replace that step.
+| Engineering pressure | What AdaLang Analyzer contributes |
+| --- | --- |
+| Expensive late-cycle rework | Finds known runtime failures, suspicious control/data flow, unsafe constructs, and maintainability risks during local development and CI. |
+| Inconsistent coding-policy reviews | Turns selected project rules and thresholds into a repeatable, version-controlled quality gate. |
+| Difficult SPARK adoption | Highlights contract, dependency, initialization, aliasing, and bounded-proof issues before a full GNATprove campaign. |
+| Audit evidence scattered across tools | Emits JSON, SARIF, configuration manifests, stable baselines, and per-objective compliance-support reports. |
+| Proprietary analysis that is hard to inspect | Ships its rules, evidence corpus, assurance boundary, and known limitations as reviewable source and documentation. |
 
-## Design Principles
+## Quick start
 
-- **Predictability** — conservative, intraprocedural analysis with documented
-  boundaries (see [ASSURANCE_MODEL.md](ASSURANCE_MODEL.md)); a finding means
-  the same thing on every run, and an unsupported case is reported as
-  `Unsupported`, never guessed at as safe.
-- **Transparency** — every check ships its own rule guidance, `why:`/
-  `evidence:` detail where a check supplies it, and a JSON/SARIF configuration
-  manifest recording exactly what ran.
-- **Interoperability** — text, JSON, and SARIF output for CI; a SonarQube
-  channel via [SonarAdaPlugin](https://github.com/mmartign/SonarAdaPlugin);
-  and a documented handoff to GNATprove for the code that needs full formal
-  proof (see [POSITIONING.md](POSITIONING.md)).
+Build with [Alire](https://alire.ada.dev/) and analyze a GNAT project with the
+curated low-noise preset:
 
-## What AdaLang Analyzer Does Not Claim
+```sh
+git clone https://github.com/mmartign/AdaLang_Analyzer.git
+cd AdaLang_Analyzer
+alr build
+alr exec -- ./bin/adalang_analyzer --recommended -P my_project.gpr
+```
 
-AdaLang Analyzer does not prove a subprogram or program free of defects, does
-not exhaustively check every execution path, and does not guarantee zero
-false negatives. It is not equivalent to GNATprove or a comparable commercial
-verification/bug-finding tool, and it is not a qualified verification tool.
-`--verify`'s `Proved_Safe` applies only to the one reported obligation, under
-the reported assumptions — never to a whole subprogram. The `--automotive`
-and `--do178c=<level>` profiles are verification *support*: they do not by
-themselves determine or certify MISRA, AUTOSAR, ISO 26262, or DO-178C
-compliance, which also requires planning, requirements, testing, and
-lifecycle evidence this tool does not produce. The complete, binding list of
-claims this project will and will not make is
-[POSITIONING.md](POSITIONING.md)'s "Approved claim vocabulary".
+Create a SARIF quality gate for CI:
 
-## Relationship to Libadalang and AdaCore
+```sh
+alr exec -- ./bin/adalang_analyzer --recommended -P my_project.gpr \
+  --format=sarif --output=adalang.sarif --baseline=adalang.baseline
+```
 
-- **Engine:** This tool is built on top of
-  [Libadalang](https://github.com/AdaCore/libadalang), the open-source semantic
-  engine developed by AdaCore.
-- **Lineage:** The codebase is a derivative of AdaCore's open-source
-  `libadalang-tools` repository.
-- **Disclaimer:** This is an independent project maintained solely by Spazio
-  IT. It is not endorsed, sponsored, or officially supported by AdaCore.
-  “Libadalang” and “AdaCore” are trademarks of AdaCore.
+The process exits unsuccessfully for new violations or invalid input. Findings
+matched by a reviewed baseline remain visible in structured reports but do not
+fail the run, allowing teams to adopt the analyzer incrementally instead of
+stopping delivery for existing technical debt.
+
+## One analyzer, four high-value workflows
+
+### 1. Daily defect detection
+
+Use `--recommended` for a deliberately low-noise first pass over ordinary Ada.
+It covers high-value control-flow, data-flow, exception, duplication,
+known-runtime-failure, and unused-data checks without imposing a new style
+guide on the team.
+
+### 2. Enforceable engineering policy
+
+Select any combination of 126 checks, tune complexity/nesting/parameter/line
+length thresholds, and commit the configuration with the project. Every rule
+has a reliability, security, or maintainability classification and a severity
+that survives into JSON and SARIF.
+
+### 3. A bridge into SPARK
+
+Use `--spark` and `--verify` to identify missing or inconsistent `Global` and
+`Depends` contracts, uninitialized outputs, aliasing risks, known contract or
+runtime-check failures, and bounded scalar obligations. Results distinguish
+`Proved_Safe`, `Definite_Error`, `Unproved`, `Unreachable`, and `Unsupported`
+instead of turning an analysis boundary into a guess.
+
+### 4. Safety and certification support
+
+Use `--automotive` or `--do178c=<A|B|C|D>` for review profiles aimed at
+high-integrity development. Generate Markdown or JSON evidence reports that
+connect enabled checks, open/baselined findings, suppressions, and explicit
+gaps to review objectives.
+
+These profiles support engineering and verification activities; they do not
+certify ISO 26262, MISRA, AUTOSAR, or DO-178C compliance by themselves.
+
+## Why teams choose AdaLang Analyzer
+
+- **Useful before full project closure** — analyze ordinary Ada files or a
+  scoped project slice when a whole-program proof workflow cannot yet start.
+- **Conservative by design** — unsupported proof cases stay unsupported;
+  individual safe results never become claims about an entire program.
+- **Built for automation** — stable exit behavior, baselines, project scenario
+  variables, config files, JSON, and SARIF make rollout practical in CI.
+- **Evidence-rich results** — diagnostics can carry `why:` and `evidence:`
+  details; structured reports preserve the exact effective configuration.
+- **Fits existing quality infrastructure** — consume reports in code-scanning
+  systems or publish them to SonarQube through
+  [SonarAdaPlugin](https://github.com/mmartign/SonarAdaPlugin).
+- **Open and commercially supportable** — inspect the implementation under
+  GPL-3.0-or-later, or engage Spazio IT for integration, custom rules,
+  qualification assistance, and long-term support.
+
+## Evidence you can inspect
+
+This project treats precision as a release artifact, not a marketing adjective.
+Its regression and quality gates include a growing boundary-case corpus,
+adversarial verification mutations, proof-path evidence, self-analysis, and
+comparisons on independently authored Ada/SPARK projects.
+
+Across **2,277 proof obligations** that AdaLang Analyzer and GNATprove could
+both evaluate at the same location in five independently authored,
+fully-proved corpora, the recorded comparisons contain:
+
+| Observed result | Count |
+| --- | ---: |
+| AdaLang called safe where GNATprove did not prove safe | **0** |
+| AdaLang called a definite error where GNATprove proved safe | **0** |
+
+This is evidence of precision on AdaLang Analyzer's supported subset, not a
+claim of GNATprove-equivalent coverage: AdaLang returns `Unproved` or
+`Unsupported` substantially more often. Review the methodology, pinned
+revisions, per-corpus results, and limitations in the
+[benchmark suite](benchmarks/README.md), and the current release evidence in
+[quality/](quality/README.md).
+
+## A deliberate place in the toolchain
+
+```text
+Compiler feedback
+      │
+      ▼
+AdaLang Analyzer
+  coding policy · defect detection · bounded obligations · SPARK readiness
+      │
+      ├──► JSON / SARIF / SonarQube / CI quality gates
+      │
+      ▼
+Selected critical SPARK components
+      │
+      ▼
+GNATprove and project-specific verification / qualification activities
+```
+
+AdaLang Analyzer does not replace GNATprove, exhaustive whole-program defect
+analysis, dynamic testing, coverage measurement, or a certification lifecycle.
+`Proved_Safe` applies only to the reported obligation under its reported
+assumptions. The binding claim vocabulary is in
+[POSITIONING.md](POSITIONING.md); result semantics are in
+[ASSURANCE_MODEL.md](ASSURANCE_MODEL.md); and the exact verification boundary
+is in [SUPPORTED_VERIFICATION_SUBSET.md](SUPPORTED_VERIFICATION_SUBSET.md).
+
+## Product and assurance documentation
+
+- [Positioning and approved claims](POSITIONING.md)
+- [Assurance model](ASSURANCE_MODEL.md)
+- [Supported verification subset](SUPPORTED_VERIFICATION_SUBSET.md)
+- [False-safe response policy](FALSE_SAFE_RESPONSE.md)
+- [Automotive Ada compliance matrix](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md)
+- [DO-178C compliance matrix](DO178C_COMPLIANCE_MATRIX.md)
+- [GNATcheck rule comparison](GNATCHECK_RULE_COMPARISON.md)
+- [Benchmarks](benchmarks/README.md) and [quality evidence](quality/README.md)
+- [Changelog](CHANGELOG.md) and [contribution guide](CONTRIBUTING.md)
+
+## Independence and lineage
+
+AdaLang Analyzer is built on AdaCore's open-source Libadalang semantic engine
+and derives from the open-source `libadalang-tools` codebase. It is an
+independent project maintained solely by Spazio IT and is not endorsed,
+sponsored, or officially supported by AdaCore. “Libadalang” and “AdaCore” are
+trademarks of AdaCore.
 
 ## Checks
 
@@ -114,7 +212,13 @@ AdaLang Analyzer's 126 checks fall into five broad groups:
 - **Style & maintainability** — restricted-construct policies, style, and
   naming checks.
 
-The analyzer currently provides the following checks:
+Run `./bin/adalang_analyzer -list-checks` for the authoritative catalog and
+guidance shipped by the current binary.
+
+<details>
+<summary><strong>Browse all 126 checks</strong></summary>
+
+<br>
 
 | Category | Check | Software Quality | Severity | Purpose |
 |----------|-------|-------------------|----------|---------|
@@ -245,8 +349,12 @@ The analyzer currently provides the following checks:
 | Data flow | `Unclosed_File_Handle` | Reliability | Medium | Reports a local `Ada.Text_IO`/`Ada.Streams.Stream_IO` file opened with `Open`/`Create` and not demonstrably closed on every normal-return or exception-handler path. |
 | Data flow | `Unused_With_Clause` | Maintainability | Low | Reports a with clause naming a unit never referenced elsewhere in the file. |
 
-Run `./bin/adalang_analyzer -list-checks` to see the authoritative list together
-with a description and guidance for every check.
+</details>
+
+<details>
+<summary><strong>Read the analysis and bounded-verification model</strong></summary>
+
+<br>
 
 Every check also carries a SonarQube-style classification: a **Software
 Quality** it primarily affects (`Security`, `Reliability`, or
@@ -538,6 +646,8 @@ for a non-normative rule-by-rule mapping to the Ada Reference Manual's Annex H
 high-integrity restrictions and SPARK Reference Manual guidance, limitations,
 and remaining compliance gaps.
 
+</details>
+
 ### DO-178C verification-support profiles
 
 Select a software level with:
@@ -687,13 +797,7 @@ false-safe regressions. A proof-path evidence gate maps 23 abstract, flow,
 contract-transfer, and external-prover routes to every one of the 17 current
 `Proved_Safe` producer sites, including adversarial and solver-boundary cases.
 
-## Usage
-
-Quick start — analyze a project with the recommended, low-noise preset:
-
-```sh
-alr exec -- ./bin/adalang_analyzer --recommended -P my_project.gpr
-```
+## Configuration and usage reference
 
 Enable every check for one or more Ada source files:
 
@@ -913,61 +1017,31 @@ JSON reports include proof-obligation details alongside ordinary findings.
 These are separate evidence channels: finding baselines affect violations but
 do not suppress or alter proof obligations.
 
-## Commercial Value & Professional Services
+## Commercial support from Spazio IT
 
-AdaLang Analyzer is developed and maintained by
-[Spazio IT](https://spazioit.com/), a company with deep expertise in
-safety-critical and high-integrity Ada/SPARK systems.
+Open source is the starting point; successful adoption is the outcome.
+[Spazio IT](https://spazioit.com/) helps high-integrity teams turn AdaLang
+Analyzer into a dependable part of their engineering lifecycle.
 
-### Why Organizations Choose AdaLang Analyzer
+| Engagement | Typical outcome |
+| --- | --- |
+| Pilot and rollout | Evaluate the analyzer on representative code, tune a low-noise policy, establish a baseline, and integrate CI reporting. |
+| Enterprise support | Obtain a maintained support path, issue triage, upgrade guidance, and continuity for long-lived programs. |
+| Custom rule development | Encode company, program, or review-board policies directly in the analyzer and its evidence gates. |
+| SPARK adoption | Assess proof readiness, prioritize components, improve contracts, and design the handoff into GNATprove. |
+| Qualification assistance | Build project-specific plans and evidence for DO-330, DO-178C, ISO 26262 TCL3, and related assurance contexts. |
+| Training | Equip developers and reviewers to use static analysis, Ada/SPARK contracts, and formal methods effectively. |
 
-- **Cost-effective daily static analysis** — fast, lightweight, and easy to
-  integrate into CI pipelines, reducing reliance on expensive proprietary
-  tools for routine checks.
-- **Strong safety & certification focus** — dedicated `--automotive` (ASIL)
-  and `--do178c=<level>` verification-support profiles. Helps catch issues
-  early that complicate formal verification with GNATprove.
-- **SPARK readiness** — checks effective `SPARK_Mode`, `Global` access modes,
-  inferred `Depends` relations, definite output initialization, and known
-  contract failures before the more expensive proof stage.
-- **Customizable & transparent** — fully open source (GPL), with clear rule
-  classifications and remediation guidance. Easy to extend or integrate into
-  your toolchain.
-- **SonarQube integration** — findings are also consumable inside SonarQube
-  Server through [SonarAdaPlugin](https://github.com/mmartign/SonarAdaPlugin),
-  a companion Ada extension that reports AdaLang Analyzer results (alongside
-  AdaControl and GNATtest coverage) as ordinary SonarQube issues, so teams
-  already standardized on SonarQube get this analysis in the dashboard they
-  already use, with no separate report to review.
-- **Available as a ready-to-run platform** — AdaLang Analyzer and
-  SonarAdaPlugin also ship together, pre-integrated with SonarQube, as part
-  of Spazio IT's
-  [SAFe Toolset](https://spazioit.com/pages_en/sol_inf_en/code_quality_en/safe-toolset-en/),
-  a packaged static-analysis environment covering C, C++, and Ada for
-  aerospace, defense, automotive, railway, and industrial safety-critical
-  development — for teams that want a working environment rather than
-  assembling and version-matching the pieces themselves.
+For organizations that prefer a ready-to-run quality platform, AdaLang
+Analyzer and SonarAdaPlugin are also available pre-integrated with SonarQube
+in Spazio IT's
+[SAFe Toolset](https://spazioit.com/pages_en/sol_inf_en/code_quality_en/safe-toolset-en/),
+covering C, C++, and Ada workflows for aerospace, defense, automotive,
+railway, and industrial programs.
 
-### Professional Services from Spazio IT
-
-We offer commercial support and services around AdaLang Analyzer, including:
-
-- **Enterprise support & maintenance contracts**
-- **Custom rule development** tailored to your coding standards or
-  certification needs
-- **Tool qualification** assistance for DO-178C / ISO 26262 (TCL3) and
-  similar standards
-- **SPARK adoption consulting** — gap analysis, proof readiness reviews, and
-  verification workflow optimization
-- **Training workshops** on static analysis, formal methods, and best
-  practices with Ada/SPARK
-
-Whether you need a lightweight daily checker or full support for a
-certification campaign, Spazio IT can help you maximize the value of AdaLang
-Analyzer in your environment.
-
-**Contact us** at [info@spazioit.com](mailto:info@spazioit.com) for a demo,
-pilot project, or consultation.
+> **Bring a representative codebase. Leave with a concrete adoption plan.**
+>
+> [Request a demo, pilot, or technical consultation](mailto:info@spazioit.com?subject=AdaLang%20Analyzer%20inquiry)
 
 ## Contributing
 
