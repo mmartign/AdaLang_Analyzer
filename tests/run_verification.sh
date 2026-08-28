@@ -48,6 +48,9 @@ loop_branch_elsif_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif-clea
 loop_branch_elsif_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif-broken.XXXXXX")
 loop_branch_nested_if=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-nested-if.XXXXXX")
 loop_branch_elsif_nested_if=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-elsif-nested-if.XXXXXX")
+loop_branch_sequential_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-sequential-clean.XXXXXX")
+loop_branch_sequential_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-sequential-broken.XXXXXX")
+loop_branch_third_conditional=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-third-conditional.XXXXXX")
 loop_branch_case_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-case-clean.XXXXXX")
 loop_branch_case_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-case-broken.XXXXXX")
 loop_branch_case_multi_choice=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-branch-case-multi-choice.XXXXXX")
@@ -85,7 +88,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -526,11 +529,17 @@ fi
 
 #  A lexically distinct, genuinely nested if inside an else arm -- as
 #  opposed to that arm's own elsif/else continuation of the same
-#  If_Stmt -- must still be rejected. This guards the AST-ancestry check
-#  (Continues_Same_If_Chain in flow_interp.adb) that distinguishes the
-#  two shapes: the nested if's disagreeing arms are crafted so a
-#  misclassification would show up as a false proof, not silent
-#  imprecision.
+#  If_Stmt -- draws on the same Branch_Budget an equivalent sequential
+#  conditional would (flow_interp.adb's Advance), so it is no longer
+#  rejected on syntax alone; here it must still end up Unproved, but
+#  because the outer condition (Flag) tells the solver nothing about the
+#  inner one (X = 0), so the two arms' genuinely disagreeing effect on
+#  Extra is a real, unrelated defect the budget increase must not paper
+#  over. Guards the AST-ancestry check (Continues_Same_If_Chain in
+#  flow_interp.adb) that distinguishes a chain continuation from a
+#  lexically distinct nested If_Stmt: the nested if's disagreeing arms
+#  are crafted so a misclassification would show up as a false proof,
+#  not silent imprecision.
 run_json "$loop_branch_nested_if" \
   tests/verification_loop_branch_nested_if_unsupported.adb
 grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
@@ -543,19 +552,64 @@ if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
    exit 1
 fi
 
-#  Same guard, but the nested if lives inside an elsif arm's own body
+#  Same shape, but the nested if lives inside an elsif arm's own body
 #  rather than the trailing else -- exercises the true-arm side of the
-#  fork, which Allow_Branch => False unconditionally, unchanged by the
-#  elsif-chain extension.
+#  fork, which now also carries forward the remaining Branch_Budget
+#  (previously forced to 0 unconditionally). Unlike the sibling case
+#  above, this one genuinely must prove: the elsif's own condition
+#  (X = 1) already contradicts the nested if's condition (X = 2), so the
+#  nested if's disagreeing arms are dead code on this path and the
+#  invariant holds regardless -- the solver, not this test, establishes
+#  that from the accumulated path facts. Renamed from
+#  "..._unsupported" to "..._clean" once this stopped being an
+#  unsupported shape.
 run_json "$loop_branch_elsif_nested_if" \
-  tests/verification_loop_branch_elsif_nested_if_unsupported.adb
+  tests/verification_loop_branch_elsif_nested_if_clean.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_elsif_nested_if" >/dev/null
+grep -F '"kind": "loop-variant", "status": "proved-safe", "method": "external-prover"' \
+  "$loop_branch_elsif_nested_if" >/dev/null
+
+#  Two independent, sequential (not nested) if statements in the same
+#  loop body -- the other shape Branch_Budget was added for. Both
+#  agree on Extra regardless of Flag/X, so preservation must prove.
+run_json "$loop_branch_sequential_clean" \
+  tests/verification_loop_branch_sequential_clean.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_sequential_clean" >/dev/null
+grep -F '"kind": "loop-variant", "status": "proved-safe", "method": "external-prover"' \
+  "$loop_branch_sequential_clean" >/dev/null
+
+#  Same two-sequential-conditionals shape, but the second conditional's
+#  arms genuinely disagree on Extra (X = 0 drives it negative) -- must
+#  stay conservative rather than let the first (agreeing) conditional's
+#  proof alone carry the whole preservation obligation.
+run_json "$loop_branch_sequential_broken" \
+  tests/verification_loop_branch_sequential_vc_broken.adb
 grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
-  "$loop_branch_elsif_nested_if" >/dev/null
+  "$loop_branch_sequential_broken" >/dev/null
 grep -F '"kind": "loop-variant", "status": "unproved"' \
-  "$loop_branch_elsif_nested_if" >/dev/null
+  "$loop_branch_sequential_broken" >/dev/null
 if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
-  "$loop_branch_elsif_nested_if" >/dev/null; then
-   echo "a nested if inside an elsif arm escaped into a false loop-invariant proof" >&2
+  "$loop_branch_sequential_broken" >/dev/null; then
+   echo "a disagreeing second sequential conditional escaped into a false loop-invariant proof" >&2
+   exit 1
+fi
+
+#  Three independent sequential conditionals exceed Max_Branch_Depth (2):
+#  the third one's genuinely disagreeing arms (X = 1 drives Extra
+#  sharply negative) must not be silently ignored once the budget is
+#  exhausted -- this must stay Unproved by hitting the budget wall, not
+#  by accident.
+run_json "$loop_branch_third_conditional" \
+  tests/verification_loop_branch_third_conditional_unsupported.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  "$loop_branch_third_conditional" >/dev/null
+grep -F '"kind": "loop-variant", "status": "unproved"' \
+  "$loop_branch_third_conditional" >/dev/null
+if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
+  "$loop_branch_third_conditional" >/dev/null; then
+   echo "a third independent conditional escaped Max_Branch_Depth into a false loop-invariant proof" >&2
    exit 1
 fi
 
@@ -626,22 +680,20 @@ if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
    exit 1
 fi
 
-#  A lexically nested if inside a case alternative's own body must still
-#  be rejected -- exercises the same Allow_Branch => False discipline
-#  each alternative's body is walked under, unchanged by the case-fold
-#  extension, the case-statement counterpart of the elsif family's own
-#  nested-if guards above.
+#  A lexically nested if inside a case alternative's own body now draws
+#  on the same remaining Branch_Budget an alternative's own body carries
+#  forward (the case-statement counterpart of the elsif family's own
+#  nested-if shape above), and here it genuinely must prove: the
+#  alternative's own selector ("when 0 =>") already establishes Mode = 0,
+#  contradicting the nested if's condition (Mode = 2), so its disagreeing
+#  arms are dead code on this path. Renamed from "..._unsupported" to
+#  "..._clean" once this stopped being an unsupported shape.
 run_json "$loop_branch_case_nested_if" \
-  tests/verification_loop_branch_case_nested_if_unsupported.adb
-grep -F '"kind": "loop-invariant-preservation", "status": "unproved"' \
+  tests/verification_loop_branch_case_nested_if_clean.adb
+grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
   "$loop_branch_case_nested_if" >/dev/null
-grep -F '"kind": "loop-variant", "status": "unproved"' \
+grep -F '"kind": "loop-variant", "status": "proved-safe", "method": "external-prover"' \
   "$loop_branch_case_nested_if" >/dev/null
-if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
-  "$loop_branch_case_nested_if" >/dev/null; then
-   echo "a nested if inside a case alternative escaped into a false loop-invariant proof" >&2
-   exit 1
-fi
 
 #  A one-sided if (no else) that increments a counter only on the true
 #  arm, with the invariant bound genuinely following from the loop guard,

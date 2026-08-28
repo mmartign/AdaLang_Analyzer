@@ -1,5 +1,6 @@
-procedure Verification_Loop_Branch_Elsif_Nested_If_Clean
+procedure Verification_Loop_Branch_Third_Conditional_Unsupported
   (X    : Integer;
+   Flag : Boolean;
    Y    : out Integer)
   with SPARK_Mode,
        Pre  => X <= 2_147_483_641
@@ -13,14 +14,20 @@ begin
         (I >= 0 and then I <= 3 and then Y = X + I and then Extra >= 0);
       pragma Loop_Variant (Decreases => 3 - I);
 
+      if Flag then
+         Extra := Extra + 1;
+      else
+         Extra := Extra + 1;
+      end if;
+
       if X = 0 then
          Extra := Extra + 1;
-      elsif X = 1 then
-         if X = 2 then
-            Extra := Extra - 1;
-         else
-            Extra := Extra + 1;
-         end if;
+      else
+         Extra := Extra + 1;
+      end if;
+
+      if X = 1 then
+         Extra := Extra - 100;
       else
          Extra := Extra + 1;
       end if;
@@ -28,4 +35,4 @@ begin
       I := I + 1;
       Y := Y + 1;
    end loop;
-end Verification_Loop_Branch_Elsif_Nested_If_Clean;
+end Verification_Loop_Branch_Third_Conditional_Unsupported;

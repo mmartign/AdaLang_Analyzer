@@ -1,6 +1,6 @@
-procedure Verification_Loop_Branch_Case_Nested_If_Clean
+procedure Verification_Loop_Branch_Sequential_Clean
   (X    : Integer;
-   Mode : Integer;
+   Flag : Boolean;
    Y    : out Integer)
   with SPARK_Mode,
        Pre  => X <= 2_147_483_641
@@ -14,18 +14,19 @@ begin
         (I >= 0 and then I <= 3 and then Y = X + I and then Extra >= 0);
       pragma Loop_Variant (Decreases => 3 - I);
 
-      case Mode is
-         when 0 =>
-            if Mode = 2 then
-               Extra := Extra - 1;
-            else
-               Extra := Extra + 1;
-            end if;
-         when others =>
-            Extra := Extra + 1;
-      end case;
+      if Flag then
+         Extra := Extra + 1;
+      else
+         Extra := Extra + 1;
+      end if;
+
+      if X = 0 then
+         Extra := Extra + 1;
+      else
+         Extra := Extra + 1;
+      end if;
 
       I := I + 1;
       Y := Y + 1;
    end loop;
-end Verification_Loop_Branch_Case_Nested_If_Clean;
+end Verification_Loop_Branch_Sequential_Clean;

@@ -25,6 +25,32 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   open gap, tracked as `FP-062` in `quality/known_analysis_issues.tsv`:
   Libadalang's own `P_Referenced_Decl` already fails to resolve member
   calls into such a package, upstream of this check's own logic.
+- `--verify`'s loop-invariant-preservation VC now supports one additional
+  independent `if`/`elsif`/`else` chain or `case` statement per loop
+  body, reached either by nesting inside an arm of the first one or
+  sequentially after it rejoins -- both draw on the same per-path
+  `Branch_Budget` (flow_interp.adb's `Advance`), replacing the previous
+  hard `Allow_Branch` cutoff after exactly one conditional construct. The
+  budget starts at 2 (`Max_Branch_Depth`), spent once per independent
+  chain or case statement entered (never for a chain's own `elsif`/
+  `else` continuations or a case's own sibling alternatives, which stay
+  free as before), so a third independent conditional along any single
+  path still conservatively bails to `Unproved`. Since `Join_On_Selector`
+  already reconciled arms generically by `Symbol_Key`, with no special
+  casing tied to nesting depth, composing the existing one-level
+  fork-and-join recursively required no change there -- only the
+  `Branch_Budget` threading through `Advance`'s recursive calls. Closes
+  two of the three existing `..._nested_if_unsupported.adb` regression
+  fixtures onto genuine proofs (renamed to `..._clean.adb`: their nested
+  condition turned out to be dead code given the enclosing arm's own
+  established fact, e.g. an `elsif X = 1` arm's nested `if X = 2`), while
+  the third (an outer `Flag` condition uncorrelated with the inner
+  `X = 0`) correctly remains `Unproved` on genuine disagreement, not
+  syntax rejection. New fixtures cover the previously-unexercised
+  sequential shape both safe and adversarial
+  (`verification_loop_branch_sequential_clean/_vc_broken.adb`) and the
+  budget boundary itself
+  (`verification_loop_branch_third_conditional_unsupported.adb`).
 
 ## [1.2.0] - 2026-08-25
 

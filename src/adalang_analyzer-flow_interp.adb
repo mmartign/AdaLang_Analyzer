@@ -4242,30 +4242,43 @@ package body Adalang_Analyzer.Flow_Interp is
             --  rules Prove_Header has always enforced (exactly one
             --  non-exceptional outgoing edge per node; assign/pragma/
             --  merge only). The one addition: at a Condition_Node with
-            --  Allow_Branch, fork into both arms. The true arm is always
-            --  walked with Allow_Branch => False (an arm's own body never
-            --  gets to branch further). The false arm is walked with
-            --  Allow_Branch => True exactly when it continues the same
-            --  if/elsif/else chain (Continues_Same_If_Chain above) --
-            --  folding elsif/else parts of one If_Stmt into the same
-            --  fork-and-join this function already applies to a single
-            --  if/else -- and Allow_Branch => False otherwise, so a
-            --  second sequential conditional or a genuinely nested one is
-            --  rejected the same way an unsupported node kind always was.
-            --  If both arms independently reach the loop's own back edge,
-            --  their final states are joined with the same Flow_Join/
-            --  VC.Join machinery Merge_Into already relies on at ordinary
-            --  CFG merge points. Reached_Back is True exactly when the
-            --  walk (directly, or via a successful fork-and-join) reached
-            --  the loop back edge; every successful return sets it, so it
-            --  never disagrees with the function result.
+            --  Branch_Budget > 0, fork into both arms. One unit of budget
+            --  is spent per independent if/elsif/else chain or case
+            --  statement encountered -- an elsif/else part that continues
+            --  the same chain (Continues_Same_If_Chain above), or a
+            --  sibling alternative of the same case statement, is free,
+            --  folding into the same fork-and-join this function already
+            --  applies to a single if/else, exactly as before this budget
+            --  existed. What *does* spend a unit is any other Condition_Node
+            --  reached from an arm's own body (a lexically nested if/case)
+            --  or from the chain's own tail once it rejoins (a second,
+            --  sequential if/case) -- both look identical to this walker
+            --  (just another Condition_Node reached while budget remains),
+            --  and both are equally sound to fork on: each arm's own
+            --  recursive Advance call must independently reach the loop's
+            --  back edge before anything is joined, so nesting one
+            --  supported fork inside another composes the same one-level
+            --  soundness argument by induction rather than needing a new
+            --  one. Starting budget is 2 (see the top-level call below),
+            --  so exactly one nested-or-sequential second conditional is
+            --  supported beyond the first; a third independent
+            --  conditional along any single path exhausts the budget and
+            --  is rejected the same way an unsupported node kind always
+            --  was. If both arms independently reach the
+            --  loop's own back edge, their final states are joined with
+            --  the same Flow_Join/VC.Join machinery Merge_Into already
+            --  relies on at ordinary CFG merge points. Reached_Back is
+            --  True exactly when the walk (directly, or via a successful
+            --  fork-and-join) reached the loop back edge; every successful
+            --  return sets it, so it never disagrees with the function
+            --  result.
             function Advance
-              (Start        : CFG.Node_Id;
-               Allow_Branch : Boolean;
-               State        : in out Flow_State;
-               Symbols      : in out VC.Symbolic_State;
-               Steps        : in out Natural;
-               Reached_Back : out Boolean) return Boolean
+              (Start         : CFG.Node_Id;
+               Branch_Budget : Natural;
+               State         : in out Flow_State;
+               Symbols       : in out VC.Symbolic_State;
+               Steps         : in out Natural;
+               Reached_Back  : out Boolean) return Boolean
             is
                Current : CFG.Node_Id := Start;
                First   : Boolean := True;
@@ -4280,12 +4293,13 @@ package body Adalang_Analyzer.Flow_Interp is
                --  is rejected outright, never range-unioned, since a
                --  covering range would unsoundly admit selector values
                --  belonging to a different (or no) alternative. Each
-               --  alternative's own body is walked with Allow_Branch =>
-               --  False, exactly like an if/elsif arm, so a nested
-               --  if/case inside any alternative, or a second sequential
-               --  conditional following the case statement, is rejected
-               --  the same way an unsupported node kind always was.
-               --  Right-folds from the trailing `others` (the base case,
+               --  alternative's own body is walked with the budget already
+               --  spent for this case statement (Branch_Budget - 1),
+               --  exactly like an if/elsif arm, so a nested if/case inside
+               --  any alternative, or a second sequential conditional
+               --  following the case statement, draws on the same
+               --  remaining budget an equivalent if/elsif/else shape
+               --  would. Right-folds from the trailing `others` (the base case,
                --  needing no selector, mirroring elsif's own bare trailing
                --  else) back to the first alternative, one Join_On_Range
                --  call per non-`others` alternative.
@@ -4387,8 +4401,8 @@ package body Adalang_Analyzer.Flow_Interp is
                         Acc_Back    : Boolean;
                         Acc_OK      : constant Boolean :=
                           Advance
-                            (Targets (N), False, Acc_State, Acc_Symbols,
-                             Acc_Steps, Acc_Back);
+                            (Targets (N), Branch_Budget - 1, Acc_State,
+                             Acc_Symbols, Acc_Steps, Acc_Back);
                      begin
                         if not Acc_OK or else not Acc_Back then
                            return False;
@@ -4402,7 +4416,7 @@ package body Adalang_Analyzer.Flow_Interp is
                               Arm_Back    : Boolean;
                               Arm_OK      : constant Boolean :=
                                 Advance
-                                  (Targets (I), False, Arm_State,
+                                  (Targets (I), Branch_Budget - 1, Arm_State,
                                    Arm_Symbols, Arm_Steps, Arm_Back);
                            begin
                               if not Arm_OK or else not Arm_Back then
@@ -4488,7 +4502,7 @@ package body Adalang_Analyzer.Flow_Interp is
                         then
                            null;
                         elsif Node_Info.Kind = CFG.Condition_Node then
-                           if not Allow_Branch then
+                           if Branch_Budget = 0 then
                               return False;
                            end if;
 
@@ -4555,8 +4569,9 @@ package body Adalang_Analyzer.Flow_Interp is
                                  True_Back    : Boolean;
                                  True_OK      : constant Boolean :=
                                    Advance
-                                     (True_Target, False, True_State,
-                                      True_Symbols, True_Steps, True_Back);
+                                     (True_Target, Branch_Budget - 1,
+                                      True_State, True_Symbols, True_Steps,
+                                      True_Back);
 
                                  False_State   : Flow_State := State;
                                  False_Symbols : VC.Symbolic_State :=
@@ -4565,7 +4580,9 @@ package body Adalang_Analyzer.Flow_Interp is
                                  False_Back    : Boolean;
                                  False_OK      : constant Boolean :=
                                    Advance
-                                     (False_Target, False_Continues,
+                                     (False_Target,
+                                      (if False_Continues then Branch_Budget
+                                       else Branch_Budget - 1),
                                       False_State, False_Symbols,
                                       False_Steps, False_Back);
                               begin
@@ -4705,11 +4722,20 @@ package body Adalang_Analyzer.Flow_Interp is
             Before_Symbols := Symbols;
 
             declare
+               --  2 independent if/elsif/else chains or case statements
+               --  along any single path through the loop body: the first
+               --  one encountered from Header, plus one more reachable
+               --  either by nesting inside one of its arms or
+               --  sequentially after it rejoins -- both draw on the same
+               --  unit of remaining budget, per Advance's own doc comment.
+               --  A third remains outside the supported subset.
+               Max_Branch_Depth : constant := 2;
+
                Reached_Back : Boolean;
                OK           : constant Boolean :=
                  Advance
-                   (Header, Allow_Branch => True, State => State,
-                    Symbols => Symbols, Steps => Steps,
+                   (Header, Branch_Budget => Max_Branch_Depth,
+                    State => State, Symbols => Symbols, Steps => Steps,
                     Reached_Back => Reached_Back);
                Path_OK      : constant Boolean := OK and then Reached_Back;
             begin
