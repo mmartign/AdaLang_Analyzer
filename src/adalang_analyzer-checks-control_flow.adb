@@ -986,6 +986,37 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          return False;
    end References_Close;
 
+   --  True when Node's subtree contains an exit statement anywhere, at
+   --  any nesting depth -- deliberately not narrowed to "targets this
+   --  loop" (a labeled exit reaching this loop from inside a nested one
+   --  is a rare shape this project doesn't attempt to distinguish from
+   --  an unrelated inner exit). Used to keep the precise loop-body
+   --  fixed-point analysis below scoped to loops whose only way out is
+   --  their own head test or an internal return/raise/goto -- both
+   --  already modeled -- falling back to the older References_Close
+   --  heuristic whenever an exit could skip either.
+   function Contains_Exit_Statement
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Exit_Stmt then
+         return True;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         if Contains_Exit_Statement (Node.Child (I)) then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   exception
+      when others =>
+         return False;
+   end Contains_Exit_Statement;
+
    type Close_Result is record
       Can_Fall_Through : Boolean := True;
       Safe             : Boolean := True;
@@ -1150,19 +1181,80 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          when Libadalang.Common.Ada_While_Loop_Stmt
             | Libadalang.Common.Ada_Loop_Stmt
             | Libadalang.Common.Ada_For_Loop_Stmt =>
-            --  Conservative simplification, deliberately narrower than
-            --  Uninitialized_Output's array-coverage loop proofs (not
-            --  applicable here): credit the resource as closed if a
-            --  matching Close call appears anywhere in the loop body,
-            --  without proving the loop actually executes. False-negative
-            --  biased, so a loop that legitimately closes the resource on
-            --  some or all iterations is never flagged.
-            if not Initial
-              and then References_Close (Node.As_Base_Loop_Stmt.F_Stmts, Decl)
-            then
-               return (True, True);
-            end if;
-            return (True, Initial);
+            declare
+               Body_Stmts : constant Libadalang.Analysis.Stmt_List :=
+                 Node.As_Base_Loop_Stmt.F_Stmts;
+            begin
+               --  An exit anywhere in the body (see Contains_Exit_Statement)
+               --  keeps the older, purely textual fallback: credit the
+               --  resource as closed if a matching Close call appears
+               --  anywhere in the loop body, without proving the loop
+               --  actually executes or that the exit doesn't skip past it.
+               --  False-negative biased, so a loop that legitimately
+               --  closes the resource on some or all iterations is never
+               --  flagged.
+               if Contains_Exit_Statement (Body_Stmts) then
+                  if not Initial
+                    and then References_Close (Body_Stmts, Decl)
+                  then
+                     return (True, True);
+                  end if;
+                  return (True, Initial);
+               end if;
+
+               --  No exit: the only ways out of a While/For loop are its
+               --  own head test (possibly zero iterations) and an
+               --  internal return/raise/goto (already tracked via
+               --  Can_Fall_Through/Bad_Exit); a bare, unconditional loop
+               --  has no head test of its own, so with no exit anywhere
+               --  either, the code after it is always unreachable via
+               --  normal control flow (a path that completes the body
+               --  normally just repeats the loop forever; every other
+               --  path already transferred out rather than falling
+               --  through to here). Interpreting the body once from the
+               --  real entry state (First) gives the effect of running it
+               --  starting from wherever the loop is actually entered;
+               --  since nothing in this interpreter's state besides the
+               --  single Safe flag threads between statements, and
+               --  Open_At (the only thing that can ever force Safe back
+               --  to False) is reached the same way regardless of the
+               --  incoming flag, re-interpreting the body from First's
+               --  own exit state (Second) always reproduces a genuine
+               --  fixed point in at most this one extra application --
+               --  the effect of any second or later iteration, however
+               --  many the loop actually runs.
+               declare
+                  First : constant Close_Result := Interpret_Closure_List
+                    (Body_Stmts, Decl, Open_At, Open_Guard, Initial,
+                     Bad_Exit);
+               begin
+                  if Node.Kind = Libadalang.Common.Ada_Loop_Stmt then
+                     return (False, Initial);
+                  end if;
+
+                  if not First.Can_Fall_Through then
+                     --  While/For: the only way to reach the code after
+                     --  this loop is the zero-iteration path, which
+                     --  leaves the state exactly as it entered.
+                     return (True, Initial);
+                  end if;
+
+                  declare
+                     Second : constant Close_Result := Interpret_Closure_List
+                       (Body_Stmts, Decl, Open_At, Open_Guard, First.Safe,
+                        Bad_Exit);
+                     One_Or_More : constant Close_Result :=
+                       (if Second.Can_Fall_Through
+                        then (True, Second.Safe)
+                        else (True, First.Safe));
+                  begin
+                     --  While/For: merge the zero-iteration outcome (the
+                     --  entry state, unchanged) with the one-or-more-
+                     --  iterations outcome, since either is possible.
+                     return Merge ((True, Initial), One_Or_More);
+                  end;
+               end;
+            end;
 
          when others =>
             return (True, Initial);
@@ -1228,11 +1320,13 @@ package body Adalang_Analyzer.Checks.Control_Flow is
    end Check_Closed_On_Every_Path;
 
    --  Unclosed_File_Handle entry point: for every local File_Type object
-   --  opened outside a loop (loop-scoped opens are out of v1's scope, the
-   --  same bailout Dead_Store applies), checks that every reachable normal
-   --  and exception-handler path closes it. One independent interpreter
-   --  run per Open/Create call site, so a File_Type reopened more than
-   --  once is checked separately for each occurrence.
+   --  opened anywhere in the subprogram, including inside a loop --
+   --  Interpret_Closure's own loop case now reasons about the loop body's
+   --  fixed point rather than bailing on any loop-scoped open -- checks
+   --  that every reachable normal and exception-handler path closes it.
+   --  One independent interpreter run per Open/Create call site, so a
+   --  File_Type reopened more than once is checked separately for each
+   --  occurrence.
    procedure Analyze_Resource_Lifecycle
      (Unit       : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body)
@@ -1258,7 +1352,6 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                     and then Is_Local_To_Subprogram (Info.Decl, Subprogram)
                     and then not Renames_Nonlocal_Object
                       (Info.Decl, Subprogram)
-                    and then not Is_Inside_Loop (Node)
                   then
                      Check_Closed_On_Every_Path
                        (Unit, Subprogram, Info.Decl,

@@ -25,6 +25,32 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   open gap, tracked as `FP-062` in `quality/known_analysis_issues.tsv`:
   Libadalang's own `P_Referenced_Decl` already fails to resolve member
   calls into such a package, upstream of this check's own logic.
+- `Unclosed_File_Handle` now reasons about loops instead of bailing out
+  around them: an `Open`/`Create` call lexically inside a loop is no
+  longer skipped entirely, and a loop appearing *after* the open is no
+  longer credited with an unconditional pass merely because a matching
+  `Close` appears somewhere in its text. `Interpret_Closure`'s loop case
+  now interprets the body through the same structural interpreter used
+  for straight-line code and `if`/`case`, then re-interprets it a second
+  time starting from the first pass's own exit state to find a genuine
+  two-state fixed point -- sound here because nothing besides the single
+  "currently open" flag threads between statements, and the tracked
+  `Open_At` call (the only thing that can force it back to unsafe) is
+  reached the same way regardless of the incoming flag. That
+  one-or-more-iterations outcome is merged with the unchanged
+  zero-iterations outcome for `while`/`for` loops; a bare, unconditional
+  `loop` has no such outcome to merge, since without an internal `exit`
+  its own body completing normally just repeats it forever, making the
+  code after it unreachable. An `exit` statement anywhere in the loop
+  body still falls back to the older, purely textual heuristic rather
+  than reasoning about where control actually goes. Deliberately still
+  conservative in one respect, tracked as the new, open `FP-063`: a
+  `while`/`for` loop is always assumed able to run zero iterations, with
+  no attempt to prove a range or condition non-empty. Adds eight
+  precision-corpus fixtures covering loop-scoped opens (found and
+  clean), open-before-loop (found, clean-via-exit-fallback, and the
+  zero-iteration boundary itself), nested loops, and a bare loop with a
+  conditional early return.
 - `--verify`'s loop-invariant-preservation VC now supports one additional
   independent `if`/`elsif`/`else` chain or `case` statement per loop
   body, reached either by nesting inside an arm of the first one or

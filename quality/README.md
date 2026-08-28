@@ -50,17 +50,42 @@ triggers are baselined, consistent with the identical `Merge (Left,
 Right : ...)` shape already accepted elsewhere in this codebase (e.g.
 `Spark_Readiness`'s own `Init_Result` merge).
 
-`Unclosed_File_Handle`'s v1 scope is deliberately narrow, matching this
+`Unclosed_File_Handle`'s v1 scope was deliberately narrow, matching this
 project's habit of shipping a check narrow and widening it later
 (`Address_Clause`'s `FP-054`/`FP-055` history is the precedent): only
-`Ada.Text_IO`/`Ada.Streams.Stream_IO` (`Ada.Direct_IO`/
-`Ada.Sequential_IO`, generic and instantiated per element type like
-`Ada.Unchecked_Deallocation`, are a documented follow-up); an `Open`/
-`Create` call lexically inside a loop is skipped entirely (mirrors
-`Dead_Store`'s own loop bailout); and a loop appearing *after* the open
-credits a `Close` found anywhere in its body without proving the loop
-executes, a false-negative-biased simplification rather than
-`Uninitialized_Output`'s heavier array-coverage loop proofs.
+`Ada.Text_IO`/`Ada.Streams.Stream_IO`; an `Open`/`Create` call lexically
+inside a loop was skipped entirely (mirroring `Dead_Store`'s own loop
+bailout); and a loop appearing *after* the open credited a `Close`
+found anywhere in its body without proving the loop executes -- a
+false-negative-biased simplification rather than `Uninitialized_
+Output`'s heavier array-coverage loop proofs. Both loop gaps were
+closed on 2026-08-28: `Interpret_Closure`'s loop case now runs the body
+through the same interpreter as a normal statement list, using the
+result of one application as the entry state for a second to find a
+genuine two-state fixed point (sound here because nothing besides the
+single "currently open" flag threads between statements, and `Open_At`
+-- the only thing that can force it back to unsafe -- is reached the
+same way regardless of the incoming flag), then merges that
+"one-or-more-iterations" outcome with the unchanged "zero-iterations"
+outcome for `while`/`for` loops (a bare, unconditional `loop` has no
+such outcome to merge, since without an internal `exit` its own body
+completing normally only repeats it forever). An `exit` statement
+anywhere in the body (`Contains_Exit_Statement`) still falls back to
+the older, purely textual heuristic rather than reasoning about where
+control actually goes. Closing the loop-scoped-open bailout let a
+`Direct_IO`/`Sequential_IO` follow-up mentioned in an earlier revision
+of this section land too (`Ada.Text_IO`/`Ada.Streams.Stream_IO`'s
+generic, per-element-type siblings, resolved the same way
+`Ada.Unchecked_Deallocation` is), tracked as closed by
+`quality/known_analysis_issues.tsv`'s `FP-062` note on the one
+generic-instantiation shape (a bare name reached only through a `use`
+clause on the generic itself) that remains an upstream Libadalang
+resolution gap rather than a gap in this check. The fixed-point
+analysis is deliberately conservative in one further respect, tracked
+as the still-open `FP-063`: a `while`/`for` loop is always assumed able
+to run zero iterations, with no attempt to prove a range or condition
+non-empty, so an open closed unconditionally on every iteration of a
+loop that in fact always runs still fires.
 
 Adding `Empty_Then_Body`/`Empty_Else_Body` on 2026-08-24 (see below) required
 regenerating `recommended.baseline` even though neither new check produced an
