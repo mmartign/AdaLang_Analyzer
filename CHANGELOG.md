@@ -20,11 +20,23 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   designated generic's `P_Defining_Name` source text directly (its own
   `P_Canonical_Fully_Qualified_Name` is itself instantiation-relative and
   unusable for this, confirmed empirically). A generic package
-  instantiated via a bare name reached only through a `use` clause on the
-  generic unit itself (rather than the fully qualified name) remains an
-  open gap, tracked as `FP-062` in `quality/known_analysis_issues.tsv`:
-  Libadalang's own `P_Referenced_Decl` already fails to resolve member
-  calls into such a package, upstream of this check's own logic.
+  instantiated via a bare name reached only through a `use` clause on
+  the generic unit itself (rather than the fully qualified name) is also
+  recognized, closing `FP-062` in `quality/known_analysis_issues.tsv`:
+  this shape hits two independent Libadalang `Property_Error`s, not
+  one -- resolving the call itself fails, and separately, resolving just
+  the instantiation object's own name and asking its designated generic
+  decl for its own defining name also raises "dereferencing a null
+  access". Worked around by resolving the call's dotted prefix instead
+  of the whole name when the first resolution fails, and by falling
+  back to the generic name's own syntactic spelling at the instantiation
+  site (accepting either the qualified or bare form) when even that
+  fails -- an accepted precision tradeoff in that last fallback
+  specifically, with no semantic confirmation possible there against an
+  unrelated, identically-named generic also in scope. Adds five
+  precision-corpus fixtures: the qualified-name Direct_IO/Sequential_IO
+  cases, a fully qualified instantiation alongside an unrelated `use`
+  clause, and the bare-generic-name shape itself (found and clean).
 - `Unclosed_File_Handle` now reasons about loops instead of bailing out
   around them: an `Open`/`Create` call lexically inside a loop is no
   longer skipped entirely, and a loop appearing *after* the open is no
@@ -43,13 +55,18 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   its own body completing normally just repeats it forever, making the
   code after it unreachable. An `exit` statement anywhere in the loop
   body still falls back to the older, purely textual heuristic rather
-  than reasoning about where control actually goes. Deliberately still
-  conservative in one respect, tracked as the new, open `FP-063`: a
-  `while`/`for` loop is always assumed able to run zero iterations, with
-  no attempt to prove a range or condition non-empty. Adds eight
-  precision-corpus fixtures covering loop-scoped opens (found and
-  clean), open-before-loop (found, clean-via-exit-fallback, and the
-  zero-iteration boundary itself), nested loops, and a bare loop with a
+  than reasoning about where control actually goes. A numeric for-loop
+  whose `Low .. High` range is statically known non-empty (via
+  `Flow_Eval.Choice_Interval`, the same static-bounds proof
+  `Spark_Readiness`'s own `Uninitialized_Output` for-loop coverage check
+  already uses) is treated the same as a bare, unconditional loop,
+  closing `FP-063`: a range bounded by a variable or an untracked
+  subtype's own declared lower bound is not proven non-empty and still
+  conservatively fires, matching `Choice_Interval`'s own established
+  scope elsewhere in this codebase. Adds nine precision-corpus fixtures
+  covering loop-scoped opens (found and clean), open-before-loop (found,
+  clean via the exit fallback, the zero-iteration boundary, and a
+  statically non-empty range), nested loops, and a bare loop with a
   conditional early return.
 - `--verify`'s loop-invariant-preservation VC now supports one additional
   independent `if`/`elsif`/`else` chain or `case` statement per loop

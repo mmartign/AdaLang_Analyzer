@@ -76,16 +76,34 @@ control actually goes. Closing the loop-scoped-open bailout let a
 `Direct_IO`/`Sequential_IO` follow-up mentioned in an earlier revision
 of this section land too (`Ada.Text_IO`/`Ada.Streams.Stream_IO`'s
 generic, per-element-type siblings, resolved the same way
-`Ada.Unchecked_Deallocation` is), tracked as closed by
-`quality/known_analysis_issues.tsv`'s `FP-062` note on the one
-generic-instantiation shape (a bare name reached only through a `use`
-clause on the generic itself) that remains an upstream Libadalang
-resolution gap rather than a gap in this check. The fixed-point
-analysis is deliberately conservative in one further respect, tracked
-as the still-open `FP-063`: a `while`/`for` loop is always assumed able
-to run zero iterations, with no attempt to prove a range or condition
-non-empty, so an open closed unconditionally on every iteration of a
-loop that in fact always runs still fires.
+`Ada.Unchecked_Deallocation` is).
+
+Both gaps opened by that same 2026-08-28 pass were closed the same day
+after further investigation, rather than left standing. `FP-062` (a
+generic package instantiated via a bare name reached only through a
+`use Ada.Direct_IO;`/`use Ada.Sequential_IO;` clause) turned out to be
+two independent Libadalang `Property_Error`s, not one: resolving the
+call itself fails (the gap first found), and separately, resolving just
+the instantiation object's own name and asking its designated generic
+decl for its own defining name *also* raises "dereferencing a null
+access" for this same bare-name shape. Fixed by resolving the call's
+dotted prefix instead of the whole name when the first resolution
+fails, and by reading the generic name's own syntactic spelling at the
+instantiation site (accepting either the qualified or bare form) when
+even that second, narrower resolution raises -- an accepted precision
+tradeoff in that last fallback specifically, since no semantic
+confirmation is possible there against an unrelated, identically-named
+generic also in scope. `FP-063` (every `while`/`for` loop conservatively
+assumed able to run zero iterations) was closed by reusing
+`Flow_Eval.Choice_Interval` -- the same static-bounds proof
+`Spark_Readiness`'s own `Uninitialized_Output` for-loop coverage check
+already uses for the identical purpose -- to recognize a numeric
+for-loop whose `Low .. High` range is statically known non-empty, and
+treating it the same as a bare, unconditional loop. Deliberately still
+limited to the same literal-bounds scope `Choice_Interval` already has
+elsewhere in this codebase: a range bounded by a variable or an
+untracked subtype's own declared lower bound is not proven non-empty
+and still conservatively fires.
 
 Adding `Empty_Then_Body`/`Empty_Else_Body` on 2026-08-24 (see below) required
 regenerating `recommended.baseline` even though neither new check produced an

@@ -725,57 +725,218 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       return Libadalang.Analysis.No_Expr;
    end First_Param_Assoc_Actual;
 
+   --  Purely syntactic fallback for Instantiation_Generic_Name: when Inst
+   --  is a Generic_Package_Instantiation, reads the generic name as
+   --  written at the instantiation itself (F_Generic_Pkg_Name) and
+   --  accepts it whether spelled fully qualified ("Ada.Direct_IO") or
+   --  bare ("Direct_IO", brought into scope by a "use Ada.Direct_IO;"
+   --  clause) -- unlike Instantiation_Generic_Name's own primary path,
+   --  there is no semantic resolution left to confirm a bare spelling
+   --  actually denotes Ada.Direct_IO rather than some unrelated,
+   --  identically-named generic also in scope, so this is used only when
+   --  that primary path has already failed outright.
+   function Instantiation_Written_Generic_Name
+     (Inst : Libadalang.Analysis.Basic_Decl'Class) return String
+   is
+   begin
+      if Inst.Kind /= Libadalang.Common.Ada_Generic_Package_Instantiation
+      then
+         return "";
+      end if;
+
+      declare
+         Written : constant String := Canonical_Text
+           (Inst.As_Generic_Package_Instantiation.F_Generic_Pkg_Name);
+      begin
+         if Written in "ada.direct_io" | "direct_io" then
+            return "ada.direct_io";
+         elsif Written in "ada.sequential_io" | "sequential_io" then
+            return "ada.sequential_io";
+         end if;
+         return "";
+      end;
+   exception
+      when others =>
+         return "";
+   end Instantiation_Written_Generic_Name;
+
+   --  When Inst is a Generic_Package_Instantiation of Ada.Direct_IO or
+   --  Ada.Sequential_IO, returns that generic's own as-declared name
+   --  ("ada.direct_io"/"ada.sequential_io"); otherwise "". Resolves
+   --  Inst's own designated generic decl via P_Designated_Generic_Decl.
+   --  That property itself returns an entity view rebound as "the
+   --  expanded generic unit at this instantiation" (per its own
+   --  documentation), so its P_Canonical_Fully_Qualified_Name is
+   --  instantiation-relative and unusable here; reading the plain source
+   --  text of its P_Defining_Name instead sidesteps that, since text
+   --  extraction is purely positional and unaffected by the entity's
+   --  rebindings -- confirmed empirically to read "Ada.Direct_IO"/
+   --  "Ada.Sequential_IO" regardless of instantiation shape. Shared by
+   --  Instantiated_Resource_Package below (walking up from a resolved
+   --  member declaration) and Resolve_Instantiation_Member further down
+   --  (resolving the instantiation object itself directly, for FP-062's
+   --  bare-generic-name-via-"use" shape, where the member can't be
+   --  resolved at all).
+   function Instantiation_Generic_Name
+     (Inst : Libadalang.Analysis.Basic_Decl'Class) return String
+   is
+   begin
+      if Inst.Kind /= Libadalang.Common.Ada_Generic_Package_Instantiation
+      then
+         return "";
+      end if;
+
+      declare
+         Generic_Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Libadalang.Analysis.Basic_Decl
+             (Inst.As_Generic_Package_Instantiation.P_Designated_Generic_Decl);
+      begin
+         if Libadalang.Analysis.Is_Null (Generic_Decl) then
+            return "";
+         end if;
+
+         declare
+            Written : constant String :=
+              Canonical_Text (Generic_Decl.P_Defining_Name);
+         begin
+            if Written in "ada.direct_io" | "ada.sequential_io" then
+               return Written;
+            end if;
+            return "";
+         end;
+      end;
+   exception
+      when others =>
+         --  P_Designated_Generic_Decl itself raises Property_Error
+         --  (dereferencing a null access) for a package instantiated via
+         --  a bare generic name reached only through a "use" clause on
+         --  the generic itself (FP-062's root cause turned out to run
+         --  deeper than the member-resolution failure Resolve_
+         --  Instantiation_Member was first written to work around: this
+         --  same bare-name shape breaks the instantiation's own semantic
+         --  properties too, confirmed empirically) -- fall back to the
+         --  syntactic name written at the instantiation itself
+         --  (F_Generic_Pkg_Name), accepting either the fully qualified
+         --  or bare spelling, since no semantic confirmation is possible
+         --  here at all.
+         return Instantiation_Written_Generic_Name (Inst);
+   end Instantiation_Generic_Name;
+
    --  When Callee (an Open/Create/Close-shaped declaration reached from a
    --  call) was reached through a generic package instantiation of
    --  Ada.Direct_IO or Ada.Sequential_IO, returns that generic's own
-   --  as-declared name ("ada.direct_io"/"ada.sequential_io"); otherwise
-   --  "". Unlike Ada.Text_IO/Ada.Streams.Stream_IO,
-   --  Callee.P_Canonical_Fully_Qualified_Name itself is useless here --
-   --  Libadalang resolves an instantiated package's own nested entities
-   --  against the instantiation's name (e.g. "my_io.open" for
-   --  "package My_IO is new Ada.Sequential_IO (...);"), not the generic
-   --  template -- so instead this walks Callee's own instantiation chain
-   --  (outer-most last; only one level is possible here since Direct_IO/
-   --  Sequential_IO are not themselves declared inside another generic)
-   --  and resolves each instantiation's own designated generic decl via
-   --  P_Designated_Generic_Decl. That property itself returns an entity
-   --  view rebound as "the expanded generic unit at this instantiation"
-   --  (per its own documentation), so its own P_Canonical_Fully_Qualified_
-   --  Name is instantiation-relative garbage the same way Callee's is;
-   --  reading the plain source text of its P_Defining_Name instead sidesteps
-   --  that, since text extraction is purely positional and unaffected by
-   --  the entity's rebindings -- confirmed empirically to read "Ada.
-   --  Direct_IO"/"Ada.Sequential_IO" regardless of instantiation shape.
+   --  as-declared name; otherwise "". Unlike Ada.Text_IO/Ada.Streams.
+   --  Stream_IO, Callee.P_Canonical_Fully_Qualified_Name itself is
+   --  useless here -- Libadalang resolves an instantiated package's own
+   --  nested entities against the instantiation's name (e.g. "my_io.open"
+   --  for "package My_IO is new Ada.Sequential_IO (...);"), not the
+   --  generic template -- so instead this walks Callee's own
+   --  instantiation chain (outer-most last; only one level is possible
+   --  here since Direct_IO/Sequential_IO are not themselves declared
+   --  inside another generic).
    function Instantiated_Resource_Package
      (Callee : Libadalang.Analysis.Basic_Decl) return String
    is
    begin
       for Inst of Callee.P_Generic_Instantiations loop
-         if Inst.Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
-         then
-            declare
-               Generic_Decl : constant Libadalang.Analysis.Basic_Decl :=
-                 Libadalang.Analysis.Basic_Decl
-                   (Inst.P_Designated_Generic_Decl);
-            begin
-               if not Libadalang.Analysis.Is_Null (Generic_Decl) then
-                  declare
-                     Written : constant String :=
-                       Canonical_Text (Generic_Decl.P_Defining_Name);
-                  begin
-                     if Written in "ada.direct_io" | "ada.sequential_io" then
-                        return Written;
-                     end if;
-                  end;
-               end if;
-            end;
-         end if;
+         declare
+            Name : constant String := Instantiation_Generic_Name (Inst);
+         begin
+            if Name /= "" then
+               return Name;
+            end if;
+         end;
       end loop;
       return "";
    exception
       when others =>
          return "";
    end Instantiated_Resource_Package;
+
+   --  When Call's name is a dotted call whose prefix resolves to a
+   --  Direct_IO/Sequential_IO instantiation, returns the suffix's own
+   --  canonical source text (the called member's name, e.g. "open",
+   --  "close", "is_open") without needing Libadalang to resolve the
+   --  member itself; "" for anything else, including a prefix that
+   --  resolves fine but isn't such an instantiation. This is the
+   --  fallback FP-062 needed: a package instantiated via a bare generic
+   --  name reached only through a "use Ada.Direct_IO;"/"use
+   --  Ada.Sequential_IO;" clause (e.g. "package My_IO is new Direct_IO
+   --  (Integer);" instead of "... is new Ada.Direct_IO (...);") makes
+   --  Libadalang's own P_Referenced_Decl fail to resolve a call into
+   --  that package's members (e.g. "My_IO.Create") entirely, even though
+   --  the instantiation object's own name ("My_IO") resolves without
+   --  issue -- confirmed empirically. Reading the suffix's plain source
+   --  text instead of a resolved member's own name sidesteps needing
+   --  that broken resolution at all.
+   function Resolve_Instantiation_Member
+     (Call : Libadalang.Analysis.Call_Expr) return String
+   is
+   begin
+      if Call.F_Name.Kind /= Libadalang.Common.Ada_Dotted_Name then
+         return "";
+      end if;
+
+      declare
+         Dotted : constant Libadalang.Analysis.Dotted_Name :=
+           Call.F_Name.As_Dotted_Name;
+      begin
+         if Dotted.F_Suffix.Kind /= Libadalang.Common.Ada_Identifier then
+            return "";
+         end if;
+
+         declare
+            Prefix_Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Dotted.F_Prefix.P_Referenced_Decl (Imprecise_Fallback => True);
+         begin
+            if Libadalang.Analysis.Is_Null (Prefix_Decl)
+              or else Instantiation_Generic_Name (Prefix_Decl) = ""
+            then
+               return "";
+            end if;
+            return Canonical_Text (Dotted.F_Suffix);
+         end;
+      end;
+   exception
+      when others =>
+         return "";
+   end Resolve_Instantiation_Member;
+
+   --  Fallback classification for a call whose own name Libadalang
+   --  cannot resolve at all (Classify_Resource_Call's own Callee is
+   --  null): the FP-062 shape Resolve_Instantiation_Member documents.
+   --  There is no resolved member declaration here to read a relative
+   --  name from, so the operation comes straight from the call's own
+   --  suffix text instead.
+   function Classify_Via_Instantiation_Prefix
+     (Call : Libadalang.Analysis.Call_Expr) return Resource_Call
+   is
+      Op_Name : constant String := Resolve_Instantiation_Member (Call);
+      Op      : Resource_Op;
+   begin
+      if Op_Name in "open" | "create" then
+         Op := Opens_Resource;
+      elsif Op_Name = "close" then
+         Op := Closes_Resource;
+      else
+         return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+      end if;
+
+      declare
+         Actual : constant Libadalang.Analysis.Expr :=
+           First_Param_Assoc_Actual (Call);
+      begin
+         if Libadalang.Analysis.Is_Null (Actual)
+           or else Actual.Kind /= Libadalang.Common.Ada_Identifier
+         then
+            return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+         end if;
+         return (Op => Op, Decl => Data_Flow.Referenced_Declaration (Actual));
+      end;
+   exception
+      when others =>
+         return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+   end Classify_Via_Instantiation_Prefix;
 
    --  Classifies Stmt as an Open/Create or Close call on an
    --  Ada.Text_IO/Ada.Streams.Stream_IO File_Type object, or on a
@@ -801,7 +962,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
              (Imprecise_Fallback => True);
       begin
          if Libadalang.Analysis.Is_Null (Callee) then
-            return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
+            return Classify_Via_Instantiation_Prefix (Call.As_Call_Expr);
          end if;
 
          declare
@@ -884,22 +1045,27 @@ package body Adalang_Analyzer.Checks.Control_Flow is
              (Imprecise_Fallback => True);
       begin
          if Libadalang.Analysis.Is_Null (Callee) then
-            return False;
-         end if;
-
-         declare
-            Full_Name : constant String := Langkit_Support.Text.To_UTF8
-              (Callee.P_Canonical_Fully_Qualified_Name);
-         begin
-            if Full_Name /= "ada.text_io.is_open"
-              and then Full_Name /= "ada.streams.stream_io.is_open"
-              and then not
-                (Instantiated_Resource_Package (Callee) /= ""
-                 and then Canonical_Text (Callee.P_Relative_Name) = "is_open")
+            --  FP-062 fallback: see Resolve_Instantiation_Member.
+            if Resolve_Instantiation_Member (Cond.As_Call_Expr) /= "is_open"
             then
                return False;
             end if;
-         end;
+         else
+            declare
+               Full_Name : constant String := Langkit_Support.Text.To_UTF8
+                 (Callee.P_Canonical_Fully_Qualified_Name);
+            begin
+               if Full_Name /= "ada.text_io.is_open"
+                 and then Full_Name /= "ada.streams.stream_io.is_open"
+                 and then not
+                   (Instantiated_Resource_Package (Callee) /= ""
+                    and then Canonical_Text (Callee.P_Relative_Name) =
+                      "is_open")
+               then
+                  return False;
+               end if;
+            end;
+         end if;
 
          declare
             Actual : constant Libadalang.Analysis.Expr :=
@@ -1016,6 +1182,47 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       when others =>
          return False;
    end Contains_Exit_Statement;
+
+   --  True when Node is a numeric "for I in Low .. High loop" (not a "for
+   --  X of/in <iterable>" container form) whose iteration range is
+   --  statically known to be non-empty (Low <= High) -- the same
+   --  static-bounds proof Spark_Readiness's own Uninitialized_Output
+   --  for-loop coverage check uses to trust that a for-loop runs its body
+   --  at least once (its own "Scalar" case), reused here so a provably
+   --  non-empty for-loop gets the same "guaranteed at least one
+   --  iteration" treatment a bare, unconditional loop already gets below.
+   --  Choice_Interval's default Empty_Flow_State means only bounds that
+   --  are themselves static (literals, or expressions built from them)
+   --  are recognized; a loop bounded by a variable or an as-yet-untracked
+   --  subtype's own declared range is conservatively left as possibly
+   --  empty, same as before this function existed.
+   function Provably_Nonempty_For_Loop
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Node.Kind /= Libadalang.Common.Ada_For_Loop_Stmt then
+         return False;
+      end if;
+
+      declare
+         Spec : constant Libadalang.Analysis.For_Loop_Spec :=
+           Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
+      begin
+         if Spec.F_Loop_Type.Kind /= Libadalang.Common.Ada_Iter_Type_In then
+            return False;
+         end if;
+
+         declare
+            Bounds : constant Static_Interval :=
+              Choice_Interval (Spec.F_Iter_Expr);
+         begin
+            return Bounds.Known and then Bounds.Low <= Bounds.High;
+         end;
+      end;
+   exception
+      when others =>
+         return False;
+   end Provably_Nonempty_For_Loop;
 
    type Close_Result is record
       Can_Fall_Through : Boolean := True;
@@ -1203,40 +1410,65 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                end if;
 
                --  No exit: the only ways out of a While/For loop are its
-               --  own head test (possibly zero iterations) and an
-               --  internal return/raise/goto (already tracked via
-               --  Can_Fall_Through/Bad_Exit); a bare, unconditional loop
-               --  has no head test of its own, so with no exit anywhere
-               --  either, the code after it is always unreachable via
-               --  normal control flow (a path that completes the body
-               --  normally just repeats the loop forever; every other
-               --  path already transferred out rather than falling
-               --  through to here). Interpreting the body once from the
-               --  real entry state (First) gives the effect of running it
-               --  starting from wherever the loop is actually entered;
-               --  since nothing in this interpreter's state besides the
-               --  single Safe flag threads between statements, and
-               --  Open_At (the only thing that can ever force Safe back
-               --  to False) is reached the same way regardless of the
-               --  incoming flag, re-interpreting the body from First's
-               --  own exit state (Second) always reproduces a genuine
-               --  fixed point in at most this one extra application --
-               --  the effect of any second or later iteration, however
-               --  many the loop actually runs.
+               --  own head test (possibly zero iterations, unless proven
+               --  otherwise below) and an internal return/raise/goto
+               --  (already tracked via Can_Fall_Through/Bad_Exit); a
+               --  bare, unconditional loop has no head test of its own,
+               --  so with no exit anywhere either, the code after it is
+               --  always unreachable via normal control flow (a path
+               --  that completes the body normally just repeats the loop
+               --  forever; every other path already transferred out
+               --  rather than falling through to here) -- exactly the
+               --  same "always at least one iteration, and completing
+               --  one normally never itself reaches past the loop"
+               --  reasoning also applies to a For loop whose range is
+               --  proven non-empty (Provably_Nonempty_For_Loop): its own
+               --  head test can never be false on the first pass, and
+               --  completing a later pass normally just starts the next
+               --  one, so the only way "after the loop" is reached at
+               --  all is via the last iteration's own normal completion
+               --  once the range is exhausted -- never via a test that
+               --  could fail before any iteration ran. Interpreting the
+               --  body once from the real entry state (First) gives the
+               --  effect of running it starting from wherever the loop is
+               --  actually entered; since nothing in this interpreter's
+               --  state besides the single Safe flag threads between
+               --  statements, and Open_At (the only thing that can ever
+               --  force Safe back to False) is reached the same way
+               --  regardless of the incoming flag, re-interpreting the
+               --  body from First's own exit state (Second) always
+               --  reproduces a genuine fixed point in at most this one
+               --  extra application -- the effect of any second or later
+               --  iteration, however many the loop actually runs.
                declare
+                  Guaranteed_At_Least_Once : constant Boolean :=
+                    Node.Kind = Libadalang.Common.Ada_Loop_Stmt
+                      or else Provably_Nonempty_For_Loop (Node);
                   First : constant Close_Result := Interpret_Closure_List
                     (Body_Stmts, Decl, Open_At, Open_Guard, Initial,
                      Bad_Exit);
                begin
-                  if Node.Kind = Libadalang.Common.Ada_Loop_Stmt then
-                     return (False, Initial);
+                  if not First.Can_Fall_Through then
+                     if Guaranteed_At_Least_Once then
+                        --  The loop's one guaranteed iteration (or every
+                        --  iteration, for a bare loop) always transfers
+                        --  out early; there is no head test that could
+                        --  still be reached to fall through normally.
+                        return (False, Initial);
+                     end if;
+                     --  While/For, not proven non-empty: the only way to
+                     --  reach the code after this loop is the
+                     --  zero-iteration path, which leaves the state
+                     --  exactly as it entered.
+                     return (True, Initial);
                   end if;
 
-                  if not First.Can_Fall_Through then
-                     --  While/For: the only way to reach the code after
-                     --  this loop is the zero-iteration path, which
-                     --  leaves the state exactly as it entered.
-                     return (True, Initial);
+                  if Node.Kind = Libadalang.Common.Ada_Loop_Stmt then
+                     --  A bare loop completing its body normally only
+                     --  repeats it forever (checked above: no exit
+                     --  anywhere); "after the loop" stays unreachable
+                     --  regardless of what a further iteration would do.
+                     return (False, Initial);
                   end if;
 
                   declare
@@ -1248,9 +1480,15 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                         then (True, Second.Safe)
                         else (True, First.Safe));
                   begin
-                     --  While/For: merge the zero-iteration outcome (the
-                     --  entry state, unchanged) with the one-or-more-
-                     --  iterations outcome, since either is possible.
+                     if Guaranteed_At_Least_Once then
+                        --  A provably non-empty For loop: no zero-
+                        --  iteration path exists to merge in.
+                        return One_Or_More;
+                     end if;
+                     --  While/For, not proven non-empty: merge the
+                     --  zero-iteration outcome (the entry state,
+                     --  unchanged) with the one-or-more-iterations
+                     --  outcome, since either is possible.
                      return Merge ((True, Initial), One_Or_More);
                   end;
                end;
