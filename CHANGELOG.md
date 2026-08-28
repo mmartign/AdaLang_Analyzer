@@ -5,6 +5,27 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `Unclosed_File_Handle` now also recognizes a `File_Type` object of a
+  package instantiated from `Ada.Direct_IO`/`Ada.Sequential_IO` (generic,
+  and instantiated per element type), the follow-up `quality/README.md`
+  had documented as out of this check's v1 scope. Since Libadalang
+  resolves an instantiated package's own nested entities (`Open`/
+  `Create`/`Close`/`Is_Open`) against the instantiation's own name rather
+  than the generic template, recognizing them required walking the
+  callee's own `P_Generic_Instantiations` chain and reading the
+  designated generic's `P_Defining_Name` source text directly (its own
+  `P_Canonical_Fully_Qualified_Name` is itself instantiation-relative and
+  unusable for this, confirmed empirically). A generic package
+  instantiated via a bare name reached only through a `use` clause on the
+  generic unit itself (rather than the fully qualified name) remains an
+  open gap, tracked as `FP-062` in `quality/known_analysis_issues.tsv`:
+  Libadalang's own `P_Referenced_Decl` already fails to resolve member
+  calls into such a package, upstream of this check's own logic.
+
 ## [1.2.0] - 2026-08-25
 
 ### Added

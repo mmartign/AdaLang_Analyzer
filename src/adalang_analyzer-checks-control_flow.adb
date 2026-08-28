@@ -725,14 +725,67 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       return Libadalang.Analysis.No_Expr;
    end First_Param_Assoc_Actual;
 
+   --  When Callee (an Open/Create/Close-shaped declaration reached from a
+   --  call) was reached through a generic package instantiation of
+   --  Ada.Direct_IO or Ada.Sequential_IO, returns that generic's own
+   --  as-declared name ("ada.direct_io"/"ada.sequential_io"); otherwise
+   --  "". Unlike Ada.Text_IO/Ada.Streams.Stream_IO,
+   --  Callee.P_Canonical_Fully_Qualified_Name itself is useless here --
+   --  Libadalang resolves an instantiated package's own nested entities
+   --  against the instantiation's name (e.g. "my_io.open" for
+   --  "package My_IO is new Ada.Sequential_IO (...);"), not the generic
+   --  template -- so instead this walks Callee's own instantiation chain
+   --  (outer-most last; only one level is possible here since Direct_IO/
+   --  Sequential_IO are not themselves declared inside another generic)
+   --  and resolves each instantiation's own designated generic decl via
+   --  P_Designated_Generic_Decl. That property itself returns an entity
+   --  view rebound as "the expanded generic unit at this instantiation"
+   --  (per its own documentation), so its own P_Canonical_Fully_Qualified_
+   --  Name is instantiation-relative garbage the same way Callee's is;
+   --  reading the plain source text of its P_Defining_Name instead sidesteps
+   --  that, since text extraction is purely positional and unaffected by
+   --  the entity's rebindings -- confirmed empirically to read "Ada.
+   --  Direct_IO"/"Ada.Sequential_IO" regardless of instantiation shape.
+   function Instantiated_Resource_Package
+     (Callee : Libadalang.Analysis.Basic_Decl) return String
+   is
+   begin
+      for Inst of Callee.P_Generic_Instantiations loop
+         if Inst.Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
+         then
+            declare
+               Generic_Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Libadalang.Analysis.Basic_Decl
+                   (Inst.P_Designated_Generic_Decl);
+            begin
+               if not Libadalang.Analysis.Is_Null (Generic_Decl) then
+                  declare
+                     Written : constant String :=
+                       Canonical_Text (Generic_Decl.P_Defining_Name);
+                  begin
+                     if Written in "ada.direct_io" | "ada.sequential_io" then
+                        return Written;
+                     end if;
+                  end;
+               end if;
+            end;
+         end if;
+      end loop;
+      return "";
+   exception
+      when others =>
+         return "";
+   end Instantiated_Resource_Package;
+
    --  Classifies Stmt as an Open/Create or Close call on an
-   --  Ada.Text_IO/Ada.Streams.Stream_IO File_Type object, resolving the
-   --  File_Type actual (the first parameter of every one of these
-   --  subprograms) to its declaration. v1 scope, matching Address_Clause's
-   --  own precedent of adding coverage incrementally: only these two
-   --  non-generic packages; Ada.Direct_IO/Ada.Sequential_IO, generic and
-   --  instantiated per element type the same way Ada.Unchecked_Deallocation
-   --  is, are a documented follow-up rather than in scope here.
+   --  Ada.Text_IO/Ada.Streams.Stream_IO File_Type object, or on a
+   --  File_Type object of a package instantiated from Ada.Direct_IO or
+   --  Ada.Sequential_IO (generic, and instantiated per element type the
+   --  same way Ada.Unchecked_Deallocation is -- resolving Instantiated_
+   --  Resource_Package's instantiation chain rather than matching a fixed
+   --  qualified name, since each instantiation mints its own), resolving
+   --  the File_Type actual (the first parameter of every one of these
+   --  subprograms) to its declaration.
    function Classify_Resource_Call
      (Stmt : Libadalang.Analysis.Call_Stmt) return Resource_Call
    is
@@ -764,6 +817,21 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               | "ada.streams.stream_io.close"
             then
                Op := Closes_Resource;
+            elsif Instantiated_Resource_Package (Callee) /= "" then
+               declare
+                  Op_Name : constant String :=
+                    Canonical_Text (Callee.P_Relative_Name);
+               begin
+                  if Op_Name in "open" | "create" then
+                     Op := Opens_Resource;
+                  elsif Op_Name = "close" then
+                     Op := Closes_Resource;
+                  else
+                     return
+                       (Op => Not_A_Resource_Call,
+                        Decl => Libadalang.Analysis.No_Basic_Decl);
+                  end if;
+               end;
             else
                return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
             end if;
@@ -787,16 +855,18 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
    end Classify_Resource_Call;
 
-   --  True when Cond is a call to Ada.Text_IO.Is_Open or
-   --  Ada.Streams.Stream_IO.Is_Open on Decl -- the standard
-   --  "if Is_Open (File) then Close (File); end if;" idiom for closing a
-   --  file that might already be closed (calling Close on an unopened or
-   --  already-closed File_Type raises Status_Error, so this guard is the
-   --  correct, common way to write an idempotent close). Recognized so
-   --  Interpret_Closure can treat the missing "else" branch as safe too,
-   --  rather than pessimistically inheriting whatever state came before
-   --  the if -- without this, the idiom itself (used correctly in this
-   --  project's own Report.Load_Baseline) false-positives every time.
+   --  True when Cond is a call to Ada.Text_IO.Is_Open,
+   --  Ada.Streams.Stream_IO.Is_Open, or the Is_Open of a package
+   --  instantiated from Ada.Direct_IO/Ada.Sequential_IO, on Decl -- the
+   --  standard "if Is_Open (File) then Close (File); end if;" idiom for
+   --  closing a file that might already be closed (calling Close on an
+   --  unopened or already-closed File_Type raises Status_Error, so this
+   --  guard is the correct, common way to write an idempotent close).
+   --  Recognized so Interpret_Closure can treat the missing "else" branch
+   --  as safe too, rather than pessimistically inheriting whatever state
+   --  came before the if -- without this, the idiom itself (used correctly
+   --  in this project's own Report.Load_Baseline) false-positives every
+   --  time.
    function Guards_Is_Open
      (Cond : Libadalang.Analysis.Expr;
       Decl : Libadalang.Analysis.Basic_Decl) return Boolean
@@ -823,6 +893,9 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          begin
             if Full_Name /= "ada.text_io.is_open"
               and then Full_Name /= "ada.streams.stream_io.is_open"
+              and then not
+                (Instantiated_Resource_Package (Callee) /= ""
+                 and then Canonical_Text (Callee.P_Relative_Name) = "is_open")
             then
                return False;
             end if;
