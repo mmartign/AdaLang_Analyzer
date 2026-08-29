@@ -269,7 +269,7 @@ Extending the CubedOS investigation to `--verify`'s bounded scalar proof
 obligations (full `src/cubedos.gpr`, 49 files) and comparing against
 GNATprove `--mode=prove --level=4` (mirroring `benchmarks/sparknacl/`'s
 methodology; detail in `benchmarks/cubedos/README.md` and
-`benchmarks/cubedos/RESULTS_2026-08-25.md`) surfaced a real analyzer bug:
+`benchmarks/cubedos/RESULTS_2026-08-29.md`) surfaced a real analyzer bug:
 `Finalize_Node` called several Libadalang properties directly outside any
 `begin`/`exception` block, so a `Property_Error` — `Call_Expr.P_Kind`
 genuinely fails for a call whose callee is declared in a separate `with`'d

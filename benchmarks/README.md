@@ -83,16 +83,16 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-24.md) | 1557 | 1334 (85.7%) | 1778 | 1334 (75.0%) |
-| [aws](aws/RESULTS_gnatcheck_2026-08-24.md) | 6343 | 3335 (52.6%) | 11617 | 3325 (28.6%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-24.md) | 1891 | 979 (51.8%) | 2191 | 977 (44.6%) |
-| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md) | 859 | 378 (44.0%) | 1087 | 378 (34.8%) |
-| [cubedos](cubedos/RESULTS_gnatcheck_2026-08-24.md) | 182 | 157 (86.3%) | 653 | 157 (24.0%) |
-| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-24.md) | 784 | 641 (81.8%) | 7629 | 641 (8.4%) |
-| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-24.md) | 1460 | 1224 (83.8%) | 1355 | 1224 (90.3%) |
-| [saatana](saatana/RESULTS_gnatcheck_2026-08-24.md) | 158 | 96 (60.8%) | 129 | 96 (74.4%) |
-| [project_bias](project_bias/RESULTS_gnatcheck_2026-08-24.md) | 225 | 168 (74.7%) | 299 | 168 (56.2%) |
-| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-08-24.md) | 599 | 444 (74.1%) | 1602 | 425 (26.5%) |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-29.md) | 1557 | 1334 (85.7%) | 1778 | 1334 (75.0%) |
+| [aws](aws/RESULTS_gnatcheck_2026-08-29.md) | 6343 | 3335 (52.6%) | 11617 | 3325 (28.6%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-29.md) | 1891 | 979 (51.8%) | 2191 | 977 (44.6%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md) | 859 | 378 (44.0%) | 1087 | 378 (34.8%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-08-29.md) | 182 | 157 (86.3%) | 653 | 157 (24.0%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-29.md) | 784 | 641 (81.8%) | 7629 | 641 (8.4%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-29.md) | 1460 | 1224 (83.8%) | 1355 | 1224 (90.3%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-08-29.md) | 158 | 96 (60.8%) | 129 | 96 (74.4%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-08-29.md) | 225 | 168 (74.7%) | 299 | 168 (56.2%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-08-29.md) | 599 | 444 (74.1%) | 1602 | 425 (26.5%) |
 
 **Reading the "unmatched" gap.** Most of it is not disagreement — it's the
 comparator's exact-line matching meeting real, explainable conventions:

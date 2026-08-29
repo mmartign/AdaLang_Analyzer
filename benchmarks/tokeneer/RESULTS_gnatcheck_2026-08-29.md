@@ -1,7 +1,7 @@
 # Tokeneer: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
 Re-run 2026-08-29, part of a full ten-corpus refresh ahead of a version
-bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`
+bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`
 for the batch's shared methodology). Clean run, no crashes.
 
 ## Environment
@@ -12,7 +12,7 @@ for the batch's shared methodology). Clean run, no crashes.
   unchanged.
 - AdaLang Analyzer: commit `c43415f`.
 - GNATcheck / rule map: same as
-  `ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`.
+  `ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`.
 - Reproduce: `TOKENEER_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/tokeneer/run_gnatcheck.sh`.
 
@@ -34,7 +34,7 @@ Bit-identical to the 2026-08-24 run in every field.
 Still 1 `Empty_Else_Body` finding (`userentry.adb:389`) and 2
 `Null_Case_Alternative` findings (`enclave.adb:1909`, `tokenreader.adb:597`)
 — 0% GNATcheck-side match for all three, the same reporting-location
-convention gap documented in `gnatcoll/RESULTS_gnatcheck_2026-08-24.md`,
+convention gap documented in `gnatcoll/RESULTS_gnatcheck_2026-08-29.md`,
 not a new bug. `Empty_Then_Body`/`Empty_Elsif_Body` still show 0/0.
 
 ## Caveats

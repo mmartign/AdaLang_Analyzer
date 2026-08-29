@@ -665,7 +665,7 @@ instead of being re-itemized here):
   fixture per check, not just argued from code inspection -- fixed by
   special-casing `pragma Assert` specifically to count as substantive,
   every other pragma unaffected. See
-  `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md` for the
+  `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md` for the
   run that found it and `quality/known_analysis_issues.tsv`'s `FP-059` for
   the full trace, including confirming each of the 5 fixtures would fail
   against the pre-fix binary by toggling the fix off and re-running.

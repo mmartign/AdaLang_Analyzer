@@ -1,7 +1,7 @@
 # coap_spark: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
 Re-run 2026-08-29, part of a full ten-corpus refresh ahead of a version
-bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`
+bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`
 for the batch's shared methodology). Clean run, no crashes.
 
 ## Environment
@@ -13,7 +13,7 @@ for the batch's shared methodology). Clean run, no crashes.
   (`COAP_SPARK_SPARKLIB`), per `README.md`'s documented environment fix.
 - AdaLang Analyzer: commit `c43415f`.
 - GNATcheck / rule map: same as
-  `ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`.
+  `ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`.
 - Reproduce: `COAP_SPARK_ROOT=<checkout> COAP_SPARK_SPARKLIB=<sparklib
   crate> GNATCHECK_ENV=<env.sh> benchmarks/coap_spark/run_gnatcheck.sh`.
 
@@ -35,7 +35,7 @@ Bit-identical to the 2026-08-24 run in every field.
 Still 5 findings, 0% GNATcheck-side match, all in RecordFlux-generated
 state-dispatch code — unchanged from every prior run, the same
 reporting-location convention difference documented in full in
-`gnatcoll/RESULTS_gnatcheck_2026-08-24.md`, not a new bug.
+`gnatcoll/RESULTS_gnatcheck_2026-08-29.md`, not a new bug.
 `Empty_Then_Body`/`Empty_Else_Body`/`Empty_Elsif_Body` still show 0/0.
 
 ## Caveats

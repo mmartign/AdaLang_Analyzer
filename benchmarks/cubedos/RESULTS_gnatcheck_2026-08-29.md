@@ -1,7 +1,7 @@
 # CubedOS: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
 Re-run 2026-08-29, part of a full ten-corpus refresh ahead of a version
-bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`
+bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`
 for the batch's shared methodology).
 
 ## Environment
@@ -10,7 +10,7 @@ for the batch's shared methodology).
   (`CUBEDOS_REVISION`), unchanged.
 - AdaLang Analyzer: commit `c43415f`.
 - GNATcheck / rule map: same as
-  `ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`.
+  `ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`.
 - Reproduce: `CUBEDOS_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/cubedos/run_gnatcheck.sh`.
 
@@ -45,7 +45,7 @@ build's already-documented run-to-run variance (see
 `benchmarks/README.md`'s "GNATcheck oracle comparison" section), but a
 larger swing than most other corpora in this batch showed. Not
 investigated further per this refresh's scope (see the corpus's own
-`RESULTS_2026-08-25.md` and `README.md` for the `FP-040` obligation-count
+`RESULTS_2026-08-29.md` and `README.md` for the `FP-040` obligation-count
 caveat that already governs how much weight to put on this corpus's
 numbers generally).
 

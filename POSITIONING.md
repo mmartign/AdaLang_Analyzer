@@ -166,7 +166,7 @@ reproduce GNATprove's verification-condition or prover engine.
 library: across 890 proof obligations both tools could evaluate at the same
 location, AdaLang never called something safe that GNATprove could not
 prove and never called something a definite error that GNATprove proved
-safe (see `benchmarks/sparknacl/RESULTS_2026-08-25.md`). AdaLang was
+safe (see `benchmarks/sparknacl/RESULTS_2026-08-29.md`). AdaLang was
 `Unproved`/`Unsupported` far more often than GNATprove across the same set,
 consistent with "a much narrower scalar subset" above -- this is evidence
 of precision on the subset AdaLang attempts, not of matching GNATprove's
@@ -185,7 +185,7 @@ independently-authored fully-proved corpus (HeisenbugLtd/Saatana): across
 101 proof obligations both tools could evaluate at the same location, again
 zero possible unsoundness and zero false positives, corroborating the
 SPARKNaCl result on a much smaller sample from a different author and
-domain -- see `benchmarks/saatana/RESULTS_2026-08-25.md`. Getting a
+domain -- see `benchmarks/saatana/RESULTS_2026-08-29.md`. Getting a
 comparable run out of this corpus at all required overriding three of the
 project's own GNATprove switches (an unavailable prover, a step budget tuned
 for that prover, and a report level the project never set), documented in
@@ -196,7 +196,7 @@ independently-authored corpus (damaki/libkeccak, SPARK silver level --
 proved free of run-time errors, not functional correctness): across 212
 proof obligations both tools could evaluate at the same location, again
 zero possible unsoundness and zero false positives -- see
-`benchmarks/libkeccak/RESULTS_2026-08-25.md`. This corpus's heavy use of
+`benchmarks/libkeccak/RESULTS_2026-08-29.md`. This corpus's heavy use of
 generic instantiation (the same permutation and sponge cores instantiated
 once per supported state size and round count) means most obligations
 land in a count-mismatch bucket instead of a 1:1 match, since GNATprove
@@ -216,7 +216,7 @@ this set from a domain (network protocol message parsing and session state)
 none of the other four touch, rather than another cryptographic primitive:
 across 853 proof obligations both tools could evaluate at the same location,
 again zero possible unsoundness and zero false positives -- see
-`benchmarks/coap_spark/RESULTS_2026-08-25.md`. Getting a comparable run out
+`benchmarks/coap_spark/RESULTS_2026-08-29.md`. Getting a comparable run out
 of this corpus required substituting a version-matched SPARKlib for the one
 its own Alire manifest pins (tied to a different GNATprove release than this
 benchmark suite's), the same category of toolchain-alignment work as
@@ -231,7 +231,7 @@ defect in that project, not an environment gap, and not pursued further.
 NSA-released Tokeneer ID Station (an access-control system, from
 AdaCore/spark2014's test suite): across 221 proof obligations both tools
 could evaluate at the same location, again zero possible unsoundness and
-zero false positives -- see `benchmarks/tokeneer/RESULTS_2026-08-25.md`.
+zero false positives -- see `benchmarks/tokeneer/RESULTS_2026-08-29.md`.
 Tokeneer is this project's oldest external corpus, predating this benchmark
 directory's own run/compare convention; its earlier findings (the first
 four confirmed analyzer false positives, `FP-004`-`FP-007`) are recorded in

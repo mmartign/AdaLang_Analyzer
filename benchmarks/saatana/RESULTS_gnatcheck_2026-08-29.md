@@ -1,7 +1,7 @@
 # Saatana: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
 Re-run 2026-08-29, part of a full ten-corpus refresh ahead of a version
-bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`
+bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`
 for the batch's shared methodology). Completed cleanly on the first
 attempt, no crash.
 
@@ -11,7 +11,7 @@ attempt, no crash.
   (`SAATANA_REVISION`), unchanged.
 - AdaLang Analyzer: commit `c43415f`.
 - GNATcheck / rule map: same as
-  `ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`.
+  `ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`.
 - Reproduce: `SAATANA_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/saatana/run_gnatcheck.sh`.
 
@@ -36,7 +36,7 @@ build's documented run-to-run variance, not a corpus or AdaLang change.
 `Empty_Else_Body`/`Empty_Elsif_Body` still show 0/0 on this corpus.
 `Empty_Then_Body` still shows 1 finding (`saatana-crypto-phelix.adb:420`),
 0% GNATcheck-side match — the same reporting-location convention
-difference documented in `gnatcoll/RESULTS_gnatcheck_2026-08-24.md`, not a
+difference documented in `gnatcoll/RESULTS_gnatcheck_2026-08-29.md`, not a
 new bug.
 
 ## Caveats

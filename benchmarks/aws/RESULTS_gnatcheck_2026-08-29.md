@@ -1,7 +1,7 @@
 # AWS: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
 Re-run 2026-08-29, part of a full ten-corpus refresh ahead of a version
-bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`
+bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`
 for the batch's shared methodology).
 
 ## Environment
@@ -11,7 +11,7 @@ for the batch's shared methodology).
   `7c59ed4f1ee371c7d3f420b890e287b72c2473f4`, unchanged.
 - AdaLang Analyzer: commit `c43415f`.
 - GNATcheck / rule map: same as
-  `ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`.
+  `ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md`.
 - Reproduce: `AWS_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/aws/run_gnatcheck.sh`, after the documented `make setup build`
   step.

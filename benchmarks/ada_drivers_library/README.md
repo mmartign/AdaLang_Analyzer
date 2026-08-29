@@ -83,5 +83,5 @@ independent oracle (there is no GNATprove lane here to cross-check against):
    positive in `Circular_Package_Dependency` on a `limited with` pair, fixed
    as part of recording these results.
 
-See [RESULTS_2026-08-25.md](RESULTS_2026-08-25.md) for the most recent run
+See [RESULTS_2026-08-29.md](RESULTS_2026-08-29.md) for the most recent run
 and its finding breakdown by lane.
