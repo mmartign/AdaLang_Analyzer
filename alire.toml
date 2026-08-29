@@ -18,7 +18,7 @@
 
 name = "adalang_analyzer"
 description = "A Libadalang-based static analyzer for Ada source code"
-version = "1.2.0"
+version = "1.3.0"
 
 authors = ["Maurizio Martignano"]
 maintainers = ["Maurizio Martignano <Maurizio.Martignano@spazioit.com>"]
