@@ -1,60 +1,61 @@
 # CubedOS: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
-Second run, part of the 2026-08-24 batch re-run across all ten corpora
-following the `Empty_Then_Body`/`Empty_Else_Body` addition and the `FP-059`
-fix (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`).
+Re-run 2026-08-29, part of a full ten-corpus refresh ahead of a version
+bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`
+for the batch's shared methodology).
 
 ## Environment
 
 - Corpus: cubesatlab/cubedos at `c402301000a5a92237e0f7ab106186a48273cf24`
-  (`CUBEDOS_REVISION`), unchanged from the 2026-08-19 run.
-- AdaLang Analyzer / GNATcheck / rule map: same as
+  (`CUBEDOS_REVISION`), unchanged.
+- AdaLang Analyzer: commit `c43415f`.
+- GNATcheck / rule map: same as
   `ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`.
 - Reproduce: `CUBEDOS_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/cubedos/run_gnatcheck.sh`.
 
 ## Reproduction gotcha: do not pre-wrap this script in your own `alr exec`
 
-Unlike every other corpus's `run_gnatcheck.sh`, CubedOS's own script has
-real setup logic (resolving `aunit.gpr` through a throwaway local Alire
-crate) inside its `if [ "${ALIRE:-}" != "True" ]` guard, not just the bare
-re-exec every other script's guard contains. Invoking it as `alr exec -- sh
-benchmarks/cubedos/run_gnatcheck.sh` (the pattern that works for every other
-corpus in this batch) sets `ALIRE=True` *before* the script's own guard
-runs, so the script's own re-exec check evaluates false and the whole aunit
-setup block is silently skipped — the first attempt this way failed at
-GNATcheck project-loading with `imported project file "aunit.gpr" not
-found`, and produced a spurious 0-finding, 0.0%-match "comparison" instead
-of erroring loudly. Fixed by invoking the script directly in a plain shell
-(`sh benchmarks/cubedos/run_gnatcheck.sh`, no `alr exec` wrapper) and
-letting it perform its own internal re-exec, as documented in its own
-header comment. Not a script bug — the script already documents this
-constraint; this was a reproduction mistake worth recording so it isn't
-repeated.
+Still applies unchanged — see the 2026-08-24 run for the full explanation.
+This run invoked the script directly in a plain shell as documented.
+
+## First attempt crashed at the start; retry succeeded
+
+The first attempt hit the recurring `STORAGE_ERROR: stack overflow`
+(`gnatcheck: error: unparsable worker output`) crash class in its first
+five lines, though processing continued afterward (561 `gnatcheck.txt`
+lines produced). A second, unmodified re-run completed with zero
+internal-issue lines; its totals are used below.
 
 ## Totals
 
 | | Count | |
 | --- | ---: | --- |
 | AdaLang findings (mapped rules) | 182 | |
-| &nbsp;&nbsp;matched by GNATcheck | 149 | 81.9% |
-| &nbsp;&nbsp;AdaLang-only (potential false positive) | 33 | 18.1% |
-| GNATcheck findings (mapped rules) | 491 | |
-| &nbsp;&nbsp;matched by AdaLang | 149 | 30.3% |
-| &nbsp;&nbsp;GNATcheck-only (potential false negative / miss) | 342 | 69.7% |
+| &nbsp;&nbsp;matched by GNATcheck | 157 | 86.3% |
+| &nbsp;&nbsp;AdaLang-only (potential false positive) | 25 | 13.7% |
+| GNATcheck findings (mapped rules) | 653 | |
+| &nbsp;&nbsp;matched by AdaLang | 157 | 24.0% |
+| &nbsp;&nbsp;GNATcheck-only (potential false negative / miss) | 496 | 76.0% |
 
-Close to the 2026-08-19 run (85.7%/25.3% then), within this build's known
-run-to-run variance.
+AdaLang's own finding count is unchanged from the 2026-08-24 run (182).
+GNATcheck's own finding count moved further than usual this time (491 →
+653, matched-pair count 149 → 157) — within the range of this from-source
+build's already-documented run-to-run variance (see
+`benchmarks/README.md`'s "GNATcheck oracle comparison" section), but a
+larger swing than most other corpora in this batch showed. Not
+investigated further per this refresh's scope (see the corpus's own
+`RESULTS_2026-08-25.md` and `README.md` for the `FP-040` obligation-count
+caveat that already governs how much weight to put on this corpus's
+numbers generally).
 
 ## `Empty_Then_Body`/`Empty_Else_Body`/`Empty_Elsif_Body`/`Null_Case_Alternative` results
 
-All four report **0 findings** on this corpus, both sides — consistent with
-the 2026-08-19 run's `Empty_If_Body`/`Empty_Elsif_Body` also showing 0/0
-here.
+All four still report **0 findings** on this corpus, both sides —
+unchanged from every prior run.
 
 ## Caveats
 
-Same caveats as the 2026-08-19 run apply unchanged (project-embedded rule
+Same caveats as prior runs apply unchanged (project-embedded rule
 configuration required `--ignore-project-switches`; `Exception_Propagation`
-finding nothing on task bodies is explained, not a bug, see the
-2026-08-19 run).
+finding nothing on task bodies is explained, not a bug).

@@ -1,51 +1,50 @@
 # SPARKNaCl: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
-Second run, part of the 2026-08-24 batch re-run across all ten corpora
-following the `Empty_Then_Body`/`Empty_Else_Body` addition and the `FP-059`
-fix (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`
-for the full writeup of that fix and the batch's shared methodology).
+Re-run 2026-08-29, part of a full ten-corpus refresh ahead of a version
+bump (see `benchmarks/ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`
+for the batch's shared methodology).
 
 ## Environment
 
 - Corpus: rod-chapman/SPARKnaCl at `49e3bddf092561ce2b74c134a35acff91a2da9a4`
-  (`SPARKNACL_REVISION`), unchanged from the 2026-08-19 run.
-- AdaLang Analyzer / GNATcheck / rule map: same as
+  (`SPARKNACL_REVISION`), unchanged.
+- AdaLang Analyzer: commit `c43415f`.
+- GNATcheck / rule map: same as
   `ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md`.
 - Reproduce: `SPARKNACL_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/sparknacl/run_gnatcheck.sh`.
 
-## First attempt crashed outright; retry succeeded
+## This run completed cleanly on the first attempt
 
-The first attempt hit the recurring `STORAGE_ERROR: stack overflow` crash
-class (`gnatcheck: error: unparsable worker output`) early enough that only
-476 of the eventual ~2150 `gnatcheck.txt` lines were produced — unlike
-`ada_drivers_library`'s 2026-08-19 run, where the crash let processing
-continue afterward, this one effectively killed the batch. A second,
-unmodified re-run completed with only one residual internal-issue line and
-totals consistent with the 2026-08-19 run (see below) — consistent with
-this being from-source-build flakiness, not a real regression.
+No `STORAGE_ERROR: stack overflow` / "unparsable worker output" crash this
+time (unlike the 2026-08-24 run, which needed a retry) — `gnatcheck.txt`
+has no internal-issue lines at all.
 
 ## Totals
 
 | | Count | |
 | --- | ---: | --- |
 | AdaLang findings (mapped rules) | 1557 | |
-| &nbsp;&nbsp;matched by GNATcheck | 1332 | 85.5% |
-| &nbsp;&nbsp;AdaLang-only (potential false positive) | 225 | 14.5% |
-| GNATcheck findings (mapped rules) | 1629 | |
-| &nbsp;&nbsp;matched by AdaLang | 1332 | 81.8% |
-| &nbsp;&nbsp;GNATcheck-only (potential false negative / miss) | 297 | 18.2% |
+| &nbsp;&nbsp;matched by GNATcheck | 1334 | 85.7% |
+| &nbsp;&nbsp;AdaLang-only (potential false positive) | 223 | 14.3% |
+| GNATcheck findings (mapped rules) | 1778 | |
+| &nbsp;&nbsp;matched by AdaLang | 1334 | 75.0% |
+| &nbsp;&nbsp;GNATcheck-only (potential false negative / miss) | 444 | 25.0% |
 
-Close to the 2026-08-19 run (85.7%/75.9% then), within this build's known
-run-to-run variance.
+AdaLang's own finding count is unchanged from the 2026-08-24 run (1557):
+none of the rule changes landed since then (`Unclosed_File_Handle`
+loop-awareness, `FP-062`/`FP-063`) touch a GNATcheck-mapped rule. The
+GNATcheck-side finding count moved from 1629 to 1778 and the matched-pair
+count from 1332 to 1334 — consistent with the "known run-to-run variance"
+already documented for this from-source GNATcheck build, not a corpus or
+AdaLang change.
 
 ## `Empty_Then_Body`/`Empty_Else_Body`/`Empty_Elsif_Body`/`Null_Case_Alternative` results
 
-All four report **0 findings** on this corpus, both sides (`null_paths`
-itself: 0 GNATcheck findings too) — this small, disciplined SPARK codebase
-simply doesn't contain the "empty branch/alternative with a real sibling"
-shape, the same true-negative result as `Empty_If_Body`/`Empty_Elsif_Body`
-showed here in the 2026-08-19 run.
+All four still report **0 findings** on this corpus, both sides
+(`null_paths` itself: 0 GNATcheck findings too) — unchanged from every
+prior run; this small, disciplined SPARK codebase still doesn't contain
+the "empty branch/alternative with a real sibling" shape.
 
 ## Caveats
 

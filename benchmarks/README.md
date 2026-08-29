@@ -83,14 +83,14 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-24.md) | 1557 | 1332 (85.5%) | 1629 | 1332 (81.8%) |
-| [aws](aws/RESULTS_gnatcheck_2026-08-24.md) | 6343 | 3258 (51.4%) | 10205 | 3248 (31.8%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-24.md) | 1891 | 982 (51.9%) | 2197 | 980 (44.6%) |
-| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md) | 859 | 378 (44.0%) | 1071 | 378 (35.3%) |
-| [cubedos](cubedos/RESULTS_gnatcheck_2026-08-24.md) | 182 | 149 (81.9%) | 491 | 149 (30.3%) |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-24.md) | 1557 | 1334 (85.7%) | 1778 | 1334 (75.0%) |
+| [aws](aws/RESULTS_gnatcheck_2026-08-24.md) | 6343 | 3335 (52.6%) | 11617 | 3325 (28.6%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-24.md) | 1891 | 979 (51.8%) | 2191 | 977 (44.6%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-24.md) | 859 | 378 (44.0%) | 1087 | 378 (34.8%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-08-24.md) | 182 | 157 (86.3%) | 653 | 157 (24.0%) |
 | [coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-24.md) | 784 | 641 (81.8%) | 7629 | 641 (8.4%) |
-| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-24.md) | 1460 | 1244 (85.2%) | 1556 | 1244 (79.9%) |
-| [saatana](saatana/RESULTS_gnatcheck_2026-08-24.md) | 158 | 96 (60.8%) | 120 | 96 (80.0%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-24.md) | 1460 | 1224 (83.8%) | 1355 | 1224 (90.3%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-08-24.md) | 158 | 96 (60.8%) | 129 | 96 (74.4%) |
 | [project_bias](project_bias/RESULTS_gnatcheck_2026-08-24.md) | 225 | 168 (74.7%) | 299 | 168 (56.2%) |
 | [tokeneer](tokeneer/RESULTS_gnatcheck_2026-08-24.md) | 599 | 444 (74.1%) | 1602 | 425 (26.5%) |
 
@@ -103,12 +103,15 @@ thresholds differ (e.g. max parameter count); and a handful of rule pairs
 have a genuine, documented scope difference (narrower or broader than
 their GNATcheck counterpart) rather than a bug — each corpus's own
 `RESULTS_gnatcheck_*.md` has the specific breakdown where it matters. On
-the large, non-threshold-configurable `Magic_Number`/`numeric_literals`
-pair, agreement runs 79–100% across every corpus — the most consistent
-positive signal in the series. GNATcheck's own findings show real
-run-to-run variance on this from-source build (an intermittent single-worker
-stack-overflow crash, not corpus-specific); treat exact counts as
-approximate, the qualitative agreement as the reliable part.
+the large, non-threshold-configurable `Magic_Number` side of that pair,
+AdaLang's own findings are matched by GNATcheck 54–97% of the time across
+the ten corpora — a wide spread driven mostly by corpus size and style
+rather than a threshold difference (both rules use the same "any numeric
+literal outside a small allow-list" definition), and still one of the more
+consistent positive signals in the series. GNATcheck's own findings show
+real run-to-run variance on this from-source build (an intermittent
+single-worker stack-overflow crash, not corpus-specific); treat exact
+counts as approximate, the qualitative agreement as the reliable part.
 
 ## What these benchmarks have found, in total
 
