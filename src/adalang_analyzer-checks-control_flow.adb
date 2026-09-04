@@ -1616,31 +1616,50 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       Scan (Subprogram.F_Stmts.F_Stmts);
    end Analyze_Resource_Lifecycle;
 
-   --  Use_After_Free: Stmt is a call to a Free-like procedure introduced by
-   --  an Ada.Unchecked_Deallocation instantiation (recognized the same way
+   --  Recognizes Call as an invocation of the Free-like procedure an
+   --  Ada.Unchecked_Deallocation instantiation introduces (the same way
    --  No_Unchecked_Deallocation recognizes the instantiation itself, via
    --  Checks.Is_Ada_Unchecked_Deallocation, but resolved from the call's
-   --  own callee declaration instead of an instantiation node). When the
-   --  freed actual is a simple local object, First_Access finds the first
-   --  read or write of it anywhere at or after the call: a write (typically
-   --  "P := null;") makes the object safe again and is not reported, while
-   --  a read with no intervening write is a use-after-free. Inherits
-   --  First_Access's documented source-order (not branch-sensitive)
-   --  boundary, the same tradeoff Uninitialized_Read already accepts.
+   --  own callee declaration instead of an instantiation node). Shared by
+   --  Analyze_Deallocation_Call for both the freeing call itself and, for
+   --  Double_Free, a later candidate second free found by First_Access.
+   function Is_Deallocation_Call
+     (Call : Libadalang.Analysis.Call_Expr) return Boolean
+   is
+      Callee_Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+   begin
+      return not Libadalang.Analysis.Is_Null (Callee_Decl)
+        and then Callee_Decl.Kind =
+          Libadalang.Common.Ada_Generic_Subp_Instantiation
+        and then Adalang_Analyzer.Checks.Is_Ada_Unchecked_Deallocation
+          (Callee_Decl.As_Generic_Subp_Instantiation.F_Generic_Subp_Name);
+   end Is_Deallocation_Call;
+
+   --  Use_After_Free / Double_Free: Stmt is a call to a Free-like
+   --  procedure introduced by an Ada.Unchecked_Deallocation instantiation
+   --  (Is_Deallocation_Call above). When the freed actual is a simple
+   --  local object, First_Access finds the first read or write of it
+   --  anywhere at or after the call: a write (typically "P := null;")
+   --  makes the object safe again and is not reported. A read is either
+   --  an ordinary use-after-free (e.g. "X := P.all;") or, when the read
+   --  site is itself a second call to the deallocation procedure, a
+   --  double free -- both are Read_Access as far as First_Access is
+   --  concerned, since Ada.Unchecked_Deallocation's formal is "in out"
+   --  and First_Access (via Call_Reads_Simple_Actual) classifies any
+   --  non-out-only formal mode as a read before ever considering it a
+   --  write, so the second free's own Write is never reached; only the
+   --  read site's identity (Is_Deallocation_Call on it) tells the two
+   --  apart. Inherits First_Access's documented source-order (not
+   --  branch-sensitive) boundary, the same tradeoff Uninitialized_Read
+   --  already accepts.
    procedure Analyze_Deallocation_Call
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Call_Stmt;
       Call : Libadalang.Analysis.Call_Expr)
    is
-      Callee_Decl : constant Libadalang.Analysis.Basic_Decl :=
-        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
    begin
-      if Libadalang.Analysis.Is_Null (Callee_Decl)
-        or else Callee_Decl.Kind /=
-          Libadalang.Common.Ada_Generic_Subp_Instantiation
-        or else not Adalang_Analyzer.Checks.Is_Ada_Unchecked_Deallocation
-          (Callee_Decl.As_Generic_Subp_Instantiation.F_Generic_Subp_Name)
-      then
+      if not Is_Deallocation_Call (Call) then
          return;
       end if;
 
@@ -1684,8 +1703,33 @@ package body Adalang_Analyzer.Checks.Control_Flow is
             declare
                Result : constant Data_Flow.Access_Result :=
                  Data_Flow.First_Access (Subprogram, Decl, Stmt);
+               --  A second Free(Decl) call is itself found here as a
+               --  Read_Access, not a Write_Access: Ada.Unchecked_
+               --  Deallocation's formal is "in out", and First_Access
+               --  (via Call_Reads_Simple_Actual/Association_Reads_Simple_
+               --  Actual) classifies any non-out-only formal mode as a
+               --  read before ever considering it a write. So the read
+               --  site's own identity -- is it itself a call to the
+               --  deallocation procedure? -- is what separates a
+               --  Double_Free from an ordinary Use_After_Free read, not
+               --  the Access_Kind.
+               Is_Second_Free : constant Boolean :=
+                 Result.Kind = Data_Flow.Read_Access
+                 and then Result.Node.Kind = Libadalang.Common.Ada_Call_Expr
+                 and then Is_Deallocation_Call (Result.Node.As_Call_Expr);
             begin
-               if Result.Kind = Data_Flow.Read_Access then
+               if Is_Second_Free then
+                  if Rule_States (Double_Free) = Enabled then
+                     Report_Rule_Violation
+                       (Unit, Result.Node, Double_Free,
+                        "frees " & Canonical_Text (Actual) &
+                          " a second time; it was already freed by an " &
+                          "earlier call to Ada.Unchecked_Deallocation, " &
+                          "with no intervening assignment");
+                  end if;
+               elsif Result.Kind = Data_Flow.Read_Access
+                 and then Rule_States (Use_After_Free) = Enabled
+               then
                   Report_Rule_Violation
                     (Unit, Result.Node, Use_After_Free,
                      "reads " & Canonical_Text (Actual) &
@@ -1710,7 +1754,8 @@ package body Adalang_Analyzer.Checks.Control_Flow is
    is
       Call : constant Libadalang.Analysis.Name := Stmt.F_Call;
    begin
-      if Rule_States (Use_After_Free) = Enabled
+      if (Rule_States (Use_After_Free) = Enabled
+            or else Rule_States (Double_Free) = Enabled)
         and then Call.Kind = Libadalang.Common.Ada_Call_Expr
       then
          Analyze_Deallocation_Call (Unit, Stmt, Call.As_Call_Expr);

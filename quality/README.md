@@ -9,6 +9,29 @@ intentional: the baseline records occurrences, not only unique shapes. The
 gate fails when a new non-baselined finding appears; removing an old finding
 does not fail the gate.
 
+`Double_Free` joined `--recommended` on 2026-09-04, `Use_After_Free`'s
+direct sibling in the same flow-sensitive defect family: where
+`Use_After_Free` reports a *read* of a local access object after it was
+passed to `Ada.Unchecked_Deallocation`, `Double_Free` reports a *second*
+such call on the same object instead, with no intervening assignment.
+Both share `Analyze_Deallocation_Call`'s single `Data_Flow.First_Access`
+walk rather than each running its own traversal. This required correcting
+an initial design assumption: since `Ada.Unchecked_Deallocation`'s formal
+is `in out`, `First_Access` (via `Call_Reads_Simple_Actual`) classifies a
+second `Free (P)` call as a *read* of `P`, not a write -- `in out` modes
+are read-checked before they are ever considered a write, and that read
+check wins. A second free is therefore indistinguishable from an ordinary
+use-after-free by `Access_Kind` alone; only the read site's own identity
+(is it itself a call recognized by the same
+`Adalang_Analyzer.Checks.Is_Ada_Unchecked_Deallocation` primitive
+`Use_After_Free` already used to recognize the original free?) separates
+the two outcomes. Each rule's report is independently gated by its own
+`Rule_States` entry, so `-checks=-*,Double_Free` and
+`-checks=-*,Use_After_Free` each fire only their own finding on the
+relevant fixture. Self-analysis against this project's own source is
+clean at this check (`tests/run_recommended_gate.sh`); no baseline
+addition was needed.
+
 `Use_After_Free`, `Unclosed_File_Handle`, and `Unused_With_Clause` joined
 `--recommended` on 2026-08-24: three new checks in the flow-sensitive
 defect/hygiene family this project's `GNATCHECK_RULE_COMPARISON.md`

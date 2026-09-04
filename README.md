@@ -10,7 +10,7 @@ gaps while they are still inexpensive to fix.**
 
 [![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-1.1.0-5b4ee5.svg)](CHANGELOG.md)
-[![Checks](https://img.shields.io/badge/checks-126-0f766e.svg)](#checks)
+[![Checks](https://img.shields.io/badge/checks-127-0f766e.svg)](#checks)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -30,7 +30,7 @@ is justified, its SPARK-readiness checks help teams spend proof effort on the
 code that is ready for it.
 
 Built on [Libadalang](https://github.com/AdaCore/libadalang) and maintained by
-[Spazio IT](https://spazioit.com/), the analyzer combines **126 curated
+[Spazio IT](https://spazioit.com/), the analyzer combines **127 curated
 checks**, bounded scalar verification, safety-oriented profiles, stable
 baselines, and text/JSON/SARIF reporting in one open implementation.
 
@@ -84,7 +84,7 @@ guide on the team.
 
 ### 2. Enforceable engineering policy
 
-Select any combination of 126 checks, tune complexity/nesting/parameter/line
+Select any combination of 127 checks, tune complexity/nesting/parameter/line
 length thresholds, and commit the configuration with the project. Every rule
 has a reliability, security, or maintainability classification and a severity
 that survives into JSON and SARIF.
@@ -195,7 +195,7 @@ trademarks of AdaCore.
 
 ## Checks
 
-AdaLang Analyzer's 126 checks fall into five broad groups:
+AdaLang Analyzer's 127 checks fall into five broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -216,7 +216,7 @@ Run `./bin/adalang_analyzer -list-checks` for the authoritative catalog and
 guidance shipped by the current binary.
 
 <details>
-<summary><strong>Browse all 126 checks</strong></summary>
+<summary><strong>Browse all 127 checks</strong></summary>
 
 <br>
 
@@ -346,6 +346,7 @@ guidance shipped by the current binary.
 | DO-178C support | `Malformed_Requirement_Trace` | Maintainability | Medium | Reports requirement annotations with no identifier. |
 | DO-178C support | `Suppression_Without_Rationale` | Maintainability | High | Reports analyzer suppressions that do not record a reviewable rationale. |
 | Safety | `Use_After_Free` | Security | High | Reports a local access object read after `Ada.Unchecked_Deallocation` frees it, with no intervening assignment. |
+| Safety | `Double_Free` | Security | High | Reports a local access object passed to `Ada.Unchecked_Deallocation` a second time, with no intervening assignment. |
 | Data flow | `Unclosed_File_Handle` | Reliability | Medium | Reports a local `Ada.Text_IO`/`Ada.Streams.Stream_IO` file opened with `Open`/`Create` and not demonstrably closed on every normal-return or exception-handler path. |
 | Data flow | `Unused_With_Clause` | Maintainability | Low | Reports a with clause naming a unit never referenced elsewhere in the file. |
 

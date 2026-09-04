@@ -376,7 +376,8 @@ package body Adalang_Analyzer.CLI is
          Redundant_Type_Conversion, Handler_Order,
          Aliasing_Between_Parameters, Known_Discriminant_Check_Failure,
          Swappable_Parameters, Duplicate_Subprogram,
-         Use_After_Free, Unclosed_File_Handle, Unused_With_Clause);
+         Use_After_Free, Double_Free, Unclosed_File_Handle,
+         Unused_With_Clause);
    begin
       Active_Preset := Recommended_Preset;
       Active_Assurance_Profile := No_Assurance_Profile;

@@ -148,6 +148,7 @@ package Adalang_Analyzer.Rules is
       Malformed_Requirement_Trace,
       Suppression_Without_Rationale,
       Use_After_Free,
+      Double_Free,
       Unclosed_File_Handle,
       Unused_With_Clause
    );
@@ -1516,6 +1517,18 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Assign the object (typically to null) immediately after " &
             "freeing it, and before any further use."),
+         Quality     => Quality_Security,
+         Severity    => Severity_High),
+      Double_Free =>
+        (Name        => To_Unbounded_String ("Double_Free"),
+         Description => To_Unbounded_String
+           ("Find a second call to Ada.Unchecked_Deallocation on the " &
+            "same local access object, with no intervening " &
+            "assignment."),
+         Guidance    => To_Unbounded_String
+           ("Assign the object (typically to null) or reassign it to a " &
+            "new allocation immediately after freeing it, and before " &
+            "any further call to Ada.Unchecked_Deallocation on it."),
          Quality     => Quality_Security,
          Severity    => Severity_High),
       Unclosed_File_Handle =>

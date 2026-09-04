@@ -25,6 +25,15 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   standards, this report cites no EN 50128 clause, table, or technique
   number and is verification-support evidence, not a compliance
   determination.
+- `Double_Free`, a new `--recommended` check and `Use_After_Free`'s direct
+  sibling: reports a local access object passed to
+  `Ada.Unchecked_Deallocation` a second time, with no intervening
+  assignment. Reuses `Analyze_Deallocation_Call`'s existing
+  `Data_Flow.First_Access` walk rather than a second traversal; since
+  `Ada.Unchecked_Deallocation`'s formal is `in out`, a second free is
+  found as a read of the object, the same `Access_Kind` an ordinary
+  use-after-free produces, so the two are told apart by whether the read
+  site is itself a recognized deallocation call.
 
 ## [1.3.0] - 2026-08-29
 
