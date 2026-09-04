@@ -141,7 +141,7 @@ package body Adalang_Analyzer.CLI is
         ("  --write-baseline=<file> Write this run's finding fingerprints");
       Ada.Text_IO.Put_Line
         ("  --compliance-report=<standard>  Write a per-objective evidence " &
-         "report ('do178c' or 'iso26262')");
+         "report ('do178c', 'iso26262', or 'en50128')");
       Ada.Text_IO.Put_Line
         ("  --compliance-report-output=<file>  Destination for " &
          "--compliance-report (default: stdout)");
@@ -226,7 +226,7 @@ package body Adalang_Analyzer.CLI is
       else
          Ada.Text_IO.Put_Line
            ("adalang-analyzer: unsupported compliance standard '" & Name &
-            "' (supported: 'do178c', 'iso26262')");
+            "' (supported: 'do178c', 'iso26262', 'en50128')");
          Invalid_Options := True;
       end if;
    end Set_Compliance_Report_Standard;

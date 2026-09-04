@@ -5,6 +5,27 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--compliance-report=en50128`, a third verification-support standard
+  alongside `do178c` and `iso26262`, reporting the CENELEC EN 50128:2011
+  (rail signaling) angle on the existing `--automotive` preset. It rides
+  the same `--automotive` flag `iso26262` already uses -- ISO 26262 and
+  EN 50128 converge on the same restricted, strongly-typed Ada subset and
+  the same static-analysis techniques, so no new preset flag or rule
+  selection was needed, only a new, EN-50128-flavored ten-category
+  objective labeling (`EN_50128_Objectives` in
+  `adalang_analyzer-compliance_mapping.adb`) reusing the identical
+  `Rule_List` partitions already declared for `iso26262`. See the new
+  [EN 50128 Rail Compliance Matrix](EN50128_RAIL_COMPLIANCE_MATRIX.md) for
+  the non-normative rule-by-rule mapping, mirroring
+  `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`'s structure. Like the other two
+  standards, this report cites no EN 50128 clause, table, or technique
+  number and is verification-support evidence, not a compliance
+  determination.
+
 ## [1.3.0] - 2026-08-29
 
 ### Added

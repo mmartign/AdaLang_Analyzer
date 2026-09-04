@@ -66,6 +66,21 @@ grep -F "No normative mapping to the licensed ISO 26262 text exists" \
   "$iso_report" >/dev/null
 grep -F 'No ISO 26262-8 tool confidence level' "$iso_report" >/dev/null
 
+#  EN 50128: same report shape and the same --automotive-driven rule set as
+#  ISO 26262, under its own EN-50128-flavored objective labels.
+en_report="$work/en50128.md"
+"$analyzer" -q --automotive --compliance-report=en50128 \
+  --compliance-report-output="$en_report" \
+  tests/automotive_restrictions_findings.adb || true
+grep -F '# AdaLang Analyzer -- EN 50128 compliance evidence report' \
+  "$en_report" >/dev/null
+grep -F '| Structured and modular programming |' "$en_report" >/dev/null
+grep -F '| Deviation control |' "$en_report" >/dev/null
+grep -F 'Directive-by-directive EN 50128 mapping' "$en_report" >/dev/null
+grep -F "No normative mapping to the licensed EN 50128 text exists" \
+  "$en_report" >/dev/null
+grep -F 'Tool classification and confidence' "$en_report" >/dev/null
+
 #  An unsupported standard fails loudly rather than silently producing no
 #  report.
 if "$analyzer" --do178c=A --compliance-report=bogus \
@@ -75,6 +90,7 @@ then
    exit 1
 fi
 grep -F "unsupported compliance standard 'bogus'" "$work/invalid" >/dev/null
+grep -F "'en50128'" "$work/invalid" >/dev/null
 
 #  --compliance-report-format=json: same evidence as the Markdown report
 #  (objectives, suppression trail, baseline table, unsupported objectives,
@@ -137,6 +153,17 @@ json_iso_report="$work/iso26262.json"
 grep -F '"standard": "ISO 26262"' "$json_iso_report" >/dev/null
 grep -F '"id": "Restricted control flow"' "$json_iso_report" >/dev/null
 grep -F '"id": "Deviation control"' "$json_iso_report" >/dev/null
+
+#  EN 50128 JSON shares the same shape, also driven by --automotive.
+json_en_report="$work/en50128.json"
+"$analyzer" -q --automotive --compliance-report=en50128 \
+  --compliance-report-format=json \
+  --compliance-report-output="$json_en_report" \
+  tests/automotive_restrictions_findings.adb || true
+grep -F '"standard": "EN 50128"' "$json_en_report" >/dev/null
+grep -F '"id": "Structured and modular programming"' "$json_en_report" \
+  >/dev/null
+grep -F '"id": "Deviation control"' "$json_en_report" >/dev/null
 
 #  An unsupported compliance report format fails loudly rather than
 #  silently falling back to Markdown. SARIF is explicitly rejected: it has

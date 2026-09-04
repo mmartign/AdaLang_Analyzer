@@ -19,6 +19,8 @@ package body Adalang_Analyzer.Compliance_Mapping is
             return "DO-178C";
          when ISO_26262 =>
             return "ISO 26262";
+         when EN_50128 =>
+            return "EN 50128";
       end case;
    end Standard_Name;
 
@@ -33,6 +35,9 @@ package body Adalang_Analyzer.Compliance_Mapping is
       elsif Lower = "iso26262" then
          Found := True;
          return ISO_26262;
+      elsif Lower = "en50128" then
+         Found := True;
+         return EN_50128;
       end if;
 
       Found := False;
@@ -132,7 +137,12 @@ package body Adalang_Analyzer.Compliance_Mapping is
    --  own grouping of that list, extending
    --  AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md's existing "Coverage summary"
    --  prose into a strict one-rule-one-category partition. They cite no
-   --  ISO 26262 Part, clause, or table number.
+   --  ISO 26262 Part, clause, or table number. EN_50128_Objectives below
+   --  reuses these same ten Rule_List constants under EN 50128 Annex A
+   --  technique vocabulary instead of ISO 26262 vocabulary -- both
+   --  standards converge on the same restricted-Ada-subset techniques, so
+   --  the partition itself does not need a second, independently
+   --  maintained copy.
 
    Restricted_Control_Flow_Rules : aliased constant Rules.Rule_List :=
      (Rules.No_Goto, Rules.No_Label, Rules.No_Multiple_Return,
@@ -305,5 +315,131 @@ package body Adalang_Analyzer.Compliance_Mapping is
        Note => To_Unbounded_String
          ("No ISO 26262-8 tool confidence level (TCL) assessment or " &
           "qualification artifact is supplied.")));
+
+   --  EN 50128 objectives reuse the same ten Rule_List constants declared
+   --  above for ISO_26262_Objectives (see the comment preceding
+   --  Restricted_Control_Flow_Rules): the underlying --automotive rule
+   --  partition is identical, only the Id/Description/Manual_Note text is
+   --  EN 50128 Annex A technique vocabulary (structured and modular
+   --  programming, strong typing, defensive programming, control-flow and
+   --  data-flow analysis, boundary value analysis) rather than ISO 26262
+   --  vocabulary. They cite no EN 50128 Part, clause, or table number.
+
+   function EN_50128_Objectives return Objective_Array is
+     ((Id          => To_Unbounded_String
+         ("Structured and modular programming"),
+       Description => To_Unbounded_String
+         ("Source code stays within a restricted, deterministic control-" &
+          "flow subset (no goto, recursion, tasking, or dispatch)."),
+       Mapped_Rules => Restricted_Control_Flow_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Only exercised when --automotive (or an equivalent explicit " &
+          "check selection) was selected for this run.")),
+      (Id          => To_Unbounded_String
+         ("Strong typing and storage discipline"),
+       Description => To_Unbounded_String
+         ("Source code avoids dynamic allocation, unchecked conversion, " &
+          "and ambiguous aliasing."),
+       Mapped_Rules => Storage_And_Aliasing_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Detects the listed Ada constructs; general points-to and " &
+          "lifetime analysis is not provided.")),
+      (Id          => To_Unbounded_String
+         ("Defensive programming: initialization and data flow"),
+       Description => To_Unbounded_String
+         ("Objects are explicitly initialized and assigned values are " &
+          "read before being overwritten or going out of scope."),
+       Mapped_Rules => Iso_Initialization_And_Data_Flow_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Intraprocedural; aliasing, calls, and unsupported constructs " &
+          "can reduce precision.")),
+      (Id          => To_Unbounded_String
+         ("Boundary value and scalar run-time-error classes"),
+       Description => To_Unbounded_String
+         ("Source code is free of the classes of scalar run-time error " &
+          "this analyzer can detect (division, range, overflow, " &
+          "precondition/postcondition failure)."),
+       Mapped_Rules => Scalar_Run_Time_Error_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Reports only statically decidable instances in the supported " &
+          "scalar model; it is not an exhaustive boundary-value proof.")),
+      (Id          => To_Unbounded_String
+         ("Control-flow and data-flow analysis"),
+       Description => To_Unbounded_String
+         ("Source code contains no dead, unreachable, or contradictory " &
+          "control-flow constructs."),
+       Mapped_Rules => Control_Flow_Correctness_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Covers statically evident cases; general reachability and " &
+          "termination proof is not provided.")),
+      (Id          => To_Unbounded_String
+         ("Fault detection and exception handling"),
+       Description => To_Unbounded_String
+         ("Exceptions are not silently discarded, blocking operations " &
+          "are contained, and library-level elaboration does no work."),
+       Mapped_Rules => Exception_Concurrency_Elaboration_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Uses conservative summaries; scheduling and WCET evidence " &
+          "remain external.")),
+      (Id          => To_Unbounded_String
+         ("Formal specification and information flow"),
+       Description => To_Unbounded_String
+         ("Where the SPARK subset is used, Global and Depends contracts " &
+          "are present and consistent with implementation behavior."),
+       Mapped_Rules => Iso_SPARK_Contract_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Applies to code already using SPARK aspects; it does not by " &
+          "itself bring code into the SPARK subset.")),
+      (Id          => To_Unbounded_String
+         ("Maintainability and reviewability bounds"),
+       Description => To_Unbounded_String
+         ("Source code stays within configured complexity, coupling, " &
+          "and naming bounds, and avoids compiler-specific extensions."),
+       Mapped_Rules => Maintainability_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Thresholds are local project policy; a passing result is not " &
+          "itself safety evidence.")),
+      (Id          => To_Unbounded_String
+         ("Target-sensitive constructs require review"),
+       Description => To_Unbounded_String
+         ("Explicit addresses and representation clauses are flagged " &
+          "for mandatory target-specific review."),
+       Mapped_Rules => Target_Sensitive_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Intentionally a review finding, not a target ABI, memory " &
+          "map, or hardware-protocol verification.")),
+      (Id          => To_Unbounded_String ("Deviation control"),
+       Description => To_Unbounded_String
+         ("Every inline analyzer suppression and run-time-check " &
+          "suppression carries a reviewable rationale."),
+       Mapped_Rules => Iso_Deviation_Control_Rules'Access,
+       Manual_Note  => To_Unbounded_String
+         ("Covers inline suppressions only; baseline-matched findings " &
+          "carry no rationale (see the suppression trail below).")));
+
+   function EN_50128_Unsupported return Unsupported_Array is
+     ((Name => To_Unbounded_String ("Directive-by-directive EN 50128 " &
+                                     "mapping"),
+       Note => To_Unbounded_String
+         ("No normative mapping to the licensed EN 50128 text exists; " &
+          "the categories above are AdaLang's own paraphrase. A project " &
+          "still needs competent reviewers to classify every applicable " &
+          "requirement against its licensed copy of the standard.")),
+      (Name => To_Unbounded_String
+         ("Complete run-time-error and formal-methods proof"),
+       Note => To_Unbounded_String
+         ("Only supported known-failure classes and bounded obligations " &
+          "are checked. Formal methods and formal proof (Table A.3/A.4 " &
+          "techniques recommended at higher SILs) require GNATprove.")),
+      (Name => To_Unbounded_String ("Structural coverage and dynamic " &
+                                     "testing"),
+       Note => To_Unbounded_String
+         ("Not measured or performed. Supply unit/integration tests, " &
+          "requirements-based tests, and structural coverage where " &
+          "required.")),
+      (Name => To_Unbounded_String ("Tool classification and confidence"),
+       Note => To_Unbounded_String
+         ("No EN 50128 Clause 6.7 tool classification (T1/T2/T3) " &
+          "assessment or qualification artifact is supplied.")));
 
 end Adalang_Analyzer.Compliance_Mapping;

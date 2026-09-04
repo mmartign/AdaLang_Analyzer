@@ -21,19 +21,23 @@ with Adalang_Analyzer.Rules;
 --
 --  DO-178C objective identifiers and descriptions are AdaLang's own
 --  paraphrase of publicly discussed DO-178C Annex A Table A-5 (reviews and
---  analyses of source code) activity categories. ISO 26262 objective
---  identifiers are AdaLang's own thematic grouping of the --automotive
---  preset, in the same non-normative style already used by
+--  analyses of source code) activity categories. ISO 26262 and EN 50128
+--  objective identifiers are each AdaLang's own thematic grouping of the
+--  --automotive preset, in the same non-normative style already used by
 --  AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md's "Coverage summary" section --
 --  general safety-relevant themes (restricted control flow, storage and
---  aliasing discipline, and so on), not a reference to any ISO 26262 Part,
---  clause, or table number. Neither is a reproduction of the respective
---  standard's normative text, and neither carries that standard's official
---  numbering. See POSITIONING.md's "approved claim vocabulary" for the
+--  aliasing discipline, and so on), not a reference to any ISO 26262 or
+--  EN 50128 Part, clause, or table number. Neither is a reproduction of the
+--  respective standard's normative text, and neither carries that
+--  standard's official numbering. ISO_26262_Objectives and
+--  EN_50128_Objectives are two different labelings of the identical
+--  --automotive rule partition (both standards converge on the same
+--  restricted-Ada-subset techniques), not two independently derived
+--  mappings. See POSITIONING.md's "approved claim vocabulary" for the
 --  claims this project may and may not make.
 package Adalang_Analyzer.Compliance_Mapping is
 
-   type Standard_Kind is (DO_178C, ISO_26262);
+   type Standard_Kind is (DO_178C, ISO_26262, EN_50128);
 
    function Standard_Name (Standard : Standard_Kind) return String;
 
@@ -56,6 +60,8 @@ package Adalang_Analyzer.Compliance_Mapping is
 
    function ISO_26262_Objectives return Objective_Array;
 
+   function EN_50128_Objectives return Objective_Array;
+
    --  Verification activities DO-178C requires that this analyzer does not
    --  automate at all, carried over near-verbatim from README.md's DO-178C
    --  section and POSITIONING.md so the report never implies coverage this
@@ -70,5 +76,7 @@ package Adalang_Analyzer.Compliance_Mapping is
    function DO_178C_Unsupported return Unsupported_Array;
 
    function ISO_26262_Unsupported return Unsupported_Array;
+
+   function EN_50128_Unsupported return Unsupported_Array;
 
 end Adalang_Analyzer.Compliance_Mapping;

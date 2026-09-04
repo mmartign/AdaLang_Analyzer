@@ -369,14 +369,18 @@ package body Adalang_Analyzer.Report is
            when Compliance_Mapping.DO_178C =>
              Compliance_Mapping.DO_178C_Objectives,
            when Compliance_Mapping.ISO_26262 =>
-             Compliance_Mapping.ISO_26262_Objectives);
+             Compliance_Mapping.ISO_26262_Objectives,
+           when Compliance_Mapping.EN_50128 =>
+             Compliance_Mapping.EN_50128_Objectives);
 
       Unsupported : constant Compliance_Mapping.Unsupported_Array :=
         (case Kind is
            when Compliance_Mapping.DO_178C =>
              Compliance_Mapping.DO_178C_Unsupported,
            when Compliance_Mapping.ISO_26262 =>
-             Compliance_Mapping.ISO_26262_Unsupported);
+             Compliance_Mapping.ISO_26262_Unsupported,
+           when Compliance_Mapping.EN_50128 =>
+             Compliance_Mapping.EN_50128_Unsupported);
 
       File    : Ada.Text_IO.File_Type;
       To_File : constant Boolean := Filename /= "";
@@ -454,8 +458,9 @@ package body Adalang_Analyzer.Report is
            "No checks are enabled for this run. Every objective below " &
            "shows zero open findings only because nothing was checked, " &
            "not because the source is clean. Pass --do178c=<level> (for " &
-           "a do178c report) or --automotive (for an iso26262 report) to " &
-           "select the checks this report is meant to evidence.";
+           "a do178c report) or --automotive (for an iso26262 or en50128 " &
+           "report) to select the checks this report is meant to " &
+           "evidence.";
       end No_Checks_Warning;
    begin
       for Rule in Rules.Rule_Kind loop

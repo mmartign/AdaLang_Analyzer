@@ -345,7 +345,8 @@ The following descriptions accurately characterize the current product:
 - "Classifies bounded scalar obligations as proved safe, definite error,
   unproved, unreachable, or unsupported."
 - "Supports SPARK-readiness assessment."
-- "Provides automotive and DO-178C verification-support profiles."
+- "Provides automotive, DO-178C, and EN 50128 verification-support
+  profiles."
 - "Suitable for integration into CI."
 
 The following claims must not be made for the current product:

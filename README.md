@@ -644,7 +644,9 @@ path proofs.
 See the [Automotive Ada Compliance Matrix](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md)
 for a non-normative rule-by-rule mapping to the Ada Reference Manual's Annex H
 high-integrity restrictions and SPARK Reference Manual guidance, limitations,
-and remaining compliance gaps.
+and remaining compliance gaps. The same `--automotive` rule set is also read
+under EN 50128 (rail) verification-support vocabulary; see the
+[EN 50128 Rail Compliance Matrix](EN50128_RAIL_COMPLIANCE_MATRIX.md).
 
 </details>
 
@@ -720,14 +722,20 @@ alr exec -- ./bin/adalang_analyzer --do178c=A --compliance-report=do178c \
 alr exec -- ./bin/adalang_analyzer --automotive --compliance-report=iso26262 \
   --compliance-report-output=compliance.md -P adalang_analyzer.gpr
 
+alr exec -- ./bin/adalang_analyzer --automotive --compliance-report=en50128 \
+  --compliance-report-output=compliance.md -P adalang_analyzer.gpr
+
 alr exec -- ./bin/adalang_analyzer --do178c=A --compliance-report=do178c \
   --compliance-report-format=json \
   --compliance-report-output=compliance.json -P adalang_analyzer.gpr
 ```
 
 Writes a per-objective evidence report to `--compliance-report-output` (or
-standard output if omitted), for either `do178c` (paired with a
-`--do178c=<level>` run) or `iso26262` (paired with an `--automotive` run).
+standard output if omitted), for `do178c` (paired with a `--do178c=<level>`
+run), `iso26262`, or `en50128` (the latter two both paired with an
+`--automotive` run -- ISO 26262 and EN 50128 converge on the same
+restricted-Ada-subset techniques, so both read the identical
+`--automotive` rule set under their own labeled objectives).
 `--compliance-report-format` selects the representation: `markdown`
 (default) or `json`, the same content as a machine-readable document for
 tooling that consumes the report programmatically (CI gates, dashboards).
@@ -756,12 +764,15 @@ printed to stderr and a matching `**WARNING:**` banner (or a non-empty
 report cannot pass as evidence unnoticed. Objective labels are AdaLang's own
 paraphrase:
 for `do178c`, of publicly discussed DO-178C Annex A Table A-5 activities;
-for `iso26262`, of the same general safety themes already summarized
-non-normatively in
-[AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md).
-Neither cites the respective standard's normative text or official
-numbering, and the report states this. Like the profiles above, this report
-is verification-support evidence, not a compliance determination.
+for `iso26262` and `en50128`, of the same general safety themes already
+summarized non-normatively in
+[AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md)
+and [EN50128_RAIL_COMPLIANCE_MATRIX.md](EN50128_RAIL_COMPLIANCE_MATRIX.md)
+respectively -- the same `--automotive` rule set read under two different
+labelings, not two independently derived mappings. None cites the
+respective standard's normative text or official numbering, and the report
+states this. Like the profiles above, this report is verification-support
+evidence, not a compliance determination.
 
 ## Requirements
 
