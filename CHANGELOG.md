@@ -5,6 +5,27 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] - 2026-09-06
+
+### Fixed
+
+- `--verify` no longer proves an index into an array *slice*
+  (`A (Lo .. Hi) (I)`) safe against the array type's declared index
+  subtype. A slice's own bounds `Lo .. Hi` may be empty (e.g. `A (1 .. 0)`)
+  or narrower than the type's, so the index check is now reported
+  conservatively as `unproved` rather than `proved-safe` (`FP-064`, a
+  possible unsoundness).
+- `--verify` no longer reports `pragma Assert (False)` (and other
+  statically-false assertions) as a `Known_Assertion_Failure` definite
+  error when the pragma sits inside a conditional whose guard could not be
+  evaluated and is in fact unreachable. The definite-error verdict is now
+  kept only where every enclosing branch guard is provably taken
+  (`FP-065`); straight-line assertions are unaffected.
+
+Both were found by a new benchmark corpus, `benchmarks/spark_testsuite/`,
+comparing `--verify` against GNATprove over 124 curated units of the
+AdaCore SPARK testsuite.
+
 ## [1.4.0] - 2026-09-04
 
 ### Added
