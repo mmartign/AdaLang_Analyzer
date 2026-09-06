@@ -820,3 +820,79 @@ reverted); the shadow-query scaffolding used for the very first measurement
 was reverted, leaving only `Decide_Bounds`/`Decide_Nonzero` behind as
 currently-unused `VC_Prover` entry points for future work in this
 direction.
+
+## SPARK testsuite (AdaCore/spark2014 `testsuite/gnatprove/tests`)
+
+`benchmarks/spark_testsuite/` runs `--verify` against a curated 124-unit
+subset of the AdaCore SPARK testsuite (pinned to the `fsf-16` branch,
+matching this suite's GNATprove FSF 16.1.0), comparing each proof
+obligation to GNATprove per `(file, line, check kind)` via the same
+`compare.awk` the other oracle corpora use — run once per test directory,
+since the testsuite reuses filenames across thousands of directories. 90
+units are `clean` (GNATprove's committed `test.out` proves every check, so
+its verdict is trustworthy ground truth) and 34 are `weak` (a deliberate
+`medium`/`high` of a scalar kind — an unsoundness tripwire). The first full
+run surfaced two analyzer mistakes; both are fixed with regression tests.
+
+### Confirmed analyzer mistake (fixed): FP-064 — slice-index proved against the wrong bounds
+
+Unit `OB26-006__ctex_array_ret_func` indexes into an array *slice*:
+
+```ada
+TC_Items : Int_Array (1 .. 10) := (others => 1);   --  Int_Array is (Positive range <>)
+TC_Last  : Natural := 0;
+Int1 : constant Integer := TC_Items (1 .. TC_Last) (1);
+```
+
+`Check_Conversion_Or_Index` took the array *type*'s declared index subtype
+(`Positive`, via `Call.F_Name.P_Expression_Type`) as the index bounds for
+the `(1)` suffix, so index `1` was proved `proved-safe` — even though the
+slice's own bounds are `1 .. TC_Last`, an empty range when `TC_Last = 0`,
+where `(1)` is out of bounds. GNATprove reports "array index check might
+fail" here. This was a **possible unsoundness** (bucket 3): AdaLang calling
+safe a check GNATprove could not prove.
+
+Fixed by detecting a slice prefix (`Indexed_Prefix_Is_Slice`) in both the
+live and finalize index-check paths and recording the obligation
+conservatively as `unproved` — the scalar domain does not model slice
+bounds. After the fix the obligation is `unproved`, matching GNATprove's
+`medium` (bucket 5). Regression:
+`tests/verification_slice_index_conservative.adb`.
+
+### Confirmed analyzer mistake (fixed): FP-065 — `pragma Assert (False)` on an unproven-reachable branch
+
+Unit `W316-007__string_multidim`:
+
+```ada
+type TA is array (STA range 5 .. 6, STA range 6 .. Id (4)) of Character;  --  dim 2 is a null range
+...
+if (6 .. Id (8) => "") = A then
+   pragma Assert (False);
+end if;
+```
+
+`--verify` reported the `pragma Assert (False)` as a `Known_Assertion_Failure`
+**definite error**. But the `if` line always raises `Constraint_Error` at
+run time (confirmed by compiling and running it under GNAT 15.3: the
+aggregate's dimension-1 bounds `6 .. 8` fall outside the index subtype
+`STA = 4 .. 7`, even though dimension 2 is null), so line 14 is
+unreachable. `Finalize_Assertion_Check`'s reachability guard only covers
+CFG-proved-unreachable nodes, not a node guarded by a condition the flow
+domain could not evaluate.
+
+Fixed with `Assertion_Point_Reachable` in `flow_interp.adb`: walking
+outward from the condition to the enclosing body, a statically-false
+assertion keeps its definite-error verdict only when every enclosing
+if-branch guard is provably taken in the current `State`; an if-branch with
+an unevaluated guard, or any `elsif`/`else`/`case`/loop nesting, downgrades
+it to `unproved` ("would fail if reached, but reachability not
+established"). Straight-line asserts and asserts under a proven-true guard
+are unaffected. Regression:
+`tests/verification_assert_false_guarded.adb` (with
+`tests/proof_assertion_findings.adb` and
+`tests/verification_vc_error.adb` covering the still-fires side).
+
+`W316-007__string_multidim` itself stays out of `MANIFEST.tsv` for a
+separate reason (`pick_manifest.py`'s `HAND_EXCLUDE`): GNATprove's baseline
+proves the line-13 range checks that GNAT rejects at run time, so it is not
+a sound oracle unit regardless of the FP-065 fix.

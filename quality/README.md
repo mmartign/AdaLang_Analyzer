@@ -763,12 +763,12 @@ code the project did not write (as opposed to the hand-constructed precision
 corpus above) — what was run, what was found, and the fix and regression
 test for anything confirmed as a real analyzer mistake (folded into
 `known_analysis_issues.tsv`). `benchmarks/README.md` carries the current
-GNATprove- and GNATcheck-oracle comparison numbers for all ten tracked
+GNATprove- and GNATcheck-oracle comparison numbers for all eleven tracked
 corpora (sparknacl, saatana, libkeccak, coap_spark, tokeneer, cubedos, aws,
-ada_drivers_library, gnatcoll, project_bias) — see that file for current
-matched-obligation counts, unsoundness/false-positive totals, and each
-corpus's own dated `RESULTS_*.md`. Do not duplicate those numbers here;
-they change with every re-run.
+ada_drivers_library, gnatcoll, project_bias, spark_testsuite) — see that
+file for current matched-obligation counts, unsoundness/false-positive
+totals, and each corpus's own dated `RESULTS_*.md`. Do not duplicate those
+numbers here; they change with every re-run.
 
 ## Differential corpus
 

@@ -1,0 +1,142 @@
+# AdaCore SPARK2014 gnatprove testsuite units used as an AdaLang Analyzer
+# --verify independent-oracle corpus.
+#
+# Columns (tab-separated): test_dir  class  n_src  loc  obligation_kinds
+#
+#   class=clean : GNATprove's committed test.out proves every check, so it
+#                 is a full oracle here -- any AdaLang definite-error is a
+#                 false positive, any AdaLang proved-safe that GNATprove
+#                 could not prove is possible unsoundness.
+#   class=weak  : test.out carries a deliberate medium/high check of a
+#                 scalar kind -- an unsoundness tripwire: AdaLang must never
+#                 call proved-safe a location GNATprove reports medium/high.
+#
+# Selection is by obligation kind, read from each unit's own sources and its
+# committed test.out -- never from how AdaLang scores it. See README.md for
+# the full criteria and the scan scripts (select_candidates.py, then
+# pick_manifest.py, whose HAND_EXCLUDE set drops units whose baseline is not
+# a sound oracle at this toolchain).
+185__raise_statements	weak	1	18	divide_by_zero
+339__mismatching_aggregate_bounds	weak	1	10	index
+487__test_mutable_in_params	clean	1	217	index,length,overflow,range
+501__derived_alias	clean	1	29	index,overflow,range
+522__visibility	clean	2	56	division,overflow,range
+555__sliding	clean	1	24	length
+631__ica	clean	2	135	discriminant,index,length,overflow,range
+786__function_with_exception	clean	1	42	index,loop_invariant,range
+802__membership	clean	1	13	overflow,range
+855__float_to_int_rac	weak	1	8	range
+863__oneliner	weak	1	8	range
+868__mut_discr_param_bool	weak	2	26	discriminant
+868__mut_discr_param_int	weak	2	26	discriminant
+933__inline_sloc	clean	1	15	discriminant,range
+934__private_fixed_point	weak	2	22	overflow,range
+K223-023__forallpre	weak	2	17	divide_by_zero
+K516-008__tabs	clean	2	32	index,loop_invariant,overflow,range
+K622-019__division	clean	1	11	division,overflow
+K817-012__exprfun	weak	2	18	divide_by_zero,overflow
+KB03-005__length	weak	1	19	length
+KB04-017__float	weak	1	8	range
+KB04-027__range	clean	1	7	length,range
+KB25-022__exp	weak	1	9	overflow,range
+L323-006__recursive_expr_func	weak	1	15	index,range
+L427-012__slice	clean	1	10	overflow,range
+L518-022__source_reference	weak	1	9	overflow
+L605-013__half	clean	2	22	division,index,overflow
+L611-003__exist	clean	2	64	index,loop_invariant,range
+L831-037__slice	clean	3	45	index,loop_invariant,loop_variant,overflow,range
+L904-010__concat	clean	1	9	length,range
+LB16-014__bool	clean	1	40	discriminant
+M103-012__length	weak	1	16	length
+M122-006__default	weak	1	20	discriminant
+M123-014__loops	clean	1	13	loop_invariant,overflow
+M318-019__expanded_name	clean	1	10	index,length
+M402-008__missing	weak	1	23	divide_by_zero,overflow
+M613-053__wp	clean	2	106	index,loop_invariant,overflow,range
+M919-030__dyn_aggr	weak	1	7	range
+M924-029__discr_dyn	weak	1	19	discriminant
+M927-008__bad_constant	weak	1	8	overflow
+M927-010__bad_function	weak	1	8	overflow
+MA25-036__loop_variant	clean	1	18	loop_variant,range
+MB14-008__iterate_naturals	clean	1	20	index,overflow,range
+MC06-031__dynamic_discrete	clean	2	112	index,length,loop_invariant,overflow,range
+N214-012__slice	clean	2	26	index,length,range
+N214-019__slice_bounds	clean	2	31	index,length,range
+N424-022__discr_init	clean	1	20	discriminant,length,range
+N523-032__hello	clean	2	133	index,length,loop_invariant,overflow,range
+N613-027__transitive	clean	2	124	index,length,loop_invariant,overflow,range
+N625-021__function_with_globals	clean	1	26	discriminant,index,length,range
+N709-018__spurious_discr	clean	1	21	discriminant,range
+N715-044__max_split	clean	2	48	division,index,length,range
+N724-026__discrim	clean	3	70	discriminant,division,range
+N917-051__longest_common_prefix	clean	2	55	index,loop_invariant,loop_variant,overflow
+O130-018__proof	clean	1	34	index,length,loop_invariant,range
+O205-003__dynamic_arrays	clean	1	63	discriminant,index,length,loop_invariant,overflow,range
+O210-007__gnatprove_crash1	clean	1	41	index,length,loop_invariant,range
+O416-002__dyn_pred_rte	clean	1	46	discriminant,division,range
+O512-022__DNS_receive_query	clean	5	170	discriminant,index,range
+O512-022__triangle_numbers	clean	2	21	division,loop_invariant,overflow
+O512-022__while_loop_invariant	clean	2	62	loop_invariant,loop_variant,range
+O521-007__fxp_div_int_result	clean	2	53	division,overflow,range
+O526-005__proof_cvc4_array_bv	clean	2	24	length
+O724-003__iterable	clean	2	46	discriminant,index,overflow,range
+OB26-006__ctex_array_ret_func	weak	2	21	index,range
+P226-008__string_literal	clean	1	7	index,length,overflow,range
+P310-021__proof_float_remainder	weak	2	25	divide_by_zero,range
+P518-021__frame_for_max	clean	2	269	index,loop_invariant,overflow,range
+P518-021__frame_for_swap	clean	1	73	index,loop_invariant,overflow
+P619-001__for_of_quantification	clean	2	48	index,loop_invariant,loop_variant
+P727-024__inlining	weak	1	19	length
+P828-003__annotate	clean	1	18	division,length,range
+P906-011__exp_division	weak	1	8	divide_by_zero,overflow
+PA24-004__loop_decr	clean	1	10	division,loop_invariant,range
+PA25-037__bit_set	clean	2	45	division,index,overflow,range
+PB16-038__float_intervals	clean	2	52	division,overflow,range
+PC06-035__array_component_subtype_indication	weak	1	10	range
+Q313-018__system_counterex	weak	1	8	overflow
+Q607-015__quantifiers	clean	3	99	loop_invariant,loop_variant,overflow,range
+Q622-010__scalar_dyn_type	weak	1	10	range
+Q926-040__recursion	clean	2	90	index,loop_invariant,overflow,range
+QA17-042__attach_handler	weak	2	25	divide_by_zero
+R323-032__dynamic_concat	clean	1	19	length,range
+R725-034__proof_warning	clean	2	122	index,length,overflow
+RA17-008__loop_invariant_checks	clean	1	51	index,length,loop_invariant,overflow,range
+RA29-003	clean	2	28	division,length,range
+RB17-010__predicate	clean	2	32	index,length,range
+RM_MS__assert_loop_contract	clean	2	28	index,loop_invariant,loop_variant,range
+RM_MS__attributes_of_unconstrained_out_parameter_in_precondition	clean	2	24	index,length,range
+RM_MS__loop_entry	clean	2	36	index,loop_invariant,range
+S529-004__update_attr	clean	1	74	discriminant,index,initialization,loop_invariant,range
+S530-019__init_by_proof	clean	5	125	initialization,overflow,range
+S711-051__exprfun_call_in_assert	clean	2	52	discriminant
+S719-030__choice	weak	1	7	overflow
+S913-009__img	clean	1	4	overflow,range
+T422-013__delta_on_arrays	clean	2	41	index,length
+T422-013__delta_on_records	clean	1	31	discriminant,range
+T430-026__fixed_point_conversion	clean	1	11	overflow,range
+T511-007__checks_in_other	clean	1	21	index,length,overflow,range
+T518-001__loop_variant	weak	1	14	divide_by_zero
+T529-035__relaxed_init_param	clean	2	27	initialization
+T626-050__logical_op_relaxed	clean	1	14	initialization,length,range
+T630-007__array_conversion	clean	1	14	length,range
+T630-007__frame_condition	clean	1	16	division,index,length,loop_invariant,range
+T630-007__frame_condition_access	clean	1	20	division,loop_invariant,overflow
+T909-033__2_dim_aggr	clean	1	8	index,overflow
+T910-001__relaxed_init	clean	1	21	initialization,range
+TA21-015__static_raise_exception	weak	1	9	divide_by_zero
+TB13-010__dynamic_float	clean	1	15	division,overflow,range
+TU__ghost_legal	clean	2	38	division,loop_invariant,loop_variant,overflow
+TU__loop_related_legal	clean	2	40	loop_invariant,loop_variant,overflow,range
+U215-020__Relaxed_Init	clean	2	55	index,initialization,loop_invariant,overflow,range
+U301-038__misplaced_old	weak	2	20	index
+U426-029__strings	clean	1	38	discriminant,overflow,range
+U519-031__constant_with_relaxed_init	clean	1	44	initialization
+U629-025__old_in_itypes	clean	1	32	index,length,overflow,range
+V211-034__iterated_comp_assoc	clean	1	17	index,initialization,length,loop_invariant,overflow,range
+V616-020__null_pointer	clean	3	71	discriminant,range
+V927-038__access_discriminant	weak	1	18	discriminant
+VC16-017__justified_check	clean	2	26	is_not_initialized
+VC31-002__star	clean	1	12	loop_invariant,range
+W306-020__relaxed_init_in_loop_entry	clean	1	36	index,initialization,loop_invariant,overflow
+W403-008__relaxed_init_call	clean	1	37	initialization,overflow
+flow_depends	clean	1	34	discriminant

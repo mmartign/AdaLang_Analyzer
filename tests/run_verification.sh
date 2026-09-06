@@ -72,6 +72,8 @@ loop_variant_succ=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-succ.XXXXXX")
 loop_variant_wrong=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-wrong.XXXXXX")
 loop_variant_unsupported=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-unsupported.XXXXXX")
 loop_variant_leading_order=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-variant-leading-order.XXXXXX")
+slice_index_conservative=$(mktemp "${TMPDIR:-/tmp}/adalang-slice-index-conservative.XXXXXX")
+assert_false_guarded=$(mktemp "${TMPDIR:-/tmp}/adalang-assert-false-guarded.XXXXXX")
 out_forwarding=$(mktemp "${TMPDIR:-/tmp}/adalang-out-forwarding.XXXXXX")
 interprocedural_effects=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-effects.XXXXXX")
 interprocedural_ordinary=$(mktemp "${TMPDIR:-/tmp}/adalang-interprocedural-ordinary.XXXXXX")
@@ -88,7 +90,7 @@ global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -250,6 +252,21 @@ grep -F '"operation": "X rem Y >= 0"' "$vc_division" |
 run_json "$vc_division_refuted" tests/verification_vc_division_refuted.adb
 grep -F '"kind": "assertion", "status": "definite-error", "method": "external-prover"' \
   "$vc_division_refuted" >/dev/null
+
+#  FP-065: "pragma Assert (False)" under a conditional whose guard the
+#  analysis cannot prove taken is not a *definite* failure -- it must be
+#  unproved, never definite-error (a straight-line one still fires, see
+#  verification_vc_error.adb above). Found on AdaCore SPARK testsuite unit
+#  W316-007__string_multidim via benchmarks/spark_testsuite/.
+run_json "$assert_false_guarded" tests/verification_assert_false_guarded.adb
+grep -F '"kind": "assertion", "status": "unproved"' \
+  "$assert_false_guarded" | grep -F '"operation": "False"' >/dev/null
+if grep -F '"kind": "assertion", "status": "definite-error"' \
+  "$assert_false_guarded" >/dev/null; then
+   echo "a conditionally-guarded pragma Assert (False) whose guard could" \
+     "not be evaluated was reported as a definite failure (FP-065)" >&2
+   exit 1
+fi
 
 run_json "$vc_division_zero_possible" \
   tests/verification_vc_division_zero_possible.adb
@@ -886,6 +903,24 @@ grep -F '"kind": "loop-variant", "status": "unproved"' \
   grep -F '"operation": "I ** 2"' |
   grep -F '"reasonCode": "unsupported-operator"' |
   grep -F '"blockingExpression": "I ** 2"' >/dev/null
+
+#  FP-064: indexing into an array slice -- Items (1 .. Last) (1) -- used to
+#  be proved safe against the array *type*'s index subtype (Positive),
+#  ignoring that the slice's own bounds are 1 .. Last and empty when
+#  Last = 0. The scalar domain does not model slice bounds, so the
+#  index-check obligation must stay conservative (unproved), never
+#  proved-safe. Found on AdaCore SPARK testsuite unit
+#  OB26-006__ctex_array_ret_func via benchmarks/spark_testsuite/.
+run_json "$slice_index_conservative" \
+  tests/verification_slice_index_conservative.adb
+grep -F '"kind": "index-check", "status": "unproved"' \
+  "$slice_index_conservative" | grep -F '"operation": "1"' >/dev/null
+if grep -F '"kind": "index-check", "status": "proved-safe"' \
+  "$slice_index_conservative" >/dev/null; then
+   echo "an index into an array slice was proved safe against the array" \
+     "type's index subtype instead of the slice bounds (FP-064)" >&2
+   exit 1
+fi
 
 #  A Loop_Invariant is only ever discharged when every loop-body statement
 #  before it is itself a leading loop-invariant/loop-variant pragma (see

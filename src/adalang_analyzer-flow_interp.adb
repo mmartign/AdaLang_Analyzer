@@ -1638,6 +1638,27 @@ package body Adalang_Analyzer.Flow_Interp is
          return Libadalang.Analysis.No_Expr;
    end Assoc_Expression;
 
+   --  True when an Array_Index Call_Expr is indexing into an array *slice*
+   --  (X (Lo .. Hi) (I)), not an array object. A slice's index bounds are
+   --  its own Lo .. Hi -- which may be empty or a proper sub-range -- not
+   --  the array type's declared index subtype, so proving I against the
+   --  type's index bounds (what Array_Index_Range returns for the slice's
+   --  P_Expression_Type) is unsound: it would call an out-of-slice index
+   --  safe (see FP-064). The scalar domain does not model slice bounds, so
+   --  such an index check is recorded conservatively as unproved rather
+   --  than proved.
+   function Indexed_Prefix_Is_Slice
+     (Call : Libadalang.Analysis.Call_Expr) return Boolean is
+   begin
+      return
+        Call.F_Name.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Call.F_Name.As_Call_Expr.P_Kind =
+                   Libadalang.Common.Array_Slice;
+   exception
+      when others =>
+         return False;
+   end Indexed_Prefix_Is_Slice;
+
    --  Checked separately from Check_Conversion_Or_Index so Verify_Subprogram's
    --  Finalize_Node can replay the same determination against a CFG node's
    --  own fully-converged State, marked Final (see FP-035, following
@@ -1793,8 +1814,20 @@ package body Adalang_Analyzer.Flow_Interp is
                              and then not Libadalang.Analysis.Is_Null
                                (Index_Value)
                            then
-                              Check_Index_Range
-                                (Unit, Index_Value, Bounds, State, Symbols);
+                              if Indexed_Prefix_Is_Slice (Call) then
+                                 Record_Unproved
+                                   (Unit, Index_Value, Proof.Index_Check,
+                                    Proof.Abstract_Interpretation,
+                                    "index-check failure is not established, " &
+                                      "but absence is not proved",
+                                    Imprecision =>
+                                      "indexed prefix is an array slice; " &
+                                      "slice bounds are not modelled by the " &
+                                      "scalar domain");
+                              else
+                                 Check_Index_Range
+                                   (Unit, Index_Value, Bounds, State, Symbols);
+                              end if;
                            end if;
                         end;
                      end loop;
@@ -2286,6 +2319,70 @@ package body Adalang_Analyzer.Flow_Interp is
       return False;
    end Contains_VC_Arithmetic;
 
+   --  FP-065: a statically-false assertion (pragma Assert (False) and the
+   --  like) is a Known_Assertion_Failure *definite* error only where the
+   --  pragma is actually reached. Walking outward from the condition to the
+   --  enclosing body, this returns False as soon as the pragma is found to
+   --  sit on a control path the analyzer cannot establish is taken -- an
+   --  if-branch whose guard State does not prove True, an elsif/else/case
+   --  alternative, or a loop body. In that case "the assertion would fail
+   --  if reached, but its reachability is not established" (unproved) is the
+   --  honest verdict rather than a definite error: an earlier statement on
+   --  the only path in may itself always raise, which the flow domain does
+   --  not model (found on AdaCore SPARK testsuite unit
+   --  W316-007__string_multidim, where GNAT raises Constraint_Error at the
+   --  enclosing "if" line). Straight-line asserts, and asserts under an
+   --  if-condition State proves True, still report a definite error --
+   --  CFG-proved-unreachable ones are already handled earlier by
+   --  Finalize_Assertion_Check's Record_Unreachable guard.
+   function Assertion_Point_Reachable
+     (Cond  : Libadalang.Analysis.Expr;
+      State : Flow_State) return Boolean
+   is
+      Child  : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Cond);
+      Parent : Libadalang.Analysis.Ada_Node;
+   begin
+      loop
+         Parent := Child.Parent;
+         exit when Libadalang.Analysis.Is_Null (Parent);
+         exit when Parent.Kind in
+           Libadalang.Common.Ada_Subp_Body
+             | Libadalang.Common.Ada_Package_Body
+             | Libadalang.Common.Ada_Task_Body
+             | Libadalang.Common.Ada_Entry_Body
+             | Libadalang.Common.Ada_Expr_Function;
+
+         case Parent.Kind is
+            when Libadalang.Common.Ada_If_Stmt =>
+               --  Only the THEN path, and only when its guard is provably
+               --  taken in this State, keeps a definite verdict alive.
+               if Libadalang.Analysis.Ada_Node
+                    (Parent.As_If_Stmt.F_Then_Stmts) /= Child
+                 or else Boolean_Value
+                           (Parent.As_If_Stmt.F_Cond_Expr, State) /= Bool_True
+               then
+                  return False;
+               end if;
+
+            when Libadalang.Common.Ada_Elsif_Stmt_Part
+               | Libadalang.Common.Ada_Case_Stmt
+               | Libadalang.Common.Ada_Case_Stmt_Alternative
+               | Libadalang.Common.Ada_Base_Loop_Stmt =>
+               return False;
+
+            when others =>
+               null;
+         end case;
+
+         Child := Parent;
+      end loop;
+      return True;
+   exception
+      when others =>
+         return False;
+   end Assertion_Point_Reachable;
+
    --  Checked separately from Interpret_Proof_Pragma so Verify_Subprogram's
    --  Finalize_Node can replay the same determination against a CFG node's
    --  own fully-converged State, marked Final (see FP-032, following
@@ -2311,7 +2408,26 @@ package body Adalang_Analyzer.Flow_Interp is
             then VC.Decide (Cond, State, Symbols) else VC.Unknown_Outcome);
          VC_Result : constant VC.VC_Result := VC_Outcome.Result;
       begin
-         if Value = Bool_False
+         if (Value = Bool_False
+             or else
+               (VC_Result = VC.VC_Refuted
+                and then not Contains_VC_Arithmetic (Cond)))
+           and then not Assertion_Point_Reachable (Cond, State)
+         then
+            --  FP-065: the condition is false, but the pragma sits on a
+            --  branch whose reachability this analysis cannot establish, so
+            --  a definite-error claim would over-state what is known.
+            Record_Unproved
+              (Unit, Cond, Proof.Assertion_Check,
+               Proof.Abstract_Interpretation,
+               "assertion condition is false, but the enclosing branch " &
+                 "guard is not established, so this point's reachability " &
+                 "is not proved",
+               Imprecision =>
+                 "reachability of a conditionally-guarded assertion whose " &
+                 "guard could not be evaluated is not modelled",
+               Final => Final);
+         elsif Value = Bool_False
            or else
              (VC_Result = VC.VC_Refuted
               and then not Contains_VC_Arithmetic (Cond))
@@ -5295,11 +5411,27 @@ package body Adalang_Analyzer.Flow_Interp is
                                     if not Libadalang.Analysis.Is_Null
                                       (Index_Value)
                                     then
-                                       Finalize_Index_Check
-                                         (Index_Value,
-                                          Array_Index_Range
-                                            (Array_Type, Dimension, Here_State),
-                                          Here);
+                                       if Indexed_Prefix_Is_Slice (Call) then
+                                          Record_Unproved
+                                            (Unit, Index_Value,
+                                             Proof.Index_Check,
+                                             Proof.Abstract_Interpretation,
+                                             "index-check failure is not " &
+                                               "established, but absence is " &
+                                               "not proved",
+                                             Imprecision =>
+                                               "indexed prefix is an array " &
+                                               "slice; slice bounds are not " &
+                                               "modelled by the scalar domain",
+                                             Final => True);
+                                       else
+                                          Finalize_Index_Check
+                                            (Index_Value,
+                                             Array_Index_Range
+                                               (Array_Type, Dimension,
+                                                Here_State),
+                                             Here);
+                                       end if;
                                     end if;
                                  end;
                               end loop;

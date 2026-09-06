@@ -39,6 +39,7 @@ only — see `git log` for prior snapshots).
 | [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 853 | 0 | 0 |
 | [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 221 | 0 | 0 |
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 7 | 0 | 0 |
+| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 428 | 0 | 0 |
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
 Saatana, libkeccak, coap_spark, Tokeneer) — 2,277 proof obligations both
@@ -49,6 +50,19 @@ prove, and never once called something a definite error that GNATprove
 proved safe.** CubedOS's 7 matched pairs (not a fully-proved corpus, so a
 weaker oracle) show the same zero-disagreement pattern on a much smaller
 sample.
+
+The `spark_testsuite` corpus is structurally different — 124 curated
+single-purpose regression tests from the AdaCore SPARK testsuite, each
+analyzed on its own generated project and compared individually (the
+testsuite reuses filenames across thousands of directories, so a global
+`(basename, line, kind)` match is not possible). Its 428 matched pairs
+span nine scalar obligation kinds across far more distinct code shapes than
+the six real projects reach; its value is that breadth, not the count. It
+also carries 34 deliberately-broken units where GNATprove's own `medium`/
+`high` verdict is the tripwire — AdaLang never once answered one of those
+`proved-safe`. See `spark_testsuite/RESULTS_2026-09-06.md`. The first run
+of this corpus found two analyzer defects (`FP-064`, `FP-065`), both fixed
+with regression tests before it landed.
 
 What this table doesn't show: AdaLang answers "I don't know"
 (`Unproved`/`Unsupported`) far more often than GNATprove does on all six —
@@ -115,10 +129,11 @@ counts as approximate, the qualitative agreement as the reliable part.
 
 ## What these benchmarks have found, in total
 
-Twelve real analyzer bugs, all discovered by running against independently
-authored code no one on this project wrote or reviewed for analyzer
-blind spots — the value external-corpus validation is meant to deliver
-(`quality/external_corpus_findings.md`), each fixed with a regression test:
+Fourteen real analyzer bugs, all discovered by running against
+independently authored code no one on this project wrote or reviewed for
+analyzer blind spots — the value external-corpus validation is meant to
+deliver (`quality/external_corpus_findings.md`), each fixed with a
+regression test:
 
 | ID | Corpus that found it | Bug |
 | --- | --- | --- |
@@ -134,6 +149,8 @@ blind spots — the value external-corpus validation is meant to deliver
 | `FP-052` | ada_drivers_library | `Duplicate_Subprogram`'s matched-location message dropped the directory, so two files sharing a simple name in different directories read as a body reported as a duplicate of itself |
 | `FP-059` | ada_drivers_library | `Empty_Else_Body` (and, by the same shared helper, `Empty_If_Body`/`Empty_Elsif_Body`/`Empty_Then_Body`/`Null_Case_Alternative`) treated a branch containing only `pragma Assert (False);` as having no effect, the same as a bare `null;` |
 | `FP-061` | sparknacl | `'Succ`/`'Pred`-based loop-variant progress collapsed to a tautological SMT goal on an untranslated RHS, misread as a proven `Definite_Error` instead of `Unsupported` |
+| `FP-064` | spark_testsuite | `--verify` proved an index into an array *slice* (`Items (1 .. Last) (1)`) safe against the array type's index subtype, missing that the slice bounds `1 .. Last` are empty when `Last = 0` — a possible unsoundness |
+| `FP-065` | spark_testsuite | `--verify` reported `pragma Assert (False)` as a definite error on a branch whose guard it could not evaluate, where the branch is in fact unreachable (the guard line itself always raises) |
 
 `FP-044`'s own two originating findings (gnatcoll-buffer.adb's
 `Current_Text_Position`) persist despite the fix, unlike every other row
