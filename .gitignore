@@ -2,6 +2,11 @@
 /obj/
 /benchmark-results/
 
+# mdBook render output for the documentation site in docs/; the sources are
+# docs/src/ + docs/book.toml, and CI (.github/workflows/docs.yml) rebuilds
+# this on every push to main.
+/docs/book/
+
 # alr's private working-state cache, not source: alire.lock pins "system"
 # origins (e.g. libgmp) to the resolving platform's package manager and
 # name, which does not carry over between macOS and Linux -- see the CI

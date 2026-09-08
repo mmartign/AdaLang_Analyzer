@@ -1,0 +1,21 @@
+[book]
+title = "AdaLang Analyzer"
+description = "Reference and assurance documentation for AdaLang Analyzer, a Libadalang-based static analyzer for Ada and SPARK-bound code."
+authors = ["Maurizio Martignano"]
+src = "src"
+language = "en"
+
+[output.html]
+git-repository-url = "https://github.com/mmartign/AdaLang_Analyzer"
+edit-url-template = "https://github.com/mmartign/AdaLang_Analyzer/edit/main/docs/{path}"
+site-url = "/AdaLang_Analyzer/"
+default-theme = "light"
+preferred-dark-theme = "navy"
+no-section-label = true
+
+[output.html.search]
+enable = true
+
+[output.html.fold]
+enable = true
+level = 1

@@ -24,11 +24,20 @@ Before opening a pull request:
 
 Changes that add or broaden a `Proved_Safe` result must also follow the
 evidence requirements in
-[Supported Verification Subset](SUPPORTED_VERIFICATION_SUBSET.md). Confirmed
-false-safe results use the release-blocking process in
-[False-Safe Response and Release Policy](FALSE_SAFE_RESPONSE.md).
+[Supported Verification Subset](https://mmartign.github.io/AdaLang_Analyzer/supported-verification-subset.html).
+Confirmed false-safe results use the release-blocking process in
+[False-Safe Response and Release Policy](https://mmartign.github.io/AdaLang_Analyzer/false-safe-response.html).
 Every new `Record_Proved_Safe` producer needs a unique `proof-path` source tag
 and one or more routes in `quality/proof_path_evidence.tsv`.
+
+## Documentation
+
+The reference and assurance documentation lives in [`docs/`](docs/) and is
+published at <https://mmartign.github.io/AdaLang_Analyzer/> by the
+`docs` workflow on every push to `main`. To preview changes locally, install
+[mdBook](https://rust-lang.github.io/mdBook/) and run `mdbook serve docs`
+(or `mdbook build docs`); the build must complete with no broken-link
+warnings.
 
 Please use GitHub issues for reproducible bug reports and feature proposals;
 the issue forms prompt for the analyzer version, host platform, command line,

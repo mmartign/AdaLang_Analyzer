@@ -377,9 +377,10 @@ exercise unsupported translation and unavailable solvers. The gate compares
 the manifest with stable `proof-path` source tags, so a new unreviewed proof
 producer fails the repository gate.
 
-The exact current proof boundary is specified in
-`SUPPORTED_VERIFICATION_SUBSET.md`. Confirmed false-safe results are governed
-by the release-blocking response process in `FALSE_SAFE_RESPONSE.md`.
+The exact current proof boundary is specified in the
+[supported verification subset](supported-verification-subset.md). Confirmed
+false-safe results are governed by the release-blocking response process in
+the [false-safe response policy](false-safe-response.md).
 
 Before broadening the supported subset or making a stronger product claim,
 the project still needs:

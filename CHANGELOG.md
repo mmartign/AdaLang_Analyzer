@@ -40,9 +40,9 @@ AdaCore SPARK testsuite.
   objective labeling (`EN_50128_Objectives` in
   `adalang_analyzer-compliance_mapping.adb`) reusing the identical
   `Rule_List` partitions already declared for `iso26262`. See the new
-  [EN 50128 Rail Compliance Matrix](EN50128_RAIL_COMPLIANCE_MATRIX.md) for
-  the non-normative rule-by-rule mapping, mirroring
-  `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`'s structure. Like the other two
+  [EN 50128 Rail Compliance Matrix](https://mmartign.github.io/AdaLang_Analyzer/en50128-rail-compliance-matrix.html)
+  for the non-normative rule-by-rule mapping, mirroring the
+  Automotive Ada compliance matrix's structure. Like the other two
   standards, this report cites no EN 50128 clause, table, or technique
   number and is verification-support evidence, not a compliance
   determination.
@@ -287,7 +287,8 @@ Initial public release.
   (`Global`/`Depends` contracts and known precondition/postcondition/
   assertion/range/index/overflow/discriminant failures), safety profiles
   (`--automotive` and `--do178c=<level>`), and style/maintainability
-  checks. See the [Checks](README.md#checks) table for the full list.
+  checks. See the [Checks catalogue](https://mmartign.github.io/AdaLang_Analyzer/checks.html)
+  for the full list.
 - `--verify`, a bounded mode that classifies individual scalar proof
   obligations as proved safe, definite error, unproved, unreachable, or
   unsupported.

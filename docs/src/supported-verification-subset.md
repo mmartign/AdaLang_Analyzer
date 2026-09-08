@@ -151,4 +151,5 @@ The executable evidence consists of:
 Any change that expands a `Proved_Safe` path must update this document, add a
 positive case, add a boundary or seeded-defect case, register the producer in
 `quality/proof_path_evidence.tsv`, and pass the complete gate. Confirmed
-false-safe results follow [FALSE_SAFE_RESPONSE.md](FALSE_SAFE_RESPONSE.md).
+false-safe results follow the [False-Safe Response and Release
+Policy](false-safe-response.md).

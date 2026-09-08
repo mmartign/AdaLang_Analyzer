@@ -200,13 +200,13 @@ GNATcheck's predefined catalog has entire families AdaLang does not attempt:
 ## Reading this comparison
 
 AdaLang Analyzer is not a GNATcheck replacement and does not claim to be
-(see `POSITIONING.md`). The rules that don't map are not a coverage gap to
+(see `positioning.md`). The rules that don't map are not a coverage gap to
 close one-for-one -- most of GNATcheck's unmatched catalog is style/
 readability preference (naming conventions, "prefer this Ada 2012+
 construct") that AdaLang deliberately doesn't attempt, while most of
 AdaLang's unmatched rules are exactly the flow-sensitive and SPARK-contract
 checks that are its actual differentiator (see "AdaLang's defensible
-distinction" in `POSITIONING.md`'s GNATcheck section). The useful reading is
+distinction" in `positioning.md`'s GNATcheck section). The useful reading is
 per-family: where AdaLang has a direct/close match, GNATcheck's version is
 almost certainly more mature and configurable; where AdaLang has no match,
 that's either intentionally out of scope (naming/readability) or the actual

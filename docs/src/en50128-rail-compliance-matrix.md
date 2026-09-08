@@ -12,8 +12,8 @@ structured and modular programming, strong typing, defensive programming,
 control-flow and data-flow analysis, and boundary value analysis, among
 others.
 
-It is the same 74-rule `--automotive` preset already described in
-[AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md](AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md),
+It is the same 74-rule `--automotive` preset already described in the
+[Automotive Ada compliance matrix](automotive-compliance-matrix.md),
 re-partitioned under a different, EN-50128-flavored set of section
 headings rather than a second, independently derived rule selection: both
 standards converge on the same restricted, deterministic, strongly-typed
@@ -35,12 +35,12 @@ It is a non-normative engineering aid. It is **not**:
   with per-technique recommendations that vary by level; this matrix and
   the underlying `--automotive` preset are flat and unleveled, the same
   design already used for ISO 26262 in this project (see
-  `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`) -- a project must independently
+  `automotive-compliance-matrix.md`) -- a project must independently
   decide which of the checks below are mandatory, highly recommended, or
   merely applicable at its required SIL.
 
 The comparison baseline is the same open-access Ada/SPARK material
-`AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md` uses -- the **Ada Reference Manual,
+`automotive-compliance-matrix.md` uses -- the **Ada Reference Manual,
 Annex H, "High Integrity Systems"** and the **SPARK Reference Manual** /
 **SPARK User's Guide** -- not EN 50128 itself, which is a paywalled
 CENELEC standard. No EN 50128 clause, table, or technique-identifier
@@ -63,7 +63,7 @@ enables 74 checks.
 
 The alignment labels measure similarity of safety intent, not standards
 coverage, and carry the same meaning as in
-`AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`:
+`automotive-compliance-matrix.md`:
 
 - **Restriction** — the check enforces, or closely mirrors, a specific Ada
   Reference Manual rule.
@@ -247,10 +247,10 @@ inferred merely because Ada differs from another language.
 | Complete run-time error analysis | Only supported known failures or bounded obligations are classified. | Use GNATprove to reach the applicable SPARK verification level for components that require it, plus qualified tests, reviews, and target evidence. |
 | Structural coverage and dynamic testing | Not provided. | Supply unit/integration tests, requirements-based tests, structural coverage, and target execution evidence as required by the project's V&V plan. |
 | Tool classification and confidence (EN 50128 Clause 6.7) | No T1/T2/T3 tool classification or confidence assessment is supplied. | Perform the applicable tool-classification and confidence assessment; document failure modes, detection controls, version pinning, and qualification needs. |
-| Independent validation corpus | Rule fixtures test expected findings and clean cases; see the "Independent validation corpus" row of `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md` for detail (shared corpus, same preset). | Extend boundary/negative coverage; add project-scale and cross-version regression tests. |
+| Independent validation corpus | Rule fixtures test expected findings and clean cases; see the "Independent validation corpus" row of `automotive-compliance-matrix.md` for detail (shared corpus, same preset). | Extend boundary/negative coverage; add project-scale and cross-version regression tests. |
 | Compliance reporting | `--compliance-report=en50128` (paired with `--automotive`) generates a per-objective evidence report (mapped checks, enabled/open/baselined status per objective, inline-suppression rationale trail, baseline-matched findings, and unsupported activities). The categories are the non-normative grouping above, not a clause-by-clause mapping to the licensed standard. `--compliance-report-format=json` produces the same content as a machine-readable document. | Revisit `en50128` with a clause-level mapping only if reviewed against a licensed copy of the standard by a qualified reviewer. |
 
-See `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md`'s own gap register for the
+See `automotive-compliance-matrix.md`'s own gap register for the
 remaining gaps common to the shared `--automotive` rule set (numeric type
 model, alias/access-value analysis, bitwise/representation behavior,
 exception completeness, termination and stack bounds, restricted runtime
