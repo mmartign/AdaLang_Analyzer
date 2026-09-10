@@ -275,15 +275,18 @@ support any tool-classification (EN 50128 §6.7) or qualification claim.
 
 `corpus_exercise_coverage.tsv` complements the hand-built fixtures with
 exercise evidence against real code: for every `Rule_Kind` check it records,
-derived wholly from the committed `benchmark-results/*/adalang-*.json`,
-whether a benchmark preset run enabled it over one of the external corpora,
-how many corpora did, and how many findings across how many files it produced
-there. `tests/gen_corpus_exercise_coverage.py` regenerates it and
-`run_corpus_exercise_coverage.sh` fails if the committed copy is stale or no
-longer covers the whole catalogue; the gate skips (exit 0) when python3 is
-unavailable, like the GNATprove differential. A finding count here is not a
-defect count, and a check not reached by the corpus presets is not a
-deficiency -- it is fixture-validated only.
+derived from `benchmark-results/*/adalang-*.json`, whether a benchmark preset
+run enabled it over one of the external corpora, how many corpora did, and
+how many findings across how many files it produced there.
+`benchmark-results/` is gitignored, so this file is a release snapshot
+refreshed by re-running `tests/gen_corpus_exercise_coverage.py` after a local
+benchmark run, the same way `benchmarks/*/RESULTS_*.md` are.
+`run_corpus_exercise_coverage.sh` always checks the file covers the whole
+catalogue with well-formed rows, and additionally regenerates and diffs it
+when the benchmark JSON is present locally; a fresh checkout or CI, where
+`benchmark-results/` does not exist, passes on the structural checks alone.
+A finding count here is not a defect count, and a check not reached by the
+corpus presets is not a deficiency -- it is fixture-validated only.
 
 ## Verification mutation campaign
 

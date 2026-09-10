@@ -43,14 +43,16 @@ for the new user-facing evidence artifacts and documentation.
   exists in `flow_interp.adb`. Partly discharges assurance-model
   remaining-work item 1.
 - Corpus exercise coverage: `quality/corpus_exercise_coverage.tsv`, derived
-  wholly from the committed `benchmark-results/*/adalang-*.json` by
+  from `benchmark-results/*/adalang-*.json` by
   `tests/gen_corpus_exercise_coverage.py`, records per check whether a
   benchmark preset run enabled it over one of the 10 external corpora, how
   many corpora did, and how many findings across how many files it produced
   there. 99 of 127 checks are exercised against independently-authored code
-  this way; 78 produce at least one finding. `run_corpus_exercise_coverage.sh`
-  regenerates and diffs it (skipping when python3 is absent) and feeds the
-  summary into the tool-function evidence page.
+  this way; 78 produce at least one finding. `benchmark-results/` is
+  gitignored, so the file is a release snapshot refreshed with the benchmark
+  run; `run_corpus_exercise_coverage.sh` always checks its structure and
+  regenerates-and-diffs it only when the benchmark JSON is present locally.
+  The summary feeds the tool-function evidence page.
 
 ### Fixed
 

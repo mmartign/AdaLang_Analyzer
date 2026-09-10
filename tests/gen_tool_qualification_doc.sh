@@ -114,9 +114,10 @@ $n_corpora external Ada/SPARK corpora in
 [\`benchmarks/\`](https://github.com/mmartign/AdaLang_Analyzer/tree/main/benchmarks)
 as part of the release process, and
 [\`quality/corpus_exercise_coverage.tsv\`](https://github.com/mmartign/AdaLang_Analyzer/blob/main/quality/corpus_exercise_coverage.tsv)
-records, per check and derived wholly from the committed benchmark result
-JSON, whether a preset run enabled it there, how many corpora did, and how
-many findings across how many files it produced.
+records, per check and derived from the benchmark result JSON, whether a
+preset run enabled it there, how many corpora did, and how many findings
+across how many files it produced. It is a release snapshot, refreshed with
+the benchmark run itself.
 
 - **$n_exercised of $total** checks were enabled by at least one benchmark
   preset run (\`--recommended\` / \`--spark\` / \`--automotive\` / \`--verify\`)

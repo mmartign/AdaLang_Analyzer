@@ -9,10 +9,12 @@ files it produced there. This is exercise evidence -- the check was actually
 run against real Ada, not only against repository fixtures -- not a soundness
 or completeness claim.
 
-Deterministic: inputs are sorted, output column order is fixed, no host
-state. tests/run_corpus_exercise_coverage.sh fails if the committed file is
-not byte-identical to this script's output (and skips when python3 is
-unavailable).
+benchmark-results/ is gitignored, so the committed .tsv is a release
+snapshot, refreshed by running this script after a local benchmark run, the
+same way benchmarks/*/RESULTS_*.md are. Deterministic: inputs are sorted,
+output column order is fixed, no host state. When the benchmark JSON is
+present locally, tests/run_corpus_exercise_coverage.sh regenerates and diffs
+the committed file; on a fresh checkout or CI it checks structure only.
 
 Usage: python3 tests/gen_corpus_exercise_coverage.py > quality/corpus_exercise_coverage.tsv
 """
