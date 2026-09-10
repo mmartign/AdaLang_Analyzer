@@ -40,7 +40,8 @@ The [`quality/`](https://github.com/mmartign/AdaLang_Analyzer/tree/main/quality)
 directory carries the per-release gate: the boundary-case precision corpus,
 adversarial verification mutations, proof-path evidence, the reviewed
 baseline, the known-false-positive / known-false-negative register, the
-per-check tool-function validation manifest behind the
+per-check tool-function validation manifest and corpus exercise-coverage
+table behind the
 [tool-function validation evidence](tool-qualification-support.md) page, and
 the release metrics tracked over time.
 

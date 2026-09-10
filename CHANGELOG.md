@@ -22,6 +22,15 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   analysis a project would build a qualification argument on; it is not a
   qualification argument and supports no EN 50128 §6.7 tool-classification
   claim.
+- Corpus exercise coverage: `quality/corpus_exercise_coverage.tsv`, derived
+  wholly from the committed `benchmark-results/*/adalang-*.json` by
+  `tests/gen_corpus_exercise_coverage.py`, records per check whether a
+  benchmark preset run enabled it over one of the 10 external corpora, how
+  many corpora did, and how many findings across how many files it produced
+  there. 99 of 127 checks are exercised against independently-authored code
+  this way; 78 produce at least one finding. `run_corpus_exercise_coverage.sh`
+  regenerates and diffs it (skipping when python3 is absent) and feeds the
+  summary into the tool-function evidence page.
 
 ### Fixed
 

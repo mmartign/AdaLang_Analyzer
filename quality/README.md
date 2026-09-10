@@ -231,6 +231,7 @@ sh tests/run_recommended_gate.sh
 sh tests/run_quality_metrics.sh
 sh tests/run_automotive_evidence.sh
 sh tests/run_do178c_evidence.sh
+sh tests/run_corpus_exercise_coverage.sh
 sh tests/run_tool_function_evidence.sh
 sh tests/run_precision_corpus.sh
 sh tests/run_verification_mutations.sh
@@ -271,6 +272,18 @@ clean, or if `docs/src/tool-qualification-support.md` is not a byte-exact
 regeneration of the manifest by `tests/gen_tool_qualification_doc.sh`. It is
 validation evidence, not a qualification argument, and does not by itself
 support any tool-classification (EN 50128 §6.7) or qualification claim.
+
+`corpus_exercise_coverage.tsv` complements the hand-built fixtures with
+exercise evidence against real code: for every `Rule_Kind` check it records,
+derived wholly from the committed `benchmark-results/*/adalang-*.json`,
+whether a benchmark preset run enabled it over one of the external corpora,
+how many corpora did, and how many findings across how many files it produced
+there. `tests/gen_corpus_exercise_coverage.py` regenerates it and
+`run_corpus_exercise_coverage.sh` fails if the committed copy is stale or no
+longer covers the whole catalogue; the gate skips (exit 0) when python3 is
+unavailable, like the GNATprove differential. A finding count here is not a
+defect count, and a check not reached by the corpus presets is not a
+deficiency -- it is fixture-validated only.
 
 ## Verification mutation campaign
 

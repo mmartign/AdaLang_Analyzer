@@ -80,6 +80,30 @@ corpora, over and above the analyzer's own fixtures:
   - `metric`: 5
   - `style`: 19
 
+## Exercise against independently-authored code
+
+The fixtures above are hand-built. Separately, the checks are run over the
+10 external Ada/SPARK corpora in
+[`benchmarks/`](https://github.com/mmartign/AdaLang_Analyzer/tree/main/benchmarks)
+as part of the release process, and
+[`quality/corpus_exercise_coverage.tsv`](https://github.com/mmartign/AdaLang_Analyzer/blob/main/quality/corpus_exercise_coverage.tsv)
+records, per check and derived wholly from the committed benchmark result
+JSON, whether a preset run enabled it there, how many corpora did, and how
+many findings across how many files it produced.
+
+- **99 of 127** checks were enabled by at least one benchmark
+  preset run (`--recommended` / `--spark` / `--automotive` / `--verify`)
+  over an external corpus; **78** produced at least one finding on that
+  real code.
+- The remaining 28 are not reached by those preset
+  runs -- mostly style rules outside every preset, plus any check newer than
+  the last benchmark refresh -- and remain fixture-validated only:
+  `No_Exit`, `No_Pragma`, `Redundant_Abs`, `Redundant_Unary_Minus`, `Integer_Division_Before_Multiplication`, `Excessive_Shift_Amount`, `Known_Negative_Shift_Amount_Failure`, `Known_Negative_Exponent_Failure`, `Succ_Pred_Boundary_Overflow`, `Duplicate_With_Clause`, `Duplicate_Exception_Choice`, `Null_Statement`, `Redundant_Final_Return`, `Contradictory_Range_Condition`, `Too_Many_Parameters`, `Unnecessary_Else_After_Return`, `Redundant_If_Boolean_Return`, `Long_Line`, `Trailing_Whitespace`, `Inefficient_String_Concatenation`, `Assertion_Side_Effect`, `Entry_Barrier_Side_Effect`, `Reraise_Discards_Occurrence`, `Known_Enum_Val_Failure`, `Known_Value_Conversion_Failure`, `Missing_Requirement_Trace`, `Malformed_Requirement_Trace`, `Double_Free`.
+
+This is exercise evidence: the check ran against real, independently authored
+Ada, not only against repository fixtures. It is not a soundness or
+completeness measure, and a finding count is not a defect count.
+
 The positive and negative invocations below are also exercised, with their
 expected outcomes, by the other quality gates: the profile presets through
 `run_automotive_evidence.sh` and `run_do178c_evidence.sh`, and the

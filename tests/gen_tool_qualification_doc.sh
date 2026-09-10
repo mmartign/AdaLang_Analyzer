@@ -2,18 +2,25 @@
 set -eu
 
 #  Regenerate docs/src/tool-qualification-support.md from
-#  quality/tool_function_evidence.tsv. Deterministic: no timestamps, no host
-#  state. tests/run_tool_function_evidence.sh fails if the committed document
-#  is not byte-identical to this script's output.
+#  quality/tool_function_evidence.tsv and quality/corpus_exercise_coverage.tsv.
+#  Deterministic: no timestamps, no host state.
+#  tests/run_tool_function_evidence.sh fails if the committed document is not
+#  byte-identical to this script's output.
 #
 #  Usage: sh tests/gen_tool_qualification_doc.sh > docs/src/tool-qualification-support.md
 
 manifest=quality/tool_function_evidence.tsv
+coverage=quality/corpus_exercise_coverage.tsv
 
 total=$(awk -F '\t' '!/^#/ && NF {n++} END {print n+0}' "$manifest")
 n_gnatcheck=$(awk -F '\t' '!/^#/ && $4=="gnatcheck-comparison" {n++} END {print n+0}' "$manifest")
 n_gnatprove=$(awk -F '\t' '!/^#/ && $4=="gnatprove-differential" {n++} END {print n+0}' "$manifest")
 n_oracle=$((n_gnatcheck + n_gnatprove))
+
+n_corpora=$(sed -n 's/^# corpora scanned (\([0-9]*\)):.*/\1/p' "$coverage")
+n_exercised=$(awk -F '\t' '!/^#/ && $2=="yes" {n++} END {print n+0}' "$coverage")
+n_hits=$(awk -F '\t' '!/^#/ && $5+0>0 {n++} END {print n+0}' "$coverage")
+not_exercised=$(awk -F '\t' '!/^#/ && $2=="no" {printf "%s`%s`", sep, $1; sep=", "}' "$coverage")
 
 cat <<EOF
 # Tool-function validation evidence
@@ -98,12 +105,36 @@ awk -F '\t' '!/^#/ && NF {c[$2]++} END {
   for (i = 1; i <= 6; i++) printf "  - `%s`: %d\n", ord[i], c[ord[i]] + 0
 }' "$manifest"
 
-cat <<'EOF'
+cat <<EOF
+
+## Exercise against independently-authored code
+
+The fixtures above are hand-built. Separately, the checks are run over the
+$n_corpora external Ada/SPARK corpora in
+[\`benchmarks/\`](https://github.com/mmartign/AdaLang_Analyzer/tree/main/benchmarks)
+as part of the release process, and
+[\`quality/corpus_exercise_coverage.tsv\`](https://github.com/mmartign/AdaLang_Analyzer/blob/main/quality/corpus_exercise_coverage.tsv)
+records, per check and derived wholly from the committed benchmark result
+JSON, whether a preset run enabled it there, how many corpora did, and how
+many findings across how many files it produced.
+
+- **$n_exercised of $total** checks were enabled by at least one benchmark
+  preset run (\`--recommended\` / \`--spark\` / \`--automotive\` / \`--verify\`)
+  over an external corpus; **$n_hits** produced at least one finding on that
+  real code.
+- The remaining $((total - n_exercised)) are not reached by those preset
+  runs -- mostly style rules outside every preset, plus any check newer than
+  the last benchmark refresh -- and remain fixture-validated only:
+  $not_exercised.
+
+This is exercise evidence: the check ran against real, independently authored
+Ada, not only against repository fixtures. It is not a soundness or
+completeness measure, and a finding count is not a defect count.
 
 The positive and negative invocations below are also exercised, with their
 expected outcomes, by the other quality gates: the profile presets through
-`run_automotive_evidence.sh` and `run_do178c_evidence.sh`, and the
-boundary/negative corpus through `run_precision_corpus.sh`. This page adds
+\`run_automotive_evidence.sh\` and \`run_do178c_evidence.sh\`, and the
+boundary/negative corpus through \`run_precision_corpus.sh\`. This page adds
 the whole-catalogue view and the per-class tool-error-effect analysis.
 
 ## Per-check validation evidence
