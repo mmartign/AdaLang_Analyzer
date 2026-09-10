@@ -15,6 +15,7 @@ for test_script in \
   tests/run_automotive_evidence.sh \
   tests/run_do178c.sh \
   tests/run_do178c_evidence.sh \
+  tests/run_tool_function_evidence.sh \
   tests/run_compliance_report.sh \
   tests/run_precision_corpus.sh \
   tests/run_circular_dependencies.sh \

@@ -7,6 +7,22 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Tool-function validation evidence: `quality/tool_function_evidence.tsv`
+  maps every one of the 127 `Rule_Kind` checks to its documented function,
+  an assurance `class` (which fixes the effect direction of a tool
+  malfunction), an `independent oracle` value (`gnatcheck-comparison`,
+  `gnatprove-differential`, or `none`), and a positive + negative
+  validation invocation. `tests/run_tool_function_evidence.sh` keeps the
+  manifest exactly aligned with the catalogue, re-runs every invocation one
+  check at a time, and regenerates the new
+  [tool-function validation evidence](https://mmartign.github.io/AdaLang_Analyzer/tool-qualification-support.html)
+  page from it. This is validation evidence and the per-class tool-error
+  analysis a project would build a qualification argument on; it is not a
+  qualification argument and supports no EN 50128 §6.7 tool-classification
+  claim.
+
 ### Fixed
 
 - `tests/run_automotive_evidence.sh` and `tests/run_do178c_evidence.sh`

@@ -231,6 +231,7 @@ sh tests/run_recommended_gate.sh
 sh tests/run_quality_metrics.sh
 sh tests/run_automotive_evidence.sh
 sh tests/run_do178c_evidence.sh
+sh tests/run_tool_function_evidence.sh
 sh tests/run_precision_corpus.sh
 sh tests/run_verification_mutations.sh
 sh tests/run_proof_path_evidence.sh
@@ -253,6 +254,23 @@ every level, a Level C tier, and a Level A/B tier), so the gate also confirms
 the matrix's per-row "DO-178C level(s)" column agrees with which tier each
 rule actually comes from in `src/adalang_analyzer-rules.ads`, not just that
 every rule name appears somewhere in the table.
+
+`tool_function_evidence.tsv` widens that pattern from the two profile presets
+to the whole `Rule_Kind` catalogue, and adds the two columns a tool-
+qualification argument needs on top of a fixture pair: an assurance `class`
+(which fixes the effect direction of a tool malfunction -- see the generated
+[tool-function validation evidence](../docs/src/tool-qualification-support.md)
+page) and an `independent oracle` value recording whether GNATcheck or the
+GNATprove differential also cross-checks that check on the benchmark corpora.
+`run_tool_function_evidence.sh` fails if the manifest is not exactly the
+`Rule_Kind` catalogue (no missing check, no stale row, no duplicate), if a
+`class` or `independent oracle` value is outside its vocabulary, if a claimed
+oracle is not backed by the corresponding evidence body, if any positive
+invocation stops producing a finding or any negative invocation stops being
+clean, or if `docs/src/tool-qualification-support.md` is not a byte-exact
+regeneration of the manifest by `tests/gen_tool_qualification_doc.sh`. It is
+validation evidence, not a qualification argument, and does not by itself
+support any tool-classification (EN 50128 §6.7) or qualification claim.
 
 ## Verification mutation campaign
 

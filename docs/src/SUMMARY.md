@@ -21,6 +21,7 @@
 - [Automotive Ada compliance matrix](automotive-compliance-matrix.md)
 - [DO-178C compliance matrix](do178c-compliance-matrix.md)
 - [EN 50128 rail compliance matrix](en50128-rail-compliance-matrix.md)
+- [Tool-function validation evidence](tool-qualification-support.md)
 
 # Comparisons & evidence
 
