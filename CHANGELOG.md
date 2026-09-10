@@ -5,7 +5,14 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] - 2026-09-10
+
+Tool-qualification-support evidence. Three new machine-checked bodies of
+validation evidence -- a per-check tool-function and tool-error register, a
+corpus exercise-coverage table, and operator/type/join/exception
+sub-boundary routes for the `--verify` proof engine -- plus a stale-path fix
+in the two profile evidence gates. No analyzer behaviour change; the bump is
+for the new user-facing evidence artifacts and documentation.
 
 ### Added
 

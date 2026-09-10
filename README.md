@@ -9,7 +9,7 @@ codebases. Find defects, enforce engineering policy, and expose proof-readiness
 gaps while they are still inexpensive to fix.**
 
 [![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.4.1-5b4ee5.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-5b4ee5.svg)](CHANGELOG.md)
 [![Checks](https://img.shields.io/badge/checks-127-0f766e.svg)](https://mmartign.github.io/AdaLang_Analyzer/checks.html)
 [![Docs](https://img.shields.io/badge/docs-site-1f6feb.svg)](https://mmartign.github.io/AdaLang_Analyzer/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
