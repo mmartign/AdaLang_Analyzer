@@ -142,8 +142,9 @@ The executable evidence consists of:
 
 - `tests/run_verification.sh` for obligation outcomes and provenance;
 - `tests/run_verification_mutations.sh` for seeded false-safe detection;
-- `tests/run_proof_path_evidence.sh` for complete `Proved_Safe` producer and
-  method-route coverage;
+- `tests/run_proof_path_evidence.sh` for complete `Proved_Safe` producer
+  coverage, method-route coverage, and operator / type / join / exception
+  sub-boundary routes;
 - `tests/run_gnatprove_differential.sh` for clean and deliberately broken
   oracle comparison; and
 - `tests/run_all.sh` for the complete repository gate.

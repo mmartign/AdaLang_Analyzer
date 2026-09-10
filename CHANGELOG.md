@@ -22,6 +22,19 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   analysis a project would build a qualification argument on; it is not a
   qualification argument and supports no EN 50128 §6.7 tool-classification
   claim.
+- `--verify` proof-path sub-boundary evidence: 14 new routes in
+  `quality/proof_path_evidence.tsv` (23 -> 37), each with new
+  `tests/verification_pp_*.adb` fixtures verified against real analyzer
+  output, covering the scalar VC sub-boundaries within the existing
+  producers -- individual operators (`*`, unary/Boolean connectives,
+  relational comparison, non-zero `/`/`mod`/`rem`, unsupported `**`), scalar
+  types (bounded subtype, enumeration, modular, `'Length` fallback with its
+  unsupported `'First`/`'Last` edge), branch and case joins (fact survival
+  vs. dropped conflicting binding), and the exception-handler edge (before a
+  `raise`, and on the non-exceptional path through a handler-bearing block).
+  No analyzer source change: every route cites a producer tag that already
+  exists in `flow_interp.adb`. Partly discharges assurance-model
+  remaining-work item 1.
 - Corpus exercise coverage: `quality/corpus_exercise_coverage.tsv`, derived
   wholly from the committed `benchmark-results/*/adalang-*.json` by
   `tests/gen_corpus_exercise_coverage.py`, records per check whether a

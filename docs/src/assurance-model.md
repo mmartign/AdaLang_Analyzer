@@ -371,11 +371,21 @@ provers succeed. `tests/run_verification_mutations.sh` independently guards
 all 12 enumerated obligation families with seeded defects or conservative
 boundary cases; none may become `Proved_Safe` unexpectedly.
 `tests/run_proof_path_evidence.sh` separately inventories every source-level
-`Record_Proved_Safe` producer and checks 23 method-specific routes. Each route
-has positive and adversarial evidence, while solver-dependent routes also
-exercise unsupported translation and unavailable solvers. The gate compares
-the manifest with stable `proof-path` source tags, so a new unreviewed proof
-producer fails the repository gate.
+`Record_Proved_Safe` producer and checks 37 method-specific routes. The first
+23 are organised by obligation kind and method; a further 14 exercise the
+scalar VC sub-boundaries within them -- individual operators (`*`, unary and
+Boolean connectives, relational comparison, non-zero `/`/`mod`/`rem`, and the
+unsupported `**` edge), scalar types (statically bounded subtype,
+enumeration, modular, and the `'Length`-on-unconstrained-formal attribute
+fallback with its unsupported `'First`/`'Last` edge), branch and case joins
+(a pre-branch fact that must survive a merge, versus a conflicting binding
+that must be dropped), and the exception-handler edge (an obligation before a
+`raise`, and one on the non-exceptional path through a handler-bearing block,
+both prove while the handler-edge obligation stays `Unproved`). Each
+route has positive and adversarial evidence, while solver-dependent routes
+also exercise unsupported translation and unavailable solvers. The gate
+compares the manifest with stable `proof-path` source tags, so a new
+unreviewed proof producer fails the repository gate.
 
 The exact current proof boundary is specified in the
 [supported verification subset](supported-verification-subset.md). Confirmed
@@ -385,8 +395,11 @@ the [false-safe response policy](false-safe-response.md).
 Before broadening the supported subset or making a stronger product claim,
 the project still needs:
 
-1. Expansion of proof-path evidence beyond the current producer and method
-   routes to additional operator, type, join, and exception sub-boundaries.
+1. Extension of the first tranche of operator, type, join, and exception
+   sub-boundary proof-path routes (now in `quality/proof_path_evidence.tsv`)
+   to the remaining cases -- composite and access types, discriminant
+   obligations, nested and sequential joins beyond the branch budget, and
+   exceptional edges other than a single catch-all handler.
 2. A larger routinely executed differential corpus beyond the current clean
    and broken units.
 3. Broader unsupported-provenance coverage for the remaining expression and
