@@ -2,7 +2,7 @@
 set -eu
 
 analyzer=${ANALYZER:-./bin/adalang_analyzer}
-matrix=AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md
+matrix=docs/src/automotive-compliance-matrix.md
 manifest=quality/automotive_rule_evidence.tsv
 work=$(mktemp -d "${TMPDIR:-/tmp}/adalang-automotive-evidence.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM

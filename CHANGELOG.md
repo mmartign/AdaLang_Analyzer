@@ -5,6 +5,16 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `tests/run_automotive_evidence.sh` and `tests/run_do178c_evidence.sh`
+  pointed at the compliance-matrix files at their old repository-root paths;
+  updated to `docs/src/automotive-compliance-matrix.md` and
+  `docs/src/do178c-compliance-matrix.md` after the mdBook move, so
+  `tests/run_all.sh` passes those gates again.
+
 ## [1.4.1] - 2026-09-06
 
 ### Fixed
