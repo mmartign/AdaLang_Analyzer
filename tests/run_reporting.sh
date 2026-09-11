@@ -42,7 +42,7 @@ grep -E '^[0-9a-f]{16}$' "$baseline" >/dev/null
 grep -F '"version": "2.1.0"' "$sarif" >/dev/null
 grep -F '"ruleId": "Contradictory_Condition"' "$sarif" >/dev/null
 grep -F '"baselineState": "unchanged"' "$sarif" >/dev/null
-grep -F '"properties": {"explanation": "The two Boolean operands are structural complements' \
+grep -F '"properties": {"severity": "High", "quality": "Reliability", "explanation": "The two Boolean operands are structural complements' \
   "$sarif" >/dev/null
 grep -F '"evidence": "left operand =>' "$sarif" >/dev/null
 grep -F '"adalang/v1": "' "$sarif" >/dev/null
@@ -71,7 +71,7 @@ then
    exit 1
 fi
 grep -F '"selectedPreset": "automotive"' "$automotive_json" >/dev/null
-grep -F '"toolVersion": "1.0.0"' "$automotive_json" >/dev/null
+grep -F '"toolVersion": "1.5.0"' "$automotive_json" >/dev/null
 grep -F '"No_Runtime_Check_Suppression"' "$automotive_json" >/dev/null
 if [ "$(grep -c '^      "[A-Za-z_]*"$' "$automotive_json")" -ne 1 ]; then
    echo "structured report did not preserve the effective enabled-rule set" >&2

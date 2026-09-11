@@ -1090,7 +1090,11 @@ package body Adalang_Analyzer.Report is
                JSON_Escape (To_String (Item.Message)) &
                """}, ""baselineState"": """ &
                (if Item.Matches_Base then "unchanged" else "new") &
-               """, ""properties"": {""explanation"": """ &
+               """, ""properties"": {""severity"": """ &
+               JSON_Escape (Rules.Severity_Name (Info.Severity)) &
+               """, ""quality"": """ &
+               JSON_Escape (Rules.Quality_Name (Info.Quality)) &
+               """, ""explanation"": """ &
                JSON_Escape (To_String (Item.Explanation)) &
                """, ""evidence"": """ &
                JSON_Escape (To_String (Item.Evidence)) &
