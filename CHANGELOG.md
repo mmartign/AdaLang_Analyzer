@@ -5,6 +5,24 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-09-21
+
+Patch release. The 1.5.0 release as indexed by Alire (commit `f3fb5da`)
+still had `Analyzer_Version` hardcoded to `1.0.0`, so `--version`, the JSON
+`toolVersion` and the SARIF `tool.driver.version` under-reported the
+release. 1.5.1 is the first indexed release that reports its own version.
+
+### Fixed
+
+- `Analyzer_Version` now matches `alire.toml`, so `--version`, JSON
+  `toolVersion` and SARIF `tool.driver.version` report the real release.
+
+### Added
+
+- SARIF results carry `properties.severity` and `properties.quality`,
+  mirroring the JSON report, so consumers can tell a Blocker from a High
+  finding (SARIF `level` only has error/warning/note).
+
 ## [1.5.0] - 2026-09-10
 
 Tool-qualification-support evidence. Three new machine-checked bodies of
