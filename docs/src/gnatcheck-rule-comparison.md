@@ -43,14 +43,14 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Floating_Equality | Float_Equality_Checks | Direct |
 | Same_Operand | Same_Operands | Direct |
 | Duplicate_Condition | Same_Tests | Direct |
-| Null_Statement | Redundant_Null_Statements | Direct |
+| Null_Statement | Redundant_Null_Statements | Direct (confirmed 2026-09-22 via the AWS corpus's GNATcheck oracle comparison, `FP-066` -- AdaLang originally flagged every `null;` unconditionally, including the sole-statement idiom GNATcheck's own rule exempts (an empty exception handler, a no-op case alternative); fixed to exempt the same sole-statement and labeled-null shapes GNATcheck does, eliminating all 88 of the AWS corpus's false positives) |
 | Empty_Exception_Handler | Silent_Exception_Handlers | Direct |
 | Identical_Branches | Duplicate_Branches | Direct |
 | No_Recursion | Recursive_Subprograms | Direct |
 | No_Multiple_Return | Improper_Returns | Direct |
 | Non_Short_Circuit_Condition | Non_Short_Circuit_Operators | Direct |
 | Too_Many_Parameters | Maximum_Parameters | Direct |
-| Deep_Nesting | Overly_Nested_Control_Structures | Direct |
+| Deep_Nesting | Overly_Nested_Control_Structures | Direct (name-level match only; confirmed 2026-09-22 via the GNATcheck oracle comparison that the two report on structurally different terms and will essentially never share an exact `(file, line)` -- GNATcheck's LKQL rule fires on *every* control-structure node whose ancestor chain exceeds its `n` parameter (default 3), so one deeply-nested chain yields several findings, each at that construct's own line; AdaLang instead computes the subprogram's single maximum nesting depth and reports one finding at the subprogram's name line if it exceeds a threshold of 4. Not a bug on either side -- same granularity/location gap as `Too_Many_Parameters`/`No_Multiple_Return` below) |
 | Cyclomatic_Complexity | Metrics_Cyclomatic_Complexity | Direct |
 | Aliasing_Between_Parameters | Parameters_Aliasing, Potential_Parameters_Aliasing | Direct |
 | No_Controlled_Type | Controlled_Type_Declarations | Direct |

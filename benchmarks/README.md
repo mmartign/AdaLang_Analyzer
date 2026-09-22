@@ -97,16 +97,16 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-08-29.md) | 1557 | 1334 (85.7%) | 1778 | 1334 (75.0%) |
-| [aws](aws/RESULTS_gnatcheck_2026-08-29.md) | 6343 | 3335 (52.6%) | 11617 | 3325 (28.6%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-08-29.md) | 1891 | 979 (51.8%) | 2191 | 977 (44.6%) |
-| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-08-29.md) | 859 | 378 (44.0%) | 1087 | 378 (34.8%) |
-| [cubedos](cubedos/RESULTS_gnatcheck_2026-08-29.md) | 182 | 157 (86.3%) | 653 | 157 (24.0%) |
-| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-08-29.md) | 784 | 641 (81.8%) | 7629 | 641 (8.4%) |
-| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-08-29.md) | 1460 | 1224 (83.8%) | 1355 | 1224 (90.3%) |
-| [saatana](saatana/RESULTS_gnatcheck_2026-08-29.md) | 158 | 96 (60.8%) | 129 | 96 (74.4%) |
-| [project_bias](project_bias/RESULTS_gnatcheck_2026-08-29.md) | 225 | 168 (74.7%) | 299 | 168 (56.2%) |
-| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-08-29.md) | 599 | 444 (74.1%) | 1602 | 425 (26.5%) |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-09-22.md) | 1557 | 1334 (85.7%) | 1758 | 1334 (75.9%) |
+| [aws](aws/RESULTS_gnatcheck_2026-09-22.md) | 6255 | 3335 (53.3%) | 11617 | 3325 (28.6%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-09-22.md) | 1847 | 1029 (55.7%) | 2523 | 1027 (40.7%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-09-22.md) | 807 | 378 (46.8%) | 1087 | 378 (34.8%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-09-22.md) | 177 | 157 (88.7%) | 653 | 157 (24.0%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-09-22.md) | 776 | 626 (80.7%) | 6545 | 626 (9.6%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-09-22.md) | 1460 | 1235 (84.6%) | 1475 | 1235 (83.7%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-09-22.md) | 157 | 96 (61.1%) | 129 | 96 (74.4%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-09-22.md) | 225 | 168 (74.7%) | 299 | 168 (56.2%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-09-22.md) | 569 | 444 (78.0%) | 1602 | 425 (26.5%) |
 
 **Reading the "unmatched" gap.** Most of it is not disagreement — it's the
 comparator's exact-line matching meeting real, explainable conventions:
@@ -129,7 +129,7 @@ counts as approximate, the qualitative agreement as the reliable part.
 
 ## What these benchmarks have found, in total
 
-Fourteen real analyzer bugs, all discovered by running against
+Fifteen real analyzer bugs, all discovered by running against
 independently authored code no one on this project wrote or reviewed for
 analyzer blind spots — the value external-corpus validation is meant to
 deliver (`quality/external_corpus_findings.md`), each fixed with a
@@ -151,6 +151,7 @@ regression test:
 | `FP-061` | sparknacl | `'Succ`/`'Pred`-based loop-variant progress collapsed to a tautological SMT goal on an untranslated RHS, misread as a proven `Definite_Error` instead of `Unsupported` |
 | `FP-064` | spark_testsuite | `--verify` proved an index into an array *slice* (`Items (1 .. Last) (1)`) safe against the array type's index subtype, missing that the slice bounds `1 .. Last` are empty when `Last = 0` — a possible unsoundness |
 | `FP-065` | spark_testsuite | `--verify` reported `pragma Assert (False)` as a definite error on a branch whose guard it could not evaluate, where the branch is in fact unreachable (the guard line itself always raises) |
+| `FP-066` | aws | `Null_Statement` flagged every `null;` unconditionally, including the sole-statement idiom (`exception when X => null;`, a no-op case alternative) GNATcheck's own `Redundant_Null_Statements` rule deliberately exempts — found via GNATcheck oracle-comparison triage rather than a fresh run |
 
 `FP-044`'s own two originating findings (gnatcoll-buffer.adb's
 `Current_Text_Position`) persist despite the fix, unlike every other row
