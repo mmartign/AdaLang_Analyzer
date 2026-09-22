@@ -484,9 +484,40 @@ package body Adalang_Analyzer.Checks is
 
          when Libadalang.Common.Ada_Null_Stmt =>
             if Rule_States (Null_Statement) = Enabled then
-               Report_Rule_Violation
-                 (Unit, Node, Null_Statement,
-                  "null statement has no executable effect");
+
+               --  A null statement that is the sole statement in its
+               --  enclosing sequence (an empty exception handler, a
+               --  no-op case alternative, an empty if/loop body, ...) is
+               --  Ada's only way to say "nothing happens here" and is a
+               --  common, deliberate idiom, not redundant padding; other
+               --  checks (Empty_Exception_Handler, Null_Case_Alternative,
+               --  Empty_Then_Body, ...) already judge whether that no-op
+               --  itself is suspicious. A null with a label is a goto
+               --  target and likewise not redundant. Only a null sitting
+               --  alongside other, real statements is truly pointless
+               --  padding. Mirrors GNATcheck's Redundant_Null_Statements
+               --  exemptions (see FP-066).
+               declare
+                  Prev : constant Libadalang.Analysis.Ada_Node :=
+                    Node.Previous_Sibling;
+                  Next : constant Libadalang.Analysis.Ada_Node :=
+                    Node.Next_Sibling;
+                  Labeled : constant Boolean :=
+                    not Libadalang.Analysis.Is_Null (Prev)
+                      and then Prev.Kind = Libadalang.Common.Ada_Label;
+                  Sole_Statement : constant Boolean :=
+                    Libadalang.Analysis.Is_Null (Prev)
+                      and then
+                        (Libadalang.Analysis.Is_Null (Next)
+                           or else
+                             Next.Kind = Libadalang.Common.Ada_Null_Stmt);
+               begin
+                  if not Labeled and then not Sole_Statement then
+                     Report_Rule_Violation
+                       (Unit, Node, Null_Statement,
+                        "null statement has no executable effect");
+                  end if;
+               end;
             end if;
 
          when Libadalang.Common.Ada_Exception_Handler =>

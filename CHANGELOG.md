@@ -5,6 +5,27 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] - 2026-09-22
+
+Patch release. `Null_Statement` flagged every `null;` statement
+unconditionally, including the sole-statement idiom Ada requires for a
+deliberate no-op (`exception when X => null;`, a single-choice
+`when K => null;` case branch, an empty `if`/loop body) and a labeled null
+used as a `goto` target -- both cases GNATcheck's own
+`Redundant_Null_Statements` rule explicitly exempts. Found while triaging
+the AWS corpus's GNATcheck oracle comparison (`benchmarks/README.md`):
+despite being a "Direct" rule pair, the two tools' findings never landed on
+the same line, and every sampled AdaLang-only finding was exactly that
+idiom -- already judged, on its own more specific terms, by
+`Empty_Exception_Handler`, `Null_Case_Alternative`, and `Empty_Then_Body`.
+
+### Fixed
+
+- `Null_Statement` no longer flags a `null;` that is the sole statement in
+  its enclosing sequence, or immediately preceded by a label; a `null;`
+  sitting alongside other, real statements is still flagged as genuine
+  redundant padding (`FP-066`).
+
 ## [1.5.1] - 2026-09-21
 
 Patch release. The 1.5.0 release as indexed by Alire (commit `f3fb5da`)
