@@ -129,6 +129,16 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          return False;
       end if;
 
+      --  The name in a declaration ("X" in a nested "X : Integer := 0;")
+      --  introduces an entity and never reads one. Resolution returns null
+      --  for it, so without this the spelling fallback below would match a
+      --  shadowed outer declaration of the same name (FP-071).
+      if Node.Kind = Libadalang.Common.Ada_Identifier
+        and then Node.Parent.Kind = Libadalang.Common.Ada_Defining_Name
+      then
+         return False;
+      end if;
+
       --  A pragma argument naming an entity ("Has_Succeed" in "pragma
       --  Unreferenced (Has_Succeed);") is never read at runtime: unlike an
       --  executable pragma such as Assert, whose argument is a genuine
@@ -842,6 +852,22 @@ package body Adalang_Analyzer.Checks.Data_Flow is
            and then Dest.As_Call_Expr.F_Name.Kind =
              Libadalang.Common.Ada_Identifier
          then
+            --  "P (I) := X;" with P of an access type implicitly
+            --  dereferences P and writes the designated object, not P
+            --  itself (FP-070), so it is not a write to P's declaration.
+            declare
+               Prefix_Type : Libadalang.Analysis.Base_Type_Decl;
+            begin
+               Prefix_Type := Dest.As_Call_Expr.F_Name.P_Expression_Type;
+               if Libadalang.Analysis.Is_Null (Prefix_Type)
+                 or else Prefix_Type.P_Is_Access_Type
+               then
+                  return Libadalang.Analysis.No_Basic_Decl;
+               end if;
+            exception
+               when others =>
+                  return Libadalang.Analysis.No_Basic_Decl;
+            end;
             return Referenced_Declaration (Dest.As_Call_Expr.F_Name);
          else
             return Libadalang.Analysis.No_Basic_Decl;
@@ -1034,6 +1060,76 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       Target_Dest : constant Libadalang.Analysis.Name := Assignment.F_Dest;
       Target_Text : constant String := Canonical_Text (Target_Dest);
 
+      --  Whether Expr is an index whose value its spelling alone fixes: an
+      --  integer or character literal, or an enumeration literal.
+      function Is_Static_Index
+        (Expr : Libadalang.Analysis.Expr) return Boolean is
+      begin
+         case Expr.Kind is
+            when Libadalang.Common.Ada_Int_Literal
+               | Libadalang.Common.Ada_Char_Literal =>
+               return True;
+            when Libadalang.Common.Ada_Identifier =>
+               declare
+                  Decl : constant Libadalang.Analysis.Basic_Decl :=
+                    Referenced_Declaration (Expr);
+               begin
+                  return not Libadalang.Analysis.Is_Null (Decl)
+                    and then Decl.Kind =
+                      Libadalang.Common.Ada_Enum_Literal_Decl;
+               end;
+            when others =>
+               return False;
+         end case;
+      end Is_Static_Index;
+
+      --  Whether Candidate indexes a component provably disjoint from the
+      --  target's: every index on both sides is static and at least one
+      --  pair differs. A variable index or a slice range may overlap the
+      --  written component (FP-073: "Key (I)" after "Key (0 .. 31) := ...").
+      function Provably_Other_Component
+        (Candidate : Libadalang.Analysis.Call_Expr) return Boolean
+      is
+         Left  : constant Libadalang.Analysis.Ada_Node :=
+           Target_Dest.As_Call_Expr.F_Suffix.As_Ada_Node;
+         Right : constant Libadalang.Analysis.Ada_Node :=
+           Candidate.F_Suffix.As_Ada_Node;
+         Differs : Boolean := False;
+      begin
+         if Left.Kind /= Libadalang.Common.Ada_Assoc_List
+           or else Right.Kind /= Libadalang.Common.Ada_Assoc_List
+           or else Left.Children_Count /= Right.Children_Count
+         then
+            return False;
+         end if;
+
+         for I in 1 .. Left.Children_Count loop
+            if Left.Child (I).Kind /= Libadalang.Common.Ada_Param_Assoc
+              or else Right.Child (I).Kind /= Libadalang.Common.Ada_Param_Assoc
+            then
+               return False;
+            end if;
+
+            declare
+               L : constant Libadalang.Analysis.Expr :=
+                 Left.Child (I).As_Param_Assoc.F_R_Expr;
+               R : constant Libadalang.Analysis.Expr :=
+                 Right.Child (I).As_Param_Assoc.F_R_Expr;
+            begin
+               if not Is_Static_Index (L) or else not Is_Static_Index (R) then
+                  return False;
+               elsif Canonical_Text (L) /= Canonical_Text (R) then
+                  Differs := True;
+               end if;
+            end;
+         end loop;
+
+         return Differs;
+      exception
+         when others =>
+            return False;
+      end Provably_Other_Component;
+
       function Reads_Component
         (Candidate : Libadalang.Analysis.Ada_Node'Class) return Boolean is
       begin
@@ -1053,8 +1149,12 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                return Indices_Unchanged_Between (Assignment, Candidate);
             end if;
 
-            --  A different component is not a read of this target. Its index
-            --  expression can still contain a nested read, however.
+            --  A provably different component is not a read of this target.
+            --  Its index expression can still contain a nested read,
+            --  however. Any other component may be the one written.
+            if not Provably_Other_Component (Candidate.As_Call_Expr) then
+               return True;
+            end if;
             return Reads_Component (Candidate.As_Call_Expr.F_Suffix);
          elsif Candidate.Kind = Libadalang.Common.Ada_Identifier
            and then Matches_Declaration (Candidate, Target_Decl)

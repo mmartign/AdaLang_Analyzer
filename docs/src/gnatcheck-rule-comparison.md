@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This document maps AdaLang Analyzer's 126 checks
+This document maps AdaLang Analyzer's 127 checks
 (`src/adalang_analyzer-rules.ads`) against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -19,14 +19,14 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 126 checks:
+Of AdaLang Analyzer's 127 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
-| Direct | 19 | Same check, essentially the same semantics |
-| Close | 18 | Same intent, minor scope difference |
-| Partial | 19 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
-| No GNATcheck counterpart | 70 | Nothing in the predefined catalog does this |
+| Direct | 22 | Same check, essentially the same semantics |
+| Close | 27 | Same intent, minor scope difference |
+| Partial | 17 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
+| No GNATcheck counterpart | 61 | Nothing in the predefined catalog does this |
 
 GNATcheck's own catalog runs to roughly 180 predefined rules; large families
 of it (identifier casing/prefixes/readability, OOP-depth metrics,
@@ -55,7 +55,7 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Aliasing_Between_Parameters | Parameters_Aliasing, Potential_Parameters_Aliasing | Direct |
 | No_Controlled_Type | Controlled_Type_Declarations | Direct |
 | Dependency_Limit | Too_Many_Dependencies | Direct |
-| Missing_Overriding_Indicator | Overriding_Indicators | Direct (found 2026-08-19 while cross-checking this document against `gnatcheck --list-rules`'s real output, not available when this comparison was first written; was previously miscategorized as "no GNATcheck counterpart") |
+| Missing_Overriding_Indicator | Overriding_Indicators | Direct (found 2026-08-19 while cross-checking this document against `gnatcheck --list-rules`'s real output, not available when this comparison was first written; was previously miscategorized as "no GNATcheck counterpart"). Paired in the benchmark lane from 2026-09-23, which found `FP-074`: a body completing a declaration that already says `overriding` was reported |
 | No_Pragma | Forbidden_Pragmas | Close (GNATcheck needs an explicit list; AdaLang flags every pragma) |
 | Magic_Number | Numeric_Literals | Close |
 | Infinite_Loop | Simple_Loop_Statements | Close |
@@ -74,6 +74,18 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Exception_Propagation | Exception_Propagation_From_Callbacks/Export/Tasks | Close (undersells the gap in both directions, confirmed across two corpora, 2026-08-19: on `aws`, AdaLang is *broader* — it checks every subprogram lacking an exception boundary, not just callback/`Export`/task boundaries, so most of AdaLang's findings have no GNATcheck counterpart at all. On `cubedos`, GNATcheck's task-specific rule is *broader* in a different way — it flags unguarded calls from task bodies without requiring proof of an explicit raise, while AdaLang only fires when it can trace an explicit `raise` transitively through its own call-graph summaries) |
 | Library_Level_Initialization | Calls_Outside_Elaboration | Close |
 | Naming_Convention | Min_Identifier_Length | Close |
+| Duplicate_With_Clause | Warnings (`-gnatwr`, "redundant with clause") | Direct (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`) |
+| Long_Line | Style_Checks (`-gnatyM120`) | Direct (through GNATcheck's `Style_Checks` rule; 120 is AdaLang's default threshold) |
+| Trailing_Whitespace | Style_Checks (`-gnatyb`) | Direct (through GNATcheck's `Style_Checks` rule) |
+| Unused_With_Clause | Warnings (`-gnatwu`, unreferenced unit) | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`). Confirmed 2026-09-23 on `gnatcoll-core`: 22 AdaLang findings against one GNAT warning exposed `FP-069` (with clauses of package renamings such as `GNAT.OS_Lib`, of generic instances, and of units whose use-visible names Libadalang fails to resolve), fixed. Enabling this check in the lane also exposed `FP-078`: an unguarded resolution of the with'd unit abandoned whole files (three on AWS), fixed |
+| Unused_Variable | Warnings (`-gnatwu`, unreferenced object) | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`). GNAT exempts objects named like `Dummy`, `Ignored`, `Unused` or `Junk`; AdaLang does not |
+| Unused_Parameter | Warnings (`-gnatwf`) | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`). GNAT also exempts overriding operations, bodies consisting only of `null;` or a `raise`, and formals named like `Dummy`; AdaLang reports each unreferenced formal |
+| Wrong_Parameter_Mode | Warnings (`-gnatwk`, "mode could be "in"") | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`). GNAT reports only an `in out` formal never modified; AdaLang also reports one never read. Establishing this pairing found `FP-076` (writes through a `for ... of` loop element) and `FP-077` (advice to change modes fixed by overriding or by an `'Access` binding) |
+| Overwritten_Assignment | Warnings (`-gnatwm`, "value overwritten at line N") | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`). `FP-067` and `FP-071` were found while establishing this pairing |
+| Dead_Store | Warnings (`-gnatwm`, "value never referenced") | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`). Establishing this pairing found `FP-070`-`FP-073` on `gnatcoll-core` and SPARKNaCl (writes through access-typed locals, up-level reads from nested bodies, `pragma Inspection_Point` key wipes, and variable-index reads after a slice write) and, across the ten corpora, `FP-075` (values stored into deliberately named sinks such as `Dummy` or `Ignored`, which GNAT's own convention exempts) |
+| Redundant_Type_Conversion | Warnings (`-gnatwr`, "redundant conversion") | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`) |
+| Self_Assignment | Warnings (`-gnatwr`, "useless assignment of X to itself") | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`) |
+| Constant_Condition | Warnings (`-gnatwc`) | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`). GNAT's constant-condition warnings cover fewer shapes than AdaLang's flow domain |
 
 ## AdaLang rules that only partially overlap GNATcheck
 
@@ -87,9 +99,7 @@ cover a different-shaped case than the nearest predefined rule.
 | No_Unchecked_Conversion | Unchecked_Conversions_As_Actuals | GNATcheck only flags UC used as an actual parameter, not every instantiation |
 | Unreachable_Branch | Null_Paths | Different shape: empty branch body vs. statically-unreachable branch |
 | Function_Side_Effect | Side_Effect_Parameters, Outside_References_From_Subprograms | Neither is "function writes to state other than locals/params" specifically |
-| Long_Line | Style_Checks (`-gnatyM`) | Only available as a style-switch wrapper, not a standalone configurable rule |
-| Trailing_Whitespace | Style_Checks | Same, style-switch wrapper only |
-| Uninitialized_Read | Uninitialized_Global_Variables | GNATcheck's version is global-scope only; AdaLang's is local scalars |
+| Uninitialized_Read | Uninitialized_Global_Variables, Warnings (`-gnatwv`) | GNATcheck's rule is global-scope only; AdaLang's is local scalars. GNAT's `-gnatwv` warning is the closer match but reports at the object's declaration while AdaLang reports at the first read, so a line-exact comparison cannot pair them |
 | No_Dynamic_Allocation | Restrictions (`No_Allocators`) | Only via the generic `pragma Restrictions` wrapper rule |
 | Restricted_Access_Type | Anonymous_Access | GNATcheck's covers anonymous access types only, not named ones |
 | No_Unchecked_Deallocation | Restrictions | No dedicated rule; only via the generic wrapper |
@@ -104,7 +114,7 @@ cover a different-shaped case than the nearest predefined rule.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-70 of AdaLang's 126 rules do something GNATcheck's predefined catalog does
+61 of AdaLang's 127 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -126,35 +136,38 @@ Suppression_Without_Rationale.
 
 **Dataflow/liveness defects** (dead code and value-flow bugs GNATcheck's
 purely syntactic matching doesn't reach):
-Dead_Store, Overwritten_Assignment, Unreachable_Case_Alternative,
-Overlapping_Case_Ranges, Constant_Condition, Unreachable_Code,
+Unreachable_Case_Alternative,
+Overlapping_Case_Ranges, Unreachable_Code,
 Division_By_Zero, Integer_Division_Before_Multiplication,
 Excessive_Shift_Amount, Known_Negative_Shift_Amount_Failure,
 Known_Negative_Exponent_Failure, Reversed_Range,
-Self_Assignment, Contradictory_Condition, Contradictory_Range_Condition,
+Contradictory_Condition, Contradictory_Range_Condition,
 Repeated_Statement, Ineffective_Operation, Constant_Result_Operation,
-Empty_Loop, Unnecessary_Else_After_Return, Redundant_Type_Conversion,
+Empty_Loop, Unnecessary_Else_After_Return,
 Handler_Order.
 
 **Everything else** (no close GNATcheck family at all):
-No_Label, Unused_Parameter, Wrong_Parameter_Mode, Swappable_Parameters,
+No_Label, Swappable_Parameters,
 Assertion_Side_Effect, Shadowed_Declaration,
 Inefficient_String_Concatenation,
 Circular_Package_Dependency, Duplicate_Subprogram, Missing_Loop_Variant,
 Potentially_Blocking_Operation, No_Explicit_Dereference, No_Rendezvous,
 No_Select, No_Requeue, No_Asynchronous_Transfer, No_Dispatching_Call,
-No_Classwide_Type, Unused_Variable, No_Unchecked_Access,
-Duplicate_With_Clause, Reraise_Discards_Occurrence,
+No_Classwide_Type, No_Unchecked_Access,
+Reraise_Discards_Occurrence,
 Duplicate_Exception_Choice, Redundant_If_Boolean_Return,
 Redundant_Final_Return, Redundant_Abs,
-Redundant_Unary_Minus, Use_After_Free, Unclosed_File_Handle,
-Unused_With_Clause.
+Redundant_Unary_Minus, Use_After_Free, Double_Free, Unclosed_File_Handle.
 
-(Several of these -- Unused_Parameter, Unused_Variable, Shadowed_Declaration,
-Dead_Store -- are things GNAT itself reports as compiler warnings, just not
-as a GNATcheck rule. `Missing_Overriding_Indicator` was formerly listed here
-too, but is a `Direct` match on `Overriding_Indicators` -- see the table
-above.)
+(`Shadowed_Declaration` is also something GNAT reports as a compiler
+warning. The checks that GNAT's warnings do cover -- Unused_Parameter,
+Unused_Variable, Unused_With_Clause, Duplicate_With_Clause,
+Wrong_Parameter_Mode, Dead_Store, Overwritten_Assignment,
+Redundant_Type_Conversion, Self_Assignment, Constant_Condition -- were
+listed here until 2026-09-23 and are now paired through GNATcheck's
+`Warnings` rule in the table above. `Missing_Overriding_Indicator` was
+formerly listed here too, but is a `Direct` match on
+`Overriding_Indicators`.)
 
 ## GNATcheck rule families with no AdaLang Analyzer counterpart
 
@@ -188,7 +201,10 @@ GNATcheck's predefined catalog has entire families AdaLang does not attempt:
   AdaLang's rules are individually named rather than configured through one
   umbrella mechanism: `Restrictions` (wraps `pragma Restrictions`),
   `Warnings` (wraps compiler warnings), `Style_Checks` (wraps `-gnaty`
-  switches).
+  switches). The benchmark comparison does use `Warnings` and
+  `Style_Checks` as oracles for individual AdaLang checks (see the table
+  above), each one pinned to the single `-gnatw`/`-gnaty` letter and message
+  the check corresponds to.
 - **Everything else with no AdaLang analog**: USE_Clauses,
   USE_PACKAGE_Clauses, Local_USE_Clauses, Renamings, Operator_Renamings,
   Separates, Nested_Subprograms, Local_Packages, Local_Instantiations,

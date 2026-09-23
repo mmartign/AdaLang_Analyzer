@@ -1,4 +1,4 @@
-adalang_rule	gnatcheck_rule	strength
+adalang_rule	gnatcheck_rule	strength	gnatcheck_option
 No_Goto	goto_statements	direct
 No_Abort	abort_statements	direct
 No_Access_To_Subp_Def	subprogram_access	direct
@@ -42,3 +42,17 @@ Exception_Propagation	exception_propagation_from_export	close
 Exception_Propagation	exception_propagation_from_tasks	close
 Library_Level_Initialization	calls_outside_elaboration	close
 Naming_Convention	min_identifier_length	close
+Missing_Overriding_Indicator	overriding_indicators	direct	+ROverriding_Indicators
+No_Pragma	forbidden_pragmas	close	+RForbidden_Pragmas:ALL
+Duplicate_With_Clause	warnings:r.with	direct	+RWarnings:r
+Long_Line	style_checks:M	direct	+RStyle_Checks:M120
+Trailing_Whitespace	style_checks:b	direct	+RStyle_Checks:b
+Unused_With_Clause	warnings:u.unit	close	+RWarnings:u
+Unused_Variable	warnings:u.object	close	+RWarnings:u
+Unused_Parameter	warnings:f	close	+RWarnings:f
+Wrong_Parameter_Mode	warnings:k.mode	close	+RWarnings:k
+Overwritten_Assignment	warnings:m.overwritten	close	+RWarnings:m
+Dead_Store	warnings:m.never	close	+RWarnings:m
+Redundant_Type_Conversion	warnings:r.conversion	close	+RWarnings:r
+Self_Assignment	warnings:r.self	close	+RWarnings:r
+Constant_Condition	warnings:c.always	close	+RWarnings:c

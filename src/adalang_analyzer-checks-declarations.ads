@@ -56,6 +56,14 @@ private package Adalang_Analyzer.Checks.Declarations is
    --  declaration (as opposed to a body acting as its own declaration,
    --  which Analyze_Subprogram covers instead).
 
+   function Effective_Package
+     (Target : Libadalang.Analysis.Basic_Decl)
+      return Libadalang.Analysis.Basic_Decl;
+   --  The package whose declarations Target's entities actually resolve to:
+   --  the ultimately renamed package for a package renaming such as
+   --  GNAT.OS_Lib (renames System.OS_Lib), the generic package for an
+   --  instantiation, else Target itself (FP-069).
+
    function Any_Reference_To_Unit
      (Node            : Libadalang.Analysis.Ada_Node'Class;
       Target_Filename : String;
@@ -66,5 +74,14 @@ private package Adalang_Analyzer.Checks.Declarations is
    --  decide whether a with'd unit is referenced anywhere in the
    --  compilation unit's body -- semantic rather than spelling-based so a
    --  reference reached only through a "use" clause still counts.
+
+   function Unresolved_Use_Visible_Reference
+     (Unit   : Libadalang.Analysis.Compilation_Unit;
+      Target : Libadalang.Analysis.Basic_Decl) return Boolean;
+   --  True when Unit has a package use clause naming Target and some
+   --  identifier in Unit's body fails to resolve while spelling a name
+   --  declared in Effective_Package (Target). Libadalang resolution can fail silently on a
+   --  whole declaration (FP-069), so Any_Reference_To_Unit alone misses a
+   --  use-visible reference such as "Create" from "use GNATCOLL.Traces;".
 
 end Adalang_Analyzer.Checks.Declarations;

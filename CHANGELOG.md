@@ -5,6 +5,46 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.3] - 2026-09-23
+
+Patch release. Twelve precision and robustness fixes, found by extending
+the GNATcheck oracle comparison to GNAT's own compiler warnings and style
+checks (`benchmarks/README.md`, "Compiler-warning and style-check pairs").
+
+### Fixed
+
+- `Unused_With_Clause` no longer flags withs of package renamings (such as
+  `GNAT.OS_Lib`) or generic instances used through a `use` clause, nor ones
+  whose use-visible names Libadalang cannot resolve (`FP-069`); and enabling
+  it no longer abandons a whole file on a Libadalang property error, which
+  silently dropped every other check's findings there (`FP-078`).
+- `Dead_Store` no longer treats a write through an access-typed local as a
+  write to the local (`FP-070`), flags calls whose callee applies
+  `pragma Inspection_Point` (key-wiping `Sanitize` calls, `FP-072`), or
+  ignores a later read through a variable index after a slice write
+  (`FP-073`).
+- `Dead_Store` and `Overwritten_Assignment` now see reads by nested
+  subprograms (`FP-071`) and skip deliberately named sinks such as `Dummy`,
+  `Ignored` or `Unused`, following GNAT's convention (`FP-075`).
+  `Overwritten_Assignment` no longer counts an unreachable later write, or
+  one past an early `return` through which an `out` value reaches the
+  caller, as an overwrite (`FP-067`).
+- `Unreachable_Code` is no longer reported when disabled but
+  `Overwritten_Assignment` or `Repeated_Statement` is enabled (`FP-068`).
+- `Missing_Overriding_Indicator` no longer flags a body whose separate
+  declaration already carries `overriding` (`FP-074`).
+- `Wrong_Parameter_Mode` now sees writes through a `for ... of` loop element
+  (`FP-076`) and no longer advises changing modes fixed by overriding or by
+  an `'Access` or generic-actual binding (`FP-077`).
+
+### Changed
+
+- The GNATcheck oracle comparison pairs fourteen more checks, twelve of them
+  through GNATcheck's `Warnings` and `Style_Checks` rules; 56 checks now
+  carry an independent-tool cross-check (was 44).
+  `tests/run_tool_function_evidence.sh` now also requires every claimed
+  GNATcheck pairing to be in `benchmarks/gnatcheck_rule_map.tsv`.
+
 ## [1.5.2] - 2026-09-22
 
 Patch release. `Null_Statement` flagged every `null;` statement

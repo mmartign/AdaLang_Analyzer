@@ -25,6 +25,7 @@ analyzer=${ANALYZER:-./bin/adalang_analyzer}
 rules=src/adalang_analyzer-rules.ads
 manifest=quality/tool_function_evidence.tsv
 gnatcheck_doc=docs/src/gnatcheck-rule-comparison.md
+gnatcheck_rule_map=benchmarks/gnatcheck_rule_map.tsv
 qual_doc=docs/src/tool-qualification-support.md
 generator=tests/gen_tool_qualification_doc.sh
 
@@ -96,6 +97,12 @@ while IFS="$tab" read -r rule class function oracle finding_args clean_args; do
       gnatcheck-comparison)
          if ! grep -qE "^\| $rule \|" "$work/gnatcheck-directclose"; then
             echo "check $rule claims the gnatcheck-comparison oracle but is not a Direct/Close row in $gnatcheck_doc" >&2
+            exit 1
+         fi
+         #  The documented pairing must also be one the benchmark corpora
+         #  actually run, or the claimed oracle never executes.
+         if ! awk -F '\t' -v rule="$rule" 'NR > 1 && $1 == rule { found = 1 } END { exit !found }' "$gnatcheck_rule_map"; then
+            echo "check $rule claims the gnatcheck-comparison oracle but has no row in $gnatcheck_rule_map" >&2
             exit 1
          fi ;;
       gnatprove-differential)

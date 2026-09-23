@@ -42,6 +42,47 @@ function jsonnum(line, key,    re, s) {
    return -1
 }
 
+#  GNATcheck's Warnings rule passes GNAT compiler warnings through tagged
+#  only by their -gnatw letter, and one letter covers several distinct
+#  diagnostics (-gnatwu: unreferenced units and unreferenced objects;
+#  -gnatwr: redundant conversions, redundant with clauses, and
+#  self-assignments; -gnatwc: statically constant conditions and
+#  validity-based ones AdaLang does not model). Split those letters by
+#  message so each AdaLang rule
+#  pairs with the one diagnostic it corresponds to; any other message keeps
+#  a ".other" suffix and, being unmapped, is ignored.
+function refine_warning(rule, line) {
+   if (rule == "warnings:u") {
+      if (line ~ /: unit "[^"]*" is not referenced/ \
+          || line ~ /: no entities of "[^"]*" are referenced/)
+         return rule ".unit"
+      if (line ~ /: (variable|constant) "[^"]*" is not referenced/)
+         return rule ".object"
+      return rule ".other"
+   }
+   if (rule == "warnings:c")
+      return rule ((line ~ /: condition is always (True|False)/) \
+                   ? ".always" : ".other")
+   if (rule == "warnings:k")
+      return rule ((line ~ /: mode could be /) ? ".mode" : ".other")
+   if (rule == "warnings:m") {
+      if (line ~ /value overwritten at line/) return rule ".overwritten"
+      if (line ~ /useless assignment to "[^"]*", value never referenced/)
+         return rule ".never"
+      return rule ".other"
+   }
+   if (rule == "warnings:r") {
+      if (line ~ /: redundant conversion/) return rule ".conversion"
+      #  "redundant with clause in body" repeats a with of the unit's own
+      #  spec, which Duplicate_With_Clause (one context clause) does not cover.
+      if (line ~ /: redundant with clause in body/) return rule ".other"
+      if (line ~ /: redundant with clause/) return rule ".with"
+      if (line ~ /useless assignment of "[^"]*" to itself/) return rule ".self"
+      return rule ".other"
+   }
+   return rule
+}
+
 BEGIN {
    adalang_json = ARGV[1]
    gnatcheck_log = ARGV[2]
@@ -77,7 +118,7 @@ BEGIN {
    close(adalang_json)
 
    #  Load GNATcheck findings into gc_present[file,line,rule].
-   gc_re = "^[^:]+:[0-9]+:[0-9]+: rule violation: .* \\[[a-z0-9_]+\\]$"
+   gc_re = "^[^:]+:[0-9]+:[0-9]+: rule violation: .* \\[[A-Za-z0-9_:.]+\\]$"
    while ((getline line < gnatcheck_log) > 0) {
       if (line !~ gc_re) continue
       split(line, parts, ":")
@@ -85,6 +126,7 @@ BEGIN {
       ln = parts[2] + 0
       rule_start = index(line, "[")
       gc_rule = substr(line, rule_start + 1, length(line) - rule_start - 1)
+      gc_rule = refine_warning(gc_rule, line)
       if (!(gc_rule in all_gc)) continue
       key = file SUBSEP ln SUBSEP gc_rule
       if (!(key in gc_present)) gc_total[gc_rule]++

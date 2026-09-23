@@ -29,6 +29,16 @@ with Adalang_Analyzer.Rules;       use Adalang_Analyzer.Rules;
 
 package body Adalang_Analyzer.Checks.Control_Flow is
 
+   type Marker_Access is access constant String;
+   Discard_Marker : aliased constant String := "discard";
+   Dummy_Marker   : aliased constant String := "dummy";
+   Ignore_Marker  : aliased constant String := "ignore";
+   Junk_Marker    : aliased constant String := "junk";
+   Unused_Marker  : aliased constant String := "unused";
+   Discard_Name_Markers : constant array (1 .. 5) of Marker_Access :=
+     (Discard_Marker'Access, Dummy_Marker'Access, Ignore_Marker'Access,
+      Junk_Marker'Access, Unused_Marker'Access);
+
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Analysis.Basic_Decl;
    use type Libadalang.Common.Ada_Node_Kind_Type;
@@ -313,6 +323,105 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       return False;
    end Is_Local_To_Subprogram;
 
+   --  Whether Decl's name marks it as a deliberate sink for values the
+   --  code must produce but does not need ("Dummy := Periph.DR;",
+   --  "Get (Item, Success => Ignored);"). This is GNAT's own convention:
+   --  its unused-value warnings skip names containing discard, dummy,
+   --  ignore, junk, or unused, in any letter case (FP-075).
+   function Is_Discard_Name
+     (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+      Name : constant String := Canonical_Text (Decl.P_Defining_Name);
+   begin
+      for Marker of Discard_Name_Markers loop
+         if Ada.Strings.Fixed.Index (Name, Marker.all) > 0 then
+            return True;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Is_Discard_Name;
+
+   --  Whether a body nested in Subprogram's declarative part (a local
+   --  subprogram, expression function, task, protected, or package body)
+   --  reads Decl as an up-level reference. Such a body can observe Decl's
+   --  value whenever it runs, which a textual search of Subprogram's own
+   --  statements after an assignment cannot see (FP-071).
+   function Read_By_Nested_Body
+     (Decl       : Libadalang.Analysis.Basic_Decl;
+      Subprogram : Libadalang.Analysis.Subp_Body) return Boolean
+   is
+   begin
+      for Item of Subprogram.F_Decls.F_Decls loop
+         if Item.Kind in Libadalang.Common.Ada_Body_Node
+           and then Data_Flow.Reads_Declaration (Item, Decl)
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return True;
+   end Read_By_Nested_Body;
+
+   --  Whether the procedure Call invokes applies pragma Inspection_Point in
+   --  its body, the RM H.3.2 way to keep a value observable -- e.g. a
+   --  "Sanitize (Key);" that zeroes secret material and then inspects it so
+   --  the wipe cannot be optimized away. The value such a call writes to an
+   --  out actual is observed by that pragma, so it is not a dead store
+   --  (FP-072). A separate body is followed through its stub.
+   function Callee_Has_Inspection_Point
+     (Call : Libadalang.Analysis.Call_Expr) return Boolean
+   is
+      function Has_Inspection_Point
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node
+           and then Canonical_Text (Node.As_Pragma_Node.F_Id) =
+             "inspection_point"
+         then
+            return True;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            if Has_Inspection_Point (Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Inspection_Point;
+
+      Callee : constant Libadalang.Analysis.Basic_Decl :=
+        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      Callee_Body : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Callee) then
+         return False;
+      elsif Callee.Kind = Libadalang.Common.Ada_Subp_Body then
+         Callee_Body := Callee;
+      else
+         Callee_Body := Libadalang.Analysis.Basic_Decl
+           (Callee.P_Body_Part_For_Decl (Imprecise_Fallback => True));
+      end if;
+
+      if not Libadalang.Analysis.Is_Null (Callee_Body)
+        and then Callee_Body.Kind = Libadalang.Common.Ada_Subp_Body_Stub
+      then
+         Callee_Body := Callee_Body.P_Next_Part_For_Decl
+           (Imprecise_Fallback => True);
+      end if;
+
+      return Has_Inspection_Point (Callee_Body);
+   exception
+      when others =>
+         return False;
+   end Callee_Has_Inspection_Point;
+
    --  Whether Decl -- already known to be an Ada_Object_Decl local to
    --  Subprogram, as Is_Local_To_Subprogram itself establishes before a
    --  caller reaches this check -- is actually tracking meaningfully local
@@ -399,6 +508,65 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          return True;
    end Renames_Nonlocal_Object;
 
+   --  Whether control may leave Node's statement list from somewhere inside
+   --  Node, so a later write in that list need not execute after an earlier
+   --  one (FP-067). Any raise, goto, requeue, or loop exit that is not an
+   --  unnamed exit of a loop nested inside Node counts, since a handler, the
+   --  jump target, or code after the loop may read the earlier value. A
+   --  return counts only when Target_Is_Local is False: a local object dies
+   --  with the subprogram, while an out parameter or non-local object
+   --  carries the earlier value to the caller. Nested bodies are skipped,
+   --  since their own transfers of control never leave this list.
+   function May_Leave_Statement_List
+     (Node            : Libadalang.Analysis.Ada_Node'Class;
+      Target_Is_Local : Boolean) return Boolean
+   is
+      function Walk
+        (Current     : Libadalang.Analysis.Ada_Node'Class;
+         Inside_Loop : Boolean) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Current) then
+            return False;
+         end if;
+
+         case Current.Kind is
+            when Libadalang.Common.Ada_Body_Node =>
+               return False;
+
+            when Libadalang.Common.Ada_Raise_Stmt
+               | Libadalang.Common.Ada_Goto_Stmt
+               | Libadalang.Common.Ada_Requeue_Stmt =>
+               return True;
+
+            when Libadalang.Common.Ada_Return_Stmt
+               | Libadalang.Common.Ada_Extended_Return_Stmt =>
+               return not Target_Is_Local;
+
+            when Libadalang.Common.Ada_Exit_Stmt =>
+               return not Inside_Loop
+                 or else not Libadalang.Analysis.Is_Null
+                   (Current.As_Exit_Stmt.F_Loop_Name);
+
+            when others =>
+               null;
+         end case;
+
+         for I in 1 .. Current.Children_Count loop
+            if Walk
+              (Current.Child (I),
+               Inside_Loop
+               or else Current.Kind in Libadalang.Common.Ada_Base_Loop_Stmt)
+            then
+               return True;
+            end if;
+         end loop;
+
+         return False;
+      end Walk;
+   begin
+      return Walk (Node, Inside_Loop => False);
+   end May_Leave_Statement_List;
+
    procedure Analyze_Statement_List  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       List : Libadalang.Analysis.Ada_Node'Class)
@@ -426,6 +594,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                   Previous_Terminates := False;  --  adalang-analyzer: ignore Dead_Store
                elsif Previous_Terminates
                  and then Stmt.Kind in Libadalang.Common.Ada_Stmt
+                 and then Rule_States (Unreachable_Code) = Enabled
                then
                   Report_Rule_Violation
                     (Unit, Stmt, Unreachable_Code,
@@ -479,27 +648,53 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                        and then not Libadalang.Analysis.Is_Null (Decl)
                        and then not Is_Self_Assignment
                        and then not Data_Flow.Is_Externally_Observable (Decl)
+                       and then not Is_Discard_Name (Decl)
                      then
-                        for J in I + 1 .. List.Children_Count loop
-                           declare
-                              Later : constant Libadalang.Analysis.Ada_Node :=
-                                List.Child (J);
-                           begin
-                              if Data_Flow.Reads_Assigned_Target
-                                (Later, Assignment)
-                              then
-                                 exit;  --  adalang-analyzer: ignore No_Exit
-                              elsif Data_Flow.Same_Assigned_Target
-                                (Stmt, Later)
-                              then
-                                 Report_Rule_Violation
-                                   (Unit, Stmt, Overwritten_Assignment,
-                                    "assigned value is overwritten before " &
-                                      "it is read");
-                                 exit;  --  adalang-analyzer: ignore No_Exit
-                              end if;
-                           end;
-                        end loop;
+                        declare
+                           Subprogram : constant
+                             Libadalang.Analysis.Subp_Body :=
+                               Data_Flow.Enclosing_Subprogram (Stmt);
+                           Target_Is_Local : constant Boolean :=
+                             Decl.Kind = Libadalang.Common.Ada_Object_Decl
+                             and then not Libadalang.Analysis.Is_Null
+                               (Subprogram)
+                             and then Is_Local_To_Subprogram
+                               (Decl, Subprogram)
+                             and then not Renames_Nonlocal_Object
+                               (Decl, Subprogram);
+                        begin
+                           --  A nested body reading Decl may run from any
+                           --  later call, so no later write provably
+                           --  overwrites an unread value.
+                           if not Target_Is_Local
+                             or else not Read_By_Nested_Body
+                               (Decl, Subprogram)
+                           then
+                              for J in I + 1 .. List.Children_Count loop
+                                 declare
+                                    Later : constant
+                                      Libadalang.Analysis.Ada_Node :=
+                                        List.Child (J);
+                                 begin
+                                    if Data_Flow.Reads_Assigned_Target
+                                      (Later, Assignment)
+                                      or else May_Leave_Statement_List
+                                        (Later, Target_Is_Local)
+                                    then
+                                       exit;  --  adalang-analyzer: ignore No_Exit
+                                    elsif Data_Flow.Same_Assigned_Target
+                                      (Stmt, Later)
+                                    then
+                                       Report_Rule_Violation
+                                         (Unit, Stmt, Overwritten_Assignment,
+                                          "assigned value is overwritten " &
+                                            "before it is read");
+                                       exit;  --  adalang-analyzer: ignore No_Exit
+                                    end if;
+                                 end;
+                              end loop;
+                           end if;
+                        end;
                      end if;
                   end;
                end if;
@@ -646,8 +841,10 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               and then Is_Local_To_Subprogram (Decl, Subprogram)
               and then not Renames_Nonlocal_Object (Decl, Subprogram)
               and then not Data_Flow.Is_Externally_Observable (Decl)
+              and then not Is_Discard_Name (Decl)
               and then not Data_Flow.Has_Read_After
                 (Subprogram.F_Stmts, Decl, Stmt)
+              and then not Read_By_Nested_Body (Decl, Subprogram)
             then
                Report_Rule_Violation
                  (Unit, Stmt, Dead_Store,
@@ -1837,8 +2034,13 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                                (Decl, Subprogram)
                              and then not Data_Flow.Is_Externally_Observable
                                (Decl)
+                             and then not Is_Discard_Name (Decl)
                              and then not Data_Flow.Has_Read_After_Node
                                (Subprogram.F_Stmts, Decl, Stmt)
+                             and then not Read_By_Nested_Body
+                               (Decl, Subprogram)
+                             and then not Callee_Has_Inspection_Point
+                               (Call.As_Call_Expr)
                            then
                               Report_Rule_Violation
                                 (Unit, Actual, Dead_Store,

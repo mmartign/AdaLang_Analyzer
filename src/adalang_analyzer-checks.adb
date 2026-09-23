@@ -1029,24 +1029,67 @@ package body Adalang_Analyzer.Checks is
                CU        : constant Libadalang.Analysis.Compilation_Unit :=
                  Node.As_Compilation_Unit;
                Body_Root : constant Libadalang.Analysis.Ada_Node := CU.F_Body;
+
+               --  The with'd unit's declaration, or null when resolving it
+               --  raises. Evaluated in a declarative part, an escaping
+               --  Property_Error would bypass the per-clause handler below
+               --  and abandon every check for the rest of the file (FP-078).
+               function With_Target
+                 (Name : Libadalang.Analysis.Name'Class)
+                  return Libadalang.Analysis.Basic_Decl is
+               begin
+                  return Name.P_Referenced_Decl (Imprecise_Fallback => True);
+               exception
+                  when Exc : others =>
+                     Log_Verbose_Once
+                       ("skipping unresolvable with clause target: " &
+                        Ada.Exceptions.Exception_Message (Exc));
+                     return Libadalang.Analysis.No_Basic_Decl;
+               end With_Target;
             begin
                for Item of CU.F_Prelude loop
                   if Item.Kind = Libadalang.Common.Ada_With_Clause then
                      for Pkg_Name of Item.As_With_Clause.F_Packages loop
                         declare
                            Target : constant Libadalang.Analysis.Basic_Decl :=
-                             Pkg_Name.P_Referenced_Decl
-                               (Imprecise_Fallback => True);
+                             With_Target (Pkg_Name);
                         begin
-                           if not Libadalang.Analysis.Is_Null (Target)
-                             and then not Declarations.Any_Reference_To_Unit
-                               (Body_Root, Target.Unit.Get_Filename,
-                                Canonical_Text (Pkg_Name.P_Relative_Name))
-                           then
-                              Report_Rule_Violation
-                                (Unit, Pkg_Name, Unused_With_Clause,
-                                 "with clause names a unit never " &
-                                 "referenced elsewhere in this file");
+                           if not Libadalang.Analysis.Is_Null (Target) then
+                              declare
+                                 --  Computed here, not with Target, so that a
+                                 --  Property_Error from resolving a renaming or
+                                 --  instance reaches this block's handler
+                                 --  instead of aborting the whole file.
+                                 Effective : constant
+                                   Libadalang.Analysis.Basic_Decl :=
+                                     Declarations.Effective_Package (Target);
+                                 Alternate : constant String :=
+                                   (if Libadalang.Analysis.Is_Null (Effective)
+                                      or else Effective.Unit.Get_Filename =
+                                        Target.Unit.Get_Filename
+                                    then ""
+                                    else Effective.Unit.Get_Filename);
+                              begin
+                                 if not Declarations.Any_Reference_To_Unit
+                                     (Body_Root, Target.Unit.Get_Filename,
+                                      Canonical_Text (Pkg_Name.P_Relative_Name))
+                                   and then
+                                     (Alternate = ""
+                                      or else not
+                                        Declarations.Any_Reference_To_Unit
+                                          (Body_Root, Alternate,
+                                           Canonical_Text
+                                             (Pkg_Name.P_Relative_Name)))
+                                   and then not
+                                     Declarations.Unresolved_Use_Visible_Reference
+                                       (CU, Target)
+                                 then
+                                    Report_Rule_Violation
+                                      (Unit, Pkg_Name, Unused_With_Clause,
+                                       "with clause names a unit never " &
+                                       "referenced elsewhere in this file");
+                                 end if;
+                              end;
                            end if;
                         exception
                            when Exc : others =>

@@ -66,7 +66,8 @@ project=$coap_spark_root/coap_spark.gpr
 scenario_args="-XSPARKLIB_INSTALLED=False"
 
 adalang_checks=$(awk -F'\t' 'NR>1 && $1!="No_Recursion"{print $1}' "$rule_map" | sort -u | tr '\n' ',' | sed 's/,$//')
-gc_rule_args=$(awk -F'\t' 'NR>1 && $2!="recursive_subprograms"{print $2}' "$rule_map" | sort -u | awk '{printf "-r %s ", $0}')
+gc_rule_args=$(awk -v part=rules -f "$repository_root/benchmarks/gnatcheck_rule_args.awk" "$rule_map")
+gc_option_args=$(awk -v part=options -f "$repository_root/benchmarks/gnatcheck_rule_args.awk" "$rule_map")
 
 #  Run the AdaLang lane FIRST, under this repository's own alr-exec
 #  environment only, with the same SPARKlib-16.1.0-override
@@ -123,6 +124,23 @@ status=0
 # shellcheck disable=SC2086
 eval "\"\$gnatcheck\" -P\"\$project\" $scenario_args --ignore-project-switches --show-rule $gc_rule_args" \
   >"$results_dir/gnatcheck.txt" 2>&1 || status=$?
+#  Separate passes for the column-4 options (compiler warnings, style
+#  checks, single LKQL rules), one per line; see
+#  gnatcheck_rule_args.awk.
+saved_ifs=$IFS
+IFS='
+'
+for pass_args in $gc_option_args; do
+   IFS=$saved_ifs
+   option_status=0
+   # shellcheck disable=SC2086
+   eval "\"\$gnatcheck\" -P\"\$project\" $scenario_args --ignore-project-switches --show-rule $pass_args" \
+     >>"$results_dir/gnatcheck.txt" 2>&1 || option_status=$?
+   if [ "$option_status" -gt "$status" ]; then
+      status=$option_status
+   fi
+done
+IFS=$saved_ifs
 printf '%s\n' "$status" >"$results_dir/gnatcheck.status"
 if [ "$status" -gt 1 ]; then
    echo "GNATcheck lane exited $status -- check $results_dir/gnatcheck.txt before trusting the comparison" >&2

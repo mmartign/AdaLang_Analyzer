@@ -68,9 +68,9 @@ corpora, over and above the analyzer's own fixtures:
   `src/adalang_analyzer-rules.ads`; every one has at least one positive and
   one negative validation invocation, each re-run by the gate one check at a
   time.
-- **44** carry an independent-tool cross-check
-  (37 via the GNATcheck comparison, 7 via the GNATprove
-  differential); the remaining 83 are fixture-validated
+- **56** carry an independent-tool cross-check
+  (49 via the GNATcheck comparison, 7 via the GNATprove
+  differential); the remaining 71 are fixture-validated
   only.
 - Class distribution:
   - `policy`: 31
@@ -126,10 +126,10 @@ the whole-catalogue view and the per-class tool-error-effect analysis.
 | `No_Unchecked_Access` | `policy` | Reports uses of the `'Unchecked_Access` attribute. | `none` | `tests/precision_no_unchecked_access_finding.adb` | `tests/precision_no_unchecked_access_clean.adb` |
 | `Floating_Equality` | `defect` | Reports `=` and `/=` applied to floating-point operands. | `gnatcheck-comparison` | `tests/high_value_findings.adb` | `tests/high_value_clean.adb` |
 | `Magic_Number` | `style` | Reports unexplained numeric literals other than 0, 1, and -1 outside named constant declarations. | `gnatcheck-comparison` | `tests/high_value_findings.adb` | `tests/high_value_clean.adb` |
-| `Unused_Parameter` | `defect` | Reports subprogram parameters that are never referenced. | `none` | `tests/precision_unused_parameter_guard.adb` | `tests/precision_unused_parameter_nested_reference_clean.adb` |
-| `Wrong_Parameter_Mode` | `defect` | Reports `in out` parameters that are only read or only written. | `none` | `tests/precision_wrong_parameter_mode_index_read.adb` | `tests/parameter_mode_clean.adb` |
-| `Dead_Store` | `defect` | Reports assignments whose value is never read later in the subprogram. | `none` | `tests/advanced_findings.adb` | `tests/advanced_clean.adb` |
-| `Overwritten_Assignment` | `defect` | Reports assignments overwritten before an intervening read. | `none` | `tests/advanced_findings.adb` | `tests/advanced_clean.adb` |
+| `Unused_Parameter` | `defect` | Reports subprogram parameters that are never referenced. | `gnatcheck-comparison` | `tests/precision_unused_parameter_guard.adb` | `tests/precision_unused_parameter_nested_reference_clean.adb` |
+| `Wrong_Parameter_Mode` | `defect` | Reports `in out` parameters that are only read or only written. | `gnatcheck-comparison` | `tests/precision_wrong_parameter_mode_index_read.adb` | `tests/parameter_mode_clean.adb` |
+| `Dead_Store` | `defect` | Reports assignments whose value is never read later in the subprogram. | `gnatcheck-comparison` | `tests/advanced_findings.adb` | `tests/advanced_clean.adb` |
+| `Overwritten_Assignment` | `defect` | Reports assignments overwritten before an intervening read. | `gnatcheck-comparison` | `tests/advanced_findings.adb` | `tests/advanced_clean.adb` |
 | `Shadowed_Declaration` | `defect` | Reports local objects hiding declarations in enclosing subprograms. | `none` | `tests/advanced_findings.adb` | `tests/advanced_clean.adb` |
 | `Unreachable_Case_Alternative` | `defect` | Reports choices wholly covered by an earlier case alternative. | `none` | `tests/advanced_findings.adb` | `tests/advanced_clean.adb` |
 | `Overlapping_Case_Ranges` | `defect` | Reports intersecting statically evaluable integer choices. | `none` | `tests/advanced_findings.adb` | `tests/advanced_clean.adb` |
@@ -139,7 +139,7 @@ the whole-catalogue view and the per-class tool-error-effect analysis.
 | `Redundant_Unary_Minus` | `style` | Reports unary negation applied to an operand that is itself a unary negation. | `none` | `tests/precision_redundant_unary_minus_finding.adb` | `tests/precision_redundant_unary_minus_clean.adb` |
 | `Exception_Swallowed` | `defect` | Reports empty or null-only `when others` handlers. | `gnatcheck-comparison` | `tests/automotive_additional_findings.adb` | `tests/automotive_additional_clean.adb` |
 | `Cyclomatic_Complexity` | `metric` | Reports subprograms exceeding the configured complexity threshold. | `gnatcheck-comparison` | `-complexity-threshold=2 tests/advanced_findings.adb` | `-complexity-threshold=20 tests/advanced_clean.adb` |
-| `Constant_Condition` | `defect` | Reports conditions that are statically always true or false. | `none` | `tests/flow_findings.adb` | `tests/flow_clean.adb` |
+| `Constant_Condition` | `defect` | Reports conditions that are statically always true or false. | `gnatcheck-comparison` | `tests/flow_findings.adb` | `tests/flow_clean.adb` |
 | `Unreachable_Code` | `defect` | Reports statements following an unconditional transfer of control. | `none` | `tests/bug_findings.adb` | `tests/clean_findings.adb` |
 | `Division_By_Zero` | `known_failure` | Reports statically detectable division, `mod`, or `rem` by zero. | `gnatprove-differential` | `tests/flow_findings.adb` | `tests/flow_clean.adb` |
 | `Integer_Division_Before_Multiplication` | `defect` | Reports integer multiplications whose left operand is an unparenthesized integer division. | `none` | `tests/precision_integer_division_before_multiplication_finding.adb` | `tests/precision_integer_division_before_multiplication_alignment_clean.adb` |
@@ -148,10 +148,10 @@ the whole-catalogue view and the per-class tool-error-effect analysis.
 | `Known_Negative_Exponent_Failure` | `known_failure` | Reports `**` exponentiations on an integer base whose static exponent is negative. | `none` | `tests/precision_known_negative_exponent_failure_finding.adb` | `tests/precision_known_negative_exponent_failure_clean.adb` |
 | `Succ_Pred_Boundary_Overflow` | `known_failure` | Reports `'Succ` applied to `'Last` or `'Pred` applied to `'First` of the same scalar type. | `none` | `tests/precision_succ_pred_boundary_overflow_succ_finding.adb` | `tests/precision_succ_pred_boundary_overflow_clean.adb` |
 | `Reversed_Range` | `known_failure` | Reports static ranges whose lower bound exceeds their upper bound. | `none` | `tests/automotive_additional_findings.adb` | `tests/automotive_additional_clean.adb` |
-| `Self_Assignment` | `defect` | Reports assignments whose target and value designate the same object, including through simple renames. | `none` | `tests/call_and_rename_findings.adb` | `tests/data_flow_loop_clean.adb` |
+| `Self_Assignment` | `defect` | Reports assignments whose target and value designate the same object, including through simple renames. | `gnatcheck-comparison` | `tests/call_and_rename_findings.adb` | `tests/data_flow_loop_clean.adb` |
 | `Same_Operand` | `defect` | Reports suspicious binary expressions with identical operands. | `gnatcheck-comparison` | `tests/precision_same_operand_subtraction_guard.adb` | `tests/precision_same_operand_identity_ops_clean.adb` |
 | `Duplicate_Condition` | `defect` | Reports repeated conditions in an `if`/`elsif` chain. | `gnatcheck-comparison` | `tests/precision_duplicate_condition_nonadjacent_guard.adb` | `tests/precision_duplicate_condition_clean.adb` |
-| `Duplicate_With_Clause` | `defect` | Reports with clauses naming a unit already with'd in the same context clause. | `none` | `tests/precision_duplicate_with_clause_finding.adb` | `tests/precision_duplicate_with_clause_clean.adb` |
+| `Duplicate_With_Clause` | `defect` | Reports with clauses naming a unit already with'd in the same context clause. | `gnatcheck-comparison` | `tests/precision_duplicate_with_clause_finding.adb` | `tests/precision_duplicate_with_clause_clean.adb` |
 | `Duplicate_Exception_Choice` | `defect` | Reports an exception handler whose own choice list names the same exception more than once. | `none` | `tests/precision_duplicate_exception_choice_finding.adb` | `tests/precision_duplicate_exception_choice_clean.adb` |
 | `Null_Statement` | `style` | Reports executable `null` statements. | `gnatcheck-comparison` | `tests/precision_null_statement_finding.adb` | `tests/precision_null_subp_clean.adb` |
 | `Redundant_Final_Return` | `style` | Reports a bare `return;` as the last statement of a procedure body. | `none` | `tests/precision_redundant_final_return_finding.adb` | `tests/precision_redundant_final_return_clean.adb` |
@@ -171,7 +171,7 @@ the whole-catalogue view and the per-class tool-error-effect analysis.
 | `Too_Many_Parameters` | `metric` | Reports subprograms exceeding the configured parameter-count threshold. | `gnatcheck-comparison` | `tests/precision_too_many_parameters_over_threshold.adb` | `tests/precision_too_many_parameters_at_threshold.adb` |
 | `Swappable_Parameters` | `defect` | Reports adjacent parameters sharing a mode and a resolved type, which a positional call could transpose undetected. | `none` | `tests/precision_swappable_parameters_finding.adb` | `tests/precision_swappable_parameters_different_types_clean.adb` |
 | `Deep_Nesting` | `metric` | Reports subprograms exceeding the configured nesting-depth threshold. | `gnatcheck-comparison` | `-nesting-threshold=3 tests/new_checks_findings.adb` | `-nesting-threshold=3 tests/new_checks_clean.adb` |
-| `Unused_Variable` | `defect` | Reports local objects that are never referenced. | `none` | `tests/precision_unused_variable_guard.adb` | `tests/precision_unused_variable_nested_reference_clean.adb` |
+| `Unused_Variable` | `defect` | Reports local objects that are never referenced. | `gnatcheck-comparison` | `tests/precision_unused_variable_guard.adb` | `tests/precision_unused_variable_nested_reference_clean.adb` |
 | `Empty_If_Body` | `style` | Reports if statements with no elsif/else whose body has no effect. | `gnatcheck-comparison` | `tests/precision_empty_if_body_guard.adb` | `tests/precision_empty_if_body_with_else_clean.adb` |
 | `Empty_Elsif_Body` | `style` | Reports elsif branches with no substantive statements. | `gnatcheck-comparison` | `tests/precision_empty_elsif_body_guard.adb` | `tests/precision_empty_elsif_body_clean.adb` |
 | `Empty_Then_Body` | `style` | Reports an empty then branch even when an elsif or else follows. | `gnatcheck-comparison` | `tests/precision_empty_then_body_guard.adb` | `tests/precision_empty_then_body_clean.adb` |
@@ -181,8 +181,8 @@ the whole-catalogue view and the per-class tool-error-effect analysis.
 | `Redundant_If_Boolean_Return` | `style` | Reports an if statement whose then and else branches each return only an opposite boolean literal. | `none` | `tests/precision_redundant_if_boolean_return_finding.adb` | `tests/precision_redundant_if_boolean_return_same_literal_clean.adb` |
 | `Function_Side_Effect` | `defect` | Reports functions that assign to state outside their own parameters and locals. | `none` | `tests/new_checks_findings.adb` | `tests/new_checks_clean.adb` |
 | `Redundant_Boolean_Comparison` | `style` | Reports equality/inequality comparisons against the literal `True`/`False`. | `gnatcheck-comparison` | `tests/new_checks_findings.adb` | `tests/new_checks_clean.adb` |
-| `Long_Line` | `style` | Reports source lines longer than the configured threshold. | `none` | `tests/precision_long_line_over_threshold.adb` | `tests/precision_long_line_at_threshold.adb` |
-| `Trailing_Whitespace` | `style` | Reports source lines with trailing spaces or tabs. | `none` | `tests/precision_trailing_whitespace_finding.adb` | `tests/precision_blank_line_clean.adb` |
+| `Long_Line` | `style` | Reports source lines longer than the configured threshold. | `gnatcheck-comparison` | `tests/precision_long_line_over_threshold.adb` | `tests/precision_long_line_at_threshold.adb` |
+| `Trailing_Whitespace` | `style` | Reports source lines with trailing spaces or tabs. | `gnatcheck-comparison` | `tests/precision_trailing_whitespace_finding.adb` | `tests/precision_blank_line_clean.adb` |
 | `SPARK_Mode` | `readiness` | Reports regions that explicitly set `SPARK_Mode` to `Off`. | `none` | `tests/spark_findings.adb` | `tests/spark_clean.adb` |
 | `Missing_Global_Contract` | `readiness` | Reports subprograms that access global state without an explicit `Global` contract. | `gnatcheck-comparison` | `tests/spark_readiness_findings.adb` | `tests/spark_readiness_clean.adb` |
 | `Global_Contract_Mismatch` | `readiness` | Reports actual global reads or writes that an existing `Global` contract does not permit. | `none` | `tests/spark_readiness_findings.adb` | `tests/spark_readiness_clean.adb` |
@@ -204,7 +204,7 @@ the whole-catalogue view and the per-class tool-error-effect analysis.
 | `Known_Index_Check_Failure` | `known_failure` | Reports array indices provably outside the corresponding index subtype. | `gnatprove-differential` | `tests/runtime_check_findings.adb` | `tests/runtime_check_clean.adb` |
 | `Known_Overflow_Failure` | `known_failure` | Reports integer arithmetic provably outside the operation's base type. | `gnatprove-differential` | `tests/overflow_findings.adb` | `tests/overflow_clean.adb` |
 | `Identical_Case_Alternative` | `defect` | Reports adjacent case alternatives with identical bodies. | `gnatcheck-comparison` | `tests/precision_identical_case_alternative_adjacent_finding.adb` | `tests/precision_identical_case_alternative_nonadjacent_clean.adb` |
-| `Redundant_Type_Conversion` | `style` | Reports explicit type conversions whose operand already has the target subtype. | `none` | `tests/general_checks2_findings.adb` | `tests/general_checks2_clean.adb` |
+| `Redundant_Type_Conversion` | `style` | Reports explicit type conversions whose operand already has the target subtype. | `gnatcheck-comparison` | `tests/general_checks2_findings.adb` | `tests/general_checks2_clean.adb` |
 | `Handler_Order` | `defect` | Reports a `when others` handler that precedes, and thereby shadows, a more specific handler in the same list. | `none` | `tests/general_checks2_findings.adb` | `tests/general_checks2_clean.adb` |
 | `Reraise_Discards_Occurrence` | `defect` | Reports an exception handler's last statement re-raising the same single exception it caught by name instead of a bare `raise;`. | `none` | `tests/precision_reraise_discards_occurrence_finding.adb` | `tests/precision_reraise_discards_occurrence_bare_raise_clean.adb` |
 | `Aliasing_Between_Parameters` | `defect` | Reports calls that pass the same object or component as two actual parameters when at least one corresponding formal is written. | `gnatcheck-comparison` | `tests/spark_checks2_findings.adb` | `tests/spark_checks2_clean.adb` |
@@ -241,4 +241,4 @@ the whole-catalogue view and the per-class tool-error-effect analysis.
 | `Use_After_Free` | `defect` | Reports a local access object read after `Ada.Unchecked_Deallocation` frees it, with no intervening assignment. | `none` | `tests/precision_use_after_free_finding.adb` | `tests/precision_use_after_free_clean.adb` |
 | `Double_Free` | `defect` | Reports a local access object passed to `Ada.Unchecked_Deallocation` a second time, with no intervening assignment. | `none` | `tests/precision_double_free_finding.adb` | `tests/precision_double_free_clean.adb` |
 | `Unclosed_File_Handle` | `defect` | Reports a local `Ada.Text_IO`/`Ada.Streams.Stream_IO` file opened with `Open`/`Create` and not demonstrably closed on every normal-return or exception-handler path. | `none` | `tests/precision_unclosed_file_handle_finding.adb` | `tests/precision_unclosed_file_handle_clean.adb` |
-| `Unused_With_Clause` | `defect` | Reports a with clause naming a unit never referenced elsewhere in the file. | `none` | `tests/precision_unused_with_clause_finding.adb` | `tests/precision_unused_with_clause_clean.adb` |
+| `Unused_With_Clause` | `defect` | Reports a with clause naming a unit never referenced elsewhere in the file. | `gnatcheck-comparison` | `tests/precision_unused_with_clause_finding.adb` | `tests/precision_unused_with_clause_clean.adb` |

@@ -152,10 +152,46 @@ package body Adalang_Analyzer.Checks.Declarations is
          return True;
    end References_Named_Declaration;
 
+   function Effective_Package
+     (Target : Libadalang.Analysis.Basic_Decl)
+      return Libadalang.Analysis.Basic_Decl
+   is
+      Current : Libadalang.Analysis.Basic_Decl := Target;
+   begin
+      if Current.Kind = Libadalang.Common.Ada_Package_Renaming_Decl then
+         Current :=
+           Current.As_Package_Renaming_Decl.P_Final_Renamed_Package;
+      end if;
+      if not Libadalang.Analysis.Is_Null (Current)
+        and then Current.Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
+      then
+         declare
+            Instance : constant
+              Libadalang.Analysis.Generic_Package_Instantiation :=
+                Current.As_Generic_Package_Instantiation;
+         begin
+            Current := Libadalang.Analysis.Basic_Decl
+              (Instance.P_Designated_Generic_Decl);
+         exception
+            when others =>
+               --  Designating the generic can fail where resolving its
+               --  name alone still succeeds.
+               Current := Instance.F_Generic_Pkg_Name.P_Referenced_Decl
+                 (Imprecise_Fallback => True);
+         end;
+      end if;
+      return (if Libadalang.Analysis.Is_Null (Current) then Target
+              else Current);
+   exception
+      when others =>
+         return Target;
+   end Effective_Package;
+
    --  True when some Name under Node resolves to a declaration owned by
-   --  the unit at Target_Filename. Unresolved names are only treated as a
-   --  conservative "possible reference" when their spelling matches
-   --  Simple_Name (the with'd unit's own relative name) -- unlike
+   --  the unit at Target_Filename. Unresolved names,
+   --  and dotted-name prefixes, are only treated as a conservative
+   --  "possible reference" when their spelling matches Simple_Name (the
+   --  with'd unit's own relative name) -- unlike
    --  References_Named_Declaration's blanket "unresolved means used"
    --  fallback, since here almost every identifier in the file is
    --  irrelevant to any one with clause, and treating every resolution
@@ -176,8 +212,15 @@ package body Adalang_Analyzer.Checks.Declarations is
             if (not Libadalang.Analysis.Is_Null (Referenced)
                 and then Referenced.Unit.Get_Filename = Target_Filename)
               or else
-                (Libadalang.Analysis.Is_Null (Referenced)
-                 and then Canonical_Text (Node) = Simple_Name)
+                (Canonical_Text (Node) = Simple_Name
+                 and then
+                   (Libadalang.Analysis.Is_Null (Referenced)
+                    --  A dotted prefix spelled like the with'd unit
+                    --  ("System.Address") counts even when resolution
+                    --  picks another unit, e.g. a child GNATCOLL.Mmap.System
+                    --  that Ada visibility would not select (FP-069).
+                    or else Node.Parent.Kind =
+                      Libadalang.Common.Ada_Dotted_Name))
             then
                return True;
             end if;
@@ -199,6 +242,103 @@ package body Adalang_Analyzer.Checks.Declarations is
          --  above: conservatively count this subtree as a possible use.
          return True;
    end Any_Reference_To_Unit;
+
+   function Unresolved_Use_Visible_Reference
+     (Unit   : Libadalang.Analysis.Compilation_Unit;
+      Target : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+      Declared : Identifier_Sets.Set;
+
+      procedure Collect_Declared (Node : Libadalang.Analysis.Ada_Node'Class)
+      is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Defining_Name then
+            Declared.Include (Canonical_Text (Node.As_Defining_Name.F_Name));
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            Collect_Declared (Node.Child (I));
+         end loop;
+      end Collect_Declared;
+
+      function Names_Target
+        (Name : Libadalang.Analysis.Name'Class) return Boolean
+      is
+         Target_Text : constant String :=
+           Canonical_Text (Target.P_Defining_Name);
+      begin
+         --  The use clause's own name may fail to resolve too, so fall back
+         --  on its spelling matching the target's full defining name.
+         if Canonical_Text (Name) = Target_Text then
+            return True;
+         end if;
+         return Name.P_Referenced_Decl (Imprecise_Fallback => True) = Target;
+      exception
+         when others =>
+            return False;
+      end Names_Target;
+
+      function Has_Use_Clause
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Use_Package_Clause then
+            for Pkg of Node.As_Use_Package_Clause.F_Packages loop
+               if Names_Target (Pkg) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            if Has_Use_Clause (Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+
+         return False;
+      end Has_Use_Clause;
+
+      function Has_Unresolved_Declared_Name
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Identifier
+           and then Declared.Contains (Canonical_Text (Node))
+         then
+            begin
+               if Libadalang.Analysis.Is_Null
+                 (Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True))
+               then
+                  return True;
+               end if;
+            exception
+               when others =>
+                  return True;
+            end;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            if Has_Unresolved_Declared_Name (Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+
+         return False;
+      end Has_Unresolved_Declared_Name;
+   begin
+      if not Has_Use_Clause (Unit) then
+         return False;
+      end if;
+
+      Collect_Declared (Effective_Package (Target));
+      return Has_Unresolved_Declared_Name (Unit.F_Body);
+   end Unresolved_Use_Visible_Reference;
 
    --  The current scope is deliberately skipped: this rule only diagnoses
    --  hiding across a lexical-scope boundary. Each lookup visits the usually
@@ -562,6 +702,82 @@ package body Adalang_Analyzer.Checks.Declarations is
       end case;
    end Write_Target_Contains_Parameter;
 
+   --  Whether Loop_Stmt, a "for Element of Container" loop, writes through
+   --  its element: the element is a variable view of each component, so an
+   --  assignment to it, a prefixed call on it ("Pin.Set;"), or passing it
+   --  as an actual may modify Container (FP-076). Any call mentioning the
+   --  element counts, since its mode is not resolved here.
+   function Loop_Element_Written
+     (Loop_Stmt : Libadalang.Analysis.For_Loop_Stmt) return Boolean
+   is
+      Element : constant String :=
+        Canonical_Text
+          (Loop_Stmt.F_Spec.As_For_Loop_Spec.F_Var_Decl.F_Id.F_Name);
+
+      function Root_Is_Element
+        (Target : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+         Current : Libadalang.Analysis.Ada_Node := Target.As_Ada_Node;
+      begin
+         loop
+            case Current.Kind is
+               when Libadalang.Common.Ada_Dotted_Name =>
+                  Current := Current.As_Dotted_Name.F_Prefix.As_Ada_Node;
+               when Libadalang.Common.Ada_Call_Expr =>
+                  Current := Current.As_Call_Expr.F_Name.As_Ada_Node;
+               when Libadalang.Common.Ada_Explicit_Deref =>
+                  Current := Current.As_Explicit_Deref.F_Prefix.As_Ada_Node;
+               when Libadalang.Common.Ada_Identifier =>
+                  return Canonical_Text (Current) = Element;
+               when others =>
+                  return False;
+            end case;
+         end loop;
+      end Root_Is_Element;
+
+      function Mentions_Element
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Identifier then
+            return Canonical_Text (Node) = Element;
+         end if;
+         for I in 1 .. Node.Children_Count loop
+            if Mentions_Element (Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Mentions_Element;
+
+      function Writes
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif (Node.Kind = Libadalang.Common.Ada_Assign_Stmt
+                and then Root_Is_Element (Node.As_Assign_Stmt.F_Dest))
+           or else
+             (Node.Kind = Libadalang.Common.Ada_Call_Stmt
+              and then Mentions_Element (Node.As_Call_Stmt.F_Call))
+         then
+            return True;
+         end if;
+         for I in 1 .. Node.Children_Count loop
+            if Writes (Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Writes;
+   begin
+      return Writes (Loop_Stmt.F_Stmts);
+   exception
+      when others =>
+         return True;
+   end Loop_Element_Written;
+
    function Parameter_Is_Written
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Param : Libadalang.Analysis.Param_Spec;
@@ -598,6 +814,15 @@ package body Adalang_Analyzer.Checks.Declarations is
              (Node.Parent.Kind = Libadalang.Common.Ada_Call_Stmt
               and then Contains_Parameter_Reference
                 (Node.As_Call_Expr.F_Name, Param, Name));
+      elsif Node.Kind = Libadalang.Common.Ada_For_Loop_Stmt
+        and then Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec.F_Loop_Type
+          .Kind = Libadalang.Common.Ada_Iter_Type_Of
+        and then Contains_Parameter_Reference
+          (Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec.F_Iter_Expr,
+           Param, Name)
+        and then Loop_Element_Written (Node.As_For_Loop_Stmt)
+      then
+         return True;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt
         and then Node.As_Call_Stmt.F_Call.Kind =
           Libadalang.Common.Ada_Dotted_Name
@@ -828,11 +1053,121 @@ package body Adalang_Analyzer.Checks.Declarations is
             Occurrence => E);
    end Check_Overriding_Indicator;
 
+   --  Whether Subprogram's parameter modes are dictated from outside, so a
+   --  mode change Wrong_Parameter_Mode would suggest is not possible
+   --  (FP-077): it overrides an inherited operation, whose modes it must
+   --  conform to, or its name is the prefix of an 'Access-family attribute
+   --  or an actual in a generic instantiation in the same unit, binding it
+   --  to a fixed profile (e.g. AUnit's "Register_Routine (T,
+   --  Test_CRC_Output'Access, ...)"). Matching by name is conservative:
+   --  an unrelated overload of the same name also suppresses the advice.
+   function Profile_Is_Fixed
+     (Unit       : Libadalang.Analysis.Analysis_Unit;
+      Subprogram : Libadalang.Analysis.Subp_Body) return Boolean
+   is
+      Name : constant String :=
+        Canonical_Text (Subprogram.F_Subp_Spec.F_Subp_Name.F_Name);
+
+      function Binds_Profile
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref then
+            declare
+               Attribute : constant String :=
+                 Canonical_Text (Node.As_Attribute_Ref.F_Attribute);
+               Prefix : constant Libadalang.Analysis.Name :=
+                 Node.As_Attribute_Ref.F_Prefix;
+            begin
+               if (Attribute = "access"
+                   or else Attribute = "unrestricted_access"
+                   or else Attribute = "unchecked_access")
+                 and then
+                   (Canonical_Text (Prefix) = Name
+                    or else
+                      (Prefix.Kind = Libadalang.Common.Ada_Dotted_Name
+                       and then Canonical_Text
+                         (Prefix.As_Dotted_Name.F_Suffix) = Name))
+               then
+                  return True;
+               end if;
+            end;
+         elsif Node.Kind = Libadalang.Common.Ada_Param_Assoc
+           and then not Libadalang.Analysis.Is_Null (Node.Parent)
+           and then not Libadalang.Analysis.Is_Null (Node.Parent.Parent)
+           and then Node.Parent.Parent.Kind in
+             Libadalang.Common.Ada_Generic_Instantiation
+           and then Canonical_Text (Node.As_Param_Assoc.F_R_Expr) = Name
+         then
+            return True;
+         end if;
+
+         for I in 1 .. Node.Children_Count loop
+            if Binds_Profile (Node.Child (I)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Binds_Profile;
+      --  Resolution of the overridden operations can fail on profiles
+      --  Libadalang cannot classify; that is no evidence of overriding.
+      function Overrides_Inherited return Boolean is
+      begin
+         return Subprogram.P_Base_Subp_Declarations
+           (Imprecise_Fallback => True)'Length > 1;
+      exception
+         when others =>
+            return False;
+      end Overrides_Inherited;
+   begin
+      if Subprogram.F_Overriding.Kind =
+        Libadalang.Common.Ada_Overriding_Overriding
+      then
+         return True;
+      end if;
+
+      declare
+         Previous : constant Libadalang.Analysis.Basic_Decl :=
+           Subprogram.P_Previous_Part_For_Decl;
+      begin
+         if not Libadalang.Analysis.Is_Null (Previous)
+           and then Previous.Kind = Libadalang.Common.Ada_Subp_Decl
+           and then Previous.As_Subp_Decl.F_Overriding.Kind =
+             Libadalang.Common.Ada_Overriding_Overriding
+         then
+            return True;
+         end if;
+      end;
+
+      return Overrides_Inherited or else Binds_Profile (Unit.Root);
+   exception
+      when others =>
+         return True;
+   end Profile_Is_Fixed;
+
+   --  Whether Subprogram completes a separate declaration. Resolving the
+   --  previous part can raise Property_Error; that must not abort the
+   --  subprogram's remaining checks, so a failure answers False and the
+   --  body is checked as before FP-074.
+   function Completes_Declaration
+     (Subprogram : Libadalang.Analysis.Subp_Body) return Boolean is
+   begin
+      return not Libadalang.Analysis.Is_Null
+        (Subprogram.P_Previous_Part_For_Decl);
+   exception
+      when others =>
+         return False;
+   end Completes_Declaration;
+
    procedure Analyze_Subprogram  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body)
    is
       Param_Count : Natural := 0;
+      Fixed_Profile : constant Boolean :=
+        Rule_States (Wrong_Parameter_Mode) = Enabled
+        and then Profile_Is_Fixed (Unit, Subprogram);
 
       --  Swappable_Parameters state, threaded across every (Param, Id)
       --  pair in call order so adjacency is checked across Param_Spec
@@ -845,7 +1180,12 @@ package body Adalang_Analyzer.Checks.Declarations is
       Previous_Type : Libadalang.Analysis.Base_Type_Decl :=
         Libadalang.Analysis.No_Base_Type_Decl;
    begin
-      if Rule_States (Missing_Overriding_Indicator) = Enabled then
+      --  A body completing a separate declaration need not repeat the
+      --  indicator: Ada requires it on the declaration, which
+      --  Analyze_Subprogram_Declaration checks (FP-074).
+      if Rule_States (Missing_Overriding_Indicator) = Enabled
+        and then not Completes_Declaration (Subprogram)
+      then
          Check_Overriding_Indicator
            (Unit, Subprogram, Subprogram.F_Subp_Spec,
             Subprogram.F_Overriding);
@@ -882,6 +1222,7 @@ package body Adalang_Analyzer.Checks.Declarations is
                if Rule_States (Wrong_Parameter_Mode) = Enabled
                  and then Param.F_Mode.Kind in
                    Libadalang.Common.Ada_Mode_In_Out_Range
+                 and then not Fixed_Profile
                then
                   declare
                      Name : constant String := Canonical_Text (Id);

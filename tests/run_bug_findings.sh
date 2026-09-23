@@ -154,11 +154,11 @@ fi
 if [ "$(grep -c '\[Dead_Store\]' "$output")" -ne 3 ] \
   || [ "$(grep -c '\[Overwritten_Assignment\]' "$output")" -ne 2 ] \
   || ! grep -F \
-       "data_flow_precision_findings.adb:17:4: warning:" "$output" >/dev/null \
+       "data_flow_precision_findings.adb:18:4: warning:" "$output" >/dev/null \
   || ! grep -F \
-       "data_flow_precision_findings.adb:19:4: warning:" "$output" >/dev/null \
+       "data_flow_precision_findings.adb:20:4: warning:" "$output" >/dev/null \
   || ! grep -F \
-       "data_flow_precision_findings.adb:21:4: warning:" "$output" >/dev/null
+       "data_flow_precision_findings.adb:22:4: warning:" "$output" >/dev/null
 then
    echo "unexpected nested-read or array-component data-flow findings" >&2
    cat "$output" >&2
