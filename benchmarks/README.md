@@ -97,16 +97,21 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-09-22.md) | 1557 | 1334 (85.7%) | 1758 | 1334 (75.9%) |
-| [aws](aws/RESULTS_gnatcheck_2026-09-22.md) | 6255 | 3335 (53.3%) | 11617 | 3325 (28.6%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-09-22.md) | 1847 | 1029 (55.7%) | 2523 | 1027 (40.7%) |
-| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-09-22.md) | 807 | 378 (46.8%) | 1087 | 378 (34.8%) |
-| [cubedos](cubedos/RESULTS_gnatcheck_2026-09-22.md) | 177 | 157 (88.7%) | 653 | 157 (24.0%) |
-| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-09-22.md) | 776 | 626 (80.7%) | 6545 | 626 (9.6%) |
-| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-09-22.md) | 1460 | 1235 (84.6%) | 1475 | 1235 (83.7%) |
-| [saatana](saatana/RESULTS_gnatcheck_2026-09-22.md) | 157 | 96 (61.1%) | 129 | 96 (74.4%) |
-| [project_bias](project_bias/RESULTS_gnatcheck_2026-09-22.md) | 225 | 168 (74.7%) | 299 | 168 (56.2%) |
-| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-09-22.md) | 569 | 444 (78.0%) | 1602 | 425 (26.5%) |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-09-23.md) | 1986 | 1752 (88.2%) | 2196 | 1752 (79.8%) |
+| [aws](aws/RESULTS_gnatcheck_2026-09-23.md) | 6697 | 3625 (54.1%) | 12946 | 3615 (27.9%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-09-23.md) | 2096 | 1261 (60.2%) | 2933 | 1259 (42.9%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-09-23.md) | 860 | 378 (44.0%) | 1087 | 378 (34.8%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-09-23.md) | 303 | 257 (84.8%) | 861 | 257 (29.8%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-09-23.md) | 3044 | 2090 (68.7%) | 10076 | 2090 (20.7%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-09-23.md) | 1852 | 1629 (88.0%) | 1941 | 1629 (83.9%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-09-23.md) | 204 | 134 (65.7%) | 167 | 134 (80.2%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-09-23.md) | 387 | 295 (76.2%) | 440 | 295 (67.0%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-09-23.md) | 769 | 609 (79.2%) | 1849 | 590 (31.9%) |
+
+These totals cover the rule map as extended on 2026-09-23 (next section).
+Re-scored with the map as it stood before, every corpus's AdaLang side is
+identical to the 2026-09-22 run; each `RESULTS_gnatcheck_2026-09-23.md`
+carries both columns.
 
 **Reading the "unmatched" gap.** Most of it is not disagreement — it's the
 comparator's exact-line matching meeting real, explainable conventions:
@@ -127,9 +132,67 @@ real run-to-run variance on this from-source build (an intermittent
 single-worker stack-overflow crash, not corpus-specific); treat exact
 counts as approximate, the qualitative agreement as the reliable part.
 
+## Compiler-warning and style-check pairs (2026-09-23)
+
+GNATcheck's `Warnings` and `Style_Checks` rules pass GNAT's own compiler
+warnings and `-gnaty` style checks through, tagged by switch letter
+(`[warnings:u]`, `[style_checks:M]`). That makes GNAT's front end an
+independent oracle for twelve more AdaLang checks: `Unused_With_Clause`,
+`Unused_Variable`, `Unused_Parameter`, `Wrong_Parameter_Mode`,
+`Overwritten_Assignment`, `Dead_Store`, `Redundant_Type_Conversion`,
+`Self_Assignment`, `Duplicate_With_Clause`, `Constant_Condition`,
+`Long_Line` and `Trailing_Whitespace`. `No_Pragma` (`Forbidden_Pragmas:ALL`)
+and `Missing_Overriding_Indicator` (`Overriding_Indicators`) were added in
+the same refresh: `quality/tool_function_evidence.tsv` already credited
+both with a GNATcheck oracle that the benchmark lane never ran, a gap
+`tests/run_tool_function_evidence.sh` now rejects.
+
+How it works:
+
+- A fourth rule-map column gives the GNATcheck option that produces a
+  tag (`+RWarnings:u`, `+RStyle_Checks:M120`).
+  `benchmarks/gnatcheck_rule_args.awk` builds the arguments.
+- One `-gnatw` letter covers several diagnostics, so
+  `benchmarks/gnatcheck_compare.awk` splits a letter by message before
+  pairing (`warnings:u.unit` against `warnings:u.object`; "condition is
+  always True/False" against validity-based `-gnatwc` warnings AdaLang does
+  not model; a with repeated in one context clause against one repeated
+  from the spec). Unpaired messages are ignored.
+- GNATcheck runs in separate passes: the original rules with `-r` exactly
+  as before, then one pass for the compiler-driven options and one for each
+  other option. In a single invocation the new options made this
+  from-source GNATcheck's workers overflow their stack and drop thousands
+  of findings on 8 of the 10 corpora. Every corpus was then retried until
+  its output contained no worker-crash line.
+
+Cross-corpus totals for the new pairs:
+
+| AdaLang rule | AdaLang | AdaLang-only | GNAT | GNAT-only | Reading |
+| --- | ---: | ---: | ---: | ---: | --- |
+| No_Pragma | 3137 | 51 | 5278 | 2192 | Same pragmas on both sides; the gap is units GNATcheck analyzes and AdaLang does not (dependency projects), and vice versa |
+| Long_Line | 826 | 802 | 24 | 0 | All 24 of GNAT's matched; 801 of AdaLang's extra are coap_spark's RecordFlux-generated files, which switch GNAT's line-length check off with `pragma Style_Checks` |
+| Unused_With_Clause | 80 | 30 | 57 | 7 | CubedOS keeps withs for elaboration and silences GNAT with `pragma Warnings (Off, ...)`; AdaLang does not honor GNAT's warning pragmas |
+| Unused_Parameter | 94 | 83 | 11 | 0 | GNAT exempts overriding operations, `null`/`raise`-only bodies (AWS's SSL stubs) and names like `Dummy` |
+| Wrong_Parameter_Mode | 63 | 63 | 0 | 0 | GNAT's `-gnatwk` only reports an `in out` never modified; AdaLang also reports one never read |
+| Dead_Store | 106 | 106 | 0 | 0 | GNAT's front end reports useless assignments only in simple straight-line shapes, and none occur in these corpora, so this pair is a weak oracle here; the AdaLang-only findings were triaged by sampling instead |
+| Overwritten_Assignment | 9 | 9 | 0 | 0 | As for `Dead_Store` |
+| Unused_Variable | 15 | 14 | 64 | 63 | 63 are Tokeneer's unused exception-choice parameters (`when E : others =>`), which `Unused_Variable` does not examine |
+| Constant_Condition | 12 | 12 | 22 | 22 | GNAT's are range-aware folds (a subtype-bound `Loop_Invariant`), outside AdaLang's flow domain |
+| Redundant_Type_Conversion | 26 | 11 | 19 | 4 | |
+| Trailing_Whitespace | 0 | 0 | 5 | 5 | All in coap_spark's `wolfssl` dependency, which AdaLang does not analyze |
+| Duplicate_With_Clause | 0 | 0 | 1 | 1 | |
+| Missing_Overriding_Indicator, Self_Assignment | 0 | 0 | 0 | 0 | |
+
+Triaging the gaps found twelve analyzer defects, `FP-067`-`FP-078` in
+`quality/known_analysis_issues.tsv` (the corpus-found ones are in the table
+below; `FP-067` and `FP-068` came from probe fixtures written while
+establishing the pairs). All are fixed with regression tests. The remaining
+differences are the policy choices and coverage gaps in the "Reading"
+column, not defects.
+
 ## What these benchmarks have found, in total
 
-Fifteen real analyzer bugs, all discovered by running against
+Twenty-five real analyzer bugs, all discovered by running against
 independently authored code no one on this project wrote or reviewed for
 analyzer blind spots — the value external-corpus validation is meant to
 deliver (`quality/external_corpus_findings.md`), each fixed with a
@@ -152,6 +215,16 @@ regression test:
 | `FP-064` | spark_testsuite | `--verify` proved an index into an array *slice* (`Items (1 .. Last) (1)`) safe against the array type's index subtype, missing that the slice bounds `1 .. Last` are empty when `Last = 0` — a possible unsoundness |
 | `FP-065` | spark_testsuite | `--verify` reported `pragma Assert (False)` as a definite error on a branch whose guard it could not evaluate, where the branch is in fact unreachable (the guard line itself always raises) |
 | `FP-066` | aws | `Null_Statement` flagged every `null;` unconditionally, including the sole-statement idiom (`exception when X => null;`, a no-op case alternative) GNATcheck's own `Redundant_Null_Statements` rule deliberately exempts — found via GNATcheck oracle-comparison triage rather than a fresh run |
+| `FP-069` | gnatcoll | `Unused_With_Clause` flagged used withs of package renamings (`GNAT.OS_Lib`), generic instances, and units whose use-visible names Libadalang failed to resolve (22 findings on gnatcoll-core, 2 after) |
+| `FP-070` | gnatcoll | `Dead_Store` treated a write through an access-typed local (`S (1) := ...`, the very write `Capitalize` exists to make) as a write to the local |
+| `FP-071` | gnatcoll | `Dead_Store`/`Overwritten_Assignment` missed reads by nested subprograms (up-level references) |
+| `FP-072` | sparknacl | `Dead_Store` flagged `Sanitize (Key);` key wipes that `pragma Inspection_Point` makes observable |
+| `FP-073` | sparknacl | `Dead_Store` treated `Key (I)` as a different component from a written `Key (0 .. 31)` |
+| `FP-074` | gnatcoll | `Missing_Overriding_Indicator` flagged a body whose separate declaration already says `overriding` |
+| `FP-075` | ada_drivers_library, tokeneer, coap_spark | `Dead_Store`/`Overwritten_Assignment` flagged deliberate sinks (`Dummy := Periph.DR;`, `Success => Ignored`), which GNAT's own convention exempts |
+| `FP-076` | ada_drivers_library | `Wrong_Parameter_Mode` missed writes through a `for Pin of Pins` element (`Pin.Set;`) |
+| `FP-077` | ada_drivers_library, cubedos | `Wrong_Parameter_Mode` advised changing modes fixed by overriding or by an `'Access` binding (AUnit test routines) |
+| `FP-078` | aws | Enabling `Unused_With_Clause` abandoned three whole files on an unguarded Libadalang property error, losing every check's findings there |
 
 `FP-044`'s own two originating findings (gnatcoll-buffer.adb's
 `Current_Text_Position`) persist despite the fix, unlike every other row
