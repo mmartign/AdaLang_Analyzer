@@ -97,21 +97,34 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-09-23.md) | 1986 | 1752 (88.2%) | 2196 | 1752 (79.8%) |
-| [aws](aws/RESULTS_gnatcheck_2026-09-23.md) | 6697 | 3625 (54.1%) | 12946 | 3615 (27.9%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-09-23.md) | 2096 | 1261 (60.2%) | 2933 | 1259 (42.9%) |
-| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-09-23.md) | 860 | 378 (44.0%) | 1087 | 378 (34.8%) |
-| [cubedos](cubedos/RESULTS_gnatcheck_2026-09-23.md) | 303 | 257 (84.8%) | 861 | 257 (29.8%) |
-| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-09-23.md) | 3044 | 2090 (68.7%) | 10076 | 2090 (20.7%) |
-| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-09-23.md) | 1852 | 1629 (88.0%) | 1941 | 1629 (83.9%) |
-| [saatana](saatana/RESULTS_gnatcheck_2026-09-23.md) | 204 | 134 (65.7%) | 167 | 134 (80.2%) |
-| [project_bias](project_bias/RESULTS_gnatcheck_2026-09-23.md) | 387 | 295 (76.2%) | 440 | 295 (67.0%) |
-| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-09-23.md) | 769 | 609 (79.2%) | 1849 | 590 (31.9%) |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-09-24.md) | 1986 | 1752 (88.2%) | 2196 | 1752 (79.8%) |
+| [aws](aws/RESULTS_gnatcheck_2026-09-24.md) | 6701 | 3635 (54.2%) | 12991 | 3625 (27.9%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-09-24.md) | 2108 | 1269 (60.2%) | 2943 | 1267 (43.1%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-09-24.md) | 860 | 425 (49.4%) | 1136 | 425 (37.4%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-09-24.md) | 304 | 258 (84.9%) | 862 | 258 (29.9%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-09-24.md) | 3066 | 2092 (68.2%) | 10094 | 2092 (20.7%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-09-24.md) | 1852 | 1629 (88.0%) | 1941 | 1629 (83.9%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-09-24.md) | 204 | 134 (65.7%) | 167 | 134 (80.2%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-09-24.md) | 387 | 295 (76.2%) | 440 | 295 (67.0%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-09-24.md) | 772 | 611 (79.1%) | 1851 | 592 (32.0%) |
 
-These totals cover the rule map as extended on 2026-09-23 (next section).
-Re-scored with the map as it stood before, every corpus's AdaLang side is
-identical to the 2026-09-22 run; each `RESULTS_gnatcheck_2026-09-23.md`
-carries both columns.
+Each corpus keeps one current results file, `RESULTS_gnatcheck_2026-09-24.md`
+(earlier runs are in the Git history), with per-rule tables for both
+tools and the known, explained differences. The 2026-09-24 refresh
+corrected two harness defects: the Ada_Drivers_Library runner had split
+every extra GNATcheck pass at spaces (an indented `IFS`), so the fourteen
+pairs added on 2026-09-23 were never checked on that corpus; and
+GNATcheck's `Duplicate_Branches` ignores branches under 4 statements or 14
+tokens by default, which hid every pair on all ten corpora. It now runs
+with `min_stmt=1,min_size=1` and, like `Same_Tests`, is matched on the
+line it names as the duplicate (the one AdaLang reports). Across the ten
+corpora, GNATcheck confirms 26 of AdaLang's 50 `Identical_Branches`/
+`Identical_Case_Alternative` findings; every other one is a later member
+of a run of identical adjacent branches, which GNATcheck reports once per
+construct (20 of them in a single coap_spark lookup-style case
+expression).
+Investigating the pair found `FP-079`-`FP-082` (see
+`quality/known_analysis_issues.tsv`).
 
 **Reading the "unmatched" gap.** Most of it is not disagreement — it's the
 comparator's exact-line matching meeting real, explainable conventions:
@@ -164,12 +177,16 @@ How it works:
   from-source GNATcheck's workers overflow their stack and drop thousands
   of findings on 8 of the 10 corpora. Every corpus was then retried until
   its output contained no worker-crash line.
+- On Ada_Drivers_Library, GNATcheck cannot compile the units (its variant
+  projects lack dependencies such as `stm32_svd.ads`), so the compiler-
+  driven pairs have no GNAT side there; that corpus says nothing about
+  them either way.
 
 Cross-corpus totals for the new pairs:
 
 | AdaLang rule | AdaLang | AdaLang-only | GNAT | GNAT-only | Reading |
 | --- | ---: | ---: | ---: | ---: | --- |
-| No_Pragma | 3137 | 51 | 5278 | 2192 | Same pragmas on both sides; the gap is units GNATcheck analyzes and AdaLang does not (dependency projects), and vice versa |
+| No_Pragma | 3137 | 8 | 5321 | 2192 | Same pragmas on both sides; the gap is units GNATcheck analyzes and AdaLang does not (dependency projects), and vice versa |
 | Long_Line | 826 | 802 | 24 | 0 | All 24 of GNAT's matched; 801 of AdaLang's extra are coap_spark's RecordFlux-generated files, which switch GNAT's line-length check off with `pragma Style_Checks` |
 | Unused_With_Clause | 80 | 30 | 57 | 7 | CubedOS keeps withs for elaboration and silences GNAT with `pragma Warnings (Off, ...)`; AdaLang does not honor GNAT's warning pragmas |
 | Unused_Parameter | 94 | 83 | 11 | 0 | GNAT exempts overriding operations, `null`/`raise`-only bodies (AWS's SSL stubs) and names like `Dummy` |
@@ -192,11 +209,13 @@ column, not defects.
 
 ## What these benchmarks have found, in total
 
-Twenty-five real analyzer bugs, all discovered by running against
+Twenty-nine real analyzer bugs, all discovered by running against
 independently authored code no one on this project wrote or reviewed for
 analyzer blind spots — the value external-corpus validation is meant to
-deliver (`quality/external_corpus_findings.md`), each fixed with a
-regression test:
+deliver (`quality/external_corpus_findings.md`), each fixed, with a
+regression test wherever the failure can be reproduced outside the real
+corpus (`FP-078`, `FP-080` and `FP-082` need a real Libadalang resolution
+failure and are verified on the corpus instead):
 
 | ID | Corpus that found it | Bug |
 | --- | --- | --- |
@@ -225,6 +244,10 @@ regression test:
 | `FP-076` | ada_drivers_library | `Wrong_Parameter_Mode` missed writes through a `for Pin of Pins` element (`Pin.Set;`) |
 | `FP-077` | ada_drivers_library, cubedos | `Wrong_Parameter_Mode` advised changing modes fixed by overriding or by an `'Access` binding (AUnit test routines) |
 | `FP-078` | aws | Enabling `Unused_With_Clause` abandoned three whole files on an unguarded Libadalang property error, losing every check's findings there |
+| `FP-079` | coap_spark | `Identical_Case_Alternative` checked case statements but never case expressions |
+| `FP-080` | cubedos | Twelve helpers resolved names in their declarations, outside their own exception handler; with `Non_Short_Circuit_Condition` enabled, a resolution failure dropped every other check on the `if` statement |
+| `FP-081` | gnatcoll | Any call with a positional argument made `Non_Short_Circuit_Condition` and `No_Dispatching_Call` raise on a null child, silently skipping every later check on the statement or call (thousands of locations on gnatcoll-core) |
+| `FP-082` | gnatcoll | One check's resolution failure skipped every later check on the same node; each check now has its own handler (114 findings recovered on gnatcoll-core with all checks enabled) |
 
 `FP-044`'s own two originating findings (gnatcoll-buffer.adb's
 `Current_Text_Position`) persist despite the fix, unlike every other row

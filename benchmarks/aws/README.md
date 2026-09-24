@@ -74,10 +74,9 @@ against GNATcheck's, for the rule pairs in `benchmarks/gnatcheck_rule_map.tsv`
 (see `benchmarks/README.md`'s GNATcheck section and
 `benchmarks/sparknacl/README.md`'s lane for the shared setup — needs
 `GNATCHECK`/`GNATCHECK_ENV` set the same way). See
-`RESULTS_gnatcheck_2026-08-29.md`: this corpus's real,
-non-SPARK, real-world code surfaces a systematic spec/body
+`RESULTS_gnatcheck_2026-09-24.md` for the current results: this corpus's
+real, non-SPARK, real-world code surfaces a systematic spec/body
 reporting-location mismatch and a genuine scope-breadth difference the
-rule-name-level comparison didn't predict. See
-`RESULTS_gnatcheck_2026-09-22.md` for a follow-up re-run confirming the
-`FP-066` fix (`Null_Statement`) found by triaging this corpus's unmatched
-gap.
+rule-name-level comparison didn't predict, and triaging its unmatched gap
+found the `FP-066` fix (`Null_Statement`). Earlier runs are in the Git
+history.
