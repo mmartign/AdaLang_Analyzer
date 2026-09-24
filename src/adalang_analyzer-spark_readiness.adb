@@ -82,21 +82,24 @@ package body Adalang_Analyzer.SPARK_Readiness is
    function Own_SPARK_Mode
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return SPARK_Mode_State
    is
-      Aspect : constant Libadalang.Analysis.Aspect :=
-        Decl.P_Get_Aspect
-          (Langkit_Support.Text.To_Unbounded_Text
-             (Langkit_Support.Text.To_Text ("SPARK_Mode")));
    begin
-      if not Libadalang.Analysis.Exists (Aspect) then
-         return (Has_Mode => False, Is_Off => False);
-      end if;
-      return
-        (Has_Mode => True,
-         Is_Off   =>
-           not Libadalang.Analysis.Is_Null
-             (Libadalang.Analysis.Value (Aspect))
-           and then Normalize_Rule_Name
-             (Node_Text (Libadalang.Analysis.Value (Aspect))) = "off");
+      declare
+         Aspect : constant Libadalang.Analysis.Aspect :=
+           Decl.P_Get_Aspect
+             (Langkit_Support.Text.To_Unbounded_Text
+                (Langkit_Support.Text.To_Text ("SPARK_Mode")));
+      begin
+         if not Libadalang.Analysis.Exists (Aspect) then
+            return (Has_Mode => False, Is_Off => False);
+         end if;
+         return
+           (Has_Mode => True,
+            Is_Off   =>
+              not Libadalang.Analysis.Is_Null
+                (Libadalang.Analysis.Value (Aspect))
+              and then Normalize_Rule_Name
+                (Node_Text (Libadalang.Analysis.Value (Aspect))) = "off");
+      end;
    exception
       when others =>
          return (Has_Mode => False, Is_Off => False);
@@ -824,13 +827,15 @@ package body Adalang_Analyzer.SPARK_Readiness is
          end loop;
          return Result;
       end Best_Of_Kind;
-
-      Decl_Match : constant Libadalang.Analysis.Base_Subp_Spec :=
-        Best_Of_Kind (Skip_Bodies => True);
    begin
-      if not Libadalang.Analysis.Is_Null (Decl_Match) then
-         return Decl_Match;
-      end if;
+      declare
+         Decl_Match : constant Libadalang.Analysis.Base_Subp_Spec :=
+           Best_Of_Kind (Skip_Bodies => True);
+      begin
+         if not Libadalang.Analysis.Is_Null (Decl_Match) then
+            return Decl_Match;
+         end if;
+      end;
       return Best_Of_Kind (Skip_Bodies => False);
    exception
       when others =>
@@ -1757,11 +1762,14 @@ package body Adalang_Analyzer.SPARK_Readiness is
    function Is_Entry_Call (Node : Libadalang.Analysis.Name'Class)
      return Boolean
    is
-      Decl : constant Libadalang.Analysis.Basic_Decl :=
-        Node.P_Referenced_Decl (Imprecise_Fallback => True);
    begin
-      return not Libadalang.Analysis.Is_Null (Decl)
-        and then Decl.Kind = Libadalang.Common.Ada_Entry_Decl;
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Node.P_Referenced_Decl (Imprecise_Fallback => True);
+      begin
+         return not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind = Libadalang.Common.Ada_Entry_Decl;
+      end;
    exception
       when others =>
          return False;

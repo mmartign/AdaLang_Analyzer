@@ -673,21 +673,24 @@ package body Adalang_Analyzer.Flow_Interp is
    function Own_SPARK_Mode
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return SPARK_Mode_State
    is
-      Aspect : constant Libadalang.Analysis.Aspect :=
-        Decl.P_Get_Aspect
-          (Langkit_Support.Text.To_Unbounded_Text
-             (Langkit_Support.Text.To_Text ("SPARK_Mode")));
    begin
-      if not Libadalang.Analysis.Exists (Aspect) then
-         return (Has_Mode => False, Is_Off => False);
-      end if;
-      return
-        (Has_Mode => True,
-         Is_Off   =>
-           not Libadalang.Analysis.Is_Null
-             (Libadalang.Analysis.Value (Aspect))
-           and then Normalized_Text (Libadalang.Analysis.Value (Aspect)) =
-             "off");
+      declare
+         Aspect : constant Libadalang.Analysis.Aspect :=
+           Decl.P_Get_Aspect
+             (Langkit_Support.Text.To_Unbounded_Text
+                (Langkit_Support.Text.To_Text ("SPARK_Mode")));
+      begin
+         if not Libadalang.Analysis.Exists (Aspect) then
+            return (Has_Mode => False, Is_Off => False);
+         end if;
+         return
+           (Has_Mode => True,
+            Is_Off   =>
+              not Libadalang.Analysis.Is_Null
+                (Libadalang.Analysis.Value (Aspect))
+              and then Normalized_Text (Libadalang.Analysis.Value (Aspect)) =
+                "off");
+      end;
    exception
       when others =>
          return (Has_Mode => False, Is_Off => False);

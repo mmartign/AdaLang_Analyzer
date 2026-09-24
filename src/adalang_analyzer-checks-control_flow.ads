@@ -63,6 +63,12 @@ private package Adalang_Analyzer.Checks.Control_Flow is
    --  Compares every case choice against every earlier choice to flag
    --  Overlapping_Case_Ranges and Unreachable_Case_Alternative.
 
+   procedure Analyze_Case_Expression
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Expr : Libadalang.Analysis.Case_Expr);
+   --  The case-expression counterpart of Analyze_Case_Statement's
+   --  Identical_Case_Alternative check.
+
    procedure Analyze_Infinite_Loop
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Loop_Node : Libadalang.Analysis.Base_Loop_Stmt);

@@ -31,11 +31,14 @@ package body Adalang_Analyzer.Checks.Expressions is
    function Is_Floating_Expression
      (Node : Libadalang.Analysis.Expr'Class) return Boolean
    is
-      Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
-        Node.P_Expression_Type;
    begin
-      return not Libadalang.Analysis.Is_Null (Expr_Type)
-        and then Expr_Type.P_Is_Float_Type (Node);
+      declare
+         Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Node.P_Expression_Type;
+      begin
+         return not Libadalang.Analysis.Is_Null (Expr_Type)
+           and then Expr_Type.P_Is_Float_Type (Node);
+      end;
    exception
       when others =>
          --  Name resolution can legitimately fail for incomplete source.
@@ -51,13 +54,16 @@ package body Adalang_Analyzer.Checks.Expressions is
    function Is_Standard_Boolean_Expression
      (Node : Libadalang.Analysis.Expr'Class) return Boolean
    is
-      Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
-        Node.P_Expression_Type;
    begin
-      return not Libadalang.Analysis.Is_Null (Expr_Type)
-        and then Langkit_Support.Text.To_UTF8
-                   (Expr_Type.P_Canonical_Fully_Qualified_Name) =
-                     "standard.boolean";
+      declare
+         Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Node.P_Expression_Type;
+      begin
+         return not Libadalang.Analysis.Is_Null (Expr_Type)
+           and then Langkit_Support.Text.To_UTF8
+                      (Expr_Type.P_Canonical_Fully_Qualified_Name) =
+                        "standard.boolean";
+      end;
    exception
       when others =>
          --  Name resolution can legitimately fail for incomplete source.
@@ -71,11 +77,14 @@ package body Adalang_Analyzer.Checks.Expressions is
    function Is_Integer_Expression
      (Node : Libadalang.Analysis.Expr'Class) return Boolean
    is
-      Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
-        Node.P_Expression_Type;
    begin
-      return not Libadalang.Analysis.Is_Null (Expr_Type)
-        and then Expr_Type.P_Is_Int_Type;
+      declare
+         Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Node.P_Expression_Type;
+      begin
+         return not Libadalang.Analysis.Is_Null (Expr_Type)
+           and then Expr_Type.P_Is_Int_Type;
+      end;
    exception
       when others =>
          --  Name resolution can legitimately fail for incomplete source.

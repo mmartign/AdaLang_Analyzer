@@ -12,6 +12,8 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Exceptions;
+
 with Libadalang.Analysis;
 
 --  The rule engine: the single recursive AST walk that drives the whole
@@ -32,13 +34,22 @@ package Adalang_Analyzer.Checks is
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class);
    --  Runs every enabled check against Node and recurses into its
-   --  children. A semantic property query inside a single node's checks
-   --  (name resolution, expression typing, ...) that raises Property_Error
-   --  is confined to that node: it is counted in
-   --  Adalang_Analyzer.Report.Skipped_Nodes rather than aborting analysis
-   --  of the rest of the file.
+   --  children. A semantic property query inside one check (name
+   --  resolution, expression typing, ...) that raises Property_Error is
+   --  confined to that check at that node: it is counted in
+   --  Adalang_Analyzer.Report.Skipped_Nodes rather than skipping the
+   --  node's other checks or aborting analysis of the rest of the file.
 
 private
+
+   procedure Note_Skipped_Check
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Exc  : Ada.Exceptions.Exception_Occurrence);
+   --  Counts and logs (once per distinct message) a check abandoned at
+   --  Node because a Libadalang property query raised. Each independent
+   --  check block calls this from its own handler, so one check's
+   --  resolution failure cannot suppress the checks that follow it on the
+   --  same node (FP-082).
 
    function Is_Ada_Unchecked_Deallocation
      (Name : Libadalang.Analysis.Name'Class) return Boolean;

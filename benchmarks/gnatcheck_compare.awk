@@ -128,6 +128,14 @@ BEGIN {
       gc_rule = substr(line, rule_start + 1, length(line) - rule_start - 1)
       gc_rule = refine_warning(gc_rule, line)
       if (!(gc_rule in all_gc)) continue
+      #  duplicate_branches and same_tests flag the FIRST of two identical
+      #  branches/conditions and name the second ("code duplicated at line
+      #  N"); Identical_Branches, Identical_Case_Alternative and
+      #  Duplicate_Condition flag the second. Key on the named line.
+      if ((gc_rule == "duplicate_branches" || gc_rule == "same_tests") \
+          && match(line, /duplicated at line [0-9]+/)) {
+         ln = substr(line, RSTART + 19, RLENGTH - 19) + 0
+      }
       key = file SUBSEP ln SUBSEP gc_rule
       if (!(key in gc_present)) gc_total[gc_rule]++
       gc_present[key]++

@@ -234,6 +234,46 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       end loop;
    end Report_Identical_Case_Alternatives;
 
+   --  The case-expression counterpart of Report_Identical_Case_Alternatives.
+   procedure Report_Identical_Case_Expr_Alternatives
+     (Unit         : Libadalang.Analysis.Analysis_Unit;
+      Alternatives : Libadalang.Analysis.Case_Expr_Alternative_List)
+   is
+      Previous : Unbounded_String;
+      Has_Previous : Boolean := False;
+   begin
+      if Rule_States (Identical_Case_Alternative) /= Enabled then
+         return;
+      end if;
+
+      for Alt of Alternatives loop
+         declare
+            Expr : constant Libadalang.Analysis.Expr :=
+              Alt.As_Case_Expr_Alternative.F_Expr;
+            Current : constant String := Canonical_Text (Expr);
+         begin
+            if Has_Previous
+              and then Current /= ""
+              and then Current = To_String (Previous)
+            then
+               Report_Rule_Violation
+                 (Unit, Expr, Identical_Case_Alternative,
+                  "case alternative expression is identical to the " &
+                    "preceding alternative");
+            end if;
+            Previous := To_Unbounded_String (Current);
+            Has_Previous := True;
+         end;
+      end loop;
+   end Report_Identical_Case_Expr_Alternatives;
+
+   procedure Analyze_Case_Expression
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Expr : Libadalang.Analysis.Case_Expr) is
+   begin
+      Report_Identical_Case_Expr_Alternatives (Unit, Expr.F_Cases);
+   end Analyze_Case_Expression;
+
    --  Reports Null_Case_Alternative when a case alternative's body has no
    --  substantive statement (only null statements and/or pragmas), so the
    --  alternative has no effect. The case-statement counterpart of
@@ -331,13 +371,16 @@ package body Adalang_Analyzer.Checks.Control_Flow is
    function Is_Discard_Name
      (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
    is
-      Name : constant String := Canonical_Text (Decl.P_Defining_Name);
    begin
-      for Marker of Discard_Name_Markers loop
-         if Ada.Strings.Fixed.Index (Name, Marker.all) > 0 then
-            return True;
-         end if;
-      end loop;
+      declare
+         Name : constant String := Canonical_Text (Decl.P_Defining_Name);
+      begin
+         for Marker of Discard_Name_Markers loop
+            if Ada.Strings.Fixed.Index (Name, Marker.all) > 0 then
+               return True;
+            end if;
+         end loop;
+      end;
       return False;
    exception
       when others =>
@@ -396,10 +439,10 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          return False;
       end Has_Inspection_Point;
 
-      Callee : constant Libadalang.Analysis.Basic_Decl :=
-        Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      Callee : Libadalang.Analysis.Basic_Decl;
       Callee_Body : Libadalang.Analysis.Basic_Decl;
    begin
+      Callee := Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
       if Libadalang.Analysis.Is_Null (Callee) then
          return False;
       elsif Callee.Kind = Libadalang.Common.Ada_Subp_Body then

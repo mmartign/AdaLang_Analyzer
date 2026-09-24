@@ -266,12 +266,11 @@ package body Adalang_Analyzer.Checks.Declarations is
       function Names_Target
         (Name : Libadalang.Analysis.Name'Class) return Boolean
       is
-         Target_Text : constant String :=
-           Canonical_Text (Target.P_Defining_Name);
       begin
          --  The use clause's own name may fail to resolve too, so fall back
          --  on its spelling matching the target's full defining name.
-         if Canonical_Text (Name) = Target_Text then
+         if Canonical_Text (Name) = Canonical_Text (Target.P_Defining_Name)
+         then
             return True;
          end if;
          return Name.P_Referenced_Decl (Imprecise_Fallback => True) = Target;
@@ -1183,179 +1182,229 @@ package body Adalang_Analyzer.Checks.Declarations is
       --  A body completing a separate declaration need not repeat the
       --  indicator: Ada requires it on the declaration, which
       --  Analyze_Subprogram_Declaration checks (FP-074).
-      if Rule_States (Missing_Overriding_Indicator) = Enabled
-        and then not Completes_Declaration (Subprogram)
-      then
-         Check_Overriding_Indicator
-           (Unit, Subprogram, Subprogram.F_Subp_Spec,
-            Subprogram.F_Overriding);
-      end if;
+      begin
+         if Rule_States (Missing_Overriding_Indicator) = Enabled
+           and then not Completes_Declaration (Subprogram)
+         then
+            Check_Overriding_Indicator
+              (Unit, Subprogram, Subprogram.F_Subp_Spec,
+               Subprogram.F_Overriding);
+         end if;
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
 
-      if Rule_States (Unused_Parameter) = Enabled
-        or else Rule_States (Wrong_Parameter_Mode) = Enabled
-        or else Rule_States (Too_Many_Parameters) = Enabled
-        or else Rule_States (Swappable_Parameters) = Enabled
-      then
-         for Param of Subprogram.F_Subp_Spec.P_Params loop
-            for Id of Param.F_Ids loop
-               Param_Count := Param_Count + 1;
+      begin
+         if Rule_States (Unused_Parameter) = Enabled
+           or else Rule_States (Wrong_Parameter_Mode) = Enabled
+           or else Rule_States (Too_Many_Parameters) = Enabled
+           or else Rule_States (Swappable_Parameters) = Enabled
+         then
+            for Param of Subprogram.F_Subp_Spec.P_Params loop
+               for Id of Param.F_Ids loop
+                  Param_Count := Param_Count + 1;
 
-               if Rule_States (Unused_Parameter) = Enabled then
-                  declare
-                     Name : constant String := Canonical_Text (Id);
-                  begin
-                     if not References_Named_Declaration
-                       (Subprogram.F_Decls,
-                        Libadalang.Analysis.Basic_Decl (Param), Name)
-                       and then not References_Named_Declaration
-                         (Subprogram.F_Stmts,
-                          Libadalang.Analysis.Basic_Decl (Param), Name)
-                     then
-                        Report_Rule_Violation
-                          (Unit, Id, Unused_Parameter,
-                           "parameter '" & Node_Text (Id) &
-                             "' is never referenced");
-                     end if;
-                  end;
-               end if;
+                  if Rule_States (Unused_Parameter) = Enabled then
+                     declare
+                        Name : constant String := Canonical_Text (Id);
+                     begin
+                        if not References_Named_Declaration
+                          (Subprogram.F_Decls,
+                           Libadalang.Analysis.Basic_Decl (Param), Name)
+                          and then not References_Named_Declaration
+                            (Subprogram.F_Stmts,
+                             Libadalang.Analysis.Basic_Decl (Param), Name)
+                        then
+                           Report_Rule_Violation
+                             (Unit, Id, Unused_Parameter,
+                              "parameter '" & Node_Text (Id) &
+                                "' is never referenced");
+                        end if;
+                     end;
+                  end if;
 
-               if Rule_States (Wrong_Parameter_Mode) = Enabled
-                 and then Param.F_Mode.Kind in
-                   Libadalang.Common.Ada_Mode_In_Out_Range
-                 and then not Fixed_Profile
-               then
-                  declare
-                     Name : constant String := Canonical_Text (Id);
-                     Is_Read : constant Boolean :=
-                       Parameter_Is_Read (Subprogram.F_Decls, Param, Name)
-                       or else Parameter_Is_Read
-                         (Subprogram.F_Stmts, Param, Name);
-                     Is_Written : constant Boolean :=
-                       Parameter_Is_Written (Subprogram.F_Decls, Param, Name)
-                       or else Parameter_Is_Written
-                         (Subprogram.F_Stmts, Param, Name);
-                     Is_Wholly_Written : constant Boolean :=
-                       Parameter_Is_Wholly_Written
-                         (Subprogram.F_Decls, Param, Name)
-                       or else Parameter_Is_Wholly_Written
-                         (Subprogram.F_Stmts, Param, Name);
-                  begin
-                     if Is_Read and then not Is_Written then
-                        Report_Rule_Violation
-                          (Unit, Id, Wrong_Parameter_Mode,
-                           "parameter '" & Node_Text (Id) &
-                             "' is only read; use mode in");
-                     elsif Is_Wholly_Written and then not Is_Read then
-                        Report_Rule_Violation
-                          (Unit, Id, Wrong_Parameter_Mode,
-                           "parameter '" & Node_Text (Id) &
-                             "' is only written; use mode out");
-                     end if;
-                  end;
-               end if;
+                  if Rule_States (Wrong_Parameter_Mode) = Enabled
+                    and then Param.F_Mode.Kind in
+                      Libadalang.Common.Ada_Mode_In_Out_Range
+                    and then not Fixed_Profile
+                  then
+                     declare
+                        Name : constant String := Canonical_Text (Id);
+                        Is_Read : constant Boolean :=
+                          Parameter_Is_Read (Subprogram.F_Decls, Param, Name)
+                          or else Parameter_Is_Read
+                            (Subprogram.F_Stmts, Param, Name);
+                        Is_Written : constant Boolean :=
+                          Parameter_Is_Written (Subprogram.F_Decls, Param, Name)
+                          or else Parameter_Is_Written
+                            (Subprogram.F_Stmts, Param, Name);
+                        Is_Wholly_Written : constant Boolean :=
+                          Parameter_Is_Wholly_Written
+                            (Subprogram.F_Decls, Param, Name)
+                          or else Parameter_Is_Wholly_Written
+                            (Subprogram.F_Stmts, Param, Name);
+                     begin
+                        if Is_Read and then not Is_Written then
+                           Report_Rule_Violation
+                             (Unit, Id, Wrong_Parameter_Mode,
+                              "parameter '" & Node_Text (Id) &
+                                "' is only read; use mode in");
+                        elsif Is_Wholly_Written and then not Is_Read then
+                           Report_Rule_Violation
+                             (Unit, Id, Wrong_Parameter_Mode,
+                              "parameter '" & Node_Text (Id) &
+                                "' is only written; use mode out");
+                        end if;
+                     end;
+                  end if;
 
-               if Rule_States (Swappable_Parameters) = Enabled then
-                  declare
-                     --  Default mode (no "in"/"out"/"in out" written at
-                     --  all) is mode in by language definition, so it is
-                     --  normalized to Ada_Mode_In here; otherwise a bare
-                     --  "X : T" next to an explicit "Y : in T" would be
-                     --  the same risk but go undetected.
-                     Mode : constant Libadalang.Common.Ada_Node_Kind_Type :=
-                       (if Param.F_Mode.Kind = Libadalang.Common.Ada_Mode_Default
-                        then Libadalang.Common.Ada_Mode_In
-                        else Param.F_Mode.Kind);
-                     Type_Decl : constant Libadalang.Analysis.Base_Type_Decl :=
-                       Param.F_Type_Expr.P_Designated_Type_Decl;
-                  begin
-                     if not Libadalang.Analysis.Is_Null (Previous_Id)
-                       and then not Libadalang.Analysis.Is_Null (Type_Decl)
-                       and then not Libadalang.Analysis.Is_Null (Previous_Type)
-                       and then Mode = Previous_Mode
-                       and then Libadalang.Analysis."=" (Type_Decl, Previous_Type)
-                     then
-                        Report_Rule_Violation
-                          (Unit, Id, Swappable_Parameters,
-                           "parameter '" & Node_Text (Id) &
-                             "' has the same mode and type as the " &
-                             "preceding parameter '" &
-                             Node_Text (Previous_Id) &
-                             "'; a positional call could swap them " &
-                             "undetected");
-                     end if;
+                  if Rule_States (Swappable_Parameters) = Enabled then
+                     declare
+                        --  Default mode (no "in"/"out"/"in out" written at
+                        --  all) is mode in by language definition, so it is
+                        --  normalized to Ada_Mode_In here; otherwise a bare
+                        --  "X : T" next to an explicit "Y : in T" would be
+                        --  the same risk but go undetected.
+                        Mode : constant Libadalang.Common.Ada_Node_Kind_Type :=
+                          (if Param.F_Mode.Kind = Libadalang.Common.Ada_Mode_Default
+                           then Libadalang.Common.Ada_Mode_In
+                           else Param.F_Mode.Kind);
+                        Type_Decl : constant Libadalang.Analysis.Base_Type_Decl :=
+                          Param.F_Type_Expr.P_Designated_Type_Decl;
+                     begin
+                        if not Libadalang.Analysis.Is_Null (Previous_Id)
+                          and then not Libadalang.Analysis.Is_Null (Type_Decl)
+                          and then not Libadalang.Analysis.Is_Null (Previous_Type)
+                          and then Mode = Previous_Mode
+                          and then Libadalang.Analysis."=" (Type_Decl, Previous_Type)
+                        then
+                           Report_Rule_Violation
+                             (Unit, Id, Swappable_Parameters,
+                              "parameter '" & Node_Text (Id) &
+                                "' has the same mode and type as the " &
+                                "preceding parameter '" &
+                                Node_Text (Previous_Id) &
+                                "'; a positional call could swap them " &
+                                "undetected");
+                        end if;
 
-                     Previous_Id   := Id.As_Defining_Name;
-                     Previous_Mode := Mode;
-                     Previous_Type := Type_Decl;
-                  end;
-               end if;
+                        Previous_Id   := Id.As_Defining_Name;
+                        Previous_Mode := Mode;
+                        Previous_Type := Type_Decl;
+                     end;
+                  end if;
+               end loop;
             end loop;
-         end loop;
-      end if;
+         end if;
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
 
-      if Rule_States (Too_Many_Parameters) = Enabled
-        and then Param_Count > Parameter_Threshold
-      then
-         Report_Rule_Violation
-           (Unit, Subprogram.F_Subp_Spec.P_Name, Too_Many_Parameters,
-            "parameter count " & To_Decimal (Param_Count) &
-              " exceeds threshold " & To_Decimal (Parameter_Threshold));
-      end if;
+      begin
+         if Rule_States (Too_Many_Parameters) = Enabled
+           and then Param_Count > Parameter_Threshold
+         then
+            Report_Rule_Violation
+              (Unit, Subprogram.F_Subp_Spec.P_Name, Too_Many_Parameters,
+               "parameter count " & To_Decimal (Param_Count) &
+                 " exceeds threshold " & To_Decimal (Parameter_Threshold));
+         end if;
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
 
-      if Rule_States (Unused_Variable) = Enabled then
-         Check_Unused_Variables_In_Scope
-           (Unit, Subprogram.F_Decls.F_Decls, Subprogram.F_Stmts);
-      end if;
+      begin
+         if Rule_States (Unused_Variable) = Enabled then
+            Check_Unused_Variables_In_Scope
+              (Unit, Subprogram.F_Decls.F_Decls, Subprogram.F_Stmts);
+         end if;
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
 
-      if Rule_States (Cyclomatic_Complexity) = Enabled then
-         declare
-            Complexity : constant Natural :=
-              1 + Cyclomatic_Value (Subprogram.F_Stmts);
-         begin
-            if Complexity > Complexity_Threshold then
-               Report_Rule_Violation
-                 (Unit, Subprogram.F_Subp_Spec.P_Name,
-                  Cyclomatic_Complexity,
-                  "cyclomatic complexity " & To_Decimal (Complexity)
-                  & " exceeds threshold " &
-                    To_Decimal (Complexity_Threshold));
-            end if;
-         end;
-      end if;
+      begin
+         if Rule_States (Cyclomatic_Complexity) = Enabled then
+            declare
+               Complexity : constant Natural :=
+                 1 + Cyclomatic_Value (Subprogram.F_Stmts);
+            begin
+               if Complexity > Complexity_Threshold then
+                  Report_Rule_Violation
+                    (Unit, Subprogram.F_Subp_Spec.P_Name,
+                     Cyclomatic_Complexity,
+                     "cyclomatic complexity " & To_Decimal (Complexity)
+                     & " exceeds threshold " &
+                       To_Decimal (Complexity_Threshold));
+               end if;
+            end;
+         end if;
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
 
-      if Rule_States (Deep_Nesting) = Enabled then
-         declare
-            Depth : constant Natural :=
-              Max_Nesting_Depth (Subprogram.F_Stmts, 0);
-         begin
-            if Depth > Nesting_Threshold then
-               Report_Rule_Violation
-                 (Unit, Subprogram.F_Subp_Spec.P_Name, Deep_Nesting,
-                  "nesting depth " & To_Decimal (Depth) &
-                    " exceeds threshold " & To_Decimal (Nesting_Threshold));
-            end if;
-         end;
-      end if;
+      begin
+         if Rule_States (Deep_Nesting) = Enabled then
+            declare
+               Depth : constant Natural :=
+                 Max_Nesting_Depth (Subprogram.F_Stmts, 0);
+            begin
+               if Depth > Nesting_Threshold then
+                  Report_Rule_Violation
+                    (Unit, Subprogram.F_Subp_Spec.P_Name, Deep_Nesting,
+                     "nesting depth " & To_Decimal (Depth) &
+                       " exceeds threshold " & To_Decimal (Nesting_Threshold));
+               end if;
+            end;
+         end if;
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
 
-      if Rule_States (No_Multiple_Return) = Enabled then
-         declare
-            Count : constant Natural :=
-              Count_Return_Statements (Subprogram.F_Stmts);
-         begin
-            if Count > 1 then
-               Report_Rule_Violation
-                 (Unit, Subprogram.F_Subp_Spec.P_Name, No_Multiple_Return,
-                  "subprogram has " & To_Decimal (Count) &
-                    " return statements");
-            end if;
-         end;
-      end if;
+      begin
+         if Rule_States (No_Multiple_Return) = Enabled then
+            declare
+               Count : constant Natural :=
+                 Count_Return_Statements (Subprogram.F_Stmts);
+            begin
+               if Count > 1 then
+                  Report_Rule_Violation
+                    (Unit, Subprogram.F_Subp_Spec.P_Name, No_Multiple_Return,
+                     "subprogram has " & To_Decimal (Count) &
+                       " return statements");
+               end if;
+            end;
+         end if;
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
 
       --  Interpret_Subprogram_Flow itself no-ops unless a flow-sensitive or
       --  contract-aware rule is enabled, so the guard lives there.
-      SPARK_Readiness.Analyze_Subprogram (Unit, Subprogram);
-      SPARK_Dependency_Analysis.Analyze_Subprogram (Unit, Subprogram);
-      Flow_Interp.Interpret_Subprogram_Flow (Unit, Subprogram);
+      begin
+         SPARK_Readiness.Analyze_Subprogram (Unit, Subprogram);
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
+      begin
+         SPARK_Dependency_Analysis.Analyze_Subprogram (Unit, Subprogram);
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
+      begin
+         Flow_Interp.Interpret_Subprogram_Flow (Unit, Subprogram);
+      exception
+         when Exc : others =>
+            Note_Skipped_Check (Subprogram, Exc);
+      end;
    end Analyze_Subprogram;
 
    --  Whether Decl's type is scalar (an integer, floating-point,

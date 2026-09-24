@@ -13,7 +13,6 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Characters.Handling;
-with Ada.Exceptions;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 
@@ -111,13 +110,19 @@ package body Adalang_Analyzer.Checks is
    function Is_Standard_Boolean_Operand
      (Expr : Libadalang.Analysis.Expr'Class) return Boolean
    is
-      Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
-        Expr.P_Expression_Type;
    begin
-      return not Libadalang.Analysis.Is_Null (Expr_Type)
-        and then Langkit_Support.Text.To_UTF8
-                   (Expr_Type.P_Canonical_Fully_Qualified_Name) =
-                     "standard.boolean";
+      --  Resolve in the handled statement part: a Property_Error raised
+      --  while elaborating a declaration would escape this handler and
+      --  abandon every other check on the enclosing if statement (FP-080).
+      declare
+         Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Expr.P_Expression_Type;
+      begin
+         return not Libadalang.Analysis.Is_Null (Expr_Type)
+           and then Langkit_Support.Text.To_UTF8
+                      (Expr_Type.P_Canonical_Fully_Qualified_Name) =
+                        "standard.boolean";
+      end;
    exception
       when Exc : others =>
          Log_Verbose_Once
@@ -163,9 +168,13 @@ package body Adalang_Analyzer.Checks is
       end if;
 
       for I in 1 .. Cond.Children_Count loop
-         if Cond.Child (I).Kind not in
-           Libadalang.Common.Ada_If_Expr
-           | Libadalang.Common.Ada_Elsif_Expr_Part
+         --  An absent optional child (e.g. in a membership test) is a null
+         --  node, whose Kind raises and would abandon every other check on
+         --  the enclosing statement (FP-081).
+         if not Libadalang.Analysis.Is_Null (Cond.Child (I))
+           and then Cond.Child (I).Kind not in
+             Libadalang.Common.Ada_If_Expr
+             | Libadalang.Common.Ada_Elsif_Expr_Part
          then
             Report_Non_Short_Circuit_Operators (Unit, Cond.Child (I));
          end if;
@@ -294,7 +303,12 @@ package body Adalang_Analyzer.Checks is
          end;
       end if;
       for Index in 1 .. Node.Children_Count loop
-         if Has_Classwide_Operand (Node.Child (Index)) then
+         --  Skip absent optional children such as a positional
+         --  Param_Assoc's F_Designator: the .Kind read above raises on a
+         --  null node and abandoned every later check on the call (FP-081).
+         if not Libadalang.Analysis.Is_Null (Node.Child (Index))
+           and then Has_Classwide_Operand (Node.Child (Index))
+         then
             return True;
          end if;
       end loop;
@@ -374,20 +388,40 @@ package body Adalang_Analyzer.Checks is
             Control_Flow.Analyze_Assignment (Unit, Node.As_Assign_Stmt);
 
          when Libadalang.Common.Ada_Call_Stmt =>
-            Control_Flow.Analyze_Call_Statement (Unit, Node.As_Call_Stmt);
-            if Node.As_Call_Stmt.F_Call.Kind /=
-              Libadalang.Common.Ada_Call_Expr
-            then
-               Analyze_Automotive_Call (Unit, Node);
-            end if;
+            begin
+               Control_Flow.Analyze_Call_Statement (Unit, Node.As_Call_Stmt);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               if Node.As_Call_Stmt.F_Call.Kind /=
+                 Libadalang.Common.Ada_Call_Expr
+               then
+                  Analyze_Automotive_Call (Unit, Node);
+               end if;
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
 
          when Libadalang.Common.Ada_Object_Decl =>
             Declarations.Analyze_Object_Declaration
               (Unit, Node.As_Object_Decl);
 
          when Libadalang.Common.Ada_Subp_Body =>
-            Declarations.Analyze_Subprogram (Unit, Node.As_Subp_Body);
-            Control_Flow.Analyze_Resource_Lifecycle (Unit, Node.As_Subp_Body);
+            begin
+               Declarations.Analyze_Subprogram (Unit, Node.As_Subp_Body);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               Control_Flow.Analyze_Resource_Lifecycle (Unit, Node.As_Subp_Body);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
 
          when Libadalang.Common.Ada_Classic_Subp_Decl =>
             Declarations.Analyze_Subprogram_Declaration
@@ -396,6 +430,9 @@ package body Adalang_Analyzer.Checks is
          when Libadalang.Common.Ada_Case_Stmt =>
             Control_Flow.Analyze_Case_Statement (Unit, Node.As_Case_Stmt);
 
+         when Libadalang.Common.Ada_Case_Expr =>
+            Control_Flow.Analyze_Case_Expression (Unit, Node.As_Case_Expr);
+
          when Libadalang.Common.Ada_Dotted_Name =>
             if Rule_States (Known_Discriminant_Check_Failure) = Enabled then
                SPARK_Readiness.Check_Discriminant_Access
@@ -403,72 +440,152 @@ package body Adalang_Analyzer.Checks is
             end if;
 
          when Libadalang.Common.Ada_Call_Expr =>
-            Analyze_Automotive_Call (Unit, Node);
-            if Rule_States (No_Recursion) = Enabled then
-               declare
-                  Subprogram : constant Libadalang.Analysis.Subp_Body :=
-                    Data_Flow.Enclosing_Subprogram (Node);
-               begin
-                  if not Libadalang.Analysis.Is_Null (Subprogram)
-                    and then Data_Flow.Is_Direct_Recursive_Call
-                      (Node.As_Call_Expr, Subprogram)
-                  then
-                     Report_Rule_Violation
-                       (Unit, Node, No_Recursion,
-                        "subprogram calls itself");
-                  end if;
-               end;
-            end if;
+            begin
+               Analyze_Automotive_Call (Unit, Node);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               if Rule_States (No_Recursion) = Enabled then
+                  declare
+                     Subprogram : constant Libadalang.Analysis.Subp_Body :=
+                       Data_Flow.Enclosing_Subprogram (Node);
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Subprogram)
+                       and then Data_Flow.Is_Direct_Recursive_Call
+                         (Node.As_Call_Expr, Subprogram)
+                     then
+                        Report_Rule_Violation
+                          (Unit, Node, No_Recursion,
+                           "subprogram calls itself");
+                     end if;
+                  end;
+               end if;
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
 
          when Libadalang.Common.Ada_If_Stmt =>
-            Report_Constant_Condition
-              (Unit, Node.As_If_Stmt.F_Cond_Expr);
-            Report_Non_Short_Circuit_Operators
-              (Unit, Node.As_If_Stmt.F_Cond_Expr);
-            Control_Flow.Analyze_If_Statement (Unit, Node.As_If_Stmt);
+            begin
+               Report_Constant_Condition
+                 (Unit, Node.As_If_Stmt.F_Cond_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               Report_Non_Short_Circuit_Operators
+                 (Unit, Node.As_If_Stmt.F_Cond_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               Control_Flow.Analyze_If_Statement (Unit, Node.As_If_Stmt);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
 
          when Libadalang.Common.Ada_Elsif_Stmt_Part =>
-            Report_Constant_Condition
-              (Unit, Node.As_Elsif_Stmt_Part.F_Cond_Expr);
-            Report_Non_Short_Circuit_Operators
-              (Unit, Node.As_Elsif_Stmt_Part.F_Cond_Expr);
+            begin
+               Report_Constant_Condition
+                 (Unit, Node.As_Elsif_Stmt_Part.F_Cond_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               Report_Non_Short_Circuit_Operators
+                 (Unit, Node.As_Elsif_Stmt_Part.F_Cond_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
 
          when Libadalang.Common.Ada_If_Expr =>
-            Report_Constant_Condition
-              (Unit, Node.As_If_Expr.F_Cond_Expr);
-            Report_Non_Short_Circuit_Operators
-              (Unit, Node.As_If_Expr.F_Cond_Expr);
-            Control_Flow.Analyze_If_Expression (Unit, Node.As_If_Expr);
+            begin
+               Report_Constant_Condition
+                 (Unit, Node.As_If_Expr.F_Cond_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               Report_Non_Short_Circuit_Operators
+                 (Unit, Node.As_If_Expr.F_Cond_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               Control_Flow.Analyze_If_Expression (Unit, Node.As_If_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
 
          when Libadalang.Common.Ada_Elsif_Expr_Part =>
-            Report_Constant_Condition
-              (Unit, Node.As_Elsif_Expr_Part.F_Cond_Expr);
-            Report_Non_Short_Circuit_Operators
-              (Unit, Node.As_Elsif_Expr_Part.F_Cond_Expr);
+            begin
+               Report_Constant_Condition
+                 (Unit, Node.As_Elsif_Expr_Part.F_Cond_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
+            begin
+               Report_Non_Short_Circuit_Operators
+                 (Unit, Node.As_Elsif_Expr_Part.F_Cond_Expr);
+            exception
+               when Exc : others =>
+                  Note_Skipped_Check (Node, Exc);
+            end;
 
          when Libadalang.Common.Ada_While_Loop_Stmt =>
             declare
                Spec : constant Libadalang.Analysis.Loop_Spec :=
                  Node.As_While_Loop_Stmt.F_Spec;
             begin
-               if not Libadalang.Analysis.Is_Null (Spec) then
-                  Report_Constant_Condition
-                    (Unit, Spec.As_While_Loop_Spec.F_Expr);
-                  Report_Non_Short_Circuit_Operators
-                    (Unit, Spec.As_While_Loop_Spec.F_Expr);
-               end if;
-               if Rule_States (Empty_Loop) = Enabled
-                 and then not Control_Flow.Has_Substantive_Statement
-                   (Node.As_Base_Loop_Stmt.F_Stmts)
-               then
-                  Report_Rule_Violation
-                    (Unit, Node, Empty_Loop,
-                     "loop body contains no substantive statements");
-               end if;
-               Control_Flow.Analyze_Infinite_Loop
-                 (Unit, Node.As_Base_Loop_Stmt);
-               Control_Flow.Analyze_Loop_Variant_Presence
-                 (Unit, Node.As_Base_Loop_Stmt);
+               begin
+                  if not Libadalang.Analysis.Is_Null (Spec) then
+                     Report_Constant_Condition
+                       (Unit, Spec.As_While_Loop_Spec.F_Expr);
+                     Report_Non_Short_Circuit_Operators
+                       (Unit, Spec.As_While_Loop_Spec.F_Expr);
+                  end if;
+               exception
+                  when Exc : others =>
+                     Note_Skipped_Check (Node, Exc);
+               end;
+               begin
+                  if Rule_States (Empty_Loop) = Enabled
+                    and then not Control_Flow.Has_Substantive_Statement
+                      (Node.As_Base_Loop_Stmt.F_Stmts)
+                  then
+                     Report_Rule_Violation
+                       (Unit, Node, Empty_Loop,
+                        "loop body contains no substantive statements");
+                  end if;
+               exception
+                  when Exc : others =>
+                     Note_Skipped_Check (Node, Exc);
+               end;
+               begin
+                  Control_Flow.Analyze_Infinite_Loop
+                    (Unit, Node.As_Base_Loop_Stmt);
+               exception
+                  when Exc : others =>
+                     Note_Skipped_Check (Node, Exc);
+               end;
+               begin
+                  Control_Flow.Analyze_Loop_Variant_Presence
+                    (Unit, Node.As_Base_Loop_Stmt);
+               exception
+                  when Exc : others =>
+                     Note_Skipped_Check (Node, Exc);
+               end;
             end;
 
          when Libadalang.Common.Ada_Exit_Stmt =>
@@ -982,6 +1099,24 @@ package body Adalang_Analyzer.Checks is
       return False;
    end Has_Requirement_Trace;
 
+   --  The node Note_Skipped_Check last counted: several checks abandoned
+   --  at one node still count as one skipped location.
+   Last_Skipped_Node : Libadalang.Analysis.Ada_Node :=
+     Libadalang.Analysis.No_Ada_Node;
+
+   procedure Note_Skipped_Check
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Exc  : Ada.Exceptions.Exception_Occurrence) is
+   begin
+      if Node.As_Ada_Node /= Last_Skipped_Node then
+         Skipped_Nodes := Skipped_Nodes + 1;
+         Last_Skipped_Node := Node.As_Ada_Node;
+      end if;
+      Log_Verbose_Once
+        ("skipping checks at " & Node.Image & ": " &
+         Ada.Exceptions.Exception_Message (Exc));
+   end Note_Skipped_Check;
+
    procedure Evaluate_Node  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class) is
@@ -992,120 +1127,135 @@ package body Adalang_Analyzer.Checks is
 
       if Libadalang.Analysis.Is_Null (Node.Parent) then
          Declarations.Begin_Traversal;
-         if Rule_States (Generic_Instantiation_Limit) = Enabled then
-            declare
-               Total : constant Natural := Count_Kind
-                 (Node, Libadalang.Common.Ada_Generic_Package_Instantiation,
-                  Libadalang.Common.Ada_Generic_Subp_Instantiation);
-            begin
-               if Total > Generic_Threshold then
-                  Report_Rule_Violation
-                    (Unit, Node, Generic_Instantiation_Limit,
-                     "unit has " & To_Decimal (Total) &
-                       " generic instantiations; threshold is " &
-                       To_Decimal (Generic_Threshold));
-               end if;
-            end;
-         end if;
-         if Rule_States (Dependency_Limit) = Enabled then
-            declare
-               Total : constant Natural := Count_Kind
-                 (Node, Libadalang.Common.Ada_With_Clause,
-                  Libadalang.Common.Ada_With_Clause);
-            begin
-               if Total > Dependency_Threshold then
-                  Report_Rule_Violation
-                    (Unit, Node, Dependency_Limit,
-                     "unit has " & To_Decimal (Total) &
-                       " with-clause dependencies; threshold is " &
-                       To_Decimal (Dependency_Threshold));
-               end if;
-            end;
-         end if;
-         if Rule_States (Unused_With_Clause) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Compilation_Unit
-         then
-            declare
-               CU        : constant Libadalang.Analysis.Compilation_Unit :=
-                 Node.As_Compilation_Unit;
-               Body_Root : constant Libadalang.Analysis.Ada_Node := CU.F_Body;
-
-               --  The with'd unit's declaration, or null when resolving it
-               --  raises. Evaluated in a declarative part, an escaping
-               --  Property_Error would bypass the per-clause handler below
-               --  and abandon every check for the rest of the file (FP-078).
-               function With_Target
-                 (Name : Libadalang.Analysis.Name'Class)
-                  return Libadalang.Analysis.Basic_Decl is
+         begin
+            if Rule_States (Generic_Instantiation_Limit) = Enabled then
+               declare
+                  Total : constant Natural := Count_Kind
+                    (Node, Libadalang.Common.Ada_Generic_Package_Instantiation,
+                     Libadalang.Common.Ada_Generic_Subp_Instantiation);
                begin
-                  return Name.P_Referenced_Decl (Imprecise_Fallback => True);
-               exception
-                  when Exc : others =>
-                     Log_Verbose_Once
-                       ("skipping unresolvable with clause target: " &
-                        Ada.Exceptions.Exception_Message (Exc));
-                     return Libadalang.Analysis.No_Basic_Decl;
-               end With_Target;
-            begin
-               for Item of CU.F_Prelude loop
-                  if Item.Kind = Libadalang.Common.Ada_With_Clause then
-                     for Pkg_Name of Item.As_With_Clause.F_Packages loop
-                        declare
-                           Target : constant Libadalang.Analysis.Basic_Decl :=
-                             With_Target (Pkg_Name);
-                        begin
-                           if not Libadalang.Analysis.Is_Null (Target) then
-                              declare
-                                 --  Computed here, not with Target, so that a
-                                 --  Property_Error from resolving a renaming or
-                                 --  instance reaches this block's handler
-                                 --  instead of aborting the whole file.
-                                 Effective : constant
-                                   Libadalang.Analysis.Basic_Decl :=
-                                     Declarations.Effective_Package (Target);
-                                 Alternate : constant String :=
-                                   (if Libadalang.Analysis.Is_Null (Effective)
-                                      or else Effective.Unit.Get_Filename =
-                                        Target.Unit.Get_Filename
-                                    then ""
-                                    else Effective.Unit.Get_Filename);
-                              begin
-                                 if not Declarations.Any_Reference_To_Unit
-                                     (Body_Root, Target.Unit.Get_Filename,
-                                      Canonical_Text (Pkg_Name.P_Relative_Name))
-                                   and then
-                                     (Alternate = ""
-                                      or else not
-                                        Declarations.Any_Reference_To_Unit
-                                          (Body_Root, Alternate,
-                                           Canonical_Text
-                                             (Pkg_Name.P_Relative_Name)))
-                                   and then not
-                                     Declarations.Unresolved_Use_Visible_Reference
-                                       (CU, Target)
-                                 then
-                                    Report_Rule_Violation
-                                      (Unit, Pkg_Name, Unused_With_Clause,
-                                       "with clause names a unit never " &
-                                       "referenced elsewhere in this file");
-                                 end if;
-                              end;
-                           end if;
-                        exception
-                           when Exc : others =>
-                              --  Target could not be resolved (e.g. a unit
-                              --  outside the analyzed source closure);
-                              --  never flag an unresolvable target.
-                              Log_Verbose_Once
-                                ("skipping unresolvable with clause " &
-                                 "target: " &
-                                 Ada.Exceptions.Exception_Message (Exc));
-                        end;
-                     end loop;
+                  if Total > Generic_Threshold then
+                     Report_Rule_Violation
+                       (Unit, Node, Generic_Instantiation_Limit,
+                        "unit has " & To_Decimal (Total) &
+                          " generic instantiations; threshold is " &
+                          To_Decimal (Generic_Threshold));
                   end if;
-               end loop;
-            end;
-         end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Dependency_Limit) = Enabled then
+               declare
+                  Total : constant Natural := Count_Kind
+                    (Node, Libadalang.Common.Ada_With_Clause,
+                     Libadalang.Common.Ada_With_Clause);
+               begin
+                  if Total > Dependency_Threshold then
+                     Report_Rule_Violation
+                       (Unit, Node, Dependency_Limit,
+                        "unit has " & To_Decimal (Total) &
+                          " with-clause dependencies; threshold is " &
+                          To_Decimal (Dependency_Threshold));
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Unused_With_Clause) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Compilation_Unit
+            then
+               declare
+                  CU        : constant Libadalang.Analysis.Compilation_Unit :=
+                    Node.As_Compilation_Unit;
+                  Body_Root : constant Libadalang.Analysis.Ada_Node := CU.F_Body;
+
+                  --  The with'd unit's declaration, or null when resolving it
+                  --  raises. Evaluated in a declarative part, an escaping
+                  --  Property_Error would bypass the per-clause handler below
+                  --  and abandon every check for the rest of the file (FP-078).
+                  function With_Target
+                    (Name : Libadalang.Analysis.Name'Class)
+                     return Libadalang.Analysis.Basic_Decl is
+                  begin
+                     return Name.P_Referenced_Decl (Imprecise_Fallback => True);
+                  exception
+                     when Exc : others =>
+                        Log_Verbose_Once
+                          ("skipping unresolvable with clause target: " &
+                           Ada.Exceptions.Exception_Message (Exc));
+                        return Libadalang.Analysis.No_Basic_Decl;
+                  end With_Target;
+               begin
+                  for Item of CU.F_Prelude loop
+                     if Item.Kind = Libadalang.Common.Ada_With_Clause then
+                        for Pkg_Name of Item.As_With_Clause.F_Packages loop
+                           declare
+                              Target : constant Libadalang.Analysis.Basic_Decl :=
+                                With_Target (Pkg_Name);
+                           begin
+                              if not Libadalang.Analysis.Is_Null (Target) then
+                                 declare
+                                    --  Computed here, not with Target, so that a
+                                    --  Property_Error from resolving a renaming or
+                                    --  instance reaches this block's handler
+                                    --  instead of aborting the whole file.
+                                    Effective : constant
+                                      Libadalang.Analysis.Basic_Decl :=
+                                        Declarations.Effective_Package (Target);
+                                    Alternate : constant String :=
+                                      (if Libadalang.Analysis.Is_Null (Effective)
+                                         or else Effective.Unit.Get_Filename =
+                                           Target.Unit.Get_Filename
+                                       then ""
+                                       else Effective.Unit.Get_Filename);
+                                 begin
+                                    if not Declarations.Any_Reference_To_Unit
+                                        (Body_Root, Target.Unit.Get_Filename,
+                                         Canonical_Text (Pkg_Name.P_Relative_Name))
+                                      and then
+                                        (Alternate = ""
+                                         or else not
+                                           Declarations.Any_Reference_To_Unit
+                                             (Body_Root, Alternate,
+                                              Canonical_Text
+                                                (Pkg_Name.P_Relative_Name)))
+                                      and then not
+                                        Declarations.Unresolved_Use_Visible_Reference
+                                          (CU, Target)
+                                    then
+                                       Report_Rule_Violation
+                                         (Unit, Pkg_Name, Unused_With_Clause,
+                                          "with clause names a unit never " &
+                                          "referenced elsewhere in this file");
+                                    end if;
+                                 end;
+                              end if;
+                           exception
+                              when Exc : others =>
+                                 --  Target could not be resolved (e.g. a unit
+                                 --  outside the analyzed source closure);
+                                 --  never flag an unresolvable target.
+                                 Log_Verbose_Once
+                                   ("skipping unresolvable with clause " &
+                                    "target: " &
+                                    Ada.Exceptions.Exception_Message (Exc));
+                           end;
+                        end loop;
+                     end if;
+                  end loop;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
       end if;
       Declarations.Enter_Node (Node);
 
@@ -1115,591 +1265,726 @@ package body Adalang_Analyzer.Checks is
       --  this node's own checks, rather than letting it unwind out of
       --  Process_File and abandon analysis of the rest of the file.
       begin
-         if Rule_States (Missing_Requirement_Trace) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Subp_Body
-           and then not Has_Requirement_Trace (Unit, Node)
-         then
-            Report_Rule_Violation
-              (Unit, Node, Missing_Requirement_Trace,
-               "subprogram has no DO-178C low-level requirement trace");
-         end if;
-         if Rule_States (Redundant_Final_Return) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Subp_Body
-         then
-            declare
-               Stmts : constant Libadalang.Analysis.Stmt_List :=
-                 Node.As_Subp_Body.F_Stmts.F_Stmts;
-            begin
-               if Stmts.Children_Count > 0
-                 and then Stmts.Child (Stmts.Children_Count).Kind =
-                   Libadalang.Common.Ada_Return_Stmt
-                 and then Libadalang.Analysis.Is_Null
-                   (Stmts.Child
-                      (Stmts.Children_Count).As_Return_Stmt.F_Return_Expr)
-               then
-                  Report_Rule_Violation
-                    (Unit, Stmts.Child (Stmts.Children_Count),
-                     Redundant_Final_Return,
-                     "redundant 'return;' as the last statement of the " &
-                     "procedure body");
-               end if;
-            end;
-         end if;
-         if Rule_States (SPARK_Mode) = Enabled then
-            if Node.Kind = Libadalang.Common.Ada_Aspect_Assoc then
+         begin
+            if Rule_States (Missing_Requirement_Trace) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Subp_Body
+              and then not Has_Requirement_Trace (Unit, Node)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Missing_Requirement_Trace,
+                  "subprogram has no DO-178C low-level requirement trace");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Redundant_Final_Return) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Subp_Body
+            then
                declare
-                  Aspect : constant Libadalang.Analysis.Aspect_Assoc :=
-                    Node.As_Aspect_Assoc;
+                  Stmts : constant Libadalang.Analysis.Stmt_List :=
+                    Node.As_Subp_Body.F_Stmts.F_Stmts;
                begin
-                  if Canonical_Text (Aspect.F_Id) = "spark_mode"
-                    and then Canonical_Text (Aspect.F_Expr) = "off"
+                  if Stmts.Children_Count > 0
+                    and then Stmts.Child (Stmts.Children_Count).Kind =
+                      Libadalang.Common.Ada_Return_Stmt
+                    and then Libadalang.Analysis.Is_Null
+                      (Stmts.Child
+                         (Stmts.Children_Count).As_Return_Stmt.F_Return_Expr)
                   then
                      Report_Rule_Violation
-                       (Unit, Node, SPARK_Mode,
-                        "SPARK_Mode is explicitly disabled");
-                  end if;
-               end;
-            elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node then
-               declare
-                  Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
-                    Node.As_Pragma_Node;
-               begin
-                  if Canonical_Text (Pragma_Node.F_Id) = "spark_mode" then
-                     for Arg of Pragma_Node.F_Args loop
-                        if Canonical_Text (Arg.P_Assoc_Expr) = "off" then
-                           Report_Rule_Violation
-                             (Unit, Node, SPARK_Mode,
-                              "SPARK_Mode is explicitly disabled");
-                           exit;
-                        end if;
-                     end loop;
+                       (Unit, Stmts.Child (Stmts.Children_Count),
+                        Redundant_Final_Return,
+                        "redundant 'return;' as the last statement of the " &
+                        "procedure body");
                   end if;
                end;
             end if;
-         end if;
-         if Rule_States (No_Goto) = Enabled and then Node.Kind = Libadalang.Common.Ada_Goto_Stmt then
-            Report_Rule_Violation (Unit, Node, No_Goto, "goto statement used");
-         end if;
-         if Rule_States (No_Abort) = Enabled and then Node.Kind = Libadalang.Common.Ada_Abort_Stmt then
-            Report_Rule_Violation (Unit, Node, No_Abort, "abort statement used");
-         end if;
-         if Rule_States (No_Raise) = Enabled and then Node.Kind = Libadalang.Common.Ada_Raise_Stmt then
-            Report_Rule_Violation (Unit, Node, No_Raise, "raise statement used");
-         end if;
-         if Rule_States (No_Exit) = Enabled and then Node.Kind = Libadalang.Common.Ada_Exit_Stmt then
-            Report_Rule_Violation (Unit, Node, No_Exit, "exit statement used");
-         end if;
-         if Rule_States (No_Label) = Enabled and then Node.Kind = Libadalang.Common.Ada_Label then
-            Report_Rule_Violation (Unit, Node, No_Label, "label used");
-         end if;
-         if Rule_States (No_Pragma) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
-           and then not Is_Generated_Config_File (Unit.Get_Filename)
-         then
-            Report_Rule_Violation (Unit, Node, No_Pragma, "pragma used");
-         end if;
-         if Rule_States (No_Compiler_Extensions) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
-           and then not Is_Generated_Config_File (Unit.Get_Filename)
-         then
-            declare
-               Name : constant String := Normalize_Rule_Name
-                 (Node_Text (Node.As_Pragma_Node.F_Id));
-            begin
-               if not Is_Language_Defined_Pragma (Name)
-               then
-                  Report_Rule_Violation
-                    (Unit, Node, No_Compiler_Extensions,
-                     "implementation-defined pragma " & Name & " used");
-               end if;
-            end;
-         end if;
-         if Rule_States (No_Runtime_Check_Suppression) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
-         then
-            declare
-               Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
-                 Node.As_Pragma_Node;
-               Name : constant String :=
-                 Normalize_Rule_Name (Node_Text (Pragma_Node.F_Id));
-
-               function Disables_Check return Boolean is
-               begin
-                  if Pragma_Node.F_Args.Children_Count < 2 then
-                     return False;
-                  end if;
-
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (SPARK_Mode) = Enabled then
+               if Node.Kind = Libadalang.Common.Ada_Aspect_Assoc then
                   declare
-                     Policy : constant String :=
-                       Normalize_Rule_Name
-                         (Node_Text
-                            (Pragma_Node.F_Args.Child
-                               (Pragma_Node.F_Args.Children_Count)
-                               .As_Pragma_Argument_Assoc.P_Assoc_Expr));
+                     Aspect : constant Libadalang.Analysis.Aspect_Assoc :=
+                       Node.As_Aspect_Assoc;
                   begin
-                     return Policy = "ignore" or else Policy = "off";
-                  end;
-               exception
-                  when others =>
-                     return False;
-               end Disables_Check;
-
-               Ignoring_Check : constant Boolean :=
-                 Name = "check-policy"
-                 and then Disables_Check;
-            begin
-               if Name = "suppress"
-                 or else Name = "suppress-all"
-                 or else Ignoring_Check
-               then
-                  Report_Rule_Violation
-                    (Unit, Node, No_Runtime_Check_Suppression,
-                     "run-time check suppression pragma " & Name & " used");
-               end if;
-            end;
-         end if;
-         if Rule_States (Naming_Convention) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Defining_Name
-           and then Node_Text (Node)'Length = 1
-           and then not Has_Ancestor
-             (Node, Libadalang.Common.Ada_For_Loop_Var_Decl)
-           and then not Has_Ancestor
-             (Node, Libadalang.Common.Ada_Enum_Literal_Decl)
-         then
-            Report_Rule_Violation
-              (Unit, Node, Naming_Convention,
-               "one-character identifier '" & Node_Text (Node) & "' used");
-         end if;
-         if Rule_States (No_Access_To_Subp_Def) = Enabled
-           and then Node.Kind =
-             Libadalang.Common.Ada_Access_To_Subp_Def
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Access_To_Subp_Def,
-               "access-to-subprogram type definition used");
-         end if;
-         if Rule_States (No_Dynamic_Allocation) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Allocator
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Dynamic_Allocation, "dynamic allocator used");
-         end if;
-         if Rule_States (Restricted_Access_Type) = Enabled
-           and then Node.Kind in
-             Libadalang.Common.Ada_Anonymous_Type_Access_Def
-               | Libadalang.Common.Ada_Type_Access_Def
-         then
-            Report_Rule_Violation
-              (Unit, Node, Restricted_Access_Type,
-               "access-to-object type definition used");
-         end if;
-         if Rule_States (No_Explicit_Dereference) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Explicit_Deref
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Explicit_Dereference,
-               "explicit access-value dereference used");
-         end if;
-         if Rule_States (No_Tasking) = Enabled
-           and then Node.Kind in Libadalang.Common.Ada_Task_Type_Decl
-             | Libadalang.Common.Ada_Single_Task_Decl
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Tasking, "task declaration used");
-         end if;
-         if Rule_States (No_Rendezvous) = Enabled
-           and then Node.Kind in Libadalang.Common.Ada_Entry_Decl
-             | Libadalang.Common.Ada_Accept_Stmt_Range
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Rendezvous,
-               (if Node.Kind = Libadalang.Common.Ada_Entry_Decl
-                then "task entry declared"
-                else "accept statement used"));
-         end if;
-         if Rule_States (No_Select) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Select_Stmt
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Select, "select statement used");
-         end if;
-         if Rule_States (No_Requeue) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Requeue_Stmt
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Requeue, "requeue statement used");
-         end if;
-         if Rule_States (No_Asynchronous_Transfer) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Then_Abort_Part
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Asynchronous_Transfer,
-               "asynchronous transfer of control used");
-         end if;
-         if Rule_States (No_Classwide_Type) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Attribute_Ref
-           and then Normalize_Rule_Name
-             (Node_Text (Node.As_Attribute_Ref.F_Attribute)) = "class"
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Classwide_Type, "class-wide type used");
-         end if;
-         if Rule_States (No_Unchecked_Access) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Attribute_Ref
-           and then Normalize_Rule_Name
-             (Node_Text (Node.As_Attribute_Ref.F_Attribute)) =
-             "unchecked-access"
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Unchecked_Access,
-               "'Unchecked_Access attribute used");
-         end if;
-         if Rule_States (Succ_Pred_Boundary_Overflow) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
-           and then Node.As_Call_Expr.F_Name.Kind =
-             Libadalang.Common.Ada_Attribute_Ref
-           and then Node.As_Call_Expr.F_Suffix.Kind in
-             Libadalang.Common.Ada_Basic_Assoc_List
-           and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
-           and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
-             Libadalang.Common.Ada_Param_Assoc
-         then
-            declare
-               Attr      : constant Libadalang.Analysis.Attribute_Ref :=
-                 Node.As_Call_Expr.F_Name.As_Attribute_Ref;
-               Attr_Name : constant String :=
-                 Normalize_Rule_Name (Node_Text (Attr.F_Attribute));
-               Arg       : constant Libadalang.Analysis.Expr :=
-                 Node.As_Call_Expr.F_Suffix.Child
-                   (1).As_Param_Assoc.F_R_Expr;
-            begin
-               if Attr_Name in "succ" | "pred"
-                 and then not Libadalang.Analysis.Is_Null (Arg)
-                 and then Arg.Kind = Libadalang.Common.Ada_Attribute_Ref
-               then
-                  declare
-                     Arg_Attr : constant Libadalang.Analysis.Attribute_Ref :=
-                       Arg.As_Attribute_Ref;
-                     Arg_Name : constant String :=
-                       Normalize_Rule_Name (Node_Text (Arg_Attr.F_Attribute));
-                  begin
-                     if ((Attr_Name = "succ" and then Arg_Name = "last")
-                           or else
-                         (Attr_Name = "pred" and then Arg_Name = "first"))
-                       and then Canonical_Text (Attr.F_Prefix) /= ""
-                       and then Canonical_Text (Attr.F_Prefix) =
-                         Canonical_Text (Arg_Attr.F_Prefix)
+                     if Canonical_Text (Aspect.F_Id) = "spark_mode"
+                       and then Canonical_Text (Aspect.F_Expr) = "off"
                      then
                         Report_Rule_Violation
-                          (Unit, Node, Succ_Pred_Boundary_Overflow,
-                           "'" &
-                           (if Attr_Name = "succ" then "Succ" else "Pred") &
-                           " applied to the type's own '" &
-                           (if Attr_Name = "succ" then "Last" else "First") &
-                           " always raises Constraint_Error");
+                          (Unit, Node, SPARK_Mode,
+                           "SPARK_Mode is explicitly disabled");
                      end if;
                   end;
-               end if;
-            end;
-         end if;
-         if Rule_States (Known_Enum_Val_Failure) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
-           and then Node.As_Call_Expr.F_Name.Kind =
-             Libadalang.Common.Ada_Attribute_Ref
-           and then Node.As_Call_Expr.F_Suffix.Kind in
-             Libadalang.Common.Ada_Basic_Assoc_List
-           and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
-           and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
-             Libadalang.Common.Ada_Param_Assoc
-         then
-            declare
-               Attr : constant Libadalang.Analysis.Attribute_Ref :=
-                 Node.As_Call_Expr.F_Name.As_Attribute_Ref;
-            begin
-               if Normalize_Rule_Name (Node_Text (Attr.F_Attribute)) =
-                 "val"
-                 and then not Libadalang.Analysis.Is_Null (Attr.F_Prefix)
-               then
+               elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node then
                   declare
-                     Arg : constant Libadalang.Analysis.Expr :=
-                       Node.As_Call_Expr.F_Suffix.Child
-                         (1).As_Param_Assoc.F_R_Expr;
-                     Arg_Value : constant Abstract_Int := Integer_Value (Arg);
+                     Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
+                       Node.As_Pragma_Node;
                   begin
-                     if Arg_Value.Known then
-                        declare
-                           Prefix_Decl :
-                             constant Libadalang.Analysis.Basic_Decl :=
-                             Attr.F_Prefix.P_Referenced_Decl
-                               (Imprecise_Fallback => True);
-                        begin
-                           if not Libadalang.Analysis.Is_Null (Prefix_Decl)
-                             and then Prefix_Decl.Kind in
-                               Libadalang.Common.Ada_Type_Decl
-                             and then Prefix_Decl.As_Type_Decl.F_Type_Def
-                               .Kind = Libadalang.Common.Ada_Enum_Type_Def
-
-                             --  Standard's predefined character types are
-                             --  synthesized with a placeholder literal list
-                             --  rather than one node per position, so their
-                             --  Children_Count does not reflect the type's
-                             --  true (256/65536-position) range -- exclude
-                             --  them rather than risk a false positive on
-                             --  every ordinary use.
-                             and then Langkit_Support.Text.To_UTF8
-                               (Prefix_Decl.P_Canonical_Fully_Qualified_Name)
-                               not in
-                               "standard.character" |
-                               "standard.wide_character" |
-                               "standard.wide_wide_character"
-                           then
-                              declare
-                                 Literal_Count : constant Natural :=
-                                   Prefix_Decl.As_Type_Decl.F_Type_Def
-                                     .As_Enum_Type_Def.F_Enum_Literals
-                                     .Children_Count;
-                              begin
-                                 if Literal_Count > 0
-                                   and then
-                                     (Arg_Value.Value < 0
-                                        or else Arg_Value.Value >
-                                          Long_Long_Integer
-                                            (Literal_Count - 1))
-                                 then
-                                    Report_Rule_Violation
-                                      (Unit, Node, Known_Enum_Val_Failure,
-                                       "'Val argument" &
-                                       Arg_Value.Value'Image &
-                                       " is outside the type's valid " &
-                                       "position range 0 .." &
-                                       Natural'Image (Literal_Count - 1),
-                                       Explanation =>
-                                         "'Val requires its argument to " &
-                                         "be a valid enumeration " &
-                                         "position of the prefix type; " &
-                                         "any other value raises " &
-                                         "Constraint_Error.");
-                                 end if;
-                              end;
+                     if Canonical_Text (Pragma_Node.F_Id) = "spark_mode" then
+                        for Arg of Pragma_Node.F_Args loop
+                           if Canonical_Text (Arg.P_Assoc_Expr) = "off" then
+                              Report_Rule_Violation
+                                (Unit, Node, SPARK_Mode,
+                                 "SPARK_Mode is explicitly disabled");
+                              exit;
                            end if;
-                        end;
+                        end loop;
                      end if;
                   end;
                end if;
-            end;
-         end if;
-         if Rule_States (Known_Value_Conversion_Failure) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
-           and then Node.As_Call_Expr.F_Name.Kind =
-             Libadalang.Common.Ada_Attribute_Ref
-           and then Node.As_Call_Expr.F_Suffix.Kind in
-             Libadalang.Common.Ada_Basic_Assoc_List
-           and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
-           and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
-             Libadalang.Common.Ada_Param_Assoc
-         then
-            declare
-               Attr : constant Libadalang.Analysis.Attribute_Ref :=
-                 Node.As_Call_Expr.F_Name.As_Attribute_Ref;
-            begin
-               if Normalize_Rule_Name (Node_Text (Attr.F_Attribute)) =
-                 "value"
-                 and then not Libadalang.Analysis.Is_Null (Attr.F_Prefix)
-               then
-                  declare
-                     Arg : constant Libadalang.Analysis.Expr :=
-                       Node.As_Call_Expr.F_Suffix.Child
-                         (1).As_Param_Assoc.F_R_Expr;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Goto) = Enabled and then Node.Kind = Libadalang.Common.Ada_Goto_Stmt then
+               Report_Rule_Violation (Unit, Node, No_Goto, "goto statement used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Abort) = Enabled and then Node.Kind = Libadalang.Common.Ada_Abort_Stmt then
+               Report_Rule_Violation (Unit, Node, No_Abort, "abort statement used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Raise) = Enabled and then Node.Kind = Libadalang.Common.Ada_Raise_Stmt then
+               Report_Rule_Violation (Unit, Node, No_Raise, "raise statement used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Exit) = Enabled and then Node.Kind = Libadalang.Common.Ada_Exit_Stmt then
+               Report_Rule_Violation (Unit, Node, No_Exit, "exit statement used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Label) = Enabled and then Node.Kind = Libadalang.Common.Ada_Label then
+               Report_Rule_Violation (Unit, Node, No_Label, "label used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Pragma) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
+              and then not Is_Generated_Config_File (Unit.Get_Filename)
+            then
+               Report_Rule_Violation (Unit, Node, No_Pragma, "pragma used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Compiler_Extensions) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
+              and then not Is_Generated_Config_File (Unit.Get_Filename)
+            then
+               declare
+                  Name : constant String := Normalize_Rule_Name
+                    (Node_Text (Node.As_Pragma_Node.F_Id));
+               begin
+                  if not Is_Language_Defined_Pragma (Name)
+                  then
+                     Report_Rule_Violation
+                       (Unit, Node, No_Compiler_Extensions,
+                        "implementation-defined pragma " & Name & " used");
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Runtime_Check_Suppression) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Pragma_Node
+            then
+               declare
+                  Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
+                    Node.As_Pragma_Node;
+                  Name : constant String :=
+                    Normalize_Rule_Name (Node_Text (Pragma_Node.F_Id));
+
+                  function Disables_Check return Boolean is
                   begin
-                     if not Libadalang.Analysis.Is_Null (Arg)
-                       and then Arg.Kind =
-                         Libadalang.Common.Ada_String_Literal
-                     then
-                        declare
-                           Trimmed : constant String :=
-                             Ada.Strings.Fixed.Trim
-                               (Langkit_Support.Text.To_UTF8
-                                  (Arg.As_String_Literal.P_Denoted_Value),
-                                Ada.Strings.Both);
-                           Prefix_Decl :
-                             constant Libadalang.Analysis.Basic_Decl :=
-                             Attr.F_Prefix.P_Referenced_Decl
-                               (Imprecise_Fallback => True);
-                        begin
-                           if not Libadalang.Analysis.Is_Null (Prefix_Decl)
-                             and then Prefix_Decl.Kind in
-                               Libadalang.Common.Ada_Type_Decl
-                           then
-                              if Prefix_Decl.As_Type_Decl.F_Type_Def.Kind =
-                                Libadalang.Common.Ada_Enum_Type_Def
+                     if Pragma_Node.F_Args.Children_Count < 2 then
+                        return False;
+                     end if;
+
+                     declare
+                        Policy : constant String :=
+                          Normalize_Rule_Name
+                            (Node_Text
+                               (Pragma_Node.F_Args.Child
+                                  (Pragma_Node.F_Args.Children_Count)
+                                  .As_Pragma_Argument_Assoc.P_Assoc_Expr));
+                     begin
+                        return Policy = "ignore" or else Policy = "off";
+                     end;
+                  exception
+                     when others =>
+                        return False;
+                  end Disables_Check;
+
+                  Ignoring_Check : constant Boolean :=
+                    Name = "check-policy"
+                    and then Disables_Check;
+               begin
+                  if Name = "suppress"
+                    or else Name = "suppress-all"
+                    or else Ignoring_Check
+                  then
+                     Report_Rule_Violation
+                       (Unit, Node, No_Runtime_Check_Suppression,
+                        "run-time check suppression pragma " & Name & " used");
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Naming_Convention) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Defining_Name
+              and then Node_Text (Node)'Length = 1
+              and then not Has_Ancestor
+                (Node, Libadalang.Common.Ada_For_Loop_Var_Decl)
+              and then not Has_Ancestor
+                (Node, Libadalang.Common.Ada_Enum_Literal_Decl)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Naming_Convention,
+                  "one-character identifier '" & Node_Text (Node) & "' used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Access_To_Subp_Def) = Enabled
+              and then Node.Kind =
+                Libadalang.Common.Ada_Access_To_Subp_Def
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Access_To_Subp_Def,
+                  "access-to-subprogram type definition used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Dynamic_Allocation) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Allocator
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Dynamic_Allocation, "dynamic allocator used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Restricted_Access_Type) = Enabled
+              and then Node.Kind in
+                Libadalang.Common.Ada_Anonymous_Type_Access_Def
+                  | Libadalang.Common.Ada_Type_Access_Def
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Restricted_Access_Type,
+                  "access-to-object type definition used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Explicit_Dereference) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Explicit_Deref
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Explicit_Dereference,
+                  "explicit access-value dereference used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Tasking) = Enabled
+              and then Node.Kind in Libadalang.Common.Ada_Task_Type_Decl
+                | Libadalang.Common.Ada_Single_Task_Decl
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Tasking, "task declaration used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Rendezvous) = Enabled
+              and then Node.Kind in Libadalang.Common.Ada_Entry_Decl
+                | Libadalang.Common.Ada_Accept_Stmt_Range
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Rendezvous,
+                  (if Node.Kind = Libadalang.Common.Ada_Entry_Decl
+                   then "task entry declared"
+                   else "accept statement used"));
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Select) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Select_Stmt
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Select, "select statement used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Requeue) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Requeue_Stmt
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Requeue, "requeue statement used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Asynchronous_Transfer) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Then_Abort_Part
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Asynchronous_Transfer,
+                  "asynchronous transfer of control used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Classwide_Type) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+              and then Normalize_Rule_Name
+                (Node_Text (Node.As_Attribute_Ref.F_Attribute)) = "class"
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Classwide_Type, "class-wide type used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Unchecked_Access) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+              and then Normalize_Rule_Name
+                (Node_Text (Node.As_Attribute_Ref.F_Attribute)) =
+                "unchecked-access"
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Unchecked_Access,
+                  "'Unchecked_Access attribute used");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Succ_Pred_Boundary_Overflow) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+              and then Node.As_Call_Expr.F_Name.Kind =
+                Libadalang.Common.Ada_Attribute_Ref
+              and then Node.As_Call_Expr.F_Suffix.Kind in
+                Libadalang.Common.Ada_Basic_Assoc_List
+              and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
+              and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
+                Libadalang.Common.Ada_Param_Assoc
+            then
+               declare
+                  Attr      : constant Libadalang.Analysis.Attribute_Ref :=
+                    Node.As_Call_Expr.F_Name.As_Attribute_Ref;
+                  Attr_Name : constant String :=
+                    Normalize_Rule_Name (Node_Text (Attr.F_Attribute));
+                  Arg       : constant Libadalang.Analysis.Expr :=
+                    Node.As_Call_Expr.F_Suffix.Child
+                      (1).As_Param_Assoc.F_R_Expr;
+               begin
+                  if Attr_Name in "succ" | "pred"
+                    and then not Libadalang.Analysis.Is_Null (Arg)
+                    and then Arg.Kind = Libadalang.Common.Ada_Attribute_Ref
+                  then
+                     declare
+                        Arg_Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                          Arg.As_Attribute_Ref;
+                        Arg_Name : constant String :=
+                          Normalize_Rule_Name (Node_Text (Arg_Attr.F_Attribute));
+                     begin
+                        if ((Attr_Name = "succ" and then Arg_Name = "last")
+                              or else
+                            (Attr_Name = "pred" and then Arg_Name = "first"))
+                          and then Canonical_Text (Attr.F_Prefix) /= ""
+                          and then Canonical_Text (Attr.F_Prefix) =
+                            Canonical_Text (Arg_Attr.F_Prefix)
+                        then
+                           Report_Rule_Violation
+                             (Unit, Node, Succ_Pred_Boundary_Overflow,
+                              "'" &
+                              (if Attr_Name = "succ" then "Succ" else "Pred") &
+                              " applied to the type's own '" &
+                              (if Attr_Name = "succ" then "Last" else "First") &
+                              " always raises Constraint_Error");
+                        end if;
+                     end;
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Known_Enum_Val_Failure) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+              and then Node.As_Call_Expr.F_Name.Kind =
+                Libadalang.Common.Ada_Attribute_Ref
+              and then Node.As_Call_Expr.F_Suffix.Kind in
+                Libadalang.Common.Ada_Basic_Assoc_List
+              and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
+              and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
+                Libadalang.Common.Ada_Param_Assoc
+            then
+               declare
+                  Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                    Node.As_Call_Expr.F_Name.As_Attribute_Ref;
+               begin
+                  if Normalize_Rule_Name (Node_Text (Attr.F_Attribute)) =
+                    "val"
+                    and then not Libadalang.Analysis.Is_Null (Attr.F_Prefix)
+                  then
+                     declare
+                        Arg : constant Libadalang.Analysis.Expr :=
+                          Node.As_Call_Expr.F_Suffix.Child
+                            (1).As_Param_Assoc.F_R_Expr;
+                        Arg_Value : constant Abstract_Int := Integer_Value (Arg);
+                     begin
+                        if Arg_Value.Known then
+                           declare
+                              Prefix_Decl :
+                                constant Libadalang.Analysis.Basic_Decl :=
+                                Attr.F_Prefix.P_Referenced_Decl
+                                  (Imprecise_Fallback => True);
+                           begin
+                              if not Libadalang.Analysis.Is_Null (Prefix_Decl)
+                                and then Prefix_Decl.Kind in
+                                  Libadalang.Common.Ada_Type_Decl
+                                and then Prefix_Decl.As_Type_Decl.F_Type_Def
+                                  .Kind = Libadalang.Common.Ada_Enum_Type_Def
+
+                                --  Standard's predefined character types are
+                                --  synthesized with a placeholder literal list
+                                --  rather than one node per position, so their
+                                --  Children_Count does not reflect the type's
+                                --  true (256/65536-position) range -- exclude
+                                --  them rather than risk a false positive on
+                                --  every ordinary use.
                                 and then Langkit_Support.Text.To_UTF8
-                                  (Prefix_Decl
-                                     .P_Canonical_Fully_Qualified_Name)
+                                  (Prefix_Decl.P_Canonical_Fully_Qualified_Name)
                                   not in
                                   "standard.character" |
                                   "standard.wide_character" |
                                   "standard.wide_wide_character"
                               then
                                  declare
-                                    Literals :
-                                      constant Libadalang.Analysis
-                                        .Enum_Literal_Decl_List :=
+                                    Literal_Count : constant Natural :=
                                       Prefix_Decl.As_Type_Decl.F_Type_Def
-                                        .As_Enum_Type_Def.F_Enum_Literals;
-                                    Has_Char_Literal : Boolean := False;
-                                    Matches          : Boolean := False;
+                                        .As_Enum_Type_Def.F_Enum_Literals
+                                        .Children_Count;
                                  begin
-                                    for Index in
-                                      1 .. Literals.Children_Count
-                                    loop
-                                       declare
-                                          Lit_Text : constant String :=
-                                            Node_Text
-                                              (Literals.Child
-                                                 (Index).As_Enum_Literal_Decl
-                                                 .F_Name);
-                                       begin
-                                          if Lit_Text'Length > 0
-                                            and then Lit_Text
-                                                (Lit_Text'First) = '''
-                                          then
-                                             Has_Char_Literal := True;
-                                          elsif Ada.Characters.Handling
-                                            .To_Lower (Lit_Text) =
-                                            Ada.Characters.Handling.To_Lower
-                                              (Trimmed)
-                                          then
-                                             Matches := True;
-                                          end if;
-                                       end;
-                                    end loop;
-                                    if not Has_Char_Literal
-                                      and then not Matches
+                                    if Literal_Count > 0
+                                      and then
+                                        (Arg_Value.Value < 0
+                                           or else Arg_Value.Value >
+                                             Long_Long_Integer
+                                               (Literal_Count - 1))
                                     then
                                        Report_Rule_Violation
-                                         (Unit, Node,
-                                          Known_Value_Conversion_Failure,
-                                          "'Value string """ & Trimmed &
-                                          """ names no literal of the " &
-                                          "prefix enumeration type",
+                                         (Unit, Node, Known_Enum_Val_Failure,
+                                          "'Val argument" &
+                                          Arg_Value.Value'Image &
+                                          " is outside the type's valid " &
+                                          "position range 0 .." &
+                                          Natural'Image (Literal_Count - 1),
                                           Explanation =>
-                                            "'Value requires its " &
-                                            "argument, once leading and " &
-                                            "trailing blanks are removed, " &
-                                            "to name (case-insensitively) " &
-                                            "one of the type's literals; " &
+                                            "'Val requires its argument to " &
+                                            "be a valid enumeration " &
+                                            "position of the prefix type; " &
                                             "any other value raises " &
                                             "Constraint_Error.");
                                     end if;
                                  end;
-                              elsif Prefix_Decl.As_Type_Decl.P_Is_Int_Type
+                              end if;
+                           end;
+                        end if;
+                     end;
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Known_Value_Conversion_Failure) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+              and then Node.As_Call_Expr.F_Name.Kind =
+                Libadalang.Common.Ada_Attribute_Ref
+              and then Node.As_Call_Expr.F_Suffix.Kind in
+                Libadalang.Common.Ada_Basic_Assoc_List
+              and then Node.As_Call_Expr.F_Suffix.Children_Count = 1
+              and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
+                Libadalang.Common.Ada_Param_Assoc
+            then
+               declare
+                  Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                    Node.As_Call_Expr.F_Name.As_Attribute_Ref;
+               begin
+                  if Normalize_Rule_Name (Node_Text (Attr.F_Attribute)) =
+                    "value"
+                    and then not Libadalang.Analysis.Is_Null (Attr.F_Prefix)
+                  then
+                     declare
+                        Arg : constant Libadalang.Analysis.Expr :=
+                          Node.As_Call_Expr.F_Suffix.Child
+                            (1).As_Param_Assoc.F_R_Expr;
+                     begin
+                        if not Libadalang.Analysis.Is_Null (Arg)
+                          and then Arg.Kind =
+                            Libadalang.Common.Ada_String_Literal
+                        then
+                           declare
+                              Trimmed : constant String :=
+                                Ada.Strings.Fixed.Trim
+                                  (Langkit_Support.Text.To_UTF8
+                                     (Arg.As_String_Literal.P_Denoted_Value),
+                                   Ada.Strings.Both);
+                              Prefix_Decl :
+                                constant Libadalang.Analysis.Basic_Decl :=
+                                Attr.F_Prefix.P_Referenced_Decl
+                                  (Imprecise_Fallback => True);
+                           begin
+                              if not Libadalang.Analysis.Is_Null (Prefix_Decl)
+                                and then Prefix_Decl.Kind in
+                                  Libadalang.Common.Ada_Type_Decl
                               then
-                                 declare
-                                    Malformed : Boolean := False;
-                                    First     : Positive := Trimmed'First;
-                                 begin
-                                    if Trimmed'Length = 0 then
-                                       Malformed := True;
-                                    else
-                                       if Trimmed (First) in '+' | '-' then
-                                          First := First + 1;
+                                 if Prefix_Decl.As_Type_Decl.F_Type_Def.Kind =
+                                   Libadalang.Common.Ada_Enum_Type_Def
+                                   and then Langkit_Support.Text.To_UTF8
+                                     (Prefix_Decl
+                                        .P_Canonical_Fully_Qualified_Name)
+                                     not in
+                                     "standard.character" |
+                                     "standard.wide_character" |
+                                     "standard.wide_wide_character"
+                                 then
+                                    declare
+                                       Literals :
+                                         constant Libadalang.Analysis
+                                           .Enum_Literal_Decl_List :=
+                                         Prefix_Decl.As_Type_Decl.F_Type_Def
+                                           .As_Enum_Type_Def.F_Enum_Literals;
+                                       Has_Char_Literal : Boolean := False;
+                                       Matches          : Boolean := False;
+                                    begin
+                                       for Index in
+                                         1 .. Literals.Children_Count
+                                       loop
+                                          declare
+                                             Lit_Text : constant String :=
+                                               Node_Text
+                                                 (Literals.Child
+                                                    (Index).As_Enum_Literal_Decl
+                                                    .F_Name);
+                                          begin
+                                             if Lit_Text'Length > 0
+                                               and then Lit_Text
+                                                   (Lit_Text'First) = '''
+                                             then
+                                                Has_Char_Literal := True;
+                                             elsif Ada.Characters.Handling
+                                               .To_Lower (Lit_Text) =
+                                               Ada.Characters.Handling.To_Lower
+                                                 (Trimmed)
+                                             then
+                                                Matches := True;
+                                             end if;
+                                          end;
+                                       end loop;
+                                       if not Has_Char_Literal
+                                         and then not Matches
+                                       then
+                                          Report_Rule_Violation
+                                            (Unit, Node,
+                                             Known_Value_Conversion_Failure,
+                                             "'Value string """ & Trimmed &
+                                             """ names no literal of the " &
+                                             "prefix enumeration type",
+                                             Explanation =>
+                                               "'Value requires its " &
+                                               "argument, once leading and " &
+                                               "trailing blanks are removed, " &
+                                               "to name (case-insensitively) " &
+                                               "one of the type's literals; " &
+                                               "any other value raises " &
+                                               "Constraint_Error.");
                                        end if;
-                                       if First > Trimmed'Last then
+                                    end;
+                                 elsif Prefix_Decl.As_Type_Decl.P_Is_Int_Type
+                                 then
+                                    declare
+                                       Malformed : Boolean := False;
+                                       First     : Positive := Trimmed'First;
+                                    begin
+                                       if Trimmed'Length = 0 then
                                           Malformed := True;
                                        else
-                                          for I in First .. Trimmed'Last
-                                          loop
-                                             if Trimmed (I) not in
-                                               '0' .. '9' | 'a' .. 'f' |
-                                               'A' .. 'F' | '_' | '#' |
-                                               'e' | 'E'
-                                             then
-                                                Malformed := True;
-                                             end if;
-                                          end loop;
+                                          if Trimmed (First) in '+' | '-' then
+                                             First := First + 1;
+                                          end if;
+                                          if First > Trimmed'Last then
+                                             Malformed := True;
+                                          else
+                                             for I in First .. Trimmed'Last
+                                             loop
+                                                if Trimmed (I) not in
+                                                  '0' .. '9' | 'a' .. 'f' |
+                                                  'A' .. 'F' | '_' | '#' |
+                                                  'e' | 'E'
+                                                then
+                                                   Malformed := True;
+                                                end if;
+                                             end loop;
+                                          end if;
                                        end if;
-                                    end if;
-                                    if Malformed then
-                                       Report_Rule_Violation
-                                         (Unit, Node,
-                                          Known_Value_Conversion_Failure,
-                                          "'Value string """ & Trimmed &
-                                          """ cannot denote any value of " &
-                                          "the prefix integer type",
-                                          Explanation =>
-                                            "'Value requires its " &
-                                            "argument, once leading and " &
-                                            "trailing blanks are removed, " &
-                                            "to be an optionally signed " &
-                                            "numeric literal; this text " &
-                                            "does not have that shape, so " &
-                                            "the call always raises " &
-                                            "Constraint_Error.");
-                                    end if;
-                                 end;
+                                       if Malformed then
+                                          Report_Rule_Violation
+                                            (Unit, Node,
+                                             Known_Value_Conversion_Failure,
+                                             "'Value string """ & Trimmed &
+                                             """ cannot denote any value of " &
+                                             "the prefix integer type",
+                                             Explanation =>
+                                               "'Value requires its " &
+                                               "argument, once leading and " &
+                                               "trailing blanks are removed, " &
+                                               "to be an optionally signed " &
+                                               "numeric literal; this text " &
+                                               "does not have that shape, so " &
+                                               "the call always raises " &
+                                               "Constraint_Error.");
+                                       end if;
+                                    end;
+                                 end if;
                               end if;
-                           end if;
-                        end;
-                     end if;
-                  end;
-               end if;
-            end;
-         end if;
-         if Rule_States (Excessive_Shift_Amount) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
-           and then Node.As_Call_Expr.F_Suffix.Kind in
-             Libadalang.Common.Ada_Basic_Assoc_List
-           and then Node.As_Call_Expr.F_Suffix.Children_Count = 2
-         then
-            declare
-               Call   : constant Libadalang.Analysis.Call_Expr :=
-                 Node.As_Call_Expr;
-               Callee : constant Libadalang.Analysis.Basic_Decl :=
-                 Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
-            begin
-               if not Libadalang.Analysis.Is_Null (Callee) then
-                  declare
-                     Qualified_Name : constant String :=
-                       Langkit_Support.Text.To_UTF8
-                         (Callee.P_Canonical_Fully_Qualified_Name);
-                  begin
-                     if Qualified_Name in
-                       "interfaces.shift_left" | "interfaces.shift_right" |
-                       "interfaces.shift_right_arithmetic" |
-                       "interfaces.rotate_left" | "interfaces.rotate_right"
-                       and then Call.F_Suffix.Child (1).Kind =
-                         Libadalang.Common.Ada_Param_Assoc
-                       and then Call.F_Suffix.Child (2).Kind =
-                         Libadalang.Common.Ada_Param_Assoc
-                     then
-                        declare
-                           Value_Expr  : constant Libadalang.Analysis.Expr :=
-                             Call.F_Suffix.Child (1).As_Param_Assoc.F_R_Expr;
-                           Amount_Expr : constant Libadalang.Analysis.Expr :=
-                             Call.F_Suffix.Child (2).As_Param_Assoc.F_R_Expr;
-                           Width       : constant Natural :=
-                             Interfaces_Shift_Rotate_Bit_Width
-                               (Value_Expr.P_Expression_Type);
-                           Amount_Val  : constant Abstract_Int :=
-                             Integer_Value (Amount_Expr);
-                        begin
-                           if Width > 0
-                             and then Amount_Val.Known
-                             and then Amount_Val.Value >=
-                               Long_Long_Integer (Width)
-                           then
-                              Report_Rule_Violation
-                                (Unit, Node, Excessive_Shift_Amount,
-                                 "shift/rotate amount is not less than " &
-                                 "the operand's " & Width'Image &
-                                 "-bit width");
-                           end if;
-                        end;
-                     end if;
-                  end;
-               end if;
-            end;
-         end if;
+                           end;
+                        end if;
+                     end;
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Excessive_Shift_Amount) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+              and then Node.As_Call_Expr.F_Suffix.Kind in
+                Libadalang.Common.Ada_Basic_Assoc_List
+              and then Node.As_Call_Expr.F_Suffix.Children_Count = 2
+            then
+               declare
+                  Call   : constant Libadalang.Analysis.Call_Expr :=
+                    Node.As_Call_Expr;
+                  Callee : constant Libadalang.Analysis.Basic_Decl :=
+                    Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+               begin
+                  if not Libadalang.Analysis.Is_Null (Callee) then
+                     declare
+                        Qualified_Name : constant String :=
+                          Langkit_Support.Text.To_UTF8
+                            (Callee.P_Canonical_Fully_Qualified_Name);
+                     begin
+                        if Qualified_Name in
+                          "interfaces.shift_left" | "interfaces.shift_right" |
+                          "interfaces.shift_right_arithmetic" |
+                          "interfaces.rotate_left" | "interfaces.rotate_right"
+                          and then Call.F_Suffix.Child (1).Kind =
+                            Libadalang.Common.Ada_Param_Assoc
+                          and then Call.F_Suffix.Child (2).Kind =
+                            Libadalang.Common.Ada_Param_Assoc
+                        then
+                           declare
+                              Value_Expr  : constant Libadalang.Analysis.Expr :=
+                                Call.F_Suffix.Child (1).As_Param_Assoc.F_R_Expr;
+                              Amount_Expr : constant Libadalang.Analysis.Expr :=
+                                Call.F_Suffix.Child (2).As_Param_Assoc.F_R_Expr;
+                              Width       : constant Natural :=
+                                Interfaces_Shift_Rotate_Bit_Width
+                                  (Value_Expr.P_Expression_Type);
+                              Amount_Val  : constant Abstract_Int :=
+                                Integer_Value (Amount_Expr);
+                           begin
+                              if Width > 0
+                                and then Amount_Val.Known
+                                and then Amount_Val.Value >=
+                                  Long_Long_Integer (Width)
+                              then
+                                 Report_Rule_Violation
+                                   (Unit, Node, Excessive_Shift_Amount,
+                                    "shift/rotate amount is not less than " &
+                                    "the operand's " & Width'Image &
+                                    "-bit width");
+                              end if;
+                           end;
+                        end if;
+                     end;
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
 
          --  A negative shift/rotate amount fails Libadalang's own
          --  overload-candidate filtering: every Interfaces shift/rotate
@@ -1713,249 +1998,301 @@ package body Adalang_Analyzer.Checks is
          --  on its own) already pins this down to a genuine Interfaces
          --  shift/rotate call precisely enough that a syntactic name match
          --  on the callee carries negligible false-positive risk.
-         if Rule_States (Known_Negative_Shift_Amount_Failure) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Call_Expr
-           and then Node.As_Call_Expr.F_Suffix.Kind in
-             Libadalang.Common.Ada_Basic_Assoc_List
-           and then Node.As_Call_Expr.F_Suffix.Children_Count = 2
-           and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
-             Libadalang.Common.Ada_Param_Assoc
-           and then Node.As_Call_Expr.F_Suffix.Child (2).Kind =
-             Libadalang.Common.Ada_Param_Assoc
-         then
-            declare
-               Call        : constant Libadalang.Analysis.Call_Expr :=
-                 Node.As_Call_Expr;
-               Callee_Name : constant String :=
-                 (if Call.F_Name.Kind = Libadalang.Common.Ada_Identifier
-                  then Normalize_Rule_Name (Node_Text (Call.F_Name))
-                  elsif Call.F_Name.Kind = Libadalang.Common.Ada_Dotted_Name
-                  then Normalize_Rule_Name
-                      (Node_Text (Call.F_Name.As_Dotted_Name.F_Suffix))
-                  else "");
-            begin
-               if Callee_Name in
-                 "shift-left" | "shift-right" | "shift-right-arithmetic" |
-                 "rotate-left" | "rotate-right"
-               then
-                  declare
-                     Value_Expr  : constant Libadalang.Analysis.Expr :=
-                       Call.F_Suffix.Child (1).As_Param_Assoc.F_R_Expr;
-                     Amount_Expr : constant Libadalang.Analysis.Expr :=
-                       Call.F_Suffix.Child (2).As_Param_Assoc.F_R_Expr;
-                     Width       : constant Natural :=
-                       Interfaces_Shift_Rotate_Bit_Width
-                         (Value_Expr.P_Expression_Type);
-                     Amount_Val  : constant Abstract_Int :=
-                       Integer_Value (Amount_Expr);
-                  begin
-                     if Width > 0
-                       and then Amount_Val.Known
-                       and then Amount_Val.Value < 0
-                     then
-                        Report_Rule_Violation
-                          (Unit, Node, Known_Negative_Shift_Amount_Failure,
-                           "shift/rotate amount " & Amount_Val.Value'Image &
-                           " is negative",
-                           Explanation =>
-                             "Every Interfaces shift/rotate function's " &
-                             "Amount parameter is subtype Natural; a " &
-                             "negative actual fails that range check " &
-                             "before the shift/rotate runs.");
-                     end if;
-                  end;
-               end if;
-            end;
-         end if;
-
-         if Rule_States (No_Controlled_Type) = Enabled
-           and then Node.Kind in Libadalang.Common.Ada_Base_Type_Decl
-           and then Is_Controlled_Type (Node)
-         then
-            Report_Rule_Violation
-              (Unit, Node, No_Controlled_Type,
-               "type derives from a controlled finalization type");
-         end if;
-         if Rule_States (Complete_Initialization) = Enabled then
-            if Node.Kind = Libadalang.Common.Ada_Object_Decl
-              and then Libadalang.Analysis.Is_Null
-                (Node.As_Object_Decl.F_Default_Expr)
+         begin
+            if Rule_States (Known_Negative_Shift_Amount_Failure) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+              and then Node.As_Call_Expr.F_Suffix.Kind in
+                Libadalang.Common.Ada_Basic_Assoc_List
+              and then Node.As_Call_Expr.F_Suffix.Children_Count = 2
+              and then Node.As_Call_Expr.F_Suffix.Child (1).Kind =
+                Libadalang.Common.Ada_Param_Assoc
+              and then Node.As_Call_Expr.F_Suffix.Child (2).Kind =
+                Libadalang.Common.Ada_Param_Assoc
             then
-               Report_Rule_Violation
-                 (Unit, Node, Complete_Initialization,
-                  "object has no explicit initializer");
-            elsif Node.Kind = Libadalang.Common.Ada_Component_Decl
-              and then Libadalang.Analysis.Is_Null
-                (Node.As_Component_Decl.F_Default_Expr)
-            then
-               Report_Rule_Violation
-                 (Unit, Node, Complete_Initialization,
-                  "record component has no explicit default");
-            end if;
-         end if;
-         if Rule_States (Volatile_Atomic_Consistency) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Aspect_Assoc
-           and then Normalize_Rule_Name
-             (Node_Text (Node.As_Aspect_Assoc.F_Id)) = "volatile"
-         then
-            declare
-               Aspects : constant String := Ada.Characters.Handling.To_Lower
-                 (Node_Text (Node.Parent));
-            begin
-               if Ada.Strings.Fixed.Index (Aspects, "atomic") = 0
-                 and then Ada.Strings.Fixed.Index
-                   (Aspects, "volatile_full_access") = 0
-               then
-                  Report_Rule_Violation
-                    (Unit, Node, Volatile_Atomic_Consistency,
-                     "volatile declaration has no atomic/full-access policy");
-               end if;
-            end;
-         end if;
-         if Rule_States (Representation_Clause_Policy) = Enabled
-           and then Node.Kind in
-             Libadalang.Common.Ada_Attribute_Def_Clause
-               | Libadalang.Common.Ada_Record_Rep_Clause
-         then
-            Report_Rule_Violation
-              (Unit, Node, Representation_Clause_Policy,
-               "explicit representation clause requires consistency review");
-         end if;
-         if Rule_States (Library_Level_Initialization) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_Object_Decl
-           and then Is_Library_Level (Node)
-           and then not Libadalang.Analysis.Is_Null
-             (Node.As_Object_Decl.F_Default_Expr)
-           and then Contains_Call (Node.As_Object_Decl.F_Default_Expr)
-         then
-            Report_Rule_Violation
-              (Unit, Node, Library_Level_Initialization,
-               "library-level initializer contains a call");
-         end if;
-         if Rule_States (Address_Clause) = Enabled then
-            if Node.Kind = Libadalang.Common.Ada_Attribute_Def_Clause then
                declare
-                  Clause     : constant
-                    Libadalang.Analysis.Attribute_Def_Clause :=
-                    Node.As_Attribute_Def_Clause;
-                  Attr_Expr  : constant Libadalang.Analysis.Name :=
-                    Clause.F_Attribute_Expr;
+                  Call        : constant Libadalang.Analysis.Call_Expr :=
+                    Node.As_Call_Expr;
+                  Callee_Name : constant String :=
+                    (if Call.F_Name.Kind = Libadalang.Common.Ada_Identifier
+                     then Normalize_Rule_Name (Node_Text (Call.F_Name))
+                     elsif Call.F_Name.Kind = Libadalang.Common.Ada_Dotted_Name
+                     then Normalize_Rule_Name
+                         (Node_Text (Call.F_Name.As_Dotted_Name.F_Suffix))
+                     else "");
                begin
-                  if not Libadalang.Analysis.Is_Null (Attr_Expr)
-                    and then Attr_Expr.Kind =
-                      Libadalang.Common.Ada_Attribute_Ref
-                    and then Normalize_Rule_Name
-                      (Node_Text (Attr_Expr.As_Attribute_Ref.F_Attribute)) =
-                      "address"
+                  if Callee_Name in
+                    "shift-left" | "shift-right" | "shift-right-arithmetic" |
+                    "rotate-left" | "rotate-right"
                   then
-                     Report_Rule_Violation
-                       (Unit, Node, Address_Clause, "address clause used");
+                     declare
+                        Value_Expr  : constant Libadalang.Analysis.Expr :=
+                          Call.F_Suffix.Child (1).As_Param_Assoc.F_R_Expr;
+                        Amount_Expr : constant Libadalang.Analysis.Expr :=
+                          Call.F_Suffix.Child (2).As_Param_Assoc.F_R_Expr;
+                        Width       : constant Natural :=
+                          Interfaces_Shift_Rotate_Bit_Width
+                            (Value_Expr.P_Expression_Type);
+                        Amount_Val  : constant Abstract_Int :=
+                          Integer_Value (Amount_Expr);
+                     begin
+                        if Width > 0
+                          and then Amount_Val.Known
+                          and then Amount_Val.Value < 0
+                        then
+                           Report_Rule_Violation
+                             (Unit, Node, Known_Negative_Shift_Amount_Failure,
+                              "shift/rotate amount " & Amount_Val.Value'Image &
+                              " is negative",
+                              Explanation =>
+                                "Every Interfaces shift/rotate function's " &
+                                "Amount parameter is subtype Natural; a " &
+                                "negative actual fails that range check " &
+                                "before the shift/rotate runs.");
+                        end if;
+                     end;
                   end if;
                end;
-            elsif (Node.Kind = Libadalang.Common.Ada_Aspect_Assoc
-                    and then Normalize_Rule_Name
-                      (Node_Text (Node.As_Aspect_Assoc.F_Id)) = "address")
-              or else Node.Kind = Libadalang.Common.Ada_At_Clause
-            then
-               --  Two other forms of the same hazard. Aspect syntax
-               --  ("with ..., Address => ...;") is semantically identical
-               --  to a separate attribute definition clause and
-               --  increasingly the more common form in modern Ada.
-               --  Ada_At_Clause is the obsolescent "for X use at ADDR;"
-               --  form (RM 13.5.1), superseded by "for X'Address use
-               --  ADDR;" but still legal; unlike Attribute_Def_Clause, it
-               --  has no attribute name to check -- the clause itself is
-               --  unconditionally an address specification.
-               Report_Rule_Violation
-                 (Unit, Node, Address_Clause, "address clause used");
             end if;
-         end if;
-         if Rule_States (Duplicate_With_Clause) = Enabled
-           and then Node.Kind = Libadalang.Common.Ada_With_Clause
-         then
-            declare
-               Clause  : constant Libadalang.Analysis.With_Clause :=
-                 Node.As_With_Clause;
-               Sibling : Libadalang.Analysis.Ada_Node :=
-                 Node.Previous_Sibling;
-               Found   : Boolean := False;
-            begin
-               Earlier_Siblings :
-               while not Libadalang.Analysis.Is_Null (Sibling) loop
-                  if Sibling.Kind = Libadalang.Common.Ada_With_Clause then
-                     for Pkg_Name of Clause.F_Packages loop
-                        for Earlier_Name of
-                          Sibling.As_With_Clause.F_Packages
-                        loop
-                           if Canonical_Text (Pkg_Name) /= ""
-                             and then Canonical_Text (Pkg_Name) =
-                               Canonical_Text (Earlier_Name)
-                           then
-                              Found := True;
-                           end if;
-                        end loop;
-                     end loop;
-                  end if;
-                  exit Earlier_Siblings when Found;
-                  Sibling := Sibling.Previous_Sibling;
-               end loop Earlier_Siblings;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
 
-               if Found then
+         begin
+            if Rule_States (No_Controlled_Type) = Enabled
+              and then Node.Kind in Libadalang.Common.Ada_Base_Type_Decl
+              and then Is_Controlled_Type (Node)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, No_Controlled_Type,
+                  "type derives from a controlled finalization type");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Complete_Initialization) = Enabled then
+               if Node.Kind = Libadalang.Common.Ada_Object_Decl
+                 and then Libadalang.Analysis.Is_Null
+                   (Node.As_Object_Decl.F_Default_Expr)
+               then
                   Report_Rule_Violation
-                    (Unit, Node, Duplicate_With_Clause,
-                     "with clause names a unit already with'd in this " &
-                     "context clause");
-               end if;
-            end;
-         end if;
-         if Rule_States (No_Unchecked_Conversion) = Enabled
-           and then Node.Kind =
-             Libadalang.Common.Ada_Generic_Subp_Instantiation
-         then
-            declare
-               Generic_Name : constant Libadalang.Analysis.Name :=
-                 Node.As_Generic_Subp_Instantiation.F_Generic_Subp_Name;
-            begin
-               if Is_Ada_Unchecked_Conversion (Generic_Name) then
+                    (Unit, Node, Complete_Initialization,
+                     "object has no explicit initializer");
+               elsif Node.Kind = Libadalang.Common.Ada_Component_Decl
+                 and then Libadalang.Analysis.Is_Null
+                   (Node.As_Component_Decl.F_Default_Expr)
+               then
                   Report_Rule_Violation
-                    (Unit, Node, No_Unchecked_Conversion,
-                     "Ada.Unchecked_Conversion instantiated");
+                    (Unit, Node, Complete_Initialization,
+                     "record component has no explicit default");
                end if;
-            end;
-         end if;
-         if Rule_States (No_Unchecked_Deallocation) = Enabled
-           and then Node.Kind =
-             Libadalang.Common.Ada_Generic_Subp_Instantiation
-         then
-            declare
-               Generic_Name : constant Libadalang.Analysis.Name :=
-                 Node.As_Generic_Subp_Instantiation.F_Generic_Subp_Name;
-            begin
-               if Is_Ada_Unchecked_Deallocation (Generic_Name) then
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Volatile_Atomic_Consistency) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Aspect_Assoc
+              and then Normalize_Rule_Name
+                (Node_Text (Node.As_Aspect_Assoc.F_Id)) = "volatile"
+            then
+               declare
+                  Aspects : constant String := Ada.Characters.Handling.To_Lower
+                    (Node_Text (Node.Parent));
+               begin
+                  if Ada.Strings.Fixed.Index (Aspects, "atomic") = 0
+                    and then Ada.Strings.Fixed.Index
+                      (Aspects, "volatile_full_access") = 0
+                  then
+                     Report_Rule_Violation
+                       (Unit, Node, Volatile_Atomic_Consistency,
+                        "volatile declaration has no atomic/full-access policy");
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Representation_Clause_Policy) = Enabled
+              and then Node.Kind in
+                Libadalang.Common.Ada_Attribute_Def_Clause
+                  | Libadalang.Common.Ada_Record_Rep_Clause
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Representation_Clause_Policy,
+                  "explicit representation clause requires consistency review");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Library_Level_Initialization) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_Object_Decl
+              and then Is_Library_Level (Node)
+              and then not Libadalang.Analysis.Is_Null
+                (Node.As_Object_Decl.F_Default_Expr)
+              and then Contains_Call (Node.As_Object_Decl.F_Default_Expr)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Library_Level_Initialization,
+                  "library-level initializer contains a call");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Address_Clause) = Enabled then
+               if Node.Kind = Libadalang.Common.Ada_Attribute_Def_Clause then
+                  declare
+                     Clause     : constant
+                       Libadalang.Analysis.Attribute_Def_Clause :=
+                       Node.As_Attribute_Def_Clause;
+                     Attr_Expr  : constant Libadalang.Analysis.Name :=
+                       Clause.F_Attribute_Expr;
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Attr_Expr)
+                       and then Attr_Expr.Kind =
+                         Libadalang.Common.Ada_Attribute_Ref
+                       and then Normalize_Rule_Name
+                         (Node_Text (Attr_Expr.As_Attribute_Ref.F_Attribute)) =
+                         "address"
+                     then
+                        Report_Rule_Violation
+                          (Unit, Node, Address_Clause, "address clause used");
+                     end if;
+                  end;
+               elsif (Node.Kind = Libadalang.Common.Ada_Aspect_Assoc
+                       and then Normalize_Rule_Name
+                         (Node_Text (Node.As_Aspect_Assoc.F_Id)) = "address")
+                 or else Node.Kind = Libadalang.Common.Ada_At_Clause
+               then
+                  --  Two other forms of the same hazard. Aspect syntax
+                  --  ("with ..., Address => ...;") is semantically identical
+                  --  to a separate attribute definition clause and
+                  --  increasingly the more common form in modern Ada.
+                  --  Ada_At_Clause is the obsolescent "for X use at ADDR;"
+                  --  form (RM 13.5.1), superseded by "for X'Address use
+                  --  ADDR;" but still legal; unlike Attribute_Def_Clause, it
+                  --  has no attribute name to check -- the clause itself is
+                  --  unconditionally an address specification.
                   Report_Rule_Violation
-                    (Unit, Node, No_Unchecked_Deallocation,
-                     "Ada.Unchecked_Deallocation instantiated");
+                    (Unit, Node, Address_Clause, "address clause used");
                end if;
-            end;
-         end if;
-         if Rule_States (Magic_Number) = Enabled
-           and then Node.Kind in Libadalang.Common.Ada_Int_Literal
-             | Libadalang.Common.Ada_Real_Literal
-           and then not Is_Allowed_Magic_Number (Node)
-         then
-            Report_Rule_Violation
-              (Unit, Node, Magic_Number,
-               "numeric literal should be replaced by a named constant");
-         end if;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Duplicate_With_Clause) = Enabled
+              and then Node.Kind = Libadalang.Common.Ada_With_Clause
+            then
+               declare
+                  Clause  : constant Libadalang.Analysis.With_Clause :=
+                    Node.As_With_Clause;
+                  Sibling : Libadalang.Analysis.Ada_Node :=
+                    Node.Previous_Sibling;
+                  Found   : Boolean := False;
+               begin
+                  Earlier_Siblings :
+                  while not Libadalang.Analysis.Is_Null (Sibling) loop
+                     if Sibling.Kind = Libadalang.Common.Ada_With_Clause then
+                        for Pkg_Name of Clause.F_Packages loop
+                           for Earlier_Name of
+                             Sibling.As_With_Clause.F_Packages
+                           loop
+                              if Canonical_Text (Pkg_Name) /= ""
+                                and then Canonical_Text (Pkg_Name) =
+                                  Canonical_Text (Earlier_Name)
+                              then
+                                 Found := True;
+                              end if;
+                           end loop;
+                        end loop;
+                     end if;
+                     exit Earlier_Siblings when Found;
+                     Sibling := Sibling.Previous_Sibling;
+                  end loop Earlier_Siblings;
+
+                  if Found then
+                     Report_Rule_Violation
+                       (Unit, Node, Duplicate_With_Clause,
+                        "with clause names a unit already with'd in this " &
+                        "context clause");
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Unchecked_Conversion) = Enabled
+              and then Node.Kind =
+                Libadalang.Common.Ada_Generic_Subp_Instantiation
+            then
+               declare
+                  Generic_Name : constant Libadalang.Analysis.Name :=
+                    Node.As_Generic_Subp_Instantiation.F_Generic_Subp_Name;
+               begin
+                  if Is_Ada_Unchecked_Conversion (Generic_Name) then
+                     Report_Rule_Violation
+                       (Unit, Node, No_Unchecked_Conversion,
+                        "Ada.Unchecked_Conversion instantiated");
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (No_Unchecked_Deallocation) = Enabled
+              and then Node.Kind =
+                Libadalang.Common.Ada_Generic_Subp_Instantiation
+            then
+               declare
+                  Generic_Name : constant Libadalang.Analysis.Name :=
+                    Node.As_Generic_Subp_Instantiation.F_Generic_Subp_Name;
+               begin
+                  if Is_Ada_Unchecked_Deallocation (Generic_Name) then
+                     Report_Rule_Violation
+                       (Unit, Node, No_Unchecked_Deallocation,
+                        "Ada.Unchecked_Deallocation instantiated");
+                  end if;
+               end;
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
+         begin
+            if Rule_States (Magic_Number) = Enabled
+              and then Node.Kind in Libadalang.Common.Ada_Int_Literal
+                | Libadalang.Common.Ada_Real_Literal
+              and then not Is_Allowed_Magic_Number (Node)
+            then
+               Report_Rule_Violation
+                 (Unit, Node, Magic_Number,
+                  "numeric literal should be replaced by a named constant");
+            end if;
+         exception
+            when Exc : others =>
+               Note_Skipped_Check (Node, Exc);
+         end;
 
          --  Apply node-specific checks before recursively visiting descendants.
          Analyze_Bug_Finding_Node (Unit, Node);
       exception
          when Exc : others =>
-            Skipped_Nodes := Skipped_Nodes + 1;
-            Log_Verbose_Once
-              ("skipping checks at " & Node.Image & ": " &
-               Ada.Exceptions.Exception_Message (Exc));
+            Note_Skipped_Check (Node, Exc);
       end;
 
       Declarations.Register_Declaration (Node);

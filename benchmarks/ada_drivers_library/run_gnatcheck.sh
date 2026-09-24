@@ -137,7 +137,7 @@ for variant in a b; do
    #  gnatcheck_rule_args.awk.
    saved_ifs=$IFS
    IFS='
-   '
+'
    for pass_args in $gc_option_args; do
       IFS=$saved_ifs
       option_status=0

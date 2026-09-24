@@ -1159,7 +1159,8 @@ package Adalang_Analyzer.Rules is
       Identical_Case_Alternative =>
         (Name        => To_Unbounded_String ("Identical_Case_Alternative"),
          Description => To_Unbounded_String
-           ("Find adjacent case alternatives with identical bodies."),
+           ("Find adjacent case alternatives with identical bodies or " &
+            "expressions."),
          Guidance    => To_Unbounded_String
            ("Merge the choices into one alternative or restore the " &
             "choice-specific handling that was probably lost during " &

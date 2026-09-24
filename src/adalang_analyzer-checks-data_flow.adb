@@ -404,13 +404,15 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          end loop;
          return Result;
       end Best_Of_Kind;
-
-      Decl_Match : constant Libadalang.Analysis.Base_Subp_Spec :=
-        Best_Of_Kind (Skip_Bodies => True);
    begin
-      if not Libadalang.Analysis.Is_Null (Decl_Match) then
-         return Decl_Match;
-      end if;
+      declare
+         Decl_Match : constant Libadalang.Analysis.Base_Subp_Spec :=
+           Best_Of_Kind (Skip_Bodies => True);
+      begin
+         if not Libadalang.Analysis.Is_Null (Decl_Match) then
+            return Decl_Match;
+         end if;
+      end;
       return Best_Of_Kind (Skip_Bodies => False);
    exception
       when others =>

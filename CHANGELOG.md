@@ -5,11 +5,12 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [1.5.3] - 2026-09-23
+## [1.5.3] - 2026-09-24
 
-Patch release. Twelve precision and robustness fixes, found by extending
+Patch release. Sixteen precision and robustness fixes, found by extending
 the GNATcheck oracle comparison to GNAT's own compiler warnings and style
-checks (`benchmarks/README.md`, "Compiler-warning and style-check pairs").
+checks (`benchmarks/README.md`, "Compiler-warning and style-check pairs")
+and by correcting two comparison-harness defects that had hidden results.
 
 ### Fixed
 
@@ -36,6 +37,22 @@ checks (`benchmarks/README.md`, "Compiler-warning and style-check pairs").
 - `Wrong_Parameter_Mode` now sees writes through a `for ... of` loop element
   (`FP-076`) and no longer advises changing modes fixed by overriding or by
   an `'Access` or generic-actual binding (`FP-077`).
+- `Identical_Case_Alternative` now also checks case expressions, not only
+  case statements, matching `Identical_Branches`' coverage of if-expressions
+  (`FP-079`).
+- A Libadalang resolution failure in a helper's declarations escaped its
+  exception handler: with `Non_Short_Circuit_Condition` enabled, an
+  unresolvable operand type in an `if` condition dropped every other check
+  on that `if` statement (`Identical_Branches`, `Duplicate_Condition`,
+  `Empty_If_Body`, `Unreachable_Branch`). Twelve helpers with the same
+  shape are fixed (`FP-080`).
+- Any call with a positional argument made `Non_Short_Circuit_Condition`
+  and `No_Dispatching_Call` raise internally, silently skipping every later
+  check on the enclosing `if`/`elsif`/`while` statement or call
+  (`FP-081`).
+- A resolution failure in one check no longer skips the other checks on
+  the same node: each check now has its own handler. With all checks
+  enabled this recovers 114 findings on gnatcoll-core alone (`FP-082`).
 
 ### Changed
 
@@ -44,6 +61,12 @@ checks (`benchmarks/README.md`, "Compiler-warning and style-check pairs").
   carry an independent-tool cross-check (was 44).
   `tests/run_tool_function_evidence.sh` now also requires every claimed
   GNATcheck pairing to be in `benchmarks/gnatcheck_rule_map.tsv`.
+- GNATcheck oracle comparison harness: the Ada_Drivers_Library runner split
+  each extra GNATcheck pass at spaces (an indented `IFS` value), so none of
+  the fourteen new pairs was ever checked there; GNATcheck's
+  `Duplicate_Branches` now runs with `min_stmt=1,min_size=1` (its defaults
+  hid every pair on all ten corpora), and it and `Same_Tests` are matched on
+  the line they name as the duplicate, the one AdaLang reports.
 
 ## [1.5.2] - 2026-09-22
 

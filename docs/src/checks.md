@@ -112,7 +112,7 @@ guidance shipped by the current binary.
 | SPARK | `Known_Range_Check_Failure` | Reliability | High | Reports values provably outside an assignment, initialization, or conversion subtype. |
 | SPARK | `Known_Index_Check_Failure` | Reliability | High | Reports array indices provably outside the corresponding index subtype. |
 | SPARK | `Known_Overflow_Failure` | Reliability | High | Reports integer arithmetic provably outside the operation's base type. |
-| Case analysis | `Identical_Case_Alternative` | Reliability | Medium | Reports adjacent case alternatives with identical bodies. |
+| Case analysis | `Identical_Case_Alternative` | Reliability | Medium | Reports adjacent case alternatives (in case statements or case expressions) with identical bodies. |
 | Expression | `Redundant_Type_Conversion` | Maintainability | Low | Reports explicit type conversions whose operand already has the target subtype. |
 | Style | `Missing_Overriding_Indicator` | Maintainability | Medium | Reports primitive subprograms that override an inherited operation without the `overriding` keyword. |
 | Exception handling | `Handler_Order` | Reliability | High | Reports a `when others` handler that precedes, and thereby shadows, a more specific handler in the same list. |

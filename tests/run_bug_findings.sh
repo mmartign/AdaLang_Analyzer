@@ -769,4 +769,21 @@ then
    exit 1
 fi
 
+if "$analyzer" -checks='Identical_Branches,Non_Short_Circuit_Condition' \
+     tests/non_short_circuit_positional_call_findings.adb >"$output" 2>&1
+then
+   echo "expected non_short_circuit_positional_call_findings.adb to" \
+     "produce violations" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Identical_Branches\]' "$output")" -ne 1 ]; then
+   echo "Identical_Branches finding lost with Non_Short_Circuit_Condition" \
+     "enabled (FP-081): a positional call in the if condition has a null" \
+     "designator child, whose Kind raised and abandoned the if statement's" \
+     "other checks" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

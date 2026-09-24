@@ -42,10 +42,10 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | No_Access_To_Subp_Def | Subprogram_Access | Direct |
 | Floating_Equality | Float_Equality_Checks | Direct |
 | Same_Operand | Same_Operands | Direct |
-| Duplicate_Condition | Same_Tests | Direct |
+| Duplicate_Condition | Same_Tests | Direct (GNATcheck flags the first of two identical tests; the lane matches on the line it names, the one AdaLang reports) |
 | Null_Statement | Redundant_Null_Statements | Direct (confirmed 2026-09-22 via the AWS corpus's GNATcheck oracle comparison, `FP-066` -- AdaLang originally flagged every `null;` unconditionally, including the sole-statement idiom GNATcheck's own rule exempts (an empty exception handler, a no-op case alternative); fixed to exempt the same sole-statement and labeled-null shapes GNATcheck does, eliminating all 88 of the AWS corpus's false positives) |
 | Empty_Exception_Handler | Silent_Exception_Handlers | Direct |
-| Identical_Branches | Duplicate_Branches | Direct |
+| Identical_Branches | Duplicate_Branches | Direct (confirmed 2026-09-24: the oracle lane runs `Duplicate_Branches` with `min_stmt=1,min_size=1`, since its defaults of 4 statements / 14 tokens hid every pair, and matches on the line GNATcheck names as the duplicate, which is the one AdaLang reports. AdaLang compares adjacent branches only, so GNATcheck's non-adjacent pairs stay GNATcheck-only) |
 | No_Recursion | Recursive_Subprograms | Direct |
 | No_Multiple_Return | Improper_Returns | Direct |
 | Non_Short_Circuit_Condition | Non_Short_Circuit_Operators | Direct |
@@ -70,7 +70,7 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Redundant_Boolean_Comparison | Redundant_Boolean_Expressions, Boolean_Negations | Close |
 | Missing_Global_Contract | SPARK_Procedures_Without_Globals | Close (AdaLang deliberately also fires pre-SPARK-adoption, as a readiness check; GNATcheck's rule only examines code already under SPARK_Mode — confirmed intentional) |
 | Uninitialized_Output | Unassigned_OUT_Parameters | Close |
-| Identical_Case_Alternative | Duplicate_Branches | Close (case-alternative-specific) |
+| Identical_Case_Alternative | Duplicate_Branches | Close (case-alternative-specific; covers case statements and, since `FP-079`, case expressions; same threshold and matching notes as Identical_Branches) |
 | Exception_Propagation | Exception_Propagation_From_Callbacks/Export/Tasks | Close (undersells the gap in both directions, confirmed across two corpora, 2026-08-19: on `aws`, AdaLang is *broader* — it checks every subprogram lacking an exception boundary, not just callback/`Export`/task boundaries, so most of AdaLang's findings have no GNATcheck counterpart at all. On `cubedos`, GNATcheck's task-specific rule is *broader* in a different way — it flags unguarded calls from task bodies without requiring proof of an explicit raise, while AdaLang only fires when it can trace an explicit `raise` transitively through its own call-graph summaries) |
 | Library_Level_Initialization | Calls_Outside_Elaboration | Close |
 | Naming_Convention | Min_Identifier_Length | Close |
