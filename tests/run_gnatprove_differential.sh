@@ -59,8 +59,13 @@ if grep -F '"status": "definite-error"' "$results" >/dev/null ||
    exit 1
 fi
 
+# --level=0 alone caps each VC at a 1-second wall-clock timeout, which slow
+# CI runners (macOS in particular) can exceed on the 70-term overflow checks
+# in verification_many_variables.adb. A step limit is machine-independent;
+# the largest VC here needs under 3,000 cvc5 steps, so 100,000 is ample.
 if ! "$gnatprove" -P tests/verification_differential.gpr \
-  --mode=prove --level=0 >"$gnatprove_log" 2>&1; then
+  --mode=prove --level=0 --timeout=0 --steps=100000 \
+  >"$gnatprove_log" 2>&1; then
    cat "$gnatprove_log"
    exit 1
 fi
