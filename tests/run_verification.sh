@@ -87,10 +87,11 @@ loop_stale_assert=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-assert.XXXXXX")
 loop_stale_precondition=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-precondition.XXXXXX")
 global_aspect_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-clean.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
+aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -629,6 +630,18 @@ if grep -F '"kind": "loop-invariant-preservation", "status": "proved-safe"' \
    echo "a third independent conditional escaped Max_Branch_Depth into a false loop-invariant proof" >&2
    exit 1
 fi
+#  The budget wall is a documented subset boundary, so both obligations
+#  carry it as unsupported provenance naming the blocking conditional.
+for kind in loop-invariant-preservation loop-variant; do
+   if ! grep -F "\"kind\": \"$kind\", \"status\": \"unproved\"" \
+       "$loop_branch_third_conditional" |
+     grep -F '"reasonCode": "branch-budget-exceeded"' |
+     grep -F '"blockingExpression": "X = 1"' >/dev/null
+   then
+      echo "$kind past Max_Branch_Depth lacks branch-budget-exceeded provenance" >&2
+      exit 1
+   fi
+done
 
 #  A case statement folds the same way an elsif chain does: every
 #  alternative but a trailing, explicit others is walked and joined via
@@ -1126,6 +1139,23 @@ if grep -F "Error processing" "$cross_project_stderr" >/dev/null; then
      "--verify processing instead of just skipping the one affected" \
      "obligation (FP-040)" >&2
    cat "$cross_project_stderr" >&2
+   exit 1
+fi
+
+#  FP-084: an exception inside the fixed-point run (here a Libadalang
+#  property error on a parameter type declared in a spec that is not
+#  available) used to finalize with the partial Reachable array, reporting
+#  every node the worklist had not yet reached as Unreachable. An aborted
+#  run must leave its obligations Unsupported, never Unreachable.
+run_json "$aborted_fixpoint" tests/verification_fp084_missing_spec.adb
+if grep -F '"status": "unreachable"' "$aborted_fixpoint" >/dev/null; then
+   echo "an aborted fixed-point run reported Unreachable obligations (FP-084)" >&2
+   exit 1
+fi
+if ! grep -F '"operation": "Z.F + 1"' "$aborted_fixpoint" |
+  grep -F '"status": "unsupported"' >/dev/null
+then
+   echo "an aborted fixed-point run did not leave its obligation Unsupported (FP-084)" >&2
    exit 1
 fi
 

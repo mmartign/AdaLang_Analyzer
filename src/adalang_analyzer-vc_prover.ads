@@ -43,6 +43,7 @@ package Adalang_Analyzer.VC_Prover is
       Callee_Not_Expression_Function,
       Writable_Formal,
       Record_Actual_Not_Object,
+      Branch_Budget_Exceeded,
       Translation_Error);
 
    type Unsupported_Provenance is record
@@ -117,6 +118,14 @@ package Adalang_Analyzer.VC_Prover is
    function Equal (Left, Right : Symbolic_State) return Boolean;
 
    function Havoc return Symbolic_State is (Empty_Symbolic_State);
+
+   function Alias_Object
+     (State    : Symbolic_State;
+      From, To : Libadalang.Analysis.Ada_Node) return Symbolic_State;
+   --  Binds every symbol key of object To (itself and its record
+   --  components) to the current term of the matching key of From, so both
+   --  names denote one value. Only sound when From and To denote the same
+   --  object, such as a parameter's spec and body defining names.
 
    function Decide
      (Condition : Libadalang.Analysis.Expr;

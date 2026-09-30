@@ -155,6 +155,13 @@ package Adalang_Analyzer.Flow_Domain is
    --  Marks Key as no longer statically known in any domain, e.g. because
    --  it was passed to a call this analysis can't see through.
 
+   procedure Flow_Copy_Key
+     (State    : in out Flow_State;
+      From, To : Libadalang.Analysis.Ada_Node);
+   --  Gives To exactly the facts State holds for From (none, if From is
+   --  unbound). Only sound when From and To denote the same object, such as
+   --  a parameter's spec and body defining names.
+
    procedure Flow_Havoc_All (State : in out Flow_State);
    --  Discards every tracked binding. The conservative fallback when a
    --  call's effects on state outside its own actual parameters can't be

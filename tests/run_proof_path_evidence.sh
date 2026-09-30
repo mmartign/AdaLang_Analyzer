@@ -49,15 +49,21 @@ run_fixture()
    mode=$2
    key=$(basename "$fixture" .adb)
    output="$work/$mode-$key.json"
+   #  A package-body fixture is analyzed together with its sibling spec,
+   #  so the body's names resolve without a project file.
+   spec=${fixture%.adb}.ads
+   if [ "$spec" = "$fixture" ] || [ ! -f "$spec" ]; then
+      spec=
+   fi
    if [ ! -f "$output" ]; then
       status=0
       if [ "$mode" = unavailable ]; then
          ADALANG_CVC5=/nonexistent/cvc5 ADALANG_Z3=/nonexistent/z3 \
            "$analyzer" --verify -q --format=json --output="$output" \
-           "$fixture" >/dev/null 2>&1 || status=$?
+           ${spec:+"$spec"} "$fixture" >/dev/null 2>&1 || status=$?
       else
          "$analyzer" --verify -q --format=json --output="$output" \
-           "$fixture" >/dev/null 2>&1 || status=$?
+           ${spec:+"$spec"} "$fixture" >/dev/null 2>&1 || status=$?
       fi
       if [ "$status" -gt 1 ]; then
          echo "proof-path fixture failed: $fixture ($mode), status $status" >&2

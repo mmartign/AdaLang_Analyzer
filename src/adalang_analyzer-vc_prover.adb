@@ -236,6 +236,49 @@ package body Adalang_Analyzer.VC_Prover is
       return 0;
    end Binding_Index;
 
+   function Alias_Object
+     (State    : Symbolic_State;
+      From, To : Libadalang.Analysis.Ada_Node) return Symbolic_State
+   is
+      Result : Symbolic_State := State;
+
+      procedure Bind (Key : Symbol_Key; Sort : Scalar_Sort; Term : String) is
+         Target : constant Symbol_Key :=
+           (Object => To, Component => Key.Component);
+         Index  : constant Natural := Binding_Index (Result, Target);
+         Item   : constant Symbolic_Binding :=
+           (Key => Target, Sort => Sort, Term => To_Unbounded_String (Term));
+      begin
+         if Index = 0 then
+            Result.Bindings.Append (Item);
+         else
+            Result.Bindings.Replace_Element (Index, Item);
+         end if;
+      end Bind;
+   begin
+      if Libadalang.Analysis.Is_Null (From)
+        or else Libadalang.Analysis.Is_Null (To)
+      then
+         return Result;
+      end if;
+
+      --  An unassigned key still denotes its root; an assigned one, its
+      --  binding's term. Bindings are applied last so they win.
+      for Root of State.Roots loop
+         if Root.Key.Object = From
+           and then Binding_Index (State, Root.Key) = 0
+         then
+            Bind (Root.Key, Root.Sort, To_String (Root.Name));
+         end if;
+      end loop;
+      for Binding of State.Bindings loop
+         if Binding.Key.Object = From then
+            Bind (Binding.Key, Binding.Sort, To_String (Binding.Term));
+         end if;
+      end loop;
+      return Result;
+   end Alias_Object;
+
    function Root_Index
      (State : Symbolic_State;
       Name  : String) return Natural
@@ -2855,6 +2898,8 @@ package body Adalang_Analyzer.VC_Prover is
             return "writable-formal";
          when Record_Actual_Not_Object =>
             return "record-actual-not-object";
+         when Branch_Budget_Exceeded =>
+            return "branch-budget-exceeded";
          when Translation_Error =>
             return "translation-error";
       end case;
@@ -2898,6 +2943,9 @@ package body Adalang_Analyzer.VC_Prover is
             return "an out or in out formal prevents pure call inlining";
          when Record_Actual_Not_Object =>
             return "a record formal requires a plain object-reference actual";
+         when Branch_Budget_Exceeded =>
+            return "the loop path has more independent conditionals than " &
+              "the branch budget folds";
          when Translation_Error =>
             return "semantic translation raised an internal property error";
       end case;

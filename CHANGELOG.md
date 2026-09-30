@@ -5,6 +5,38 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Second tranche of proof-path evidence for the assurance model: the
+remaining discriminant, join, exception, and composite/access
+sub-boundaries now each have positive and adversarial routes in
+`quality/proof_path_evidence.tsv` (48 routes over 18 producers).
+
+### Added
+
+- `--verify` proves a discriminant check when the prefix object's own
+  static discriminant constraint selects the variant that declares the
+  component (new `discriminant-static-constraint` proof path). Without
+  `--verify` such accesses stay `Unproved`.
+- Loop-invariant preservation and loop-variant obligations that exceed the
+  branch budget (a third independent conditional on one path) now carry
+  `branch-budget-exceeded` provenance naming the blocking condition.
+
+### Fixed
+
+- `Known_Discriminant_Check_Failure` no longer reports a valid component
+  access when the discriminant constraint is a named constant or a variant
+  choice is a subtype name (`FP-083`).
+- `--verify` no longer reports obligations as `Unreachable` when a
+  subprogram's fixed-point run fails partway; they are `Unsupported`
+  (`FP-084`).
+- `--verify` now applies preconditions and postconditions written on a
+  separate spec to the subprogram body. Previously they never narrowed the
+  body's parameters, leaving provable checks in every package-level
+  subprogram `Unproved` (`FP-085`). A contract is carried across only when
+  the spec conforms to the body parameter by parameter, so a same-name
+  overload's contract is never applied.
+
 ## [1.5.3] - 2026-09-24
 
 Patch release. Sixteen precision and robustness fixes, found by extending

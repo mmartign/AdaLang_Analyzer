@@ -371,8 +371,8 @@ provers succeed. `tests/run_verification_mutations.sh` independently guards
 all 12 enumerated obligation families with seeded defects or conservative
 boundary cases; none may become `Proved_Safe` unexpectedly.
 `tests/run_proof_path_evidence.sh` separately inventories every source-level
-`Record_Proved_Safe` producer and checks 37 method-specific routes. The first
-23 are organised by obligation kind and method; a further 14 exercise the
+`Record_Proved_Safe` producer and checks 48 method-specific routes. The first
+23 are organised by obligation kind and method; a further 25 exercise the
 scalar VC sub-boundaries within them -- individual operators (`*`, unary and
 Boolean connectives, relational comparison, non-zero `/`/`mod`/`rem`, and the
 unsupported `**` edge), scalar types (statically bounded subtype,
@@ -381,7 +381,22 @@ fallback with its unsupported `'First`/`'Last` edge), branch and case joins
 (a pre-branch fact that must survive a merge, versus a conflicting binding
 that must be dropped), and the exception-handler edge (an obligation before a
 `raise`, and one on the non-exceptional path through a handler-bearing block,
-both prove while the handler-edge obligation stays `Unproved`). Each
+both prove while the handler-edge obligation stays `Unproved`; with several
+named handlers, the normal path past the raise chain keeps its branch facts
+and none of them leaks into a handler). A second tranche covers the
+remaining named sub-boundaries: discriminant checks (a static integer or
+enumeration-literal constraint, including an `others` variant, proves the
+access, a statically excluded component is a definite error, and a constant
+or dynamic constraint stays `Unproved`), joins beyond the first conditional
+(a second sequential or nested conditional in a loop body folds into
+invariant preservation, and a third is reported `Unproved` with
+`branch-budget-exceeded` provenance), and composite and access values
+(array-of-record indexing and record-component range checks prove, record
+aggregates stay outside the scalar VC subset, and a write through one access
+value leaves no stale fact about a read through another), and contracts on
+a separate spec (a spec precondition narrows the conforming body's
+parameters but never a same-name overload's, and a spec postcondition is
+decided against the body's exit state). Each
 route has positive and adversarial evidence, while solver-dependent routes
 also exercise unsupported translation and unavailable solvers. The gate
 compares the manifest with stable `proof-path` source tags, so a new
@@ -395,11 +410,10 @@ the [false-safe response policy](false-safe-response.md).
 Before broadening the supported subset or making a stronger product claim,
 the project still needs:
 
-1. Extension of the first tranche of operator, type, join, and exception
-   sub-boundary proof-path routes (now in `quality/proof_path_evidence.tsv`)
-   to the remaining cases -- composite and access types, discriminant
-   obligations, nested and sequential joins beyond the branch budget, and
-   exceptional edges other than a single catch-all handler.
+1. Proof paths that make the composite and access sub-boundaries more than
+   conservative: record-component and access-designated values are checked
+   against their subtypes but never carried as facts, and handler entry
+   drops even precondition facts.
 2. A larger routinely executed differential corpus beyond the current clean
    and broken units.
 3. Broader unsupported-provenance coverage for the remaining expression and

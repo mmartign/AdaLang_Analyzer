@@ -24,4 +24,12 @@ package Adalang_Analyzer.SPARK_Readiness is
    --  variant-part component that a statically known discriminant
    --  constraint on its prefix object provably excludes.
 
+   function Discriminant_Access_Proved
+     (Node : Libadalang.Analysis.Dotted_Name'Class) return Boolean;
+   --  True when Node selects a variant-part component of an object whose
+   --  own static discriminant constraint provably selects that component's
+   --  variant, with the prefix object resolved without imprecise fallback.
+   --  A constrained object's discriminants cannot change, so the access
+   --  can never fail its discriminant check.
+
 end Adalang_Analyzer.SPARK_Readiness;

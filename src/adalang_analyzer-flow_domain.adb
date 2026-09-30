@@ -266,6 +266,38 @@ package body Adalang_Analyzer.Flow_Domain is
           Range_Value => Range_From_Int (Value), Initialized => Bool_True));
    end Flow_Set;
 
+   procedure Flow_Copy_Key
+     (State    : in out Flow_State;
+      From, To : Libadalang.Analysis.Ada_Node)
+   is
+      Source : Flow_Binding := (others => <>);
+      Found  : Boolean := False;
+   begin
+      if Libadalang.Analysis.Is_Null (From)
+        or else Libadalang.Analysis.Is_Null (To)
+      then
+         return;
+      end if;
+
+      for I in 1 .. Binding_Count (State) loop
+         if State.Bindings (I).Decl = From then
+            Source := State.Bindings (I);
+            Found := True;
+         end if;
+      end loop;
+
+      for I in reverse 1 .. Binding_Count (State) loop
+         if State.Bindings (I).Decl = To then
+            State.Bindings.Delete (I);
+         end if;
+      end loop;
+
+      if Found then
+         Source.Decl := To;
+         State.Bindings.Append (Source);
+      end if;
+   end Flow_Copy_Key;
+
    procedure Flow_Bool_Set
      (State      : in out Flow_State;
       Key        : Libadalang.Analysis.Ada_Node;

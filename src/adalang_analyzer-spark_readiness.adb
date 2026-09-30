@@ -1902,6 +1902,29 @@ package body Adalang_Analyzer.SPARK_Readiness is
    --  that is neither a resolved integer nor a plain identifier).
    type Discriminant_Match_Result is (Match, No_Match, Unknown_Match);
 
+   --  Whether Node is an identifier that resolves to an enumeration literal.
+   --  Only such identifiers can be compared by spelling: a constant, a
+   --  variable, or a subtype name spells differently from the literal(s) it
+   --  denotes, so a text mismatch would not prove a mismatch.
+   function Is_Enum_Literal
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Node.Kind /= Libadalang.Common.Ada_Identifier then
+         return False;
+      end if;
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Node.As_Name.P_Referenced_Decl;
+      begin
+         return not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind = Libadalang.Common.Ada_Enum_Literal_Decl;
+      end;
+   exception
+      when others =>
+         return False;
+   end Is_Enum_Literal;
+
    function Choice_Match_Result
      (Choice     : Libadalang.Analysis.Ada_Node'Class;
       Value_Text : String;
@@ -1928,8 +1951,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
       --  an identifier-shaped (enumeration literal) choice can be compared
       --  by text; a choice of any other shape (e.g. a numeric literal)
       --  can't be related to an unresolved value by spelling alone.
-      if Value_Text = "" or else Choice.Kind /= Libadalang.Common.Ada_Identifier
-      then
+      if Value_Text = "" or else not Is_Enum_Literal (Choice) then
          return Unknown_Match;
       elsif Canonical_Text (Choice) = Value_Text then
          return Match;
@@ -1976,9 +1998,20 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Variant;
    end Selected_Variant;
 
-   procedure Check_Discriminant_Access  --  adalang-analyzer: ignore Cyclomatic_Complexity
-     (Unit : Libadalang.Analysis.Analysis_Unit;
-      Node : Libadalang.Analysis.Dotted_Name'Class)
+   --  How a component selection Prefix.Component relates to the variant
+   --  the prefix object's own discriminant constraint selects:
+   --  Not_Applicable when the shape is outside this pass (not a
+   --  variant-part component of a directly constrained object), Unresolved
+   --  when the selected variant can't be determined, Excluded when it
+   --  provably isn't the component's variant, and Selected when it provably
+   --  is. Precise_Only refuses Libadalang's imprecise name-resolution
+   --  fallback, as a proved-safe result must not rest on a guessed object.
+   type Discriminant_Access_Class is
+     (Not_Applicable, Unresolved, Excluded, Selected);
+
+   function Classify_Discriminant_Access  --  adalang-analyzer: ignore Cyclomatic_Complexity
+     (Node         : Libadalang.Analysis.Dotted_Name'Class;
+      Precise_Only : Boolean := False) return Discriminant_Access_Class
    is
       Suffix : constant Libadalang.Analysis.Ada_Node :=
         Libadalang.Analysis.Ada_Node (Node.F_Suffix);
@@ -1990,7 +2023,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
         or else Libadalang.Analysis.Is_Null (Prefix)
         or else Prefix.Kind /= Libadalang.Common.Ada_Identifier
       then
-         return;
+         return Not_Applicable;
       end if;
 
       declare
@@ -2015,7 +2048,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
            or else Prefix_Type.As_Type_Decl.F_Type_Def.As_Record_Type_Def
              .F_Record_Def.Kind /= Libadalang.Common.Ada_Record_Def
          then
-            return;
+            return Not_Applicable;
          end if;
 
          declare
@@ -2024,24 +2057,25 @@ package body Adalang_Analyzer.SPARK_Readiness is
                 .F_Record_Def.As_Record_Def.F_Components;
          begin
             if Libadalang.Analysis.Is_Null (Components) then
-               return;
+               return Not_Applicable;
             end if;
             Part := Components.F_Variant_Part;
          end;
 
          if Libadalang.Analysis.Is_Null (Part) then
-            return;
+            return Not_Applicable;
          end if;
 
          Actual_Variant := Owning_Variant (Part, Field_Name);
          if Libadalang.Analysis.Is_Null (Actual_Variant) then
             --  The fixed part or an unresolved shape: nothing provably
             --  wrong.
-            return;
+            return Not_Applicable;
          end if;
 
          Decl :=
-           Prefix.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+           Prefix.As_Name.P_Referenced_Decl
+             (Imprecise_Fallback => not Precise_Only);
          if Libadalang.Analysis.Is_Null (Decl)
            or else Decl.Kind /= Libadalang.Common.Ada_Object_Decl
            or else Libadalang.Analysis.Is_Null
@@ -2049,7 +2083,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
            or else Decl.As_Object_Decl.F_Type_Expr.Kind /=
              Libadalang.Common.Ada_Subtype_Indication
          then
-            return;
+            return Not_Applicable;
          end if;
 
          Constraint :=
@@ -2061,7 +2095,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
            or else not Constraint.As_Composite_Constraint
              .P_Is_Discriminant_Constraint
          then
-            return;
+            return Not_Applicable;
          end if;
 
          declare
@@ -2083,76 +2117,104 @@ package body Adalang_Analyzer.SPARK_Readiness is
          end;
 
          if Libadalang.Analysis.Is_Null (Value) then
-            return;
+            return Not_Applicable;
          end if;
 
          declare
             Value_Int  : constant Abstract_Int := Integer_Value (Value);
             Value_Text : constant String :=
-              (if Value.Kind = Libadalang.Common.Ada_Identifier
+              (if Is_Enum_Literal (Value)
                then Canonical_Text (Value)
                else "");
-            Selected   : constant Libadalang.Analysis.Variant :=
+            Chosen     : constant Libadalang.Analysis.Variant :=
               Selected_Variant (Part, Value_Text, Value_Int);
          begin
-            if Libadalang.Analysis.Is_Null (Selected) then
-               Adalang_Analyzer.Proof_Obligations.Register_At
-                 (Unit               => Unit,
-                  Node               => Node,
-                  Kind               =>
-                    Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
-                  Status             =>
-                    Adalang_Analyzer.Proof_Obligations.Unproved,
-                  Method             =>
-                    Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
-                  Explanation        =>
-                    "discriminant failure is not established, but the " &
-                    "component access is not proved safe",
-                  Imprecision_Source =>
-                    "the selected variant could not be resolved",
-                  Configuration_Id   => Assurance_Profile_Name);
-            elsif Libadalang.Analysis.Ada_Node (Selected) /=
+            if Libadalang.Analysis.Is_Null (Chosen) then
+               return Unresolved;
+            elsif Libadalang.Analysis.Ada_Node (Chosen) /=
               Libadalang.Analysis.Ada_Node (Actual_Variant)
             then
-               Adalang_Analyzer.Proof_Obligations.Register_At
-                 (Unit             => Unit,
-                  Node             => Node,
-                  Kind             =>
-                    Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
-                  Status           =>
-                    Adalang_Analyzer.Proof_Obligations.Definite_Error,
-                  Method           =>
-                    Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
-                  Abstract_State   =>
-                    "selected variant excludes the referenced component",
-                  Explanation      =>
-                    "component belongs to a variant excluded by the " &
-                    "object's discriminant constraint",
-                  Configuration_Id => Assurance_Profile_Name);
-               Report_Rule_Violation
-                 (Unit, Node, Known_Discriminant_Check_Failure,
-                  "component '" & Node_Text (Suffix) &
-                    "' belongs to a variant excluded by the object's " &
-                    "discriminant constraint");
+               return Excluded;
             else
-               Adalang_Analyzer.Proof_Obligations.Register_At
-                 (Unit               => Unit,
-                  Node               => Node,
-                  Kind               =>
-                    Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
-                  Status             =>
-                    Adalang_Analyzer.Proof_Obligations.Unproved,
-                  Method             =>
-                    Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
-                  Explanation        =>
-                    "discriminant failure is not established, but the " &
-                    "component access is not yet a proved-safe result",
-                  Imprecision_Source =>
-                    "proved-safe discriminant outcomes are not enabled",
-                  Configuration_Id   => Assurance_Profile_Name);
+               return Selected;
             end if;
          end;
       end;
+   end Classify_Discriminant_Access;
+
+   function Discriminant_Access_Proved
+     (Node : Libadalang.Analysis.Dotted_Name'Class) return Boolean is
+   begin
+      return Classify_Discriminant_Access (Node, Precise_Only => True) =
+        Selected;
+   exception
+      when others =>
+         return False;
+   end Discriminant_Access_Proved;
+
+   procedure Check_Discriminant_Access
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Node : Libadalang.Analysis.Dotted_Name'Class) is
+   begin
+      case Classify_Discriminant_Access (Node) is
+         when Not_Applicable =>  --  adalang-analyzer: ignore Null_Case_Alternative
+            null;  --  adalang-analyzer: ignore Null_Statement
+         when Unresolved =>
+            Adalang_Analyzer.Proof_Obligations.Register_At
+              (Unit               => Unit,
+               Node               => Node,
+               Kind               =>
+                 Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
+               Status             =>
+                 Adalang_Analyzer.Proof_Obligations.Unproved,
+               Method             =>
+                 Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+               Explanation        =>
+                 "discriminant failure is not established, but the " &
+                 "component access is not proved safe",
+               Imprecision_Source =>
+                 "the selected variant could not be resolved",
+               Configuration_Id   => Assurance_Profile_Name);
+         when Excluded =>
+            Adalang_Analyzer.Proof_Obligations.Register_At
+              (Unit             => Unit,
+               Node             => Node,
+               Kind             =>
+                 Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
+               Status           =>
+                 Adalang_Analyzer.Proof_Obligations.Definite_Error,
+               Method           =>
+                 Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+               Abstract_State   =>
+                 "selected variant excludes the referenced component",
+               Explanation      =>
+                 "component belongs to a variant excluded by the " &
+                 "object's discriminant constraint",
+               Configuration_Id => Assurance_Profile_Name);
+            Report_Rule_Violation
+              (Unit, Node, Known_Discriminant_Check_Failure,
+               "component '" & Node_Text (Node.F_Suffix) &
+                 "' belongs to a variant excluded by the object's " &
+                 "discriminant constraint");
+         when Selected =>
+            --  --verify may upgrade this to Proved_Safe through
+            --  Flow_Interp's discriminant proof path.
+            Adalang_Analyzer.Proof_Obligations.Register_At
+              (Unit               => Unit,
+               Node               => Node,
+               Kind               =>
+                 Adalang_Analyzer.Proof_Obligations.Discriminant_Check,
+               Status             =>
+                 Adalang_Analyzer.Proof_Obligations.Unproved,
+               Method             =>
+                 Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+               Explanation        =>
+                 "discriminant failure is not established, but the " &
+                 "component access is not yet a proved-safe result",
+               Imprecision_Source =>
+                 "proved-safe discriminant outcomes require --verify",
+               Configuration_Id   => Assurance_Profile_Name);
+      end case;
    exception
       when Exc : others =>
          Log_Verbose_Once

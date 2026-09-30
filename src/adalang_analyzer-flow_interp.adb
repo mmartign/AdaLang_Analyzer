@@ -14,6 +14,7 @@
 
 with Ada.Containers.Vectors;
 with Ada.Exceptions;
+with Ada.Strings.Unbounded;
 
 with Libadalang.Common;
 with Langkit_Support.Text;
@@ -26,6 +27,7 @@ with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;
+with Adalang_Analyzer.SPARK_Readiness;
 with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Text_Utils;
 with Adalang_Analyzer.VC_Prover;
@@ -3355,7 +3357,15 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
       end Contains_Unsupported_Semantics;
 
-      Boundary_Supported : constant Boolean :=
+      --  Cleared by the handler below when the fixed-point run aborts:
+      --  States and Reachable then describe only the nodes the worklist
+      --  happened to reach, so finalization must not read an unprocessed
+      --  node as Unreachable or a partially iterated state as a proof.
+      --  Fixpoint_Complete marks the point after which they are final, so
+      --  a later failure (in postcondition evaluation, say) does not
+      --  discard a completed analysis.
+      Fixpoint_Complete  : Boolean := False;
+      Boundary_Supported : Boolean :=
         CFG.Is_Complete (Graph)
         and then CFG.Is_Well_Formed (Graph)
         and then not Contains_Unsupported_Semantics (Subprogram);
@@ -3394,6 +3404,132 @@ package body Adalang_Analyzer.Flow_Interp is
          when others =>
             Flow_Havoc_All (State);
       end Seed_Parameters;
+
+      --  Contracts written on a separate spec name the spec's parameter
+      --  defining names, while the body's state is keyed by the body's own
+      --  (FP-085). Parameter_Pairs lists each body parameter with its spec
+      --  counterpart, so contract facts can be carried across. It is empty
+      --  unless the spec resolves precisely and conforms parameter by
+      --  parameter (same names, modes and type text, in order):
+      --  Libadalang's decl-part resolution is not reliable for same-name
+      --  overloads, and a wrong pairing would attach one overload's
+      --  contract to another's body.
+      type Parameter_Pair is record
+         Spec_Name : Libadalang.Analysis.Ada_Node;
+         Body_Name : Libadalang.Analysis.Ada_Node;
+      end record;
+
+      package Parameter_Pair_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Parameter_Pair);
+
+      function Parameter_Pairs return Parameter_Pair_Vectors.Vector is
+         type Flat_Parameter is record
+            Name      : Libadalang.Analysis.Ada_Node;
+            Name_Text : Ada.Strings.Unbounded.Unbounded_String;
+            Mode      : Libadalang.Common.Ada_Node_Kind_Type;
+            Is_Aliased : Boolean;
+            Type_Text : Ada.Strings.Unbounded.Unbounded_String;
+         end record;
+
+         package Flat_Vectors is new Ada.Containers.Vectors
+           (Index_Type => Positive, Element_Type => Flat_Parameter);
+
+         function Squeezed (Text : String) return String is
+            Lowered : constant String :=
+              Text_Utils.Normalize_Rule_Name (Text);
+            Result  : String (1 .. Lowered'Length);
+            Last    : Natural := 0;
+         begin
+            for C of Lowered loop
+               if C not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+                  Last := Last + 1;
+                  Result (Last) := C;
+               end if;
+            end loop;
+            return Result (1 .. Last);
+         end Squeezed;
+
+         function Flatten
+           (Spec : Libadalang.Analysis.Base_Subp_Spec)
+            return Flat_Vectors.Vector
+         is
+            Result : Flat_Vectors.Vector;
+         begin
+            for Param of Spec.P_Params loop
+               for Id of Param.F_Ids loop
+                  Result.Append
+                    ((Name      => Libadalang.Analysis.Ada_Node (Id),
+                      Name_Text =>
+                        Ada.Strings.Unbounded.To_Unbounded_String
+                          (Squeezed (Ada_Text.Node_Text (Id))),
+                      Mode      =>
+                        (if Param.F_Mode.Kind = Libadalang.Common.Ada_Mode_Default
+                         then Libadalang.Common.Ada_Mode_In
+                         else Param.F_Mode.Kind),
+                      Is_Aliased => Param.F_Has_Aliased.P_As_Bool,
+                      Type_Text =>
+                        Ada.Strings.Unbounded.To_Unbounded_String
+                          (Squeezed (Ada_Text.Node_Text (Param.F_Type_Expr)))));
+               end loop;
+            end loop;
+            return Result;
+         end Flatten;
+
+         Result    : Parameter_Pair_Vectors.Vector;
+         Decl_Part : Libadalang.Analysis.Basic_Decl;
+      begin
+         --  Resolved here, not in the declarative part, so a Libadalang
+         --  property error reaches the handler below instead of escaping
+         --  Verify_Subprogram's elaboration and aborting the whole file.
+         Decl_Part := Subprogram.P_Decl_Part (Imprecise_Fallback => False);
+         if Libadalang.Analysis.Is_Null (Decl_Part)
+           or else Decl_Part.Kind not in
+             Libadalang.Common.Ada_Subp_Decl
+               | Libadalang.Common.Ada_Abstract_Subp_Decl
+           or else Squeezed (Ada_Text.Node_Text
+                    (Decl_Part.P_Defining_Name))
+             /= Squeezed (Ada_Text.Node_Text (Subprogram.P_Defining_Name))
+         then
+            return Result;
+         end if;
+
+         declare
+            Spec_Params : constant Flat_Vectors.Vector :=
+              Flatten (Decl_Part.As_Basic_Subp_Decl.P_Subp_Decl_Spec);
+            Body_Params : constant Flat_Vectors.Vector :=
+              Flatten
+                (Libadalang.Analysis.Base_Subp_Spec (Subprogram.F_Subp_Spec));
+            use type Ada.Containers.Count_Type;
+            use type Ada.Strings.Unbounded.Unbounded_String;
+         begin
+            if Spec_Params.Length /= Body_Params.Length then
+               return Result;
+            end if;
+            for I in 1 .. Natural (Spec_Params.Length) loop
+               declare
+                  S : constant Flat_Parameter := Spec_Params (I);
+                  B : constant Flat_Parameter := Body_Params (I);
+               begin
+                  if S.Name_Text /= B.Name_Text
+                    or else S.Mode /= B.Mode
+                    or else S.Is_Aliased /= B.Is_Aliased
+                    or else S.Type_Text /= B.Type_Text
+                  then
+                     Result.Clear;
+                     return Result;
+                  end if;
+                  if S.Name /= B.Name then
+                     Result.Append
+                       ((Spec_Name => S.Name, Body_Name => B.Name));
+                  end if;
+               end;
+            end loop;
+         end;
+         return Result;
+      exception
+         when others =>
+            return Parameter_Pair_Vectors.Empty_Vector;
+      end Parameter_Pairs;
 
       procedure Transfer_Declaration
         (Node  : Libadalang.Analysis.Ada_Node;
@@ -4171,7 +4307,8 @@ package body Adalang_Analyzer.Flow_Interp is
            (Header  : CFG.Node_Id;
             State   : Flow_State;
             Symbols : VC.Symbolic_State;
-            Path_Supported : Boolean)
+            Path_Supported : Boolean;
+            Path_Blocker   : VC.VC_Outcome)
          is
          begin
             for Index in 1 .. Natural (Loop_Invariants.Length) loop
@@ -4182,6 +4319,8 @@ package body Adalang_Analyzer.Flow_Interp is
                   if Item.Header = Header and then Item.Leading then
                      if not Path_Supported then
                         Item.Preservation := VC_Not_Discharged;
+                        Remember_Inconclusive
+                          (Item.Preservation_Outcome, Path_Blocker);
                      else
                         declare
                            Value : constant Abstract_Bool :=
@@ -4220,7 +4359,8 @@ package body Adalang_Analyzer.Flow_Interp is
             Before_Symbols : VC.Symbolic_State;
             After_State    : Flow_State;
             After_Symbols  : VC.Symbolic_State;
-            Path_Supported : Boolean)
+            Path_Supported : Boolean;
+            Path_Blocker   : VC.VC_Outcome)
          is
          begin
             for Index in 1 .. Natural (Loop_Variants.Length) loop
@@ -4234,6 +4374,9 @@ package body Adalang_Analyzer.Flow_Interp is
                        or else not Invariants_Usable_For_Variant (Header)
                      then
                         Item.Progress := VC_Not_Discharged;
+                        if not Path_Supported then
+                           Item.Progress_Outcome := Path_Blocker;
+                        end if;
                      else
                         declare
                            Expr_Type : constant
@@ -4283,6 +4426,13 @@ package body Adalang_Analyzer.Flow_Interp is
             Before_State   : Flow_State := Empty_Flow_State;
             Before_Symbols : VC.Symbolic_State := VC.Havoc;
             Steps     : Natural := 0;
+
+            --  Why Advance (through its Blocker parameter) rejected the
+            --  loop path, when the reason is a documented subset boundary
+            --  rather than an unsupported node kind. Reported as
+            --  unsupported provenance on the preservation and
+            --  variant-progress obligations.
+            Path_Blocker : VC.VC_Outcome := VC.Unknown_Outcome;
 
             --  The If_Stmt an elsif/else condition belongs to: Source
             --  itself when Source.Parent is the If_Stmt (the chain's
@@ -4397,7 +4547,8 @@ package body Adalang_Analyzer.Flow_Interp is
                State         : in out Flow_State;
                Symbols       : in out VC.Symbolic_State;
                Steps         : in out Natural;
-               Reached_Back  : out Boolean) return Boolean
+               Reached_Back  : out Boolean;
+               Blocker       : in out VC.VC_Outcome) return Boolean
             is
                Current : CFG.Node_Id := Start;
                First   : Boolean := True;
@@ -4521,7 +4672,7 @@ package body Adalang_Analyzer.Flow_Interp is
                         Acc_OK      : constant Boolean :=
                           Advance
                             (Targets (N), Branch_Budget - 1, Acc_State,
-                             Acc_Symbols, Acc_Steps, Acc_Back);
+                             Acc_Symbols, Acc_Steps, Acc_Back, Blocker);
                      begin
                         if not Acc_OK or else not Acc_Back then
                            return False;
@@ -4536,7 +4687,7 @@ package body Adalang_Analyzer.Flow_Interp is
                               Arm_OK      : constant Boolean :=
                                 Advance
                                   (Targets (I), Branch_Budget - 1, Arm_State,
-                                   Arm_Symbols, Arm_Steps, Arm_Back);
+                                   Arm_Symbols, Arm_Steps, Arm_Back, Blocker);
                            begin
                               if not Arm_OK or else not Arm_Back then
                                  return False;
@@ -4622,6 +4773,21 @@ package body Adalang_Analyzer.Flow_Interp is
                            null;
                         elsif Node_Info.Kind = CFG.Condition_Node then
                            if Branch_Budget = 0 then
+                              if Blocker.Result /= VC.VC_Unsupported then
+                                 Blocker :=
+                                   (Result     => VC.VC_Unsupported,
+                                    Provenance =>
+                                      (Reason              =>
+                                         VC.Branch_Budget_Exceeded,
+                                       Blocking_Expression =>
+                                         Ada.Strings.Unbounded
+                                           .To_Unbounded_String
+                                             (Ada_Text.Node_Text
+                                                (Node_Info.Source)),
+                                       Inline_Path         =>
+                                         Ada.Strings.Unbounded
+                                           .Null_Unbounded_String));
+                              end if;
                               return False;
                            end if;
 
@@ -4690,7 +4856,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                    Advance
                                      (True_Target, Branch_Budget - 1,
                                       True_State, True_Symbols, True_Steps,
-                                      True_Back);
+                                      True_Back, Blocker);
 
                                  False_State   : Flow_State := State;
                                  False_Symbols : VC.Symbolic_State :=
@@ -4703,7 +4869,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                       (if False_Continues then Branch_Budget
                                        else Branch_Budget - 1),
                                       False_State, False_Symbols,
-                                      False_Steps, False_Back);
+                                      False_Steps, False_Back, Blocker);
                               begin
                                  if not True_OK or else not False_OK
                                    or else not True_Back
@@ -4855,13 +5021,14 @@ package body Adalang_Analyzer.Flow_Interp is
                  Advance
                    (Header, Branch_Budget => Max_Branch_Depth,
                     State => State, Symbols => Symbols, Steps => Steps,
-                    Reached_Back => Reached_Back);
+                    Reached_Back => Reached_Back, Blocker => Path_Blocker);
                Path_OK      : constant Boolean := OK and then Reached_Back;
             begin
-               Mark_Preservation (Header, State, Symbols, Path_OK);
+               Mark_Preservation
+                 (Header, State, Symbols, Path_OK, Path_Blocker);
                Mark_Variant_Progress
                  (Header, Before_State, Before_Symbols, State, Symbols,
-                  Path_OK);
+                  Path_OK, Path_Blocker);
             end;
          end Prove_Header;
       begin
@@ -5654,6 +5821,7 @@ package body Adalang_Analyzer.Flow_Interp is
 
       Initial : Flow_State := Empty_Flow_State;
       Initial_Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
+      Pairs   : constant Parameter_Pair_Vectors.Vector := Parameter_Pairs;
       Pre     : constant Libadalang.Analysis.Expr :=
         Contract_Expression (Subprogram, "Pre");
       Post    : constant Libadalang.Analysis.Expr :=
@@ -5661,6 +5829,9 @@ package body Adalang_Analyzer.Flow_Interp is
    begin
       Collect_Loop_Invariants (Subprogram);
       Seed_Parameters (Initial);
+      for Pair of Pairs loop
+         Flow_Copy_Key (Initial, Pair.Body_Name, Pair.Spec_Name);
+      end loop;
       if not Libadalang.Analysis.Is_Null (Pre) then
          declare
             True_State, False_State : Flow_State;
@@ -5672,6 +5843,12 @@ package body Adalang_Analyzer.Flow_Interp is
               VC.Assume
                 (VC.Empty_Symbolic_State, Pre, Truth => True,
                  Flow => Initial);
+            for Pair of Pairs loop
+               Flow_Copy_Key (Initial, Pair.Spec_Name, Pair.Body_Name);
+               Initial_Symbols :=
+                 VC.Alias_Object
+                   (Initial_Symbols, Pair.Spec_Name, Pair.Body_Name);
+            end loop;
          end;
       end if;
 
@@ -5719,6 +5896,7 @@ package body Adalang_Analyzer.Flow_Interp is
          end loop;
       end if;
 
+      Fixpoint_Complete := True;
       Finalize_Node (Subprogram);
 
       if not Libadalang.Analysis.Is_Null (Post) then
@@ -5732,15 +5910,35 @@ package body Adalang_Analyzer.Flow_Interp is
                "the subprogram has no reachable normal exit");
          else
             declare
-               Exit_State : constant Flow_State :=
-                 States (CFG.Normal_Exit (Graph));
+               --  A spec postcondition names the spec's parameters: give
+               --  them the body parameters' exit facts (FP-085).
+               function Exit_Flow return Flow_State is
+                  Result : Flow_State := States (CFG.Normal_Exit (Graph));
+               begin
+                  for Pair of Pairs loop
+                     Flow_Copy_Key (Result, Pair.Body_Name, Pair.Spec_Name);
+                  end loop;
+                  return Result;
+               end Exit_Flow;
+
+               function Exit_Symbols return VC.Symbolic_State is
+                  Result : VC.Symbolic_State :=
+                    Symbolic_States (CFG.Normal_Exit (Graph));
+               begin
+                  for Pair of Pairs loop
+                     Result :=
+                       VC.Alias_Object
+                         (Result, Pair.Body_Name, Pair.Spec_Name);
+                  end loop;
+                  return Result;
+               end Exit_Symbols;
+
+               Exit_State : constant Flow_State := Exit_Flow;
                Value : constant Abstract_Bool :=
                  Boolean_Value (Post, Exit_State);
                VC_Outcome : constant VC.VC_Outcome :=
                  (if Value = Bool_Unknown
-                  then VC.Decide
-                    (Post, Exit_State,
-                     Symbolic_States (CFG.Normal_Exit (Graph)))
+                  then VC.Decide (Post, Exit_State, Exit_Symbols)
                   else VC.Unknown_Outcome);
                VC_Result : constant VC.VC_Result := VC_Outcome.Result;
             begin
@@ -5787,6 +5985,9 @@ package body Adalang_Analyzer.Flow_Interp is
          Log_Verbose_Once
            ("bounded verification skipped for subprogram: " &
             Ada.Exceptions.Exception_Message (Exc));
+         if not Fixpoint_Complete then
+            Boundary_Supported := False;
+         end if;
          Finalize_Node (Subprogram);
    end Verify_Subprogram;
 
@@ -5805,8 +6006,41 @@ package body Adalang_Analyzer.Flow_Interp is
             Visit (Node.Child (Index));
          end loop;
       end Visit;
+
+      --  A component selected from an object whose own static
+      --  discriminant constraint selects that component's variant can never
+      --  fail its discriminant check: a constrained object's discriminants
+      --  are fixed for its lifetime. Runs before Visit so an Unreachable
+      --  result from the subprogram pass still takes precedence.
+      procedure Visit_Discriminant_Accesses
+        (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Dotted_Name
+           and then SPARK_Readiness.Discriminant_Access_Proved
+             (Node.As_Dotted_Name)
+         then
+            --  proof-path: discriminant-static-constraint
+            Record_Proved_Safe
+              (Unit, Node, Proof.Discriminant_Check,
+               Proof.Static_Evaluation,
+               "the object's discriminant constraint selects the "
+               & "component's variant",
+               "selected variant declares the referenced component");
+         end if;
+
+         for Index in 1 .. Node.Children_Count loop
+            Visit_Discriminant_Accesses (Node.Child (Index));
+         end loop;
+      end Visit_Discriminant_Accesses;
    begin
       if Config.Verification_Mode then
+         if Config.Rule_States (Rules.Known_Discriminant_Check_Failure) =
+           Config.Enabled
+         then
+            Visit_Discriminant_Accesses (Unit.Root);
+         end if;
          Visit (Unit.Root);
       end if;
    end Verify_Unit;
