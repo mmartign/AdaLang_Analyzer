@@ -5,12 +5,15 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.0] - 2026-09-30
 
-Second tranche of proof-path evidence for the assurance model: the
-remaining discriminant, join, exception, and composite/access
-sub-boundaries now each have positive and adversarial routes in
-`quality/proof_path_evidence.tsv` (48 routes over 18 producers).
+Minor release. `--verify` now applies contracts written on a separate spec
+to the subprogram body, and proves discriminant checks; the proof-path
+evidence gains a second tranche covering the remaining discriminant, join,
+exception, composite/access and spec-contract sub-boundaries (48 routes
+over 18 producers in `quality/proof_path_evidence.tsv`). Obligations of a
+subprogram whose analysis fails partway are now `Unsupported` rather than
+`Unreachable`.
 
 ### Added
 
