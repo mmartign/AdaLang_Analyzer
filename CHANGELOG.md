@@ -37,6 +37,13 @@ sub-boundaries now each have positive and adversarial routes in
   the spec conforms to the body parameter by parameter, so a same-name
   overload's contract is never applied.
 
+### Changed
+
+- Re-ran all eleven benchmark corpora from fresh checkouts, including both
+  lanes of the seven GNATprove-oracle SPARK corpora; results are in each
+  `benchmarks/<corpus>/RESULTS_2026-09-30.md`. Zero possible unsoundness
+  and zero false positives on every corpus with an oracle.
+
 ## [1.5.3] - 2026-09-24
 
 Patch release. Sixteen precision and robustness fixes, found by extending

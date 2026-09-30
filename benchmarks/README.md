@@ -60,7 +60,7 @@ span nine scalar obligation kinds across far more distinct code shapes than
 the six real projects reach; its value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-09-06.md`. The first run
+`proved-safe`. See `spark_testsuite/RESULTS_2026-09-30.md`. The first run
 of this corpus found two analyzer defects (`FP-064`, `FP-065`), both fixed
 with regression tests before it landed.
 
@@ -70,10 +70,22 @@ consistent with `POSITIONING.md`'s framing of `--verify` as "a much
 narrower scalar subset," not a competitor to full SMT-backed proof. The
 "both safe" share of each corpus's matched pairs varies a lot by code
 style: sparknacl 56/890 (~6%), tokeneer 25/221 (~11%), libkeccak 55/212
-(~26%), coap_spark 5/853 (~0.6%) — coap_spark's RecordFlux-generated
+(~26%), coap_spark 4/853 (~0.5%) — coap_spark's RecordFlux-generated
 protocol contracts and session-state logic remain the hardest code shape
 for AdaLang's bounded verifier to independently prove, even though it
 never gets one *wrong* there.
+
+The 2026-09-30 refresh (after `FP-085`, which lets preconditions written on
+a separate spec reach the body) raised AdaLang's `Proved_Safe` count on
+every fully-proved corpus: coap_spark 1,797 to 3,257, libkeccak 2,760 to
+3,026, Tokeneer 1,933 to 2,030, SPARKNaCl 3,875 to 3,913, Saatana 146 to
+178. Almost all of the new proofs fall outside 1:1 matched pairs (in the
+count-mismatch and AdaLang-only buckets), so the matched figures above
+barely move. The same refresh confirmed `FP-084` on real code: the
+`Unreachable` results on gnatcoll (1,072), AWS (352), CubedOS (73) and
+coap_spark (65) were all artifacts of aborted analyses and are now
+`Unsupported`, together with the `Proved_Safe` results those half-finished
+runs had produced (107 on gnatcoll, which is why its count falls).
 
 ## Real-code validation (no GNATprove oracle)
 

@@ -92,14 +92,14 @@ preset run enabled it there, how many corpora did, and how many findings
 across how many files it produced. It is a release snapshot, refreshed with
 the benchmark run itself.
 
-- **99 of 127** checks were enabled by at least one benchmark
+- **100 of 127** checks were enabled by at least one benchmark
   preset run (`--recommended` / `--spark` / `--automotive` / `--verify`)
-  over an external corpus; **78** produced at least one finding on that
+  over an external corpus; **79** produced at least one finding on that
   real code.
-- The remaining 28 are not reached by those preset
+- The remaining 27 are not reached by those preset
   runs -- mostly style rules outside every preset, plus any check newer than
   the last benchmark refresh -- and remain fixture-validated only:
-  `No_Exit`, `No_Pragma`, `Redundant_Abs`, `Redundant_Unary_Minus`, `Integer_Division_Before_Multiplication`, `Excessive_Shift_Amount`, `Known_Negative_Shift_Amount_Failure`, `Known_Negative_Exponent_Failure`, `Succ_Pred_Boundary_Overflow`, `Duplicate_With_Clause`, `Duplicate_Exception_Choice`, `Null_Statement`, `Redundant_Final_Return`, `Contradictory_Range_Condition`, `Too_Many_Parameters`, `Unnecessary_Else_After_Return`, `Redundant_If_Boolean_Return`, `Long_Line`, `Trailing_Whitespace`, `Inefficient_String_Concatenation`, `Assertion_Side_Effect`, `Entry_Barrier_Side_Effect`, `Reraise_Discards_Occurrence`, `Known_Enum_Val_Failure`, `Known_Value_Conversion_Failure`, `Missing_Requirement_Trace`, `Malformed_Requirement_Trace`, `Double_Free`.
+  `No_Exit`, `No_Pragma`, `Redundant_Abs`, `Redundant_Unary_Minus`, `Integer_Division_Before_Multiplication`, `Excessive_Shift_Amount`, `Known_Negative_Shift_Amount_Failure`, `Known_Negative_Exponent_Failure`, `Succ_Pred_Boundary_Overflow`, `Duplicate_With_Clause`, `Duplicate_Exception_Choice`, `Null_Statement`, `Redundant_Final_Return`, `Contradictory_Range_Condition`, `Too_Many_Parameters`, `Unnecessary_Else_After_Return`, `Redundant_If_Boolean_Return`, `Long_Line`, `Trailing_Whitespace`, `Inefficient_String_Concatenation`, `Assertion_Side_Effect`, `Entry_Barrier_Side_Effect`, `Reraise_Discards_Occurrence`, `Known_Enum_Val_Failure`, `Known_Value_Conversion_Failure`, `Missing_Requirement_Trace`, `Malformed_Requirement_Trace`.
 
 This is exercise evidence: the check ran against real, independently authored
 Ada, not only against repository fixtures. It is not a soundness or
