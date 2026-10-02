@@ -5,12 +5,24 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.1] - 2026-10-02
 
-Eleven false-safe results in `--verify` are fixed. Each reported an obligation
-`Proved_Safe` that a legal execution can violate; all eleven are present in
-1.6.0 and earlier. They were found by seeded-defect probing: small programs
-in which a marked check really fails. Proved-safe counts change as a result:
+Corrective release. Eleven false-safe results in `--verify` are fixed. Each
+reported an obligation `Proved_Safe` that a legal execution can violate.
+
+**Affected versions.** Every release up to and including 1.6.0 that offers
+`--verify`. In those versions a `Proved_Safe` result is not trustworthy for
+the obligations listed under Fixed below: index and range checks on arrays
+or subtypes whose bounds are not statically known, any obligation in a
+subprogram that contains a loop (in particular one over an empty range) or
+modular arithmetic, and any obligation that depends on an object that is
+renamed, overlaid, volatile, atomic, aliased, written through an expanded
+name, or changed by a function, a controlled operation or a default
+initializer. Re-run `--verify` with 1.6.1 before relying on such results.
+Rule findings without `--verify` are not affected.
+
+The defects were found by seeded-defect probing: small programs in which a
+marked check really fails. Proved-safe counts change as a result:
 index checks on unconstrained array parameters, range checks against a
 subtype with a bound that is not known, and facts about globals across calls
 to functions with side effects no longer prove unless one of the sound paths
@@ -105,6 +117,10 @@ below applies.
   for `Buffer : String (1 .. 10)`) is now a `Definite_Error`, and reported
   by `Known_Index_Check_Failure`; it was previously `Proved_Safe`.
 - The proof-path evidence has 62 routes over 20 producers.
+- SPARKNaCl and libkeccak were re-run with this release: zero possible
+  unsoundness and zero false positives against the GNATprove oracle. The
+  `benchmarks/<corpus>/RESULTS_2026-09-30.md` files still describe 1.6.0;
+  the other nine corpora have not been re-run yet.
 
 ## [1.6.0] - 2026-09-30
 
