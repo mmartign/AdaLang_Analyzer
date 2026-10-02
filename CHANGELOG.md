@@ -5,6 +5,57 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `--verify` run time on large projects, which 1.6.1 made much worse. To
+  decide whether a function called in an expression may change state
+  (`FP-093`), 1.6.1 reads the callee's body and the bodies it calls, four
+  levels deep, and did so again at every call site. The work grew with the
+  fourth power of the number of calls in a body: the AWS verify lane (348
+  files) took 159 s with 1.6.0 and 39 minutes with 1.6.1; it now takes
+  69 s. The answer is worked out once for each callee and depth in a unit,
+  and the walk of a callee body stops at the first such call.
+- `--verify` starts far fewer solver processes. A query whose text was
+  already answered in the same run is not sent again (the fixed point
+  evaluates a node several times, and 65% of libkeccak's solver runs
+  repeated an earlier one), and Z3 no longer runs when CVC5 has already
+  given an answer other than UNSAT, since only an UNSAT answer from both is
+  ever used. libkeccak: 18,670 solver processes with 1.6.1, 3,418 now.
+
+  Neither change alters a result: the reports for AWS, libkeccak and
+  gnatcoll-core are byte-identical to 1.6.1's.
+- The actual of a function's `out` parameter is no longer reported as
+  read uninitialized after the call (`FP-099`, a false positive introduced
+  in 1.6.1). In `if Decode (Input, C) then Result := C;` the read of `C`
+  was a `Definite_Error`: the call's effect on the actual's value was
+  modelled, but not that the call may initialize it. The read is now
+  `Unproved`. Found by the corpus refresh, on AWS.
+- An initial value whose computation always overflows no longer gets a
+  second `Definite_Error` for the range check that would follow
+  (`FP-100`, also introduced in 1.6.1): the check is never reached.
+  `X : constant Natural := Ident (Integer'Last) + 1;` reports the overflow
+  only. Found by the corpus refresh, on the SPARK testsuite.
+
+### Added
+
+- `tests/run_seeded_defects.sh`, part of `tests/run_all.sh`: the fifteen
+  seeded-defect probe programs that found the 1.6.1 false-safes, now under
+  `tests/seeded_defects/`. A marked defect reported `Proved_Safe` or
+  `Unreachable` fails the gate, and `quality/seeded_defect_outcomes.tsv`
+  pins the outcome of all 406 marked lines.
+
+### Changed
+
+- Re-ran all eleven benchmark corpora, including both lanes of the seven
+  GNATprove-oracle SPARK corpora; results are in each
+  `benchmarks/<corpus>/RESULTS_2026-10-02.md`. Zero possible unsoundness
+  and zero false positives on every corpus with an oracle. The five
+  fully-proved corpora now give 2,366 matched obligations (2,277 before):
+  coap_spark gains 89 pairs from the precondition obligations `FP-096`
+  added.
+
 ## [1.6.1] - 2026-10-02
 
 Corrective release. Eleven false-safe results in `--verify` are fixed. Each

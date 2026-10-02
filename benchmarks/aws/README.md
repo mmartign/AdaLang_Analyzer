@@ -65,7 +65,7 @@ excludes only `aws-client-http_utils.adb`, the body that prevents unmodified
 GNATprove runs from completing project-wide preprocessing. That experiment is
 clearly separated from the primary, unmodified-source lanes and is opt-in.
 
-See [RESULTS_2026-09-30.md](RESULTS_2026-09-30.md) for the current recorded run.
+See [RESULTS_2026-10-02.md](RESULTS_2026-10-02.md) for the current recorded run.
 
 ## GNATcheck oracle lane
 

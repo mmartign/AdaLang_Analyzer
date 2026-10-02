@@ -6,11 +6,13 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Containers.Hashed_Maps;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
 with Ada.Environment_Variables;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Strings.Unbounded.Hash;
 with Ada.Text_IO;
 
 with GNAT.OS_Lib;
@@ -2800,7 +2802,9 @@ package body Adalang_Analyzer.VC_Prover is
          return Solver_Unknown;
    end Run_Solver;
 
-   function Query
+   --  Asks both solvers. Only an UNSAT answer from both is ever acted on,
+   --  so Z3 does not run once CVC5 has answered anything else.
+   function Run_Query
      (Formula : String;
       Negate  : Boolean) return Solver_Answer
    is
@@ -2832,7 +2836,9 @@ package body Adalang_Analyzer.VC_Prover is
       Ada.Text_IO.Close (File);
 
       CVC5 := Run_Solver (CVC5_Path, True, Input_Name.all);
-      Z3 := Run_Solver (Z3_Path, False, Input_Name.all);
+      Z3 :=
+        (if CVC5 = Solver_Unsat
+         then Run_Solver (Z3_Path, False, Input_Name.all) else CVC5);
       GNAT.OS_Lib.Delete_File (Input_Name.all, Deleted);
       if not Deleted then
          Log_Verbose ("could not remove solver input file");
@@ -2857,6 +2863,40 @@ package body Adalang_Analyzer.VC_Prover is
             GNAT.OS_Lib.Free (Input_Name);
          end if;
          return Solver_Unknown;
+   end Run_Query;
+
+   --  The answers already obtained in this run, by query text. The CFG
+   --  fixed point evaluates a node several times, and most of its queries
+   --  come back unchanged; each one saved is two to four solver processes.
+   package Answer_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Unbounded_String,
+      Element_Type    => Solver_Answer,
+      Hash            => Ada.Strings.Unbounded.Hash,
+      Equivalent_Keys => "=");
+   Max_Remembered_Answers : constant := 50_000;
+   Answers : array (Boolean) of Answer_Maps.Map;
+
+   procedure Query
+     (Formula : String;
+      Negate  : Boolean;
+      Answer  : out Solver_Answer)
+   is
+      Key      : constant Unbounded_String := To_Unbounded_String (Formula);
+      Position : constant Answer_Maps.Cursor := Answers (Negate).Find (Key);
+   begin
+      if Answer_Maps.Has_Element (Position) then
+         Answer := Answer_Maps.Element (Position);
+         return;
+      end if;
+
+      Answer := Run_Query (Formula, Negate);
+      --  A missing solver is not an answer about the formula.
+      if Answer /= Solver_Unavailable then
+         if Answers (Negate).Length >= Max_Remembered_Answers then
+            Answers (Negate).Clear;
+         end if;
+         Answers (Negate).Insert (Key, Answer);
+      end if;
    end Query;
 
    --  Shared solver core for Decide/Decide_Bounds/Decide_Nonzero: each only
@@ -2874,7 +2914,7 @@ package body Adalang_Analyzer.VC_Prover is
       Append
         (Formula,
          "(define-fun goal () Bool " & To_String (Goal) & ")" & ASCII.LF);
-      Negated := Query (To_String (Formula), Negate => True);
+      Query (To_String (Formula), Negate => True, Answer => Negated);
       if Negated = Solver_Unavailable then
          return (Result => VC_Unavailable,
                  Provenance => No_Unsupported_Provenance);
@@ -2883,7 +2923,7 @@ package body Adalang_Analyzer.VC_Prover is
                  Provenance => No_Unsupported_Provenance);
       end if;
 
-      Direct := Query (To_String (Formula), Negate => False);
+      Query (To_String (Formula), Negate => False, Answer => Direct);
       if Direct = Solver_Unavailable then
          return (Result => VC_Unavailable,
                  Provenance => No_Unsupported_Provenance);

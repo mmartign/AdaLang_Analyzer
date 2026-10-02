@@ -24,7 +24,7 @@ Redundant_Abs	no	-	0	0	0
 Redundant_Unary_Minus	no	-	0	0	0
 Exception_Swallowed	yes	automotive,recommended	4	24	6
 Cyclomatic_Complexity	yes	automotive	2	105	52
-Constant_Condition	yes	automotive,recommended,spark,verify	10	43	22
+Constant_Condition	yes	automotive,recommended,spark,verify	10	13	4
 Unreachable_Code	yes	automotive,recommended,spark,verify	10	46	3
 Division_By_Zero	yes	automotive,recommended,spark,verify	10	0	0
 Integer_Division_Before_Multiplication	no	-	0	0	0
@@ -85,9 +85,9 @@ Known_Postcondition_Failure	yes	automotive,recommended,spark,verify	10	0	0
 Known_Assertion_Failure	yes	automotive,recommended,spark,verify	10	3	1
 Assertion_Side_Effect	no	-	0	0	0
 Entry_Barrier_Side_Effect	no	-	0	0	0
-Known_Range_Check_Failure	yes	automotive,recommended,spark,verify	10	1	1
+Known_Range_Check_Failure	yes	automotive,recommended,spark,verify	10	0	0
 Known_Index_Check_Failure	yes	automotive,recommended,spark,verify	10	0	0
-Known_Overflow_Failure	yes	automotive,recommended,spark,verify	10	1	1
+Known_Overflow_Failure	yes	automotive,recommended,spark,verify	10	0	0
 Identical_Case_Alternative	yes	recommended	4	9	4
 Redundant_Type_Conversion	yes	automotive,recommended	4	4	2
 Handler_Order	yes	recommended	4	0	0

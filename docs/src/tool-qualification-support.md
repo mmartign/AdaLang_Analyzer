@@ -94,7 +94,7 @@ the benchmark run itself.
 
 - **100 of 127** checks were enabled by at least one benchmark
   preset run (`--recommended` / `--spark` / `--automotive` / `--verify`)
-  over an external corpus; **79** produced at least one finding on that
+  over an external corpus; **77** produced at least one finding on that
   real code.
 - The remaining 27 are not reached by those preset
   runs -- mostly style rules outside every preset, plus any check newer than

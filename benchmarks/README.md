@@ -36,13 +36,13 @@ only — see `git log` for prior snapshots).
 | [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 890 | 0 | 0 |
 | [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 101 | 0 | 0 |
 | [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 212 | 0 | 0 |
-| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 853 | 0 | 0 |
+| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 942 | 0 | 0 |
 | [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 221 | 0 | 0 |
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 7 | 0 | 0 |
-| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 428 | 0 | 0 |
+| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 427 | 0 | 0 |
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark, Tokeneer) — 2,277 proof obligations both
+Saatana, libkeccak, coap_spark, Tokeneer) — 2,366 proof obligations both
 tools could independently evaluate at the same location, spanning five
 different authors/origins and five structurally different domains —
 AdaLang has never once called something safe that GNATprove could not
@@ -55,37 +55,44 @@ The `spark_testsuite` corpus is structurally different — 124 curated
 single-purpose regression tests from the AdaCore SPARK testsuite, each
 analyzed on its own generated project and compared individually (the
 testsuite reuses filenames across thousands of directories, so a global
-`(basename, line, kind)` match is not possible). Its 428 matched pairs
+`(basename, line, kind)` match is not possible). Its 427 matched pairs
 span nine scalar obligation kinds across far more distinct code shapes than
 the six real projects reach; its value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-09-30.md`. The first run
+`proved-safe`. See `spark_testsuite/RESULTS_2026-10-02.md`. The first run
 of this corpus found two analyzer defects (`FP-064`, `FP-065`), both fixed
-with regression tests before it landed.
+with regression tests before it landed; the 2026-10-02 run found a third
+(`FP-100`).
 
 What this table doesn't show: AdaLang answers "I don't know"
 (`Unproved`/`Unsupported`) far more often than GNATprove does on all six —
 consistent with `POSITIONING.md`'s framing of `--verify` as "a much
 narrower scalar subset," not a competitor to full SMT-backed proof. The
 "both safe" share of each corpus's matched pairs varies a lot by code
-style: sparknacl 56/890 (~6%), tokeneer 25/221 (~11%), libkeccak 55/212
-(~26%), coap_spark 4/853 (~0.5%) — coap_spark's RecordFlux-generated
+style: sparknacl 74/890 (~8%), tokeneer 27/221 (~12%), libkeccak 57/212
+(~27%), coap_spark 4/942 (~0.4%) — coap_spark's RecordFlux-generated
 protocol contracts and session-state logic remain the hardest code shape
 for AdaLang's bounded verifier to independently prove, even though it
 never gets one *wrong* there.
 
-The 2026-09-30 refresh (after `FP-085`, which lets preconditions written on
-a separate spec reach the body) raised AdaLang's `Proved_Safe` count on
-every fully-proved corpus: coap_spark 1,797 to 3,257, libkeccak 2,760 to
-3,026, Tokeneer 1,933 to 2,030, SPARKNaCl 3,875 to 3,913, Saatana 146 to
-178. Almost all of the new proofs fall outside 1:1 matched pairs (in the
-count-mismatch and AdaLang-only buckets), so the matched figures above
-barely move. The same refresh confirmed `FP-084` on real code: the
-`Unreachable` results on gnatcoll (1,072), AWS (352), CubedOS (73) and
-coap_spark (65) were all artifacts of aborted analyses and are now
-`Unsupported`, together with the `Proved_Safe` results those half-finished
-runs had produced (107 on gnatcoll, which is why its count falls).
+The 2026-10-02 refresh followed release 1.6.1, which fixed eleven
+false-safe results that these comparisons could not show: on code that is
+proved correct, a bogus proof agrees with the oracle. Its effect on the
+`Proved_Safe` counts goes both ways. Results that rested on unsound
+reasoning are withdrawn (the bounds of an array that no declaration fixes,
+facts about objects across calls and loops), and what 1.6.1 added proves
+more elsewhere: SPARKNaCl 3,913 to 4,584, coap_spark 3,257 to 3,755,
+libkeccak 3,026 to 3,318, Saatana 178 to 319, and Tokeneer 2,030 to 2,010,
+the one corpus that loses on balance (118 preconditions are no longer
+proved). coap_spark's matched pairs rise from 853 to
+942 because calls to subprograms completed by expression functions now
+have precondition obligations (`FP-096`). The refresh was also the first
+run of 1.6.1 on the non-SPARK corpora and on the SPARK testsuite, and found
+three defects that release introduced: a `--verify` run time of 39 minutes
+on AWS (159 s before, 69 s now) and two false `Definite_Error` results,
+`FP-099` and `FP-100`. Each corpus's `RESULTS_2026-10-02.md` has the
+details.
 
 ## Real-code validation (no GNATprove oracle)
 
@@ -221,7 +228,7 @@ column, not defects.
 
 ## What these benchmarks have found, in total
 
-Twenty-nine real analyzer bugs, all discovered by running against
+Thirty-one real analyzer bugs, all discovered by running against
 independently authored code no one on this project wrote or reviewed for
 analyzer blind spots — the value external-corpus validation is meant to
 deliver (`quality/external_corpus_findings.md`), each fixed, with a
@@ -260,6 +267,8 @@ failure and are verified on the corpus instead):
 | `FP-080` | cubedos | Twelve helpers resolved names in their declarations, outside their own exception handler; with `Non_Short_Circuit_Condition` enabled, a resolution failure dropped every other check on the `if` statement |
 | `FP-081` | gnatcoll | Any call with a positional argument made `Non_Short_Circuit_Condition` and `No_Dispatching_Call` raise on a null child, silently skipping every later check on the statement or call (thousands of locations on gnatcoll-core) |
 | `FP-082` | gnatcoll | One check's resolution failure skipped every later check on the same node; each check now has its own handler (114 findings recovered on gnatcoll-core with all checks enabled) |
+| `FP-099` | aws | `--verify` reported a read of the `out` actual of a function called in a condition (`if Decode_Bit (Iter, Bit, C) then Result (I) := C;`) as a definite uninitialized read (introduced in 1.6.1) |
+| `FP-100` | spark_testsuite | `--verify` reported a second definite error, for the range check, on an initial value whose computation always overflows and so never reaches that check (introduced in 1.6.1) |
 
 `FP-044`'s own two originating findings (gnatcoll-buffer.adb's
 `Current_Text_Position`) persist despite the fix, unlike every other row
@@ -278,7 +287,7 @@ it's actually positioned as (`POSITIONING.md`): a fast, no-setup-required
 first pass.
 
 **Where the evidence is strong.** Zero false positives and zero possible
-unsoundness across 2,277 matched proof obligations spanning five
+unsoundness across 2,366 matched proof obligations spanning five
 independently-authored, fully-proved SPARK corpora — a hash family, two
 crypto primitives, a protocol parser, a security-critical access-control
 system — is the property that matters most for trusting a tool's output,
@@ -292,9 +301,9 @@ server or crypto primitive): GNATprove hard-stops on a SPARK-illegal
 aspect 41 units into the project, while AdaLang completes a full pass.
 
 **Where the tradeoff bites.** AdaLang rarely proves anything independently
-on harder code shapes — on coap_spark it leaves 848 of 853 comparable
+on harder code shapes — on coap_spark it leaves 937 of 942 comparable
 obligations `Unproved`/`Unsupported` and matches GNATprove's own proof on
-only 5, so its `Proved_Safe` verdicts are a bonus on top of GNATprove
+only 4, so its `Proved_Safe` verdicts are a bonus on top of GNATprove
 where both are available, not a substitute, and its
 `Unproved`/`Unsupported` results mean "no information," not "probably
 fine." Two of the five oracle corpora (saatana: 101 matched pairs;

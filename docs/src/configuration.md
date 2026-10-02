@@ -208,6 +208,7 @@ sh tests/run_config_file.sh
 sh tests/run_circular_dependencies.sh
 sh tests/run_verification.sh
 sh tests/run_verification_mutations.sh
+sh tests/run_seeded_defects.sh
 sh tests/run_proof_path_evidence.sh
 sh tests/run_gnatprove_differential.sh
 sh tests/run_performance_smoke.sh

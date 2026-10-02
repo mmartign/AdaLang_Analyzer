@@ -1,0 +1,42 @@
+package H06 is
+   type Int_Access is access all Integer;
+   type Byte is mod 256;
+   type Kind is (A, B, C);
+   type Rec (K : Kind := A) is record
+      case K is
+         when A => X : Integer;
+         when B => Y : Integer;
+         when C => null;
+      end case;
+   end record;
+   subtype Rec_A is Rec (A);
+   Registry : Int_Access;
+   V : Integer := 5 with Volatile;
+   At_Var : Integer := 5 with Atomic;
+   G : Integer := 5;
+   procedure Unrelated;
+   procedure Touch_Registry;
+   procedure Mutate (R : in out Rec);
+   procedure M01 (N : Byte; Sink : out Byte);
+   procedure M02 (N : Integer; Sink : out Integer);
+   procedure M03 (N : Integer; Sink : out Integer);
+   procedure M04 (N : Integer; Sink : out Integer);
+   procedure M05 (N : Integer; Sink : out Integer);
+   procedure M06 (N : Integer; Sink : out Integer);
+   procedure M07 (N : Integer; Sink : out Integer);
+   procedure M08 (N : Integer; Sink : out Integer);
+   procedure M09 (N : Integer; Sink : out Integer);
+   procedure M10 (N : Integer; Sink : out Integer);
+   procedure M11 (N : Integer; Sink : out Integer);
+   procedure M12 (N : Integer; Sink : out Integer);
+   procedure M13 (N : Integer; Sink : out Integer);
+   procedure M14 (N : Integer; Sink : out Integer);
+   procedure M15 (N : Integer; Sink : out Integer);
+   procedure M16 (N : Integer; Sink : out Integer);
+   procedure M17 (N : Integer; Sink : out Integer);
+   procedure M18 (N : Integer; Sink : out Integer);
+   procedure M19 (N : Integer; Sink : out Integer);
+   procedure M20 (N : Integer; Sink : out Integer);
+   procedure M21 (N : Integer; Sink : out Integer);
+   procedure M22 (N : Integer; Sink : out Integer);
+end H06;

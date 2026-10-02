@@ -235,6 +235,7 @@ sh tests/run_corpus_exercise_coverage.sh
 sh tests/run_tool_function_evidence.sh
 sh tests/run_precision_corpus.sh
 sh tests/run_verification_mutations.sh
+sh tests/run_seeded_defects.sh
 sh tests/run_proof_path_evidence.sh
 ```
 
@@ -296,6 +297,19 @@ requires every named obligation to exist, rejects any `Proved_Safe` result,
 and also checks the expected `Definite_Error` or `Unproved` classification.
 This is a focused false-safe regression gate, complementary to the clean and
 broken GNATprove differential corpora.
+
+`tests/seeded_defects/` widens the same idea from one obligation per manifest
+row to whole probe programs. Each is written so that a marked check really
+fails (`--  BAD`, or `--  BAD:kind` for a kind other than division by zero)
+or really holds (`--  OK`). `run_seeded_defects.sh` fails if any marked defect
+is reported `Proved_Safe` or `Unreachable`. It also compares the outcome of
+every marked line with `seeded_defect_outcomes.tsv`, so a probe that loses
+its obligation, or a safe check that stops proving, is noticed; after an
+intended change, regenerate that file with
+`python3 tests/seeded_defect_check.py --update` and review the diff. These
+probes found the eleven false-safes fixed in 1.6.1 (`FP-086`-`FP-094`,
+`FP-097`, `FP-098`), which the GNATprove-oracle corpora could not show: on
+code that is proved correct, a bogus proof agrees with the oracle.
 
 `proof_path_evidence.tsv` maps every source-tagged `Record_Proved_Safe`
 producer to one or more method-specific evidence routes. Its gate checks a

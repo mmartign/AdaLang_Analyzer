@@ -370,6 +370,10 @@ remain `Unproved` where GNATprove's stronger VC generation and automated
 provers succeed. `tests/run_verification_mutations.sh` independently guards
 all 12 enumerated obligation families with seeded defects or conservative
 boundary cases; none may become `Proved_Safe` unexpectedly.
+`tests/run_seeded_defects.sh` does the same for whole probe programs under
+`tests/seeded_defects/`, in which every marked check fails or holds by
+construction; it rejects a `Proved_Safe` or `Unreachable` result on a marked
+defect and pins the outcome of every marked line.
 `tests/run_proof_path_evidence.sh` separately inventories every source-level
 `Record_Proved_Safe` producer and checks 48 method-specific routes. The first
 23 are organised by obligation kind and method; a further 25 exercise the

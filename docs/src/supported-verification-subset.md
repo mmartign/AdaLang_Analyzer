@@ -233,6 +233,7 @@ The executable evidence consists of:
 
 - `tests/run_verification.sh` for obligation outcomes and provenance;
 - `tests/run_verification_mutations.sh` for seeded false-safe detection;
+- `tests/run_seeded_defects.sh` for the seeded-defect probe programs;
 - `tests/run_proof_path_evidence.sh` for complete `Proved_Safe` producer
   coverage, method-route coverage, and operator / type / join / exception
   sub-boundary routes;

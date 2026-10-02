@@ -13,6 +13,7 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Characters.Handling;
+with Ada.Containers.Hashed_Maps;
 with Ada.Containers.Vectors;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded;
@@ -46,6 +47,23 @@ package body Adalang_Analyzer.Flow_Interp is
    package VC renames Adalang_Analyzer.VC_Prover;
    use type Proof.Analysis_Method;
    use type VC.VC_Result;
+
+   --  How far Verify_Subprogram follows calls into callee bodies when it
+   --  asks whether a function called in an expression may change state.
+   Max_Effect_Depth : constant := 4;
+
+   --  What Verify_Subprogram has already worked out about callee bodies in
+   --  the unit being verified: for a callee declaration at a given depth,
+   --  whether its body may change state. The answer does not depend on the
+   --  caller, and without it each call site walks the callee's whole call
+   --  tree again, which grows with the fourth power of the calls per body.
+   package Body_Effect_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Boolean,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=");
+   Body_Effects :
+     array (Natural range 0 .. Max_Effect_Depth) of Body_Effect_Maps.Map;
 
    procedure Record_Outcome
      (Unit           : Libadalang.Analysis.Analysis_Unit;
@@ -1789,6 +1807,58 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end Known_Arithmetic_Overflow;
 
+   --  As Known_Arithmetic_Overflow, when it takes the scalar verification
+   --  condition to establish the overflow: the decision
+   --  Check_Integer_Overflow reports as a definite error.
+   function Arithmetic_Overflow_Refuted
+     (Node    : Libadalang.Analysis.Expr'Class;
+      State   : Flow_State;
+      Symbols : VC.Symbolic_State) return Boolean
+   is
+   begin
+      if Node.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+        or else Node.As_Bin_Op.F_Op not in
+          Libadalang.Common.Ada_Op_Plus
+            | Libadalang.Common.Ada_Op_Minus
+            | Libadalang.Common.Ada_Op_Mult
+            | Libadalang.Common.Ada_Op_Div
+            | Libadalang.Common.Ada_Op_Pow
+      then
+         return False;
+      end if;
+
+      declare
+         Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Node.P_Expression_Type;
+      begin
+         if Libadalang.Analysis.Is_Null (Expr_Type)
+           or else not Expr_Type.P_Is_Int_Type
+           or else Arithmetic_Proved_Safe (Node, State)
+         then
+            return False;
+         end if;
+
+         declare
+            Bounds : Abstract_Range :=
+              Overflow_Base_Range (Expr_Type, Node, State);
+            Name   : constant String := Langkit_Support.Text.To_UTF8
+              (Expr_Type.P_Canonical_Fully_Qualified_Name);
+         begin
+            if not Bounds.Has_Low
+              and then not Bounds.Has_High
+              and then Name = "standard.integer"
+            then
+               Bounds := Type_Range (Expr_Type, State);
+            end if;
+            return VC.Decide_Bounds (Node, Bounds, State, Symbols).Result =
+              VC.VC_Refuted;
+         end;
+      end;
+   exception
+      when others =>
+         return False;
+   end Arithmetic_Overflow_Refuted;
+
    procedure Check_Value_Range
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Value   : Libadalang.Analysis.Expr'Class;
@@ -1857,17 +1927,30 @@ package body Adalang_Analyzer.Flow_Interp is
                           "inside the target subtype range",
                         VC.Evidence, Final => Final);
                   when VC.VC_Refuted =>
-                     Record_Definite_Error
-                       (Unit, Value, Proof.Range_Check,
-                        Proof.External_Prover, Message, VC.Evidence,
-                        Final => Final);
-                     Report_Flow_Violation
-                       (Unit, Value, Rule, Message,
-                        Explanation =>
-                          "The scalar verification condition establishes " &
-                          "that the value cannot satisfy the target subtype " &
-                          "bounds.",
-                        Evidence => VC.Evidence);
+                     --  The verification condition computes without
+                     --  overflow, so it also refutes the range of a value
+                     --  that is never produced because computing it always
+                     --  overflows. As above, that is the overflow check's
+                     --  error, not a second one here (FP-100).
+                     if Rule /= Rules.Known_Range_Check_Failure
+                       or else Config.Rule_States
+                                 (Rules.Known_Overflow_Failure) /=
+                         Config.Enabled
+                       or else not Arithmetic_Overflow_Refuted
+                                     (Value, State, Symbols)
+                     then
+                        Record_Definite_Error
+                          (Unit, Value, Proof.Range_Check,
+                           Proof.External_Prover, Message, VC.Evidence,
+                           Final => Final);
+                        Report_Flow_Violation
+                          (Unit, Value, Rule, Message,
+                           Explanation =>
+                             "The scalar verification condition " &
+                             "establishes that the value cannot satisfy " &
+                             "the target subtype bounds.",
+                           Evidence => VC.Evidence);
+                     end if;
                   when others =>
                      Record_VC_Unproved
                        (Unit, Value, Proof.Range_Check,
@@ -4630,15 +4713,41 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
          end Forget_Identifiers_In;
 
+         --  An object the call may have written is no longer known to be
+         --  uninitialized.
+         procedure May_Initialize_Identifiers_In
+           (Node : Libadalang.Analysis.Ada_Node'Class) is
+         begin
+            if Libadalang.Analysis.Is_Null (Node) then
+               return;
+            elsif Node.Kind = Libadalang.Common.Ada_Identifier then
+               declare
+                  Key : constant Libadalang.Analysis.Ada_Node :=
+                    Flow_Referenced_Name (Node);
+               begin
+                  if Flow_Initialization (State, Key) = Bool_False then
+                     Flow_Set_Initialized (State, Key, Bool_Unknown);
+                  end if;
+               end;
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               May_Initialize_Identifiers_In (Node.Child (Index));
+            end loop;
+         end May_Initialize_Identifiers_In;
+
          --  A function with an "out" or "in out" parameter writes its
-         --  actual. Unlike a procedure call's actual, the object stays as
-         --  initialized as it was: only its value is no longer known.
+         --  actual. Whether it does on every path is not worked out, so
+         --  unlike a procedure call's actual the object is not taken as
+         --  initialized: its value is no longer known, and if it was
+         --  uninitialized it may no longer be (FP-099).
          procedure Forget_Written_Actuals
            (Call : Libadalang.Analysis.Name) is
          begin
             for Pair of Call.P_Call_Params loop
                if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
                   Forget_Identifiers_In (Libadalang.Analysis.Actual (Pair));
+                  May_Initialize_Identifiers_In
+                    (Libadalang.Analysis.Actual (Pair));
                end if;
             end loop;
          exception
@@ -4784,17 +4893,20 @@ package body Adalang_Analyzer.Flow_Interp is
       --  Fills Effectful_Calls: for every CFG node, the function calls its
       --  own expression evaluates that are not known to leave state alone.
       procedure Collect_Effectful_Calls is
-         Max_Depth : constant := 4;
+         Max_Depth : constant := Max_Effect_Depth;
 
          function May_Change_State
            (Call  : Libadalang.Analysis.Name;
             Depth : Natural) return Boolean;
 
+         --  With First_Only, Collect stops at the first call it finds:
+         --  enough for a caller that only asks whether there is one.
          procedure Collect
-           (Node  : Libadalang.Analysis.Ada_Node'Class;
-            Calls : in out Call_Name_Vectors.Vector;
-            Root  : Boolean;
-            Depth : Natural);
+           (Node       : Libadalang.Analysis.Ada_Node'Class;
+            Calls      : in out Call_Name_Vectors.Vector;
+            Root       : Boolean;
+            Depth      : Natural;
+            First_Only : Boolean := False);
 
          --  True unless the body of Decl can be read and does nothing but
          --  compute: no assignment to an object declared outside it, no
@@ -4922,12 +5034,38 @@ package body Adalang_Analyzer.Flow_Interp is
             then
                return True;
             end if;
-            Collect (Subp_Body, Calls, Root => True, Depth => Depth);
+            Collect
+              (Subp_Body, Calls, Root => True, Depth => Depth,
+               First_Only => True);
             return not Calls.Is_Empty;
          exception
             when others =>
                return True;
          end Body_May_Change_State;
+
+         --  Body_May_Change_State (Decl, Depth), worked out once for each
+         --  declaration and depth in a unit.
+         procedure Body_Effect
+           (Decl   : Libadalang.Analysis.Basic_Decl;
+            Depth  : Natural;
+            Result : out Boolean)
+         is
+            Key      : constant Libadalang.Analysis.Ada_Node :=
+              Libadalang.Analysis.Ada_Node (Decl);
+            Position : Body_Effect_Maps.Cursor;
+         begin
+            if Depth > Max_Depth then
+               Result := True;
+               return;
+            end if;
+            Position := Body_Effects (Depth).Find (Key);
+            if Body_Effect_Maps.Has_Element (Position) then
+               Result := Body_Effect_Maps.Element (Position);
+            else
+               Result := Body_May_Change_State (Decl, Depth);
+               Body_Effects (Depth).Include (Key, Result);
+            end if;
+         end Body_Effect;
 
          function May_Change_State
            (Call  : Libadalang.Analysis.Name;
@@ -4935,6 +5073,7 @@ package body Adalang_Analyzer.Flow_Interp is
          is
             Decl : constant Libadalang.Analysis.Basic_Decl :=
               Call_Declaration (Call);
+            Body_Changes_State : Boolean;
          begin
             if Libadalang.Analysis.Is_Null (Decl) then
                return True;
@@ -4960,24 +5099,29 @@ package body Adalang_Analyzer.Flow_Interp is
             elsif Has_Aspect (Decl, "Global") then
                return not Libadalang.Analysis.Is_Null (Global_Outputs (Decl));
             end if;
-            return not In_Pure_Unit (Decl)
-              and then not Explicitly_SPARK (Decl)
-              and then Body_May_Change_State (Decl, Depth + 1);
+            if In_Pure_Unit (Decl) or else Explicitly_SPARK (Decl) then
+               return False;
+            end if;
+            Body_Effect (Decl, Depth + 1, Body_Changes_State);
+            return Body_Changes_State;
          exception
             when others =>
                return True;
          end May_Change_State;
 
          procedure Collect
-           (Node  : Libadalang.Analysis.Ada_Node'Class;
-            Calls : in out Call_Name_Vectors.Vector;
-            Root  : Boolean;
-            Depth : Natural)
+           (Node       : Libadalang.Analysis.Ada_Node'Class;
+            Calls      : in out Call_Name_Vectors.Vector;
+            Root       : Boolean;
+            Depth      : Natural;
+            First_Only : Boolean := False)
          is
             procedure Collect_In
               (Part : Libadalang.Analysis.Ada_Node'Class) is
             begin
-               Collect (Part, Calls, Root => False, Depth => Depth);
+               Collect
+                 (Part, Calls, Root => False, Depth => Depth,
+                  First_Only => First_Only);
             end Collect_In;
 
             procedure Collect_Children is
@@ -5014,7 +5158,7 @@ package body Adalang_Analyzer.Flow_Interp is
                for Param of Decl.P_Subp_Spec_Or_Null.P_Params loop
                   Collect
                     (Param.F_Default_Expr, Calls, Root => False,
-                     Depth => Depth + 1);
+                     Depth => Depth + 1, First_Only => First_Only);
                end loop;
             exception
                when others =>
@@ -5024,6 +5168,7 @@ package body Adalang_Analyzer.Flow_Interp is
             if Libadalang.Analysis.Is_Null (Node)
               or else Node.Kind in Libadalang.Common.Ada_Defining_Name
                                  | Libadalang.Common.Ada_Aspect_Spec
+              or else (First_Only and then not Calls.Is_Empty)
             then
                return;
             end if;
@@ -7268,6 +7413,9 @@ package body Adalang_Analyzer.Flow_Interp is
          then
             Visit_Discriminant_Accesses (Unit.Root);
          end if;
+         for Effects of Body_Effects loop
+            Effects.Clear;
+         end loop;
          Visit (Unit.Root);
       end if;
    end Verify_Unit;

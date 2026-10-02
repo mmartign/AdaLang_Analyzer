@@ -269,7 +269,7 @@ Extending the CubedOS investigation to `--verify`'s bounded scalar proof
 obligations (full `src/cubedos.gpr`, 49 files) and comparing against
 GNATprove `--mode=prove --level=4` (mirroring `benchmarks/sparknacl/`'s
 methodology; detail in `benchmarks/cubedos/README.md` and
-`benchmarks/cubedos/RESULTS_2026-09-30.md`) surfaced a real analyzer bug:
+`benchmarks/cubedos/RESULTS_2026-10-02.md`) surfaced a real analyzer bug:
 `Finalize_Node` called several Libadalang properties directly outside any
 `begin`/`exception` block, so a `Property_Error` — `Call_Expr.P_Kind`
 genuinely fails for a call whose callee is declared in a separate `with`'d
@@ -896,3 +896,79 @@ are unaffected. Regression:
 separate reason (`pick_manifest.py`'s `HAND_EXCLUDE`): GNATprove's baseline
 proves the line-13 range checks that GNAT rejects at run time, so it is not
 a sound oracle unit regardless of the FP-065 fix.
+
+## Corpus refresh after 1.6.1 (2026-10-02)
+
+Release 1.6.1 was checked against SPARKNaCl and libkeccak only. Re-running
+all eleven corpora with it found three defects that release introduced.
+None is a false-safe result.
+
+### Run time: the callee-body walk behind `FP-093`
+
+The AWS `--verify` lane (348 files) took 159 s with 1.6.0. With 1.6.1 it
+took 39 minutes. A sample of the running process showed every stack inside
+`Verify_Subprogram.Collect_Effectful_Calls`: to decide whether a function
+called in an expression may change state, 1.6.1 reads the callee's body and
+the bodies that body calls, four levels deep, and repeated the whole walk
+for every call site in every subprogram. The cost grows with the fourth
+power of the number of calls in a body, which SPARK corpora (whose callees
+are in SPARK and are not walked) never showed.
+
+Fixed by remembering the answer for each callee declaration and depth
+while a unit is verified (`Flow_Interp.Body_Effects`) and by stopping the
+walk of a callee body at its first such call. A second change removes most
+solver processes: a query whose text was already answered in the run is
+not sent again, and Z3 is not started once CVC5 has given an answer other
+than UNSAT (`VC_Prover.Query`). On libkeccak that is 3,418 solver processes
+instead of 18,670. The AWS lane now takes 69 s. Reports for AWS, libkeccak
+and gnatcoll-core from the build with only these changes are byte-identical
+to 1.6.1's.
+
+### Confirmed analyzer mistake (fixed): FP-099 — `out` actual of a function called in a condition
+
+AWS, `src/http2/aws-http2-hpack-huffman.adb:412`:
+
+```ada
+C : Character;
+...
+if Decode_Bit (Iter, Bit, C) then
+   I := @ + 1;
+   Result (I) := C;
+```
+
+`Decode_Bit` is a function with an `out` parameter. 1.6.1 reported the read
+of `C` as a `Definite_Error` ("object is uninitialized on every incoming
+path"); 1.6.0 left it `Unproved`. The `FP-093` handling of functions that
+may change state forgot the value of a written actual but kept its
+initialization state, so an actual that was uninitialized before the call
+stayed uninitialized after it.
+
+Fixed in `Apply_Function_Call_Effects`: an actual of a writable formal that
+was uninitialized becomes possibly initialized. It is not taken as
+initialized, since whether the callee writes it on every path is not
+worked out, so the read is `Unproved`. Regression:
+`tests/verification_fp099_function_out_actual.adb`.
+
+### Confirmed analyzer mistake (fixed): FP-100 — range check behind an overflow that always occurs
+
+SPARK testsuite unit `M927-008__bad_constant`:
+
+```ada
+function Ident (X : Integer) return Integer is (X);
+X : constant Natural := Ident (Integer'Last) + 1;
+```
+
+GNATprove reports the overflow check as `medium` and proves the range check
+against `Natural`, which is never reached. 1.6.1 reported both as
+`Definite_Error`, the comparison's only false positive. `Check_Value_Range`
+already creates no range obligation when abstract interpretation shows the
+value's computation always overflows. Since 1.6.1 the verification
+condition evaluates the expression-function call, so here the solver
+establishes the overflow, and the same condition, which computes without
+overflow, then refutes the range.
+
+Fixed by applying the existing rule when it is the solver that refutes the
+overflow bounds (`Flow_Interp.Arithmetic_Overflow_Refuted`). A value
+computed without overflow that lies outside its subtype is still a
+`Definite_Error`. Regression:
+`tests/verification_fp100_overflow_before_range.adb`.

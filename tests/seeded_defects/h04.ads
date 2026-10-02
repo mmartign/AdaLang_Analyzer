@@ -1,0 +1,41 @@
+package H04 with SPARK_Mode is
+   subtype Small is Integer range 0 .. 10;
+   G : Integer := 0;
+
+   procedure Needs_Pos (X : Integer) with Pre => X > 0;
+   procedure Needs_Both (X : Integer; Y : Integer) with Pre => X > 0 and then Y > X;
+   procedure Needs_Default (X : Integer; Y : Integer := 0) with Pre => Y > 0;
+   procedure Needs_G (X : Integer) with Pre => G > X;
+   procedure Bump (X : in out Integer) with Pre => X < 100, Post => X = X'Old + 1;
+   procedure Weak (X : in out Integer) with Post => X >= 0;
+   function Twice (X : Integer) return Integer with Pre => X in -100 .. 100, Post => Twice'Result = 2 * X;
+   function Opaque (X : Integer) return Integer;
+
+   procedure C01 (N : Integer);
+   procedure C02 (N : Integer);
+   procedure C03 (N : Integer);
+   procedure C04 (N : Integer);
+   procedure C05 (N : Integer; Sink : out Integer);
+   procedure C06 (N : Integer; Sink : out Integer);
+   procedure C07 (N : Integer; Sink : out Integer);
+   procedure C08 (X : in out Integer) with Pre => X > 0;
+   procedure C09 (X : in out Integer) with Pre => X in 1 .. 10, Post => X > X'Old;
+   procedure C10 (X : in out Integer) with Pre => X in 1 .. 10, Post => X = X'Old + 1;
+   procedure C11 (N : Integer; X : out Integer) with Post => X = 5;
+   procedure C12 (N : Integer; X : out Integer) with Post => X >= 5;
+   function C13 (N : Integer) return Integer with Post => C13'Result > 0;
+   function C14 (N : Integer) return Integer with Pre => N in 0 .. 10, Post => C14'Result > N;
+   procedure C15 (N : Integer; X : in out Integer) with Pre => X = 1, Post => X = 1;
+   procedure C16 (N : Integer; Sink : out Integer);
+   procedure C17 (N : Integer; Sink : out Integer);
+   procedure C18 (N : Integer; Sink : out Integer);
+   procedure C19 (N : Integer; Sink : out Integer) with Pre => N > 0;
+   procedure C20 (A, B : Integer; Sink : out Integer) with Pre => A > 0 or else B > 0;
+   procedure C21 (A, B : in out Integer) with Pre => A < B, Post => A < B;
+   procedure C22 (N : Integer; Sink : out Integer) with Global => (In_Out => G), Pre => G > 0;
+   procedure C23 (N : Integer; Sink : out Integer);
+   procedure C24 (N : Integer; Sink : out Integer);
+   procedure C25 (N : Integer; Sink : out Integer) with Pre => N in 1 .. 10;
+   procedure C26 (N : Integer; Sink : out Integer);
+   procedure C27 (N : Integer; Sink : out Integer);
+end H04;
