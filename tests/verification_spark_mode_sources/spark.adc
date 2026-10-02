@@ -1,0 +1,2 @@
+--  Every source of this project is in SPARK unless it says otherwise.
+pragma SPARK_Mode (On);

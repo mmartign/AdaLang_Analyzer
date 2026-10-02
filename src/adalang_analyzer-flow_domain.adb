@@ -12,9 +12,181 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Characters.Handling;
+
+with Langkit_Support.Text;
+with Libadalang.Common;
+
 package body Adalang_Analyzer.Flow_Domain is
 
    use type Libadalang.Analysis.Ada_Node;
+   use type Libadalang.Common.Ada_Node_Kind_Type;
+
+   function Lower_Text
+     (Node : Libadalang.Analysis.Ada_Node'Class) return String is
+     (Ada.Characters.Handling.To_Lower
+        (Langkit_Support.Text.To_UTF8 (Node.Text)));
+
+   function Classify
+     (Key : Libadalang.Analysis.Ada_Node) return Object_Class
+   is
+      --  What one aspect, pragma or representation attribute says about the
+      --  object it is applied to.
+      function Class_Of_Mark (Name : String) return Object_Class is
+        (if Name in "address" | "import" | "interface"
+           then Aliasing
+         elsif Name in "volatile" | "atomic" | "volatile_full_access"
+                     | "async_writers" | "export" | "shared"
+           then Untracked
+         else Tracked);
+
+      Result : Object_Class := Tracked;
+
+      procedure Note (Class : Object_Class) is
+      begin
+         Result := Object_Class'Max (Result, Class);
+      end Note;
+
+      procedure Note_Aspects
+        (Aspects : Libadalang.Analysis.Aspect_Spec) is
+      begin
+         if Libadalang.Analysis.Is_Null (Aspects) then
+            return;
+         end if;
+         for Item of Aspects.F_Aspect_Assocs loop
+            Note
+              (Class_Of_Mark
+                 (Lower_Text (Item.As_Aspect_Assoc.F_Id)));
+         end loop;
+      end Note_Aspects;
+
+      --  The aspects of the object's type; none when the type does not
+      --  resolve, which leaves the object classified by its own marks.
+      function Type_Aspects
+        (Object : Libadalang.Analysis.Object_Decl)
+         return Libadalang.Analysis.Aspect_Spec
+      is
+         Typ : constant Libadalang.Analysis.Base_Type_Decl :=
+           Object.F_Type_Expr.P_Designated_Type_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Typ) then
+            return Libadalang.Analysis.No_Aspect_Spec;
+         end if;
+         return Typ.F_Aspects;
+      exception
+         when others =>
+            return Libadalang.Analysis.No_Aspect_Spec;
+      end Type_Aspects;
+
+      Decl : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Key)
+        or else Key.Kind /= Libadalang.Common.Ada_Defining_Name
+      then
+         return Tracked;
+      end if;
+
+      Decl := Key.As_Defining_Name.P_Basic_Decl;
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else Decl.Kind not in Libadalang.Common.Ada_Object_Decl_Range
+      then
+         return Tracked;
+      end if;
+
+      if not Libadalang.Analysis.Is_Null
+           (Decl.As_Object_Decl.F_Renaming_Clause)
+      then
+         return Aliasing;
+      end if;
+      if Decl.As_Object_Decl.F_Has_Aliased then
+         Note (Untracked);
+      end if;
+      Note_Aspects (Decl.As_Object_Decl.F_Aspects);
+
+      --  The pragma and representation-clause spellings of the same marks
+      --  sit beside the declaration, naming the object.
+      declare
+         Name     : constant String := Lower_Text (Key);
+         Siblings : constant Libadalang.Analysis.Ada_Node := Decl.Parent;
+      begin
+         if not Libadalang.Analysis.Is_Null (Siblings) then
+            for Index in 1 .. Siblings.Children_Count loop
+               declare
+                  Item : constant Libadalang.Analysis.Ada_Node :=
+                    Siblings.Child (Index);
+               begin
+                  if Libadalang.Analysis.Is_Null (Item) then
+                     goto Next_Sibling;
+                  end if;
+
+                  if Item.Kind = Libadalang.Common.Ada_Pragma_Node
+                    and then Item.As_Pragma_Node.F_Args.Children_Count > 0
+                    and then Class_Of_Mark
+                      (Lower_Text (Item.As_Pragma_Node.F_Id)) /= Tracked
+                  then
+                     --  The object is the first argument, or the second of
+                     --  "pragma Import (Convention, Entity, ...)".
+                     for Arg in 1 .. Natural'Min
+                       (2, Item.As_Pragma_Node.F_Args.Children_Count)
+                     loop
+                        declare
+                           Text : constant String :=
+                             Lower_Text
+                               (Item.As_Pragma_Node.F_Args.Child (Arg));
+                        begin
+                           if Text = Name
+                             or else
+                               (Text'Length > Name'Length + 2
+                                and then Text
+                                  (Text'Last - Name'Length + 1 .. Text'Last) =
+                                  Name
+                                and then Text (Text'Last - Name'Length) in
+                                  ' ' | '>')
+                           then
+                              Note
+                                (Class_Of_Mark
+                                   (Lower_Text (Item.As_Pragma_Node.F_Id)));
+                           end if;
+                        end;
+                     end loop;
+                  elsif Item.Kind =
+                    Libadalang.Common.Ada_Attribute_Def_Clause
+                    and then Item.As_Attribute_Def_Clause.F_Attribute_Expr
+                      .Kind = Libadalang.Common.Ada_Attribute_Ref
+                  then
+                     declare
+                        Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                          Item.As_Attribute_Def_Clause.F_Attribute_Expr
+                            .As_Attribute_Ref;
+                     begin
+                        if Lower_Text (Attr.F_Prefix) = Name then
+                           Note (Class_Of_Mark (Lower_Text (Attr.F_Attribute)));
+                        end if;
+                     end;
+                  elsif Item.Kind = Libadalang.Common.Ada_At_Clause
+                    and then Lower_Text (Item.As_At_Clause.F_Name) = Name
+                  then
+                     Note (Aliasing);
+                  end if;
+
+                  <<Next_Sibling>>
+               end;
+            end loop;
+         end if;
+      end;
+
+      --  A volatile or atomic type makes every object of it so.
+      if Result = Tracked then
+         Note_Aspects (Type_Aspects (Decl.As_Object_Decl));
+      end if;
+
+      return Result;
+   exception
+      when others =>
+         --  An object whose declaration cannot be examined is not assumed
+         --  to be an ordinary one.
+         return Aliasing;
+   end Classify;
 
    function Binding_Count (State : Flow_State) return Natural is
      (Natural (State.Bindings.Length));
@@ -119,8 +291,18 @@ package body Adalang_Analyzer.Flow_Domain is
    end Range_From_Int;
 
    function Range_Union (Left, Right : Abstract_Range) return Abstract_Range is
+      function Is_Empty (Value : Abstract_Range) return Boolean is
+        (Value.Has_Low and then Value.Has_High
+         and then Value.Low > Value.High);
+
       Result : Abstract_Range;
    begin
+      if Is_Empty (Left) then
+         return Right;
+      elsif Is_Empty (Right) then
+         return Left;
+      end if;
+
       if Left.Has_Low and then Right.Has_Low then
          Result.Has_Low := True;
          Result.Low := Long_Long_Integer'Min (Left.Low, Right.Low);
@@ -235,7 +417,7 @@ package body Adalang_Analyzer.Flow_Domain is
           Initialized => Initialized));
    end Flow_Set_Initialized;
 
-   procedure Flow_Set
+   procedure Flow_Set_Stored
      (State : in out Flow_State;
       Key   : Libadalang.Analysis.Ada_Node;
       Value : Abstract_Int)
@@ -264,7 +446,7 @@ package body Adalang_Analyzer.Flow_Domain is
       State.Bindings.Append
         ((Decl => Key, Value => Value, Bool_Value => Bool_Unknown,
           Range_Value => Range_From_Int (Value), Initialized => Bool_True));
-   end Flow_Set;
+   end Flow_Set_Stored;
 
    procedure Flow_Copy_Key
      (State    : in out Flow_State;
@@ -298,7 +480,7 @@ package body Adalang_Analyzer.Flow_Domain is
       end if;
    end Flow_Copy_Key;
 
-   procedure Flow_Bool_Set
+   procedure Flow_Bool_Set_Stored
      (State      : in out Flow_State;
       Key        : Libadalang.Analysis.Ada_Node;
       Bool_Value : Abstract_Bool)
@@ -328,9 +510,9 @@ package body Adalang_Analyzer.Flow_Domain is
           Range_Value => Unknown_Range,
           Initialized =>
             (if Bool_Value = Bool_Unknown then Bool_Unknown else Bool_True)));
-   end Flow_Bool_Set;
+   end Flow_Bool_Set_Stored;
 
-   procedure Flow_Range_Set
+   procedure Flow_Range_Set_Stored
      (State       : in out Flow_State;
       Key         : Libadalang.Analysis.Ada_Node;
       Range_Value : Abstract_Range)
@@ -355,9 +537,9 @@ package body Adalang_Analyzer.Flow_Domain is
       State.Bindings.Append
         ((Decl => Key, Value => Unknown_Int, Bool_Value => Bool_Unknown,
           Range_Value => Range_Value, Initialized => Bool_Unknown));
-   end Flow_Range_Set;
+   end Flow_Range_Set_Stored;
 
-   procedure Flow_Havoc
+   procedure Flow_Havoc_Stored
      (State : in out Flow_State;
       Key   : Libadalang.Analysis.Ada_Node)
    is
@@ -378,7 +560,7 @@ package body Adalang_Analyzer.Flow_Domain is
             return;
          end if;
       end loop;
-   end Flow_Havoc;
+   end Flow_Havoc_Stored;
 
    procedure Flow_Havoc_All (State : in out Flow_State) is
    begin
@@ -411,15 +593,15 @@ package body Adalang_Analyzer.Flow_Domain is
             if Left_Value.Known and then Right_Value.Known
               and then Left_Value.Value = Right_Value.Value
             then
-               Flow_Set (Result, Decl, Left_Value);
+               Flow_Set_Stored (Result, Decl, Left_Value);
             end if;
 
             if Left_Bool /= Bool_Unknown and then Left_Bool = Right_Bool then
-               Flow_Bool_Set (Result, Decl, Left_Bool);
+               Flow_Bool_Set_Stored (Result, Decl, Left_Bool);
             end if;
 
             if Left_Range.Has_Low or else Left_Range.Has_High then
-               Flow_Range_Set
+               Flow_Range_Set_Stored
                  (Result, Decl, Range_Union (Left_Range, Right_Range));
             end if;
 
@@ -483,13 +665,13 @@ package body Adalang_Analyzer.Flow_Domain is
               and then Next_Value.Known
               and then Item.Value.Value = Next_Value.Value
             then
-               Flow_Set (Result, Item.Decl, Item.Value);
+               Flow_Set_Stored (Result, Item.Decl, Item.Value);
             end if;
 
             if Item.Bool_Value /= Bool_Unknown
               and then Item.Bool_Value = Next_Bool
             then
-               Flow_Bool_Set (Result, Item.Decl, Item.Bool_Value);
+               Flow_Bool_Set_Stored (Result, Item.Decl, Item.Bool_Value);
             end if;
 
             Wide.Has_Low :=
@@ -509,7 +691,7 @@ package body Adalang_Analyzer.Flow_Domain is
             end if;
 
             if Wide.Has_Low or else Wide.Has_High then
-               Flow_Range_Set (Result, Item.Decl, Wide);
+               Flow_Range_Set_Stored (Result, Item.Decl, Wide);
             end if;
 
             if Item.Initialized = Next_Init then
@@ -522,5 +704,104 @@ package body Adalang_Analyzer.Flow_Domain is
       end loop;
       return Result;
    end Flow_Widen;
+
+   procedure Flow_Forget_All_Values (State : in out Flow_State) is
+   begin
+      for I in 1 .. Binding_Count (State) loop
+         declare
+            Item : Flow_Binding := State.Bindings (I);
+         begin
+            Item.Value := Unknown_Int;
+            Item.Bool_Value := Bool_Unknown;
+            Item.Range_Value := Unknown_Range;
+            State.Bindings.Replace_Element (I, Item);
+         end;
+      end loop;
+   end Flow_Forget_All_Values;
+
+   procedure Flow_Forget_Value
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) is
+   begin
+      for I in 1 .. Binding_Count (State) loop
+         if State.Bindings (I).Decl = Key then
+            declare
+               Item : Flow_Binding := State.Bindings (I);
+            begin
+               Item.Value := Unknown_Int;
+               Item.Bool_Value := Bool_Unknown;
+               Item.Range_Value := Unknown_Range;
+               State.Bindings.Replace_Element (I, Item);
+            end;
+            return;
+         end if;
+      end loop;
+   end Flow_Forget_Value;
+
+   --  Applies a write to Key that the state must not turn into a fact
+   --  about Key. True when Key is such an object, in which case the caller
+   --  stores nothing.
+   function Write_Without_Fact
+     (State       : in out Flow_State;
+      Key         : Libadalang.Analysis.Ada_Node;
+      Initializes : Boolean) return Boolean is
+   begin
+      case Classify (Key) is
+         when Tracked =>
+            return False;
+         when Untracked =>
+            Flow_Havoc_Stored (State, Key);
+         when Aliasing =>
+            Flow_Forget_All_Values (State);
+      end case;
+      if Initializes then
+         Flow_Set_Initialized (State, Key, Bool_True);
+      end if;
+      return True;
+   end Write_Without_Fact;
+
+   procedure Flow_Set
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node;
+      Value : Abstract_Int) is
+   begin
+      if not Write_Without_Fact (State, Key, Initializes => True) then
+         Flow_Set_Stored (State, Key, Value);
+      end if;
+   end Flow_Set;
+
+   procedure Flow_Bool_Set
+     (State      : in out Flow_State;
+      Key        : Libadalang.Analysis.Ada_Node;
+      Bool_Value : Abstract_Bool) is
+   begin
+      if not Write_Without_Fact
+               (State, Key, Initializes => Bool_Value /= Bool_Unknown)
+      then
+         Flow_Bool_Set_Stored (State, Key, Bool_Value);
+      end if;
+   end Flow_Bool_Set;
+
+   procedure Flow_Range_Set
+     (State       : in out Flow_State;
+      Key         : Libadalang.Analysis.Ada_Node;
+      Range_Value : Abstract_Range) is
+   begin
+      --  Narrowing and seeding, never a write: an object that holds no
+      --  facts simply gains none.
+      if Classify (Key) = Tracked then
+         Flow_Range_Set_Stored (State, Key, Range_Value);
+      end if;
+   end Flow_Range_Set;
+
+   procedure Flow_Havoc
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) is
+   begin
+      if Classify (Key) = Aliasing then
+         Flow_Forget_All_Values (State);
+      end if;
+      Flow_Havoc_Stored (State, Key);
+   end Flow_Havoc;
 
 end Adalang_Analyzer.Flow_Domain;

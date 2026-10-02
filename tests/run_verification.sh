@@ -88,10 +88,29 @@ loop_stale_precondition=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-stale-preconditio
 global_aspect_clean=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-clean.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
+fp086=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp086.XXXXXX")
+fp087=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp087.XXXXXX")
+fp088=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp088.XXXXXX")
+fp089=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp089.XXXXXX")
+membership=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-membership.XXXXXX")
+own_range=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-own-range.XXXXXX")
+fp090=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp090.XXXXXX")
+fp091=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp091.XXXXXX")
+fp092=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp092.XXXXXX")
+fp093=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp093.XXXXXX")
+fp094=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp094.XXXXXX")
+converged=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-converged.XXXXXX")
+completion=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-completion.XXXXXX")
+spark_project=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-spark-project.XXXXXX")
+spark_bare=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-spark-bare.XXXXXX")
+fp097=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp097.XXXXXX")
+fp098=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp098.XXXXXX")
+symbolic_bounds=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-symbolic-bounds.XXXXXX")
+pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$symbolic_bounds" "$pre_globals"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -1158,5 +1177,322 @@ then
    echo "an aborted fixed-point run did not leave its obligation Unsupported (FP-084)" >&2
    exit 1
 fi
+
+#  An obligation of the given kind and operation must exist and must not be
+#  Proved_Safe: the seeded defect makes it fail at run time, or leaves it
+#  beyond what the analysis may claim.
+must_not_prove()
+{
+   report=$1
+   kind=$2
+   operation=$3
+   issue=$4
+   found=$(grep -F "\"kind\": \"$kind\"" "$report" |
+     grep -F "\"operation\": \"$operation\"" || true)
+   if [ -z "$found" ]; then
+      echo "$issue: no $kind obligation for '$operation'" >&2
+      exit 1
+   fi
+   if printf '%s\n' "$found" | grep -F '"status": "proved-safe"' >/dev/null
+   then
+      echo "$issue: false-safe $kind for '$operation'" >&2
+      exit 1
+   fi
+}
+
+#  The positive sibling: the same obligation must still prove, by the named
+#  method.
+must_prove()
+{
+   report=$1
+   kind=$2
+   operation=$3
+   method=$4
+   issue=$5
+   if ! grep -F "\"kind\": \"$kind\"" "$report" |
+     grep -F "\"operation\": \"$operation\"" |
+     grep -F '"status": "proved-safe"' |
+     grep -F "\"method\": \"$method\"" >/dev/null
+   then
+      echo "$issue: $kind for '$operation' no longer proves by $method" >&2
+      exit 1
+   fi
+}
+
+#  FP-086: "X not in S" where S carries a predicate was translated as a
+#  range test, so the solver proved a non-member outside S's range and a
+#  division by a value that can be zero safe.
+run_json "$fp086" tests/verification_fp086_predicate_membership.adb
+for operation in '(Value - 1)' '(Value - 3)' '(Value - 5)' '(Value - 2)'; do
+   must_not_prove "$fp086" division-by-zero "$operation" FP-086
+done
+must_prove "$fp086" division-by-zero '(Value - 11)' abstract-interpretation \
+  FP-086
+must_prove "$fp086" division-by-zero '(Value - 7)' external-prover FP-086
+
+#  FP-087: a subtype or array bound that reads a variable was re-evaluated
+#  with the variable's current value instead of its value at elaboration.
+run_json "$fp087" tests/verification_fp087_stale_bound.adb
+must_not_prove "$fp087" range-check 50 FP-087
+must_not_prove "$fp087" index-check 60 FP-087
+must_prove "$fp087" range-check 7 abstract-interpretation FP-087
+must_prove "$fp087" index-check 8 abstract-interpretation FP-087
+
+#  FP-088: an array whose bounds no declaration fixes was checked against
+#  its index subtype, and a target range with one unknown bound was proved
+#  from the other alone.
+run_json "$fp088" tests/verification_fp088_unknown_array_bounds.adb
+must_not_prove "$fp088" index-check Position FP-088
+must_not_prove "$fp088" index-check 2 FP-088
+must_not_prove "$fp088" index-check 3 FP-088
+must_not_prove "$fp088" range-check Position FP-088
+must_not_prove "$fp088" assertion "Text'First = 1" FP-088
+must_prove "$fp088" index-check 4 abstract-interpretation FP-088
+must_prove "$fp088" index-check 6 abstract-interpretation FP-088
+for operation in 20 30; do
+   if ! grep -F '"kind": "index-check"' "$fp088" |
+     grep -F "\"operation\": \"$operation\"" |
+     grep -F '"status": "definite-error"' >/dev/null
+   then
+      echo "an index outside an object's own static index constraint was" \
+        "not reported as a definite error (FP-088)" >&2
+      exit 1
+   fi
+done
+
+#  FP-089: Standard's character types were bounded by the single
+#  placeholder literal of Libadalang's own declaration, so any two
+#  Character values were provably equal.
+run_json "$fp089" tests/verification_fp089_character_positions.adb
+must_not_prove "$fp089" assertion 'Left = Right' FP-089
+must_not_prove "$fp089" assertion "Wide = Wide_Character'Val (65)" FP-089
+must_prove "$fp089" assertion 'Tint in Red .. Blue' external-prover FP-089
+
+#  Membership tests narrow the tested identifier's interval on both
+#  outcomes, without ever narrowing past what the test establishes.
+run_json "$membership" tests/verification_membership_narrowing.adb
+for operation in Divisor Free '(Free - 11)' '(Free + 1)' '(Bounded - 2)' \
+  '(Bounded - 6)' '(Bounded + 1)'
+do
+   must_prove "$membership" division-by-zero "$operation" \
+     abstract-interpretation "membership narrowing"
+done
+for operation in '(Free - 5)' '(Free - 9)' '(Free - 20)' '(Free - 7)' \
+  '(Bounded - 8)' '(Bounded - 1)' '(Bounded - 3)'
+do
+   must_not_prove "$membership" division-by-zero "$operation" \
+     "membership narrowing"
+done
+
+#  The parameter of a loop over an array object's own range indexes that
+#  object; nothing else about a loop makes an index safe.
+run_json "$own_range" tests/verification_pp_index_own_range.adb
+for operation in Own Spelled Backward Row Column; do
+   must_prove "$own_range" index-check "$operation" static-evaluation \
+     "own-range index"
+done
+for operation in Foreign Mixed 'Shifted + 1' Shadowed Swapped \
+  "Cells'First (2)"
+do
+   must_not_prove "$own_range" index-check "$operation" "own-range index"
+done
+
+#  FP-090: a symbol minted at a merge point kept the bounds of the first
+#  visit, so a variable changed on a later loop iteration was still
+#  confined to its pre-loop value at the loop exit.
+run_json "$fp090" tests/verification_fp090_loop_exit_roots.adb
+for operation in Early Late '(Count - 3)'; do
+   must_not_prove "$fp090" division-by-zero "$operation" FP-090
+done
+must_prove "$fp090" division-by-zero Kept abstract-interpretation FP-090
+
+#  FP-091: modular "+", "-" and "*" were evaluated as mathematical
+#  integers, on both the abstract path and the solver path, so a sum that
+#  wraps to zero was a provably nonzero divisor.
+run_json "$fp091" tests/verification_fp091_modular_wrap.adb
+for operation in '(Top + 1)' '(Half * 2)' '(Any + 1)' 'Integer (Any + 2)'; do
+   must_not_prove "$fp091" division-by-zero "$operation" FP-091
+done
+must_prove "$fp091" division-by-zero '(Low + 1)' abstract-interpretation \
+  FP-091
+must_prove "$fp091" division-by-zero 'Integer (Any * 2 + 1)' \
+  external-prover FP-091
+
+#  FP-092: facts were kept about objects that another name can change (a
+#  renaming, an address overlay) or that can change with no name at all
+#  (volatile, atomic).
+run_json "$fp092" tests/verification_fp092_untracked_objects.adb
+for operation in Renamed View Overlaid Device Shared; do
+   must_not_prove "$fp092" division-by-zero "$operation" FP-092
+done
+must_prove "$fp092" division-by-zero Plain abstract-interpretation FP-092
+
+#  FP-093: a function called inside an expression was assumed to change
+#  nothing, so a fact about an object it writes survived the call.
+run_json "$fp093" tests/verification_fp093_function_side_effects.adb
+for operation in Level '(Level + 0)' '(Level - 0)' '(0 + Level)' \
+  '(Level * 1)'
+do
+   must_not_prove "$fp093" division-by-zero "$operation" FP-093
+done
+must_prove "$fp093" division-by-zero Other abstract-interpretation FP-093
+
+#  FP-094: Initialize and Finalize of a controlled object, and component
+#  defaults that call a function, run where the source shows no call.
+status=0
+"$analyzer" --verify -q --format=json --output="$fp094" \
+  tests/verification_fp094_implicit_code.ads \
+  tests/verification_fp094_implicit_code.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "verification run failed for verification_fp094_implicit_code" \
+     "with status $status" >&2
+   exit "$status"
+fi
+for operation in '(Level + 0)' '(Level - 0)' '(0 + Level)'; do
+   must_not_prove "$fp094" division-by-zero "$operation" FP-094
+done
+must_prove "$fp094" division-by-zero Level abstract-interpretation FP-094
+
+#  Rule findings under --verify are reported from converged states only:
+#  the fixed-point run first reaches the code after a loop, and a while
+#  loop's own condition, with the values from before the loop, which made
+#  a divisor look like a known zero and the condition look constant.
+run_json "$converged" tests/verification_converged_rule_findings.adb
+for finding in '"line": 17' '"line": 20'; do
+   if grep -E '"ruleId": "(Division_By_Zero|Constant_Condition)"' \
+     "$converged" | grep -F "$finding," >/dev/null
+   then
+      echo "a rule finding was reported from a state the fixed point had" \
+        "not converged on ($finding)" >&2
+      exit 1
+   fi
+done
+grep -F '"ruleId": "Constant_Condition"' "$converged" |
+  grep -F '"line": 24,' >/dev/null
+grep -F '"ruleId": "Division_By_Zero"' "$converged" |
+  grep -F '"line": 27,' >/dev/null
+
+#  A call that resolves to a null procedure or an expression function
+#  completing an earlier declaration is checked against the precondition on
+#  that declaration; it used to get no precondition obligation at all.
+status=0
+"$analyzer" --verify -q --format=json --output="$completion" \
+  tests/verification_null_completion_contracts.ads \
+  tests/verification_null_completion_contracts.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "verification run failed for" \
+     "verification_null_completion_contracts with status $status" >&2
+   exit "$status"
+fi
+must_prove "$completion" precondition 'Needs_Positive (7)' \
+  contract-transfer "completion contracts"
+must_prove "$completion" precondition 'Needs_Ordered (1, 2)' \
+  contract-transfer "completion contracts"
+must_prove "$completion" precondition 'Half (4)' contract-transfer \
+  "completion contracts"
+must_not_prove "$completion" precondition 'Needs_Positive (N)' \
+  "completion contracts"
+for operation in 'Needs_Ordered (High => 1, Low => 2)' 'Half (1)'; do
+   if ! grep -F '"kind": "precondition"' "$completion" |
+     grep -F "\"operation\": \"$operation\"" |
+     grep -F '"status": "definite-error"' >/dev/null
+   then
+      echo "a false precondition on a completed declaration was not" \
+        "reported: $operation" >&2
+      exit 1
+   fi
+done
+
+#  A function in SPARK has no side effects. SPARK_Mode can come from a
+#  pragma before the unit or from the project's configuration pragmas; a
+#  unit that opts out, or the same sources read without the project, get
+#  no such credit.
+status=0
+"$analyzer" -P tests/verification_spark_mode_sources/main.gpr --verify -q \
+  --format=json --output="$spark_project" \
+  tests/verification_spark_mode_sources/verification_spark_mode_sources.adb \
+  || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "verification run failed for verification_spark_mode_sources" \
+     "with status $status" >&2
+   exit "$status"
+fi
+must_prove "$spark_project" division-by-zero Unit_Level \
+  abstract-interpretation "SPARK_Mode before the unit"
+must_prove "$spark_project" division-by-zero Project_Level \
+  abstract-interpretation "SPARK_Mode from configuration pragmas"
+must_not_prove "$spark_project" division-by-zero Unmarked_Level \
+  "SPARK_Mode (Off)"
+
+status=0
+"$analyzer" --verify -q --format=json --output="$spark_bare" \
+  tests/verification_spark_mode_sources/by_project.ads \
+  tests/verification_spark_mode_sources/by_unit.ads \
+  tests/verification_spark_mode_sources/unmarked.ads \
+  tests/verification_spark_mode_sources/verification_spark_mode_sources.adb \
+  || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "verification run failed for verification_spark_mode_sources" \
+     "(no project) with status $status" >&2
+   exit "$status"
+fi
+must_prove "$spark_bare" division-by-zero Unit_Level \
+  abstract-interpretation "SPARK_Mode before the unit"
+must_not_prove "$spark_bare" division-by-zero Project_Level \
+  "no project, no configuration pragmas"
+
+#  FP-097: an expanded name ("Pkg.Obj", "Subp.Local") was not recognized
+#  as the object it denotes, so a write through it left the fact held
+#  under the direct name in place.
+run_json "$fp097" tests/verification_fp097_expanded_names.adb
+must_not_prove "$fp097" division-by-zero Level FP-097
+must_not_prove "$fp097" division-by-zero Local FP-097
+must_prove "$fp097" division-by-zero State.Other abstract-interpretation \
+  FP-097
+
+#  FP-098: a symbol minted on a path the interval domain found infeasible
+#  (the body of a loop over an empty range) kept its empty bounds after
+#  the join, which made every later goal follow from a contradiction.
+run_json "$fp098" tests/verification_fp098_infeasible_roots.adb
+for operation in '(Kept - 1)' Divisor '(Divisor - 1)'; do
+   must_not_prove "$fp098" division-by-zero "$operation" FP-098
+done
+must_prove "$fp098" division-by-zero '(Kept + 1)' abstract-interpretation \
+  FP-098
+
+#  An index into an object whose bounds no declaration fixes proves
+#  against the object's own 'First and 'Last, and only against those.
+run_json "$symbolic_bounds" tests/verification_pp_index_symbolic_bounds.adb
+for operation in Given Probe "Data'First + 1" 'Step + 1'; do
+   must_prove "$symbolic_bounds" index-check "$operation" external-prover \
+     "symbolic array bounds"
+done
+for operation in 'Given + 1' 'Given + 0' 'Probe + 0' "Data'Last + 1" \
+  'Step + 2'
+do
+   must_not_prove "$symbolic_bounds" index-check "$operation" \
+     "symbolic array bounds"
+done
+
+#  A precondition is evaluated in the caller's state, so one that reads a
+#  global is decided; on a recursive call the formals take the actuals'
+#  values instead of keeping what the caller knows about its own.
+status=0
+"$analyzer" --verify -q --format=json --output="$pre_globals" \
+  tests/verification_precondition_globals.ads \
+  tests/verification_precondition_globals.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "verification run failed for verification_precondition_globals" \
+     "with status $status" >&2
+   exit "$status"
+fi
+must_prove "$pre_globals" precondition 'Needs_Above (4)' contract-transfer \
+  "precondition over a global"
+must_not_prove "$pre_globals" precondition 'Needs_Above (5)' \
+  "precondition over a global"
+must_not_prove "$pre_globals" precondition 'Needs_Above (3)' \
+  "precondition over a global"
+must_not_prove "$pre_globals" precondition 'Count_Down (X - X)' \
+  "recursive precondition"
 
 echo "bounded verification tests passed"

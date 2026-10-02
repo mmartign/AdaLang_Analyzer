@@ -12,6 +12,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Characters.Handling;
 with Ada.Containers.Vectors;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded;
@@ -24,6 +25,7 @@ with Adalang_Analyzer.Config;      use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Control_Flow_Graph;
 with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
+with Adalang_Analyzer.Project_Files;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;
@@ -174,6 +176,28 @@ package body Adalang_Analyzer.Flow_Interp is
          Explanation, Imprecision => "outside bounded verification subset");
    end Record_Unsupported;
 
+   --  True while Verify_Subprogram's fixed-point run is still iterating. A
+   --  state seen then is one some path reaches, not yet the join of all of
+   --  them, so what it shows to be certain may not be: a divisor that is
+   --  zero before a loop has run need not be zero after it. Rule findings
+   --  are therefore reported only from converged states, when
+   --  Finalize_Node replays each determination.
+   Fixpoint_In_Progress : Boolean := False;
+
+   procedure Report_Flow_Violation
+     (Unit        : Libadalang.Analysis.Analysis_Unit;
+      Node        : Libadalang.Analysis.Ada_Node'Class;
+      Rule        : Rules.Rule_Kind;
+      Message     : String;
+      Explanation : String := "";  --  adalang-analyzer: ignore Swappable_Parameters
+      Evidence    : String := "") is  --  adalang-analyzer: ignore Swappable_Parameters
+   begin
+      if not Fixpoint_In_Progress then
+         Report.Report_Rule_Violation
+           (Unit, Node, Rule, Message, Explanation, Evidence);
+      end if;
+   end Report_Flow_Violation;
+
    --  Fetches an aspect from any declaration/body part. Missing or
    --  unresolved contracts are represented by a null expression.
    function Contract_Expression
@@ -199,12 +223,84 @@ package body Adalang_Analyzer.Flow_Interp is
                     (Langkit_Support.Text.To_Text (Name)));
             end if;
          end;
+      elsif Libadalang.Analysis.Is_Null (Result)
+        and then Decl.Kind in Libadalang.Common.Ada_Null_Subp_Decl
+                            | Libadalang.Common.Ada_Expr_Function
+      then
+         --  A null procedure or expression function that completes an
+         --  earlier declaration: the contract is on that declaration. Only
+         --  a precise resolution counts, so a same-name overload's contract
+         --  is never picked up.
+         declare
+            Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
+              Decl.As_Base_Subp_Body.P_Decl_Part;
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl_Part)
+              and then Libadalang.Analysis.Ada_Node (Decl_Part) /=
+                Libadalang.Analysis.Ada_Node (Decl)
+            then
+               Result := Decl_Part.P_Get_Aspect_Spec_Expr
+                 (Langkit_Support.Text.To_Unbounded_Text
+                    (Langkit_Support.Text.To_Text (Name)));
+            end if;
+         end;
       end if;
       return Result;
    exception
       when others =>
          return Libadalang.Analysis.No_Expr;
    end Contract_Expression;
+
+   --  The earlier declaration a completion's contracts are written on,
+   --  resolved the way Contract_Expression resolves it; No_Basic_Decl when
+   --  Decl is not a completion or has no separate declaration.
+   function Contract_Part
+     (Decl : Libadalang.Analysis.Basic_Decl'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is
+      Part : Libadalang.Analysis.Basic_Decl :=
+        Libadalang.Analysis.No_Basic_Decl;
+   begin
+      if Decl.Kind = Libadalang.Common.Ada_Subp_Body then
+         Part := Decl.As_Subp_Body.P_Decl_Part (Imprecise_Fallback => True);
+      elsif Decl.Kind in Libadalang.Common.Ada_Null_Subp_Decl
+                       | Libadalang.Common.Ada_Expr_Function
+      then
+         Part := Decl.As_Base_Subp_Body.P_Decl_Part;
+      end if;
+
+      if Libadalang.Analysis.Is_Null (Part)
+        or else Libadalang.Analysis.Ada_Node (Part) =
+          Libadalang.Analysis.Ada_Node (Decl)
+      then
+         return Libadalang.Analysis.No_Basic_Decl;
+      end if;
+      return Part;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Contract_Part;
+
+   --  The defining name of the formal of Subprogram spelled Name (in
+   --  normalized form), or No_Ada_Node.
+   function Formal_Named
+     (Subprogram : Libadalang.Analysis.Basic_Decl;
+      Name       : String) return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      for Param of Subprogram.P_Subp_Spec_Or_Null.P_Params loop
+         for Id of Param.F_Ids loop
+            if Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Id)) = Name
+            then
+               return Libadalang.Analysis.Ada_Node (Id);
+            end if;
+         end loop;
+      end loop;
+      return Libadalang.Analysis.No_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Formal_Named;
 
    function Has_Aspect
      (Decl : Libadalang.Analysis.Basic_Decl'Class;
@@ -242,9 +338,13 @@ package body Adalang_Analyzer.Flow_Interp is
       return Libadalang.Analysis.Ada_Node
    is
    begin
-      if Libadalang.Analysis.Is_Null (Node)
-        or else Node.Kind /= Libadalang.Common.Ada_Identifier
-      then
+      if Libadalang.Analysis.Is_Null (Node) then
+         return Libadalang.Analysis.No_Ada_Node;
+      elsif Node.Kind = Libadalang.Common.Ada_Dotted_Name then
+         --  An expanded name denotes the same object as its last
+         --  identifier (FP-097).
+         return Flow_Referenced_Name (Expanded_Name_Target (Node));
+      elsif Node.Kind /= Libadalang.Common.Ada_Identifier then
          return Libadalang.Analysis.No_Ada_Node;
       end if;
 
@@ -588,17 +688,26 @@ package body Adalang_Analyzer.Flow_Interp is
                if not Libadalang.Analysis.Is_Null (Enclosing)
                  and then Prefix_Decl = Enclosing
                then
-                  return Matching_Formal_Name
-                    (Enclosing,
-                     Text_Utils.Normalize_Rule_Name
-                       (Ada_Text.Node_Text
-                          (Dest.As_Dotted_Name.F_Suffix)));
+                  declare
+                     Formal : constant Libadalang.Analysis.Ada_Node :=
+                       Matching_Formal_Name
+                         (Enclosing,
+                          Text_Utils.Normalize_Rule_Name
+                            (Ada_Text.Node_Text
+                               (Dest.As_Dotted_Name.F_Suffix)));
+                  begin
+                     --  Not a formal: a local, named the same way below.
+                     if not Libadalang.Analysis.Is_Null (Formal) then
+                        return Formal;
+                     end if;
+                  end;
                end if;
             end;
          end if;
-      end;
 
-      return Libadalang.Analysis.No_Ada_Node;
+         --  "Pkg.Obj := ..." writes Obj.
+         return Flow_Referenced_Name (Dest);
+      end;
    exception
       when others =>
          return Libadalang.Analysis.No_Ada_Node;
@@ -698,6 +807,115 @@ package body Adalang_Analyzer.Flow_Interp is
          return (Has_Mode => False, Is_Off => False);
    end Own_SPARK_Mode;
 
+   --  The SPARK_Mode that applies to the whole compilation unit holding
+   --  Node when no declaration in it says otherwise: a "pragma SPARK_Mode"
+   --  written before the unit, or else the configuration pragmas of the
+   --  project the source belongs to.
+   function Unit_SPARK_Mode
+     (Node : Libadalang.Analysis.Ada_Node'Class) return SPARK_Mode_State
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Node);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current)
+        and then Current.Kind /= Libadalang.Common.Ada_Compilation_Unit
+      loop
+         Current := Current.Parent;
+      end loop;
+
+      if not Libadalang.Analysis.Is_Null (Current) then
+         for Item of Current.As_Compilation_Unit.F_Prelude loop
+            if Item.Kind = Libadalang.Common.Ada_Pragma_Node
+              and then Normalized_Text (Item.As_Pragma_Node.F_Id) =
+                "spark-mode"
+            then
+               return
+                 (Has_Mode => True,
+                  Is_Off   =>
+                    Item.As_Pragma_Node.F_Args.Children_Count > 0
+                    and then Normalized_Text
+                      (Item.As_Pragma_Node.F_Args.Child (1)) = "off");
+            end if;
+         end loop;
+      end if;
+
+      return
+        (Has_Mode => Adalang_Analyzer.Project_Files.Under_Project_SPARK_Mode
+           (Node.Unit.Get_Filename),
+         Is_Off   => False);
+   exception
+      when others =>
+         return (Has_Mode => False, Is_Off => False);
+   end Unit_SPARK_Mode;
+
+   --  True when Decl's library unit is declared Pure, so nothing in
+   --  it has state to change.
+   function In_Pure_Unit
+     (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+      Top : constant Libadalang.Analysis.Basic_Decl :=
+        Decl.P_Top_Level_Decl (Decl.Unit);
+   begin
+      return not Libadalang.Analysis.Is_Null (Top)
+        and then Top.P_Has_Aspect
+          (Langkit_Support.Text.To_Unbounded_Text
+             (Langkit_Support.Text.To_Text ("Pure")));
+   exception
+      when others =>
+         return False;
+   end In_Pure_Unit;
+
+   --  True when Decl is under an explicit SPARK_Mode (On): a SPARK
+   --  function has no side effects unless it says so.
+   function Explicitly_SPARK
+     (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+      Mode     : SPARK_Mode_State := Own_SPARK_Mode (Decl);
+      Ancestor : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Decl).Parent;
+   begin
+      while not Mode.Has_Mode
+        and then not Libadalang.Analysis.Is_Null (Ancestor)
+      loop
+         if Ancestor.Kind in Libadalang.Common.Ada_Package_Body
+                           | Libadalang.Common.Ada_Package_Decl
+                           | Libadalang.Common.Ada_Generic_Package_Decl
+                           | Libadalang.Common.Ada_Subp_Body
+         then
+            Mode := Own_SPARK_Mode (Ancestor.As_Basic_Decl);
+         end if;
+         Ancestor := Ancestor.Parent;
+      end loop;
+      if not Mode.Has_Mode then
+         Mode := Unit_SPARK_Mode (Decl);
+      end if;
+      return Mode.Has_Mode and then not Mode.Is_Off
+        and then not Has_Aspect (Decl, "Side_Effects");
+   exception
+      when others =>
+         return False;
+   end Explicitly_SPARK;
+
+   --  True when Decl is a function that the language or its own unit says
+   --  has no side effects: one declared in a Pure unit, or under an
+   --  explicit SPARK_Mode without the Side_Effects aspect.
+   function Function_Declared_Pure
+     (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else Libadalang.Analysis.Is_Null (Decl.P_Subp_Spec_Or_Null)
+        or else Decl.P_Subp_Spec_Or_Null.As_Subp_Spec.F_Subp_Kind.Kind /=
+          Libadalang.Common.Ada_Subp_Kind_Function
+      then
+         return False;
+      end if;
+      return In_Pure_Unit (Decl) or else Explicitly_SPARK (Decl);
+   exception
+      when others =>
+         return False;
+   end Function_Declared_Pure;
+
    function Effective_SPARK_Enabled
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
    is
@@ -738,7 +956,8 @@ package body Adalang_Analyzer.Flow_Interp is
          Ancestor := Ancestor.Parent;
       end loop;
 
-      return True;
+      Mode := Unit_SPARK_Mode (Decl);
+      return not (Mode.Has_Mode and then Mode.Is_Off);
    exception
       when others =>
          return True;
@@ -834,12 +1053,31 @@ package body Adalang_Analyzer.Flow_Interp is
       declare
          Pre : constant Libadalang.Analysis.Expr :=
            Contract_Expression (Decl, "Pre");
-         Contract_State : Flow_State := Empty_Flow_State;
+         Contract_State : Flow_State := State;
          Contract_Symbols : VC.Symbolic_State := Symbols;
       begin
          if Libadalang.Analysis.Is_Null (Pre) then
             return;
          end if;
+
+         --  The precondition is evaluated where the call is, so what the
+         --  caller knows about the objects it names -- globals, most of
+         --  all -- applies. The formals are the callee's own: on a
+         --  recursive call they are the very names the caller's state
+         --  describes, so each starts from nothing before it is given its
+         --  actual's value. If the formals cannot be enumerated, nothing
+         --  of the caller's state is used.
+         begin
+            for Pair of Call.P_Call_Params loop
+               Flow_Havoc
+                 (Contract_State,
+                  Libadalang.Analysis.Ada_Node
+                    (Libadalang.Analysis.Param (Pair)));
+            end loop;
+         exception
+            when others =>
+               Contract_State := Empty_Flow_State;
+         end;
 
          Seed_Formal_Values
            (Call, State, Include_Outputs => True,
@@ -852,6 +1090,38 @@ package body Adalang_Analyzer.Flow_Interp is
                    (Libadalang.Analysis.Param (Pair)),
                  Libadalang.Analysis.Actual (Pair), State);
          end loop;
+
+         --  When the call resolves to a completion (a body, a null
+         --  procedure, an expression function), the precondition is written
+         --  on the earlier declaration and names that declaration's
+         --  formals, which are other defining names than the completion's.
+         --  Each gets what its namesake was just given.
+         declare
+            Part : constant Libadalang.Analysis.Basic_Decl :=
+              Contract_Part (Decl);
+         begin
+            if not Libadalang.Analysis.Is_Null (Part) then
+               for Pair of Call.P_Call_Params loop
+                  declare
+                     Formal : constant Libadalang.Analysis.Ada_Node :=
+                       Libadalang.Analysis.Ada_Node
+                         (Libadalang.Analysis.Param (Pair));
+                     Twin   : constant Libadalang.Analysis.Ada_Node :=
+                       Formal_Named (Part, Normalized_Text (Formal));
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Twin)
+                       and then Twin /= Formal
+                     then
+                        Flow_Copy_Key (Contract_State, Formal, Twin);
+                        Contract_Symbols :=
+                          VC.Assign
+                            (Contract_Symbols, Twin,
+                             Libadalang.Analysis.Actual (Pair), State);
+                     end if;
+                  end;
+               end loop;
+            end if;
+         end;
 
          declare
             Value : constant Abstract_Bool :=
@@ -876,7 +1146,7 @@ package body Adalang_Analyzer.Flow_Interp is
                   (if VC_Result = VC.VC_Refuted
                    then VC.Evidence else "precondition => false"),
                   Final => Final);
-               Report.Report_Rule_Violation
+               Report_Flow_Violation
                  (Unit, Call, Rules.Known_Precondition_Failure,
                   "actual arguments make the precondition false",
                   Explanation =>
@@ -969,6 +1239,14 @@ package body Adalang_Analyzer.Flow_Interp is
 
       if Libadalang.Analysis.Is_Null (Decl) then
          Flow_Havoc_All (State);
+         return;
+      elsif Decl.Kind in Libadalang.Common.Ada_Synthetic_Subp_Decl
+                       | Libadalang.Common.Ada_Enum_Literal_Decl
+                       | Libadalang.Common.Ada_Synthetic_Char_Enum_Lit
+        or else Function_Declared_Pure (Decl)
+      then
+         --  A predefined operator or attribute function ("T'Pos (X)"), a
+         --  literal, or a function declared free of side effects.
          return;
       end if;
 
@@ -1550,7 +1828,7 @@ package body Adalang_Analyzer.Flow_Interp is
            (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
             Message, "value range is outside the target subtype range",
             Final => Final);
-         Report.Report_Rule_Violation
+         Report_Flow_Violation
            (Unit, Value, Rule, Message,
             Explanation =>
               "Abstract interpretation found that every represented value " &
@@ -1583,7 +1861,7 @@ package body Adalang_Analyzer.Flow_Interp is
                        (Unit, Value, Proof.Range_Check,
                         Proof.External_Prover, Message, VC.Evidence,
                         Final => Final);
-                     Report.Report_Rule_Violation
+                     Report_Flow_Violation
                        (Unit, Value, Rule, Message,
                         Explanation =>
                           "The scalar verification condition establishes " &
@@ -1668,13 +1946,194 @@ package body Adalang_Analyzer.Flow_Interp is
    --  Finalize_Node can replay the same determination against a CFG node's
    --  own fully-converged State, marked Final (see FP-035, following
    --  FP-031/FP-034's Ada_Identifier/Range_Check fixes).
+   --  The array object and dimension an attribute reference ranges over.
+   --  Object is the defining name of a declared object or parameter of an
+   --  array type, the only prefixes whose bounds cannot change while the
+   --  name is visible; Dimension is 0 for anything else.
+   type Own_Range_Target is record
+      Object    : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Dimension : Natural := 0;
+   end record;
+
+   No_Own_Range_Target : constant Own_Range_Target := (others => <>);
+
+   --  The defining name Prefix denotes when Prefix is the plain name of an
+   --  array object: a declared object (not a renaming) or a parameter. A
+   --  component, a dereference, a slice or a call result is none of these:
+   --  what those denote can be replaced while the same text still names it.
+   function Array_Object_Key
+     (Prefix : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Prefix)
+        or else Prefix.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return Libadalang.Analysis.No_Ada_Node;
+      end if;
+
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Prefix.As_Name.P_Referenced_Decl;
+         Typ  : constant Libadalang.Analysis.Base_Type_Decl :=
+           Prefix.As_Expr.P_Expression_Type;
+      begin
+         if Libadalang.Analysis.Is_Null (Decl)
+           or else Libadalang.Analysis.Is_Null (Typ)
+           or else not Typ.P_Is_Array_Type
+           or else Typ.P_Is_Access_Type
+         then
+            return Libadalang.Analysis.No_Ada_Node;
+         elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec
+           or else
+             (Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
+              and then Libadalang.Analysis.Is_Null
+                (Decl.As_Object_Decl.F_Renaming_Clause))
+         then
+            return Libadalang.Analysis.Ada_Node
+              (Prefix.As_Name.P_Referenced_Defining_Name);
+         end if;
+         return Libadalang.Analysis.No_Ada_Node;
+      end;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Array_Object_Key;
+
+   --  What "A'Range", "A'First" or "A'Last" refers to, with or without an
+   --  explicit static dimension.
+   function Range_Attribute_Target
+     (Attr : Libadalang.Analysis.Attribute_Ref) return Own_Range_Target
+   is
+      Result : Own_Range_Target :=
+        (Object => Array_Object_Key (Attr.F_Prefix), Dimension => 1);
+   begin
+      if Libadalang.Analysis.Is_Null (Result.Object) then
+         return No_Own_Range_Target;
+      end if;
+
+      if not Libadalang.Analysis.Is_Null (Attr.F_Args)
+        and then Attr.F_Args.Children_Count > 0
+      then
+         declare
+            Dimension : constant Abstract_Int :=
+              (if Attr.F_Args.Children_Count = 1
+               then Integer_Value (Assoc_Expression (Attr.F_Args, 1))
+               else Unknown_Int);
+         begin
+            if not Dimension.Known or else Dimension.Value not in 1 .. 255
+            then
+               return No_Own_Range_Target;
+            end if;
+            Result.Dimension := Natural (Dimension.Value);
+         end;
+      end if;
+      return Result;
+   exception
+      when others =>
+         return No_Own_Range_Target;
+   end Range_Attribute_Target;
+
+   --  True when Index_Value, the Dimension-th index of the indexed
+   --  component Indexed, is the parameter of a "for ... in" loop that
+   --  ranges over that same dimension of the very object being indexed:
+   --  "for I in A'Range loop ... A (I)", or "A'First .. A'Last" spelled
+   --  out. A loop parameter is a constant, and the bounds of a declared
+   --  array object or array parameter are fixed for as long as its name is
+   --  visible, so the index is within them on every iteration whatever
+   --  those bounds are -- the one index check that needs no bound at all.
+   function Index_Is_Own_Range_Loop_Parameter
+     (Indexed     : Libadalang.Analysis.Call_Expr;
+      Index_Value : Libadalang.Analysis.Expr'Class;
+      Dimension   : Positive) return Boolean
+   is
+      function Attribute_Target
+        (Node : Libadalang.Analysis.Ada_Node'Class;
+         Name : String) return Own_Range_Target is
+      begin
+         if Libadalang.Analysis.Is_Null (Node)
+           or else Node.Kind /= Libadalang.Common.Ada_Attribute_Ref
+           or else Text_Utils.Normalize_Rule_Name
+             (Ada_Text.Node_Text (Node.As_Attribute_Ref.F_Attribute)) /= Name
+         then
+            return No_Own_Range_Target;
+         end if;
+         return Range_Attribute_Target (Node.As_Attribute_Ref);
+      end Attribute_Target;
+
+      Object : constant Libadalang.Analysis.Ada_Node :=
+        Array_Object_Key (Indexed.F_Name);
+      Index  : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Index_Value);
+      Target : Own_Range_Target := No_Own_Range_Target;
+   begin
+      if Libadalang.Analysis.Is_Null (Object) then
+         return False;
+      end if;
+
+      while not Libadalang.Analysis.Is_Null (Index)
+        and then Index.Kind = Libadalang.Common.Ada_Paren_Expr
+      loop
+         Index := Libadalang.Analysis.Ada_Node (Index.As_Paren_Expr.F_Expr);
+      end loop;
+      if Libadalang.Analysis.Is_Null (Index)
+        or else Index.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return False;
+      end if;
+
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Index.As_Name.P_Referenced_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.Kind /= Libadalang.Common.Ada_For_Loop_Var_Decl
+           or else Decl.Parent.Kind /= Libadalang.Common.Ada_For_Loop_Spec
+           or else Decl.Parent.As_For_Loop_Spec.F_Loop_Type.Kind /=
+             Libadalang.Common.Ada_Iter_Type_In
+         then
+            return False;
+         end if;
+
+         declare
+            Iter_Expr : constant Libadalang.Analysis.Ada_Node :=
+              Decl.Parent.As_For_Loop_Spec.F_Iter_Expr;
+         begin
+            if Iter_Expr.Kind = Libadalang.Common.Ada_Attribute_Ref then
+               Target := Attribute_Target (Iter_Expr, "range");
+            elsif Iter_Expr.Kind = Libadalang.Common.Ada_Bin_Op
+              and then Iter_Expr.As_Bin_Op.F_Op =
+                Libadalang.Common.Ada_Op_Double_Dot
+            then
+               Target :=
+                 Attribute_Target (Iter_Expr.As_Bin_Op.F_Left, "first");
+               if Target /=
+                 Attribute_Target (Iter_Expr.As_Bin_Op.F_Right, "last")
+               then
+                  return False;
+               end if;
+            end if;
+         end;
+      end;
+
+      return Target.Dimension = Dimension
+        and then Libadalang.Analysis."=" (Target.Object, Object);
+   exception
+      when others =>
+         return False;
+   end Index_Is_Own_Range_Loop_Parameter;
+
    procedure Check_Index_Range
      (Unit        : Libadalang.Analysis.Analysis_Unit;
       Index_Value : Libadalang.Analysis.Expr'Class;
       Bounds      : Abstract_Range;
       State       : Flow_State;
       Symbols     : VC.Symbolic_State := VC.Empty_Symbolic_State;
-      Final       : Boolean := False)
+      Final       : Boolean := False;
+      Indexed     : Libadalang.Analysis.Call_Expr :=
+        Libadalang.Analysis.No_Call_Expr;
+      Dimension   : Positive := 1)
    is
    begin
       if Definitely_Outside_Range (Index_Value, Bounds, State) then
@@ -1682,7 +2141,7 @@ package body Adalang_Analyzer.Flow_Interp is
            (Unit, Index_Value, Proof.Index_Check, Proof.Abstract_Interpretation,
             "index is outside the array index subtype",
             "index range is outside the array bounds", Final => Final);
-         Report.Report_Rule_Violation
+         Report_Flow_Violation
            (Unit, Index_Value, Rules.Known_Index_Check_Failure,
             "index is outside the array index subtype",
             Explanation =>
@@ -1690,7 +2149,18 @@ package body Adalang_Analyzer.Flow_Interp is
               "index value is outside the array bounds.",
             Evidence => "index range is outside the array bounds");
       elsif Config.Verification_Mode then
-         if Definitely_Inside_Range (Index_Value, Bounds, State) then
+         if not Libadalang.Analysis.Is_Null (Indexed)
+           and then Index_Is_Own_Range_Loop_Parameter
+             (Indexed, Index_Value, Dimension)
+         then
+            --  proof-path: index-own-range
+            Record_Proved_Safe
+              (Unit, Index_Value, Proof.Index_Check, Proof.Static_Evaluation,
+               "index is the parameter of a loop over this array's own " &
+                 "range",
+               "loop parameter ranges over the indexed object's bounds",
+               Final => Final);
+         elsif Definitely_Inside_Range (Index_Value, Bounds, State) then
             --  proof-path: index-abstract
             Record_Proved_Safe
               (Unit, Index_Value, Proof.Index_Check,
@@ -1717,7 +2187,7 @@ package body Adalang_Analyzer.Flow_Interp is
                         Proof.External_Prover,
                         "index is outside the array index subtype",
                         VC.Evidence, Final => Final);
-                     Report.Report_Rule_Violation
+                     Report_Flow_Violation
                        (Unit, Index_Value,
                         Rules.Known_Index_Check_Failure,
                         "index is outside the array index subtype",
@@ -1726,13 +2196,32 @@ package body Adalang_Analyzer.Flow_Interp is
                           "that the index cannot satisfy the array bounds.",
                         Evidence => VC.Evidence);
                   when others =>
-                     Record_VC_Unproved
-                       (Unit, Index_Value, Proof.Index_Check,
-                        Proof.Abstract_Interpretation,
-                        "index-check failure is not established, but " &
-                          "absence is not proved",
-                        "index and bound ranges remain inconclusive",
-                        Outcome, Final => Final);
+                     --  No declaration fixes the object's bounds, but the
+                     --  index may still be provably within them: against
+                     --  the object's own 'First and 'Last as symbols.
+                     if (not Bounds.Has_Low or else not Bounds.Has_High)
+                       and then Dimension = 1
+                       and then not Libadalang.Analysis.Is_Null (Indexed)
+                       and then VC.Decide_Index_In_Object
+                         (Index_Value, Indexed.F_Name, State, Symbols)
+                           .Result = VC.VC_Proved
+                     then
+                        --  proof-path: index-symbolic-bounds
+                        Record_Proved_Safe
+                          (Unit, Index_Value, Proof.Index_Check,
+                           Proof.External_Prover,
+                           "scalar verification condition proves the " &
+                             "index is within the object's own bounds",
+                           VC.Evidence, Final => Final);
+                     else
+                        Record_VC_Unproved
+                          (Unit, Index_Value, Proof.Index_Check,
+                           Proof.Abstract_Interpretation,
+                           "index-check failure is not established, but " &
+                             "absence is not proved",
+                           "index and bound ranges remain inconclusive",
+                           Outcome, Final => Final);
+                     end if;
                end case;
             end;
          end if;
@@ -1783,7 +2272,7 @@ package body Adalang_Analyzer.Flow_Interp is
                             Libadalang.Analysis.Ada_Node
                               (Decl.As_Base_Type_Decl)
                         then
-                           Report.Report_Rule_Violation
+                           Report_Flow_Violation
                              (Unit, Call, Rules.Redundant_Type_Conversion,
                               "conversion has no effect because the " &
                                 "operand already has this type");
@@ -1811,7 +2300,8 @@ package body Adalang_Analyzer.Flow_Interp is
                            Index_Value : constant Libadalang.Analysis.Expr :=
                              Assoc_Expression (Call.F_Suffix, Dim);
                            Bounds : constant Abstract_Range :=
-                             Array_Index_Range (Array_Type, Dim, State);
+                             Array_Object_Index_Range
+                               (Call.F_Name, Dim, State);
                         begin
                            if Config.Rule_States
                                 (Rules.Known_Index_Check_Failure) =
@@ -1831,7 +2321,8 @@ package body Adalang_Analyzer.Flow_Interp is
                                       "scalar domain");
                               else
                                  Check_Index_Range
-                                   (Unit, Index_Value, Bounds, State, Symbols);
+                                   (Unit, Index_Value, Bounds, State, Symbols,
+                                    Indexed => Call, Dimension => Dim);
                               end if;
                            end if;
                         end;
@@ -1880,7 +2371,7 @@ package body Adalang_Analyzer.Flow_Interp is
             "right operand is zero in the incoming abstract state",
             "right operand => 0", Final => Final);
          if not Is_Static_Zero (Expr.F_Right) then
-            Report.Report_Rule_Violation
+            Report_Flow_Violation
               (Unit, Expr.F_Right, Rules.Division_By_Zero,
                "right operand is zero here based on an earlier assignment",
                Explanation =>
@@ -1919,7 +2410,7 @@ package body Adalang_Analyzer.Flow_Interp is
                         Proof.External_Prover,
                         "right operand is zero in every represented state",
                         VC.Evidence, Final => Final);
-                     Report.Report_Rule_Violation
+                     Report_Flow_Violation
                        (Unit, Expr.F_Right, Rules.Division_By_Zero,
                         "right operand is zero here",
                         Explanation =>
@@ -1979,7 +2470,7 @@ package body Adalang_Analyzer.Flow_Interp is
                   "arithmetic result is outside its base type range",
                   "result range is outside the operation's base type",
                   Final => Final);
-               Report.Report_Rule_Violation
+               Report_Flow_Violation
                  (Unit, Node, Rules.Known_Overflow_Failure,
                   "arithmetic result is outside its base type range",
                   Explanation =>
@@ -2031,7 +2522,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                  "arithmetic result is outside its base " &
                                    "type range",
                                  VC.Evidence, Final => Final);
-                              Report.Report_Rule_Violation
+                              Report_Flow_Violation
                                 (Unit, Node,
                                  Rules.Known_Overflow_Failure,
                                  "arithmetic result is outside its base " &
@@ -2229,7 +2720,7 @@ package body Adalang_Analyzer.Flow_Interp is
          Flow_Value : constant Abstract_Bool := Boolean_Value (Cond, State);
       begin
          if Flow_Value /= Bool_Unknown then
-            Report.Report_Rule_Violation
+            Report_Flow_Violation
               (Unit, Cond, Rules.Constant_Condition,
                "condition is always " & Bool_Name (Flow_Value) &
                  " based on an earlier assignment");
@@ -2448,7 +2939,7 @@ package body Adalang_Analyzer.Flow_Interp is
                 else "assertion condition => false"),
                Final => Final);
             if Boolean_Value (Cond) = Bool_Unknown then
-               Report.Report_Rule_Violation
+               Report_Flow_Violation
                  (Unit, Cond, Rules.Known_Assertion_Failure,
                   "assertion condition is false here based on earlier " &
                     "state",
@@ -2735,29 +3226,60 @@ package body Adalang_Analyzer.Flow_Interp is
       State     : Flow_State) return Abstract_Range
    is
    begin
-      if Libadalang.Analysis.Is_Null (Iter_Expr)
-        or else Iter_Expr.Kind /= Libadalang.Common.Ada_Bin_Op
-        or else Iter_Expr.As_Bin_Op.F_Op /=
-          Libadalang.Common.Ada_Op_Double_Dot
-      then
+      if Libadalang.Analysis.Is_Null (Iter_Expr) then
          return Unknown_Range;
       end if;
 
+      --  "for I in A'Range" over an array object whose bounds a
+      --  declaration fixes; any other form that names a subtype ("for I in
+      --  Index", "for I in Index'Range", "for I in Index range 1 .. 3")
+      --  is a discrete subtype definition.
+      if Iter_Expr.Kind = Libadalang.Common.Ada_Attribute_Ref then
+         declare
+            Target : constant Own_Range_Target :=
+              Range_Attribute_Target (Iter_Expr.As_Attribute_Ref);
+         begin
+            if Target.Dimension > 0 then
+               return Array_Object_Index_Range
+                 (Iter_Expr.As_Attribute_Ref.F_Prefix, Target.Dimension,
+                  State);
+            end if;
+         end;
+         return Discrete_Definition_Range (Iter_Expr, State);
+      elsif Iter_Expr.Kind /= Libadalang.Common.Ada_Bin_Op
+        or else Iter_Expr.As_Bin_Op.F_Op /=
+          Libadalang.Common.Ada_Op_Double_Dot
+      then
+         return Discrete_Definition_Range (Iter_Expr, State);
+      end if;
+
+      --  The parameter is never below the least value the low bound can
+      --  have, nor above the greatest the high bound can.
       declare
-         Low    : constant Abstract_Int :=
+         Low        : constant Abstract_Int :=
            Integer_Value (Iter_Expr.As_Bin_Op.F_Left, State);
-         High   : constant Abstract_Int :=
+         High       : constant Abstract_Int :=
            Integer_Value (Iter_Expr.As_Bin_Op.F_Right, State);
-         Result : Abstract_Range;
+         Low_Range  : constant Abstract_Range :=
+           Range_Value (Iter_Expr.As_Bin_Op.F_Left, State);
+         High_Range : constant Abstract_Range :=
+           Range_Value (Iter_Expr.As_Bin_Op.F_Right, State);
+         Result     : Abstract_Range;
       begin
          if Low.Known then
             Result.Has_Low := True;
             Result.Low := Low.Value;
+         elsif Low_Range.Has_Low then
+            Result.Has_Low := True;
+            Result.Low := Low_Range.Low;
          end if;
 
          if High.Known then
             Result.Has_High := True;
             Result.High := High.Value;
+         elsif High_Range.Has_High then
+            Result.Has_High := True;
+            Result.High := High_Range.High;
          end if;
 
          return Result;
@@ -3172,7 +3694,7 @@ package body Adalang_Analyzer.Flow_Interp is
                      Proof.Contract_Transfer,
                      "subprogram body makes the postcondition false",
                      "postcondition => false");
-                  Report.Report_Rule_Violation
+                  Report_Flow_Violation
                     (Unit, Post, Rules.Known_Postcondition_Failure,
                      "subprogram body makes the postcondition false",
                      Explanation =>
@@ -3263,6 +3785,31 @@ package body Adalang_Analyzer.Flow_Interp is
         (others => VC.Empty_Symbolic_State);
       Reachable : Boolean_Array (States'Range) := (others => False);
       Updates   : Natural_Array (States'Range) := (others => 0);
+
+      --  The function calls evaluated by each CFG node's own expression
+      --  that may change state: a call to a function that is not known to
+      --  be free of side effects, in a condition, an initializer, an
+      --  assignment's right-hand side or a procedure call's actuals. Ada
+      --  lets such a function write anything it can see, and fixes no
+      --  order of evaluation within the expression, so the node's entry
+      --  state must already omit whatever those calls may write (FP-093).
+      package Call_Name_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Libadalang.Analysis.Name,
+         "=" => Libadalang.Analysis."=");
+      type Call_Name_Array is
+        array (CFG.Node_Id range <>) of Call_Name_Vectors.Vector;
+      Effectful_Calls : Call_Name_Array (States'Range);
+
+      --  Set when the subprogram declares or assigns an object whose type
+      --  may run user code implicitly: a controlled type's Initialize,
+      --  Adjust and Finalize, or a component default that calls a function
+      --  with side effects. That code runs at points no CFG node stands
+      --  for (a scope exit, most of all), so facts about objects declared
+      --  outside the subprogram are not kept at all (FP-094). When the type
+      --  is itself declared inside the subprogram, its operations can see
+      --  the subprogram's own objects too, and no value fact is kept.
+      Implicit_Code_May_Run     : Boolean := False;
+      Implicit_Code_Sees_Locals : Boolean := False;
       Loop_Invariants : Loop_Invariant_Vectors.Vector;
       Loop_Variants   : Loop_Variant_Vectors.Vector;
       Summary_Mode : Boolean := False;
@@ -3990,6 +4537,145 @@ package body Adalang_Analyzer.Flow_Interp is
          Work.Append (Id);
       end Enqueue;
 
+      --  The part of Decl's Global contract that names what it may write:
+      --  the whole aggregate when any association is an output or one this
+      --  does not recognize, nothing for "null", a bare input list, or an
+      --  aggregate of Input and Proof_In associations only.
+      function Global_Outputs
+        (Decl : Libadalang.Analysis.Basic_Decl)
+         return Libadalang.Analysis.Ada_Node
+      is
+         Aspect : constant Libadalang.Analysis.Aspect :=
+           Decl.P_Get_Aspect
+             (Langkit_Support.Text.To_Unbounded_Text
+                (Langkit_Support.Text.To_Text ("Global")));
+         Value  : Libadalang.Analysis.Expr;
+      begin
+         if not Libadalang.Analysis.Exists (Aspect) then
+            return Libadalang.Analysis.No_Ada_Node;
+         end if;
+         if Libadalang.Analysis.Is_Null (Libadalang.Analysis.Value (Aspect))
+         then
+            return Libadalang.Analysis.No_Ada_Node;
+         end if;
+         Value := Libadalang.Analysis.Value (Aspect).As_Expr;
+         if Value.Kind not in Libadalang.Common.Ada_Base_Aggregate
+         then
+            return Libadalang.Analysis.No_Ada_Node;
+         end if;
+
+         for Item of Value.As_Base_Aggregate.F_Assocs loop
+            if Item.Kind /= Libadalang.Common.Ada_Aggregate_Assoc
+              or else Item.As_Aggregate_Assoc.F_Designators.Children_Count = 0
+              or else Normalized_Text
+                (Item.As_Aggregate_Assoc.F_Designators.Child (1)) not in
+                  "input" | "proof-in"
+            then
+               return Libadalang.Analysis.Ada_Node (Value);
+            end if;
+         end loop;
+         return Libadalang.Analysis.No_Ada_Node;
+      end Global_Outputs;
+
+      --  True when Node lies within the subprogram body under analysis.
+      function Inside_Subprogram
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+         Current : Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.Ada_Node (Node);
+      begin
+         while not Libadalang.Analysis.Is_Null (Current) loop
+            if Current = Libadalang.Analysis.Ada_Node (Subprogram) then
+               return True;
+            end if;
+            Current := Current.Parent;
+         end loop;
+         return False;
+      end Inside_Subprogram;
+
+      --  Forgets the value of every object declared outside this
+      --  subprogram: what code declared elsewhere, with effects that are
+      --  not known, can reach. It cannot reach this subprogram's own
+      --  objects.
+      procedure Havoc_Nonlocal (State : in out Flow_State) is
+         Keys : array (1 .. Binding_Count (State)) of
+           Libadalang.Analysis.Ada_Node;
+      begin
+         for Index in Keys'Range loop
+            Keys (Index) := Binding_At (State, Index).Decl;
+         end loop;
+         for Key of Keys loop
+            if not Inside_Subprogram (Key) then
+               Flow_Forget_Value (State, Key);
+            end if;
+         end loop;
+      end Havoc_Nonlocal;
+
+      --  Removes from State whatever the effectful function calls
+      --  evaluated by Target may write.
+      procedure Apply_Function_Call_Effects
+        (Target : CFG.Node_Id;
+         State  : in out Flow_State)
+      is
+         procedure Forget_Identifiers_In
+           (Node : Libadalang.Analysis.Ada_Node'Class) is
+         begin
+            if Libadalang.Analysis.Is_Null (Node) then
+               return;
+            elsif Node.Kind = Libadalang.Common.Ada_Identifier then
+               Flow_Forget_Value (State, Flow_Referenced_Name (Node));
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               Forget_Identifiers_In (Node.Child (Index));
+            end loop;
+         end Forget_Identifiers_In;
+
+         --  A function with an "out" or "in out" parameter writes its
+         --  actual. Unlike a procedure call's actual, the object stays as
+         --  initialized as it was: only its value is no longer known.
+         procedure Forget_Written_Actuals
+           (Call : Libadalang.Analysis.Name) is
+         begin
+            for Pair of Call.P_Call_Params loop
+               if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
+                  Forget_Identifiers_In (Libadalang.Analysis.Actual (Pair));
+               end if;
+            end loop;
+         exception
+            when others =>
+               Flow_Forget_All_Values (State);
+         end Forget_Written_Actuals;
+      begin
+         for Call of Effectful_Calls (Target) loop
+            declare
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Call_Declaration (Call);
+            begin
+               if Adalang_Analyzer.Subprogram_Summaries
+                    .Callee_State_Effects_Known (Call)
+               then
+                  Havoc_Global_Effects (Call, State);
+               elsif not Libadalang.Analysis.Is_Null (Decl)
+                 and then Has_Aspect (Decl, "Global")
+               then
+                  --  Collected only because its Global contract names
+                  --  outputs: those are what it writes.
+                  Forget_Identifiers_In (Global_Outputs (Decl));
+               elsif Libadalang.Analysis.Is_Null (Decl)
+                 or else Inside_Subprogram (Decl)
+               then
+                  Flow_Forget_All_Values (State);
+               else
+                  Havoc_Nonlocal (State);
+               end if;
+               Forget_Written_Actuals (Call);
+            end;
+         end loop;
+      exception
+         when others =>
+            Flow_Forget_All_Values (State);
+      end Apply_Function_Call_Effects;
+
       procedure Merge_Into
         (Target : CFG.Node_Id;
          State  : Flow_State;
@@ -4001,6 +4687,18 @@ package body Adalang_Analyzer.Flow_Interp is
          Joined           : Flow_State;
          Joined_Symbols   : VC.Symbolic_State;
       begin
+         if not Effectful_Calls (Target).Is_Empty then
+            Apply_Function_Call_Effects (Target, Incoming_State);
+            Incoming_Symbols := VC.Havoc;
+         end if;
+         if Implicit_Code_Sees_Locals then
+            Flow_Forget_All_Values (Incoming_State);
+            Incoming_Symbols := VC.Havoc;
+         elsif Implicit_Code_May_Run then
+            Havoc_Nonlocal (Incoming_State);
+            Incoming_Symbols := VC.Havoc;
+         end if;
+
          if CFG.Node_At (Graph, Target).Kind = CFG.Loop_Header_Node then
             if Summary_Mode
               and then Incoming_Kind = CFG.Loop_Back_Edge
@@ -4043,7 +4741,7 @@ package body Adalang_Analyzer.Flow_Interp is
            and then Updates (Target) >= 3
          then
             Joined := Flow_Widen (States (Target), Joined);
-            Joined_Symbols := VC.Havoc;
+            Joined_Symbols := VC.Array_Bound_Facts (Joined_Symbols);
          end if;
          Apply_Invariant_Cutpoint (Target, Joined, Joined_Symbols);
 
@@ -4082,6 +4780,490 @@ package body Adalang_Analyzer.Flow_Interp is
          when others =>
             return Libadalang.Analysis.No_Expr;
       end Boolean_Condition;
+
+      --  Fills Effectful_Calls: for every CFG node, the function calls its
+      --  own expression evaluates that are not known to leave state alone.
+      procedure Collect_Effectful_Calls is
+         Max_Depth : constant := 4;
+
+         function May_Change_State
+           (Call  : Libadalang.Analysis.Name;
+            Depth : Natural) return Boolean;
+
+         procedure Collect
+           (Node  : Libadalang.Analysis.Ada_Node'Class;
+            Calls : in out Call_Name_Vectors.Vector;
+            Root  : Boolean;
+            Depth : Natural);
+
+         --  True unless the body of Decl can be read and does nothing but
+         --  compute: no assignment to an object declared outside it, no
+         --  procedure call, and no call to a function that may itself
+         --  change state.
+         function Body_May_Change_State
+           (Decl  : Libadalang.Analysis.Basic_Decl;
+            Depth : Natural) return Boolean
+         is
+            Subp_Body : Libadalang.Analysis.Ada_Node :=
+              Libadalang.Analysis.No_Ada_Node;
+
+            function Inside_Body
+              (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+            is
+               Current : Libadalang.Analysis.Ada_Node :=
+                 Libadalang.Analysis.Ada_Node (Node);
+            begin
+               while not Libadalang.Analysis.Is_Null (Current) loop
+                  if Current = Subp_Body then
+                     return True;
+                  end if;
+                  Current := Current.Parent;
+               end loop;
+               return False;
+            end Inside_Body;
+
+            function Writes_Outside
+              (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+            is
+            begin
+               if Libadalang.Analysis.Is_Null (Node) then
+                  return False;
+               elsif Node.Kind = Libadalang.Common.Ada_Call_Stmt then
+                  return True;
+               elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+                  declare
+                     Target : Libadalang.Analysis.Ada_Node :=
+                       Libadalang.Analysis.Ada_Node
+                         (Node.As_Assign_Stmt.F_Dest);
+                  begin
+                     --  Down to the object the destination starts from.
+                     loop
+                        if Target.Kind = Libadalang.Common.Ada_Dotted_Name
+                        then
+                           Target := Libadalang.Analysis.Ada_Node
+                             (Target.As_Dotted_Name.F_Prefix);
+                        elsif Target.Kind = Libadalang.Common.Ada_Call_Expr
+                        then
+                           Target := Libadalang.Analysis.Ada_Node
+                             (Target.As_Call_Expr.F_Name);
+                        else
+                           exit;
+                        end if;
+                     end loop;
+                     if Target.Kind /= Libadalang.Common.Ada_Identifier
+                       or else not Inside_Body
+                         (Target.As_Name.P_Referenced_Defining_Name)
+                     then
+                        return True;
+                     end if;
+                  end;
+               end if;
+
+               for Index in 1 .. Node.Children_Count loop
+                  if Writes_Outside (Node.Child (Index)) then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Writes_Outside;
+
+            --  Node's source text in lower case with all white space
+            --  removed.
+            function Compact_Text
+              (Node : Libadalang.Analysis.Ada_Node'Class) return String
+            is
+               Image  : constant String :=
+                 Ada.Characters.Handling.To_Lower (Ada_Text.Node_Text (Node));
+               Result : String (1 .. Image'Length);
+               Length : Natural := 0;
+            begin
+               for Item of Image loop
+                  if Item not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+                     Length := Length + 1;
+                     Result (Length) := Item;
+                  end if;
+               end loop;
+               return Result (1 .. Length);
+            end Compact_Text;
+
+            Calls : Call_Name_Vectors.Vector;
+         begin
+            if Depth > Max_Depth then
+               return True;
+            elsif Decl.Kind = Libadalang.Common.Ada_Subp_Renaming_Decl then
+               --  A renaming does what the subprogram it renames does.
+               return May_Change_State
+                 (Decl.As_Subp_Renaming_Decl.F_Renames.F_Renamed_Object,
+                  Depth + 1);
+            elsif Decl.Kind in Libadalang.Common.Ada_Base_Subp_Body then
+               Subp_Body := Libadalang.Analysis.Ada_Node (Decl);
+            elsif Decl.Kind in Libadalang.Common.Ada_Basic_Subp_Decl then
+               --  Libadalang can pair a declaration with the body of a
+               --  same-name overload (FP-044), so the body counts only when
+               --  its profile is written exactly like the declaration's.
+               declare
+                  Candidate : constant Libadalang.Analysis.Body_Node :=
+                    Decl.P_Body_Part_For_Decl;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Candidate)
+                    and then Candidate.Kind in
+                      Libadalang.Common.Ada_Base_Subp_Body
+                    and then Compact_Text
+                      (Candidate.As_Base_Subp_Body.F_Subp_Spec) =
+                      Compact_Text (Decl.As_Basic_Subp_Decl.P_Subp_Decl_Spec)
+                  then
+                     Subp_Body := Libadalang.Analysis.Ada_Node (Candidate);
+                  end if;
+               end;
+            end if;
+
+            if Libadalang.Analysis.Is_Null (Subp_Body)
+              or else Writes_Outside (Subp_Body)
+            then
+               return True;
+            end if;
+            Collect (Subp_Body, Calls, Root => True, Depth => Depth);
+            return not Calls.Is_Empty;
+         exception
+            when others =>
+               return True;
+         end Body_May_Change_State;
+
+         function May_Change_State
+           (Call  : Libadalang.Analysis.Name;
+            Depth : Natural) return Boolean
+         is
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Call_Declaration (Call);
+         begin
+            if Libadalang.Analysis.Is_Null (Decl) then
+               return True;
+            elsif Decl.Kind in Libadalang.Common.Ada_Enum_Literal_Decl
+                             | Libadalang.Common.Ada_Synthetic_Char_Enum_Lit
+                             | Libadalang.Common.Ada_Synthetic_Subp_Decl
+            then
+               --  A literal, or a predefined operator or attribute.
+               return False;
+            end if;
+
+            for Pair of Call.P_Call_Params loop
+               if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
+                  return True;
+               end if;
+            end loop;
+
+            if Adalang_Analyzer.Subprogram_Summaries
+                 .Callee_State_Effects_Known (Call)
+            then
+               return Adalang_Analyzer.Subprogram_Summaries
+                 .Callee_Global_Write_Count (Call) > 0;
+            elsif Has_Aspect (Decl, "Global") then
+               return not Libadalang.Analysis.Is_Null (Global_Outputs (Decl));
+            end if;
+            return not In_Pure_Unit (Decl)
+              and then not Explicitly_SPARK (Decl)
+              and then Body_May_Change_State (Decl, Depth + 1);
+         exception
+            when others =>
+               return True;
+         end May_Change_State;
+
+         procedure Collect
+           (Node  : Libadalang.Analysis.Ada_Node'Class;
+            Calls : in out Call_Name_Vectors.Vector;
+            Root  : Boolean;
+            Depth : Natural)
+         is
+            procedure Collect_In
+              (Part : Libadalang.Analysis.Ada_Node'Class) is
+            begin
+               Collect (Part, Calls, Root => False, Depth => Depth);
+            end Collect_In;
+
+            procedure Collect_Children is
+            begin
+               for Index in 1 .. Node.Children_Count loop
+                  Collect_In (Node.Child (Index));
+               end loop;
+            end Collect_Children;
+
+            procedure Note (Call : Libadalang.Analysis.Name) is
+            begin
+               if May_Change_State (Call, Depth) then
+                  Calls.Append (Call);
+               end if;
+            end Note;
+
+            --  A call evaluates the default expression of every formal it
+            --  leaves out; which ones those are is not worked out, so all
+            --  the callee's defaults count.
+            procedure Collect_Defaults (Call : Libadalang.Analysis.Name) is
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Call_Declaration (Call);
+            begin
+               --  A literal or a predefined operation has no defaults.
+               if Libadalang.Analysis.Is_Null (Decl)
+                 or else Depth >= Max_Depth
+                 or else Decl.Kind in
+                   Libadalang.Common.Ada_Enum_Literal_Decl
+                     | Libadalang.Common.Ada_Synthetic_Char_Enum_Lit
+                     | Libadalang.Common.Ada_Synthetic_Subp_Decl
+               then
+                  return;
+               end if;
+               for Param of Decl.P_Subp_Spec_Or_Null.P_Params loop
+                  Collect
+                    (Param.F_Default_Expr, Calls, Root => False,
+                     Depth => Depth + 1);
+               end loop;
+            exception
+               when others =>
+                  Calls.Append (Call);
+            end Collect_Defaults;
+         begin
+            if Libadalang.Analysis.Is_Null (Node)
+              or else Node.Kind in Libadalang.Common.Ada_Defining_Name
+                                 | Libadalang.Common.Ada_Aspect_Spec
+            then
+               return;
+            end if;
+
+            case Node.Kind is
+               when Libadalang.Common.Ada_Call_Stmt =>
+                  --  The procedure call itself is the statement's own
+                  --  transfer; only its actuals are evaluated before it.
+                  if Node.As_Call_Stmt.F_Call.Kind =
+                    Libadalang.Common.Ada_Call_Expr
+                  then
+                     Collect_In
+                       (Node.As_Call_Stmt.F_Call.As_Call_Expr.F_Suffix);
+                     Collect_Defaults
+                       (Node.As_Call_Stmt.F_Call.As_Call_Expr.F_Name);
+                  else
+                     Collect_Defaults (Node.As_Call_Stmt.F_Call);
+                  end if;
+
+               when Libadalang.Common.Ada_Call_Expr =>
+                  if Node.As_Call_Expr.P_Kind = Libadalang.Common.Call then
+                     Note (Node.As_Call_Expr.F_Name);
+                     Collect_Defaults (Node.As_Call_Expr.F_Name);
+                     Collect_In (Node.As_Call_Expr.F_Suffix);
+                  else
+                     Collect_Children;
+                  end if;
+
+               when Libadalang.Common.Ada_Identifier
+                  | Libadalang.Common.Ada_Dotted_Name =>
+                  --  Libadalang does not report the bare name of a
+                  --  generic function instance as a call.
+                  if Node.As_Name.P_Is_Call
+                    or else
+                      (not Libadalang.Analysis.Is_Null
+                             (Call_Declaration (Node.As_Name))
+                       and then Call_Declaration (Node.As_Name).Kind =
+                         Libadalang.Common.Ada_Generic_Subp_Instantiation)
+                  then
+                     Note (Node.As_Name);
+                     Collect_Defaults (Node.As_Name);
+                  end if;
+
+               when Libadalang.Common.Ada_Attribute_Ref =>
+                  Collect_In (Node.As_Attribute_Ref.F_Prefix);
+                  Collect_In (Node.As_Attribute_Ref.F_Args);
+
+               when Libadalang.Common.Ada_Bin_Op_Range =>
+                  --  A user-defined operator is a function call too; a
+                  --  predefined one resolves to no declaration.
+                  if not Libadalang.Analysis.Is_Null
+                       (Node.As_Bin_Op.F_Op.P_Referenced_Decl)
+                  then
+                     Note (Node.As_Bin_Op.F_Op.As_Name);
+                  end if;
+                  Collect_In (Node.As_Bin_Op.F_Left);
+                  Collect_In (Node.As_Bin_Op.F_Right);
+
+               when Libadalang.Common.Ada_Un_Op =>
+                  if not Libadalang.Analysis.Is_Null
+                       (Node.As_Un_Op.F_Op.P_Referenced_Decl)
+                  then
+                     Note (Node.As_Un_Op.F_Op.As_Name);
+                  end if;
+                  Collect_In (Node.As_Un_Op.F_Expr);
+
+               when others =>
+                  --  A nested declaration other than the node's own is not
+                  --  evaluated here.
+                  if Root
+                    or else Node.Kind not in Libadalang.Common.Ada_Basic_Decl
+                  then
+                     Collect_Children;
+                  end if;
+            end case;
+         exception
+            when others =>
+               --  A name that cannot be resolved may be a call to anything.
+               if Node.Kind in Libadalang.Common.Ada_Name then
+                  Calls.Append (Node.As_Name);
+               end if;
+         end Collect;
+         --  True unless creating, copying and destroying an object of Typ
+         --  provably runs no user code: a scalar or access type, or an
+         --  array or untagged record built from such types whose component
+         --  defaults call nothing that may change state.
+         function Type_May_Run_Code
+           (Typ   : Libadalang.Analysis.Base_Type_Decl;
+            Depth : Natural) return Boolean
+         is
+            Full : Libadalang.Analysis.Base_Type_Decl := Typ;
+
+            function Components_May_Run_Code
+              (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+            is
+               Calls : Call_Name_Vectors.Vector;
+            begin
+               if Libadalang.Analysis.Is_Null (Node) then
+                  return False;
+               elsif Node.Kind = Libadalang.Common.Ada_Component_Decl then
+                  Collect
+                    (Node.As_Component_Decl.F_Default_Expr, Calls,
+                     Root => True, Depth => Depth);
+                  return not Calls.Is_Empty
+                    or else Type_May_Run_Code
+                      (Node.As_Component_Decl.F_Component_Def.F_Type_Expr
+                         .P_Designated_Type_Decl,
+                       Depth + 1);
+               end if;
+
+               for Index in 1 .. Node.Children_Count loop
+                  if Components_May_Run_Code (Node.Child (Index)) then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Components_May_Run_Code;
+         begin
+            if Libadalang.Analysis.Is_Null (Full) or else Depth > Max_Depth
+            then
+               return True;
+            end if;
+            if Full.P_Is_Private then
+               Full := Full.P_Full_View;
+               if Libadalang.Analysis.Is_Null (Full) then
+                  return True;
+               end if;
+            end if;
+
+            if Full.P_Is_Discrete_Type or else Full.P_Is_Real_Type
+              or else Full.P_Is_Access_Type
+            then
+               return False;
+            elsif Full.P_Is_Array_Type then
+               return Type_May_Run_Code (Full.P_Comp_Type, Depth + 1);
+            elsif Full.P_Is_Record_Type and then not Full.P_Is_Tagged_Type
+            then
+               --  Down to the declaration that lists the components.
+               while Full.Kind = Libadalang.Common.Ada_Subtype_Decl loop
+                  Full :=
+                    Full.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+               end loop;
+               return Full.Kind not in Libadalang.Common.Ada_Type_Decl
+                 or else Full.As_Type_Decl.F_Type_Def.Kind /=
+                   Libadalang.Common.Ada_Record_Type_Def
+                 or else Components_May_Run_Code (Full);
+            end if;
+            return True;
+         exception
+            when others =>
+               return True;
+         end Type_May_Run_Code;
+
+         --  Sets the Implicit_Code flags from every object of such a type
+         --  that Node declares or assigns, within this subprogram but
+         --  outside its nested subprograms.
+         procedure Note_Implicit_Code
+           (Node : Libadalang.Analysis.Ada_Node'Class)
+         is
+            procedure Note_Type
+              (Typ : Libadalang.Analysis.Base_Type_Decl) is
+            begin
+               if Type_May_Run_Code (Typ, Depth => 0) then
+                  Implicit_Code_May_Run := True;
+                  if not Libadalang.Analysis.Is_Null (Typ)
+                    and then Inside_Subprogram (Typ)
+                  then
+                     Implicit_Code_Sees_Locals := True;
+                  end if;
+               end if;
+            end Note_Type;
+         begin
+            if Libadalang.Analysis.Is_Null (Node)
+              or else
+                (Node.Kind in Libadalang.Common.Ada_Base_Subp_Body
+                 and then Libadalang.Analysis.Ada_Node (Node) /=
+                   Libadalang.Analysis.Ada_Node (Subprogram))
+            then
+               return;
+            end if;
+
+            begin
+               if Node.Kind in Libadalang.Common.Ada_Object_Decl_Range
+                 and then Libadalang.Analysis.Is_Null
+                   (Node.As_Object_Decl.F_Renaming_Clause)
+               then
+                  Note_Type
+                    (Node.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl);
+               elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+                  Note_Type (Node.As_Assign_Stmt.F_Dest.P_Expression_Type);
+               end if;
+            exception
+               when others =>
+                  --  A type that does not resolve is declared elsewhere.
+                  Implicit_Code_May_Run := True;
+            end;
+
+            for Index in 1 .. Node.Children_Count loop
+               Note_Implicit_Code (Node.Child (Index));
+            end loop;
+         end Note_Implicit_Code;
+      begin
+         Implicit_Code_May_Run := False;
+         Implicit_Code_Sees_Locals := False;
+         Note_Implicit_Code (Subprogram);
+
+         for Id in Effectful_Calls'Range loop
+            declare
+               Source : constant Libadalang.Analysis.Ada_Node :=
+                 Source_Node (Id);
+               Cond   : constant Libadalang.Analysis.Expr :=
+                 Boolean_Condition (Source);
+               Own    : Libadalang.Analysis.Ada_Node :=
+                 Libadalang.Analysis.No_Ada_Node;
+            begin
+               Effectful_Calls (Id).Clear;
+               if not Libadalang.Analysis.Is_Null (Cond) then
+                  Own := Libadalang.Analysis.Ada_Node (Cond);
+               elsif Libadalang.Analysis.Is_Null (Source) then
+                  Own := Libadalang.Analysis.No_Ada_Node;
+               elsif Source.Kind = Libadalang.Common.Ada_For_Loop_Stmt then
+                  Own := Libadalang.Analysis.Ada_Node
+                    (Source.As_For_Loop_Stmt.F_Spec);
+               elsif Source.Kind = Libadalang.Common.Ada_Case_Stmt then
+                  Own := Libadalang.Analysis.Ada_Node
+                    (Source.As_Case_Stmt.F_Expr);
+               elsif Source.Kind = Libadalang.Common.Ada_If_Stmt then
+                  Own := Libadalang.Analysis.Ada_Node
+                    (Source.As_If_Stmt.F_Cond_Expr);
+               elsif Source.Kind not in Libadalang.Common.Ada_Composite_Stmt
+                 and then Source.Kind not in
+                   Libadalang.Common.Ada_Base_Subp_Body
+               then
+                  Own := Source;
+               end if;
+               Collect
+                 (Own, Effectful_Calls (Id), Root => True, Depth => 0);
+            end;
+         end loop;
+      end Collect_Effectful_Calls;
 
       procedure Seed_For_Loop_Variable
         (Node  : Libadalang.Analysis.Ada_Node;
@@ -4157,6 +5339,17 @@ package body Adalang_Analyzer.Flow_Interp is
                           VC.Assign
                             (Input_Symbols, Key,
                              Source.As_Assign_Stmt.F_Expr, Input);
+                     elsif Dest.Kind = Libadalang.Common.Ada_Call_Expr
+                       and then Dest.As_Call_Expr.P_Kind in
+                         Libadalang.Common.Array_Index
+                           | Libadalang.Common.Array_Slice
+                     then
+                        --  A write to array elements: the symbolic state
+                        --  holds scalars, record components and array
+                        --  bounds, never an element, so nothing it knows
+                        --  changes. (A scalar that renames or overlays an
+                        --  element holds no fact in the first place.)
+                        Output_Symbols := Input_Symbols;
                      else
                         Output_Symbols := VC.Havoc;
                      end if;
@@ -4287,7 +5480,22 @@ package body Adalang_Analyzer.Flow_Interp is
                  and then Edge.Kind = CFG.True_Edge
                then
                   Seed_For_Loop_Variable (Source, Edge_State);
-                  Edge_Symbols := VC.Havoc;
+                  Edge_Symbols := VC.Array_Bound_Facts (Output_Symbols);
+                  declare
+                     Spec : constant Libadalang.Analysis.For_Loop_Spec :=
+                       Source.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
+                  begin
+                     if Spec.F_Loop_Type.Kind =
+                       Libadalang.Common.Ada_Iter_Type_In
+                     then
+                        Edge_Symbols :=
+                          VC.Assume_Loop_Range
+                            (Edge_Symbols,
+                             Libadalang.Analysis.Ada_Node
+                               (Spec.F_Var_Decl.F_Id),
+                             Spec.F_Iter_Expr, Edge_State);
+                     end if;
+                  end;
                end if;
 
                if Propagate then
@@ -5127,7 +6335,9 @@ package body Adalang_Analyzer.Flow_Interp is
       procedure Finalize_Index_Check
         (Index_Value : Libadalang.Analysis.Expr'Class;
          Bounds      : Abstract_Range;
-         Container   : CFG.Node_Id)
+         Container   : CFG.Node_Id;
+         Indexed     : Libadalang.Analysis.Call_Expr;
+         Dimension   : Positive)
       is
       begin
          if not Boundary_Supported then
@@ -5147,7 +6357,7 @@ package body Adalang_Analyzer.Flow_Interp is
                 else States (Container)),
                (if Container = CFG.No_Node then VC.Empty_Symbolic_State
                 else Symbolic_States (Container)),
-               Final => True);
+               Final => True, Indexed => Indexed, Dimension => Dimension);
          end if;
       end Finalize_Index_Check;
 
@@ -5597,10 +6807,10 @@ package body Adalang_Analyzer.Flow_Interp is
                                        else
                                           Finalize_Index_Check
                                             (Index_Value,
-                                             Array_Index_Range
-                                               (Array_Type, Dimension,
+                                             Array_Object_Index_Range
+                                               (Call.F_Name, Dimension,
                                                 Here_State),
-                                             Here);
+                                             Here, Call, Dimension);
                                        end if;
                                     end if;
                                  end;
@@ -5827,7 +7037,10 @@ package body Adalang_Analyzer.Flow_Interp is
       Post    : constant Libadalang.Analysis.Expr :=
         Contract_Expression (Subprogram, "Post");
    begin
+      --  Read by Report_Flow_Violation throughout the run.
+      Fixpoint_In_Progress := True;  --  adalang-analyzer: ignore Overwritten_Assignment
       Collect_Loop_Invariants (Subprogram);
+      Collect_Effectful_Calls;
       Seed_Parameters (Initial);
       for Pair of Pairs loop
          Flow_Copy_Key (Initial, Pair.Body_Name, Pair.Spec_Name);
@@ -5897,6 +7110,19 @@ package body Adalang_Analyzer.Flow_Interp is
       end if;
 
       Fixpoint_Complete := True;
+      Fixpoint_In_Progress := False;
+
+      --  A condition is constant only if it is so in the state every path
+      --  to it agrees on.
+      for Id in States'Range loop
+         if Reachable (Id)
+           and then CFG.Node_At (Graph, Id).Kind in
+             CFG.Condition_Node | CFG.Loop_Header_Node
+         then
+            Check_Flow_Condition
+              (Unit, Boolean_Condition (Source_Node (Id)), States (Id));
+         end if;
+      end loop;
       Finalize_Node (Subprogram);
 
       if not Libadalang.Analysis.Is_Null (Post) then
@@ -5988,6 +7214,7 @@ package body Adalang_Analyzer.Flow_Interp is
          if not Fixpoint_Complete then
             Boundary_Supported := False;
          end if;
+         Fixpoint_In_Progress := False;
          Finalize_Node (Subprogram);
    end Verify_Subprogram;
 

@@ -53,6 +53,25 @@ package Adalang_Analyzer.Flow_Eval is
    --  membership tests, and an "if" expression whose condition itself
    --  resolves. Bool_Unknown for anything else.
 
+   function Expression_Modulus
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      Is_Modular : out Boolean) return Abstract_Int;
+   --  Is_Modular says whether the operator Node computes in a modular type
+   --  (or in a type that cannot be shown not to be one); the result is its
+   --  modulus when known. Integer_Value and Range_Value already reduce
+   --  their results accordingly; this is for consumers that build their
+   --  own terms.
+
+   function Expanded_Name_Target
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node;
+   --  For an expanded name of an object -- "Pkg.Obj", "Outer.Inner.Obj",
+   --  "Subp.Local" -- the final identifier, which resolves to the same
+   --  defining name as the object's direct name; No_Ada_Node for anything
+   --  else, a record component selection in particular. Every consumer of
+   --  an identifier treats such a name as that identifier, so a fact held
+   --  for the object is the same fact whichever way it is named.
+
    function Is_Static_Zero
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
    --  True when Node statically evaluates to 0, covering both integer and
@@ -113,9 +132,11 @@ package Adalang_Analyzer.Flow_Eval is
    --  Returns the states true after Cond holds (True_State) and after it
    --  doesn't (False_State), narrowing a tracked identifier's range for the
    --  handful of shapes this recognizes: a direct comparison against a
-   --  statically known expression on either side, and "not"/"and"/
-   --  "and then"/"or"/"or else" built from such comparisons. Anything else
-   --  leaves both states identical to State, which is always sound.
+   --  statically known expression on either side, a membership test of an
+   --  identifier against static values, ".." ranges and integer subtype
+   --  marks, and "not"/"and"/"and then"/"or"/"or else" built from those.
+   --  Anything else leaves both states identical to State, which is always
+   --  sound.
 
    type Static_Interval is record
       Known : Boolean := False;
@@ -135,15 +156,56 @@ package Adalang_Analyzer.Flow_Eval is
       State : Flow_State) return Abstract_Range;
    --  Best-effort integer bounds for a resolved discrete subtype. Bounds
    --  are expressions in Libadalang, so the same abstract state used for
-   --  program expressions can also resolve named static bounds.
+   --  program expressions can also resolve named static bounds. A bound is
+   --  resolved only when its value cannot have changed since the subtype
+   --  was elaborated (it names constants, not variables); either side may
+   --  be absent, and a caller that checks a value against the result needs
+   --  both.
+
+   function Discrete_Definition_Range
+     (Definition : Libadalang.Analysis.Ada_Node'Class;
+      State      : Flow_State) return Abstract_Range;
+   --  The range one discrete_subtype_definition or index constraint
+   --  denotes: "L .. H", a subtype mark, "S range L .. H" or "T'Range" of
+   --  an integer or constrained array subtype T. A side is absent unless it is known as of the
+   --  elaboration of the declaration Definition belongs to (see
+   --  Type_Range).
+
+   function Is_Elaboration_Stable
+     (Expr : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Expr still has the value it had when the declaration it
+   --  belongs to was elaborated: every name in it denotes a constant, a
+   --  named number, an "in" parameter, a loop parameter, an enumeration
+   --  literal, a subtype or a package.
+
+   function Has_Subtype_Predicate
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Boolean;
+   --  True when Typ, or a subtype or derived type it is declared from,
+   --  carries a Predicate, Static_Predicate or Dynamic_Predicate aspect, and
+   --  also whenever that can't be established. The values of such a subtype
+   --  are a subset of Type_Range, not all of it, so "X in Typ" is not a
+   --  range test: a caller may still conclude that a member lies within
+   --  Type_Range, but never that a value within Type_Range is a member.
 
    function Array_Index_Range
      (Array_Type : Libadalang.Analysis.Base_Type_Decl;
       Dimension  : Positive;
       State      : Flow_State) return Abstract_Range;
-   --  The index range of Array_Type's Dimension-th index, from its own
-   --  constrained index constraint when present, otherwise from its index
-   --  subtype's Type_Range.
+   --  The bounds of Array_Type's Dimension-th index when the type itself
+   --  fixes them: a constrained array definition, or a subtype or derived
+   --  type that adds an index constraint. Unknown_Range for an
+   --  unconstrained array type, whose index subtype says only what an
+   --  object's bounds may be, never what they are.
+
+   function Array_Object_Index_Range
+     (Prefix    : Libadalang.Analysis.Ada_Node'Class;
+      Dimension : Positive;
+      State     : Flow_State) return Abstract_Range;
+   --  The bounds of the Dimension-th index of the array object Prefix
+   --  names: the index constraint on the object's or component's own
+   --  declaration when it has one, otherwise Array_Index_Range of its
+   --  type. Unknown_Range when Prefix isn't an array or its bounds aren't
+   --  fixed by a declaration.
 
    function Safe_Add
      (Left : Long_Long_Integer; Right : Long_Long_Integer) return Abstract_Int;

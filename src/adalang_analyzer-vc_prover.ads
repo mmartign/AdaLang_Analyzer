@@ -149,6 +149,34 @@ package Adalang_Analyzer.VC_Prover is
    --  in-bounds condition the way an Assert or Loop_Invariant does.
    --  VC_Unsupported when Bounds carries neither side.
 
+   function Decide_Index_In_Object
+     (Index   : Libadalang.Analysis.Expr'Class;
+      Prefix  : Libadalang.Analysis.Name'Class;
+      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome;
+   --  Decides "Prefix'First <= Index and Index <= Prefix'Last" for the
+   --  first dimension of the array object Prefix names, with the object's
+   --  bounds as symbols where no declaration fixes them. This is the index
+   --  check for an object whose bounds are not known as numbers: an
+   --  unconstrained formal, most often.
+
+   function Array_Bound_Facts (State : Symbolic_State) return Symbolic_State;
+   --  What State knows about the bounds and lengths of array objects, and
+   --  nothing else. Those never change while the objects are visible, so
+   --  such facts survive where every fact about a variable must be
+   --  dropped, at the entry of a loop body in particular.
+
+   function Assume_Loop_Range
+     (State     : Symbolic_State;
+      Parameter : Libadalang.Analysis.Ada_Node;
+      Iteration : Libadalang.Analysis.Ada_Node'Class;
+      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State with the fact that the loop parameter whose defining name is
+   --  Parameter lies within Iteration, the loop's own "A'Range" or
+   --  "Low .. High". Only bounds whose value cannot change during the loop
+   --  are used; otherwise State is returned as it is.
+
    function Decide_Nonzero
      (Value   : Libadalang.Analysis.Expr'Class;
       State   : Adalang_Analyzer.Flow_Domain.Flow_State;

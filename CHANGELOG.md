@@ -5,6 +5,107 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Eleven false-safe results in `--verify` are fixed. Each reported an obligation
+`Proved_Safe` that a legal execution can violate; all eleven are present in
+1.6.0 and earlier. They were found by seeded-defect probing: small programs
+in which a marked check really fails. Proved-safe counts change as a result:
+index checks on unconstrained array parameters, range checks against a
+subtype with a bound that is not known, and facts about globals across calls
+to functions with side effects no longer prove unless one of the sound paths
+below applies.
+
+### Fixed
+
+- `X not in S`, where `S` is a subtype with a `Static_Predicate`,
+  `Dynamic_Predicate` or `Predicate`, is no longer treated as "outside the
+  range of `S`" (`FP-086`). A value inside the range but excluded by the
+  predicate was assumed impossible.
+- A subtype or array bound that reads a variable keeps its elaboration-time
+  meaning (`FP-087`). Previously the bound was re-evaluated with the
+  variable's current value, so assigning the variable later widened the
+  subtype.
+- Index and range checks are decided only against bounds that a declaration
+  fixes (`FP-088`). Previously an array with no statically known bounds --
+  a `String` parameter, an `array (1 .. N)`, even an object declared
+  `String (1 .. 10)` -- was checked against its index subtype, a target
+  range with one unknown bound was proved from the other bound alone, and
+  `X'First` of an unconstrained array was taken to be its index subtype's
+  first value.
+- Two `Character` values are no longer provably equal (`FP-089`).
+- A variable changed on some iterations of a loop is no longer confined to
+  its pre-loop value after the loop (`FP-090`). The solver path kept the
+  bounds of the first visit of a merge point.
+- Modular arithmetic wraps (`FP-091`). `N + 1` for a `mod 256` value was
+  taken to be nonzero; it is zero for `N = 255`.
+- No fact is kept about an object that can change without being named:
+  one written or read through a renaming or an address overlay, or one that
+  is volatile, atomic, imported, exported or aliased (`FP-092`).
+- A function called inside an expression is no longer assumed to change
+  nothing (`FP-093`). Unless it is known to be free of side effects, what
+  it may write is forgotten before the expression is evaluated.
+- Controlled types and record defaults that call functions are accounted
+  for (`FP-094`): a subprogram that declares or assigns such an object
+  keeps no fact about objects declared outside it.
+
+- An expanded name (`Pkg.Obj`, `Subp.Local`) is the object it denotes
+  (`FP-097`). A write through one no longer leaves the fact held under the
+  direct name in place.
+- A loop over an empty range, or any other path the interval analysis
+  finds infeasible, no longer makes every later obligation provable
+  (`FP-098`).
+- Under `--verify`, rule findings are reported only from converged states
+  (`FP-095`). A division after a loop was reported as a division by a known
+  zero, and `while` conditions as constant, from the values before the
+  loop.
+- Calls to a subprogram completed by a null procedure or an expression
+  function are checked against the precondition on its declaration
+  (`FP-096`); they had no precondition obligation.
+
+### Added
+
+- `--verify` proves an index check when the index is the parameter of a
+  `for` loop over the indexed object's own range (`for I in A'Range`,
+  `A'Range (N)` or `A'First .. A'Last`), whatever the object's bounds are
+  (new `index-own-range` proof path).
+- `--verify` proves an index into an array whose bounds no declaration
+  fixes when the index is shown to lie between the object's own `'First`
+  and `'Last` (new `index-symbolic-bounds` proof path): from a precondition
+  such as `I in A'Range`, a guard, `A'Length`, or a loop over
+  `A'First .. A'Last - 1`. `A'First`, `A'Last` and `A'Length` of such an
+  object are now terms the provers can reason about.
+- Package-qualified globals are tracked like directly visible ones.
+- A precondition is evaluated in the caller's state, so one that reads a
+  global can be decided.
+- The symbolic state survives an assignment whose value cannot be
+  translated (only the destination becomes unknown), a write to an array
+  element, and calls to predefined attribute functions such as `T'Pos`;
+  each of these used to discard everything known.
+- Membership tests narrow intervals: `Pre => X in 1 .. 5`, `if X in Small`,
+  and `if X not in 0 .. 3` now give `X` a range on the abstract path, as
+  comparisons already did. Obligations that needed the external provers for
+  this now prove without them.
+- Range and index targets resolve `T'First`/`T'Last`, named numbers,
+  constants declared outside the subprogram, modular types, 64-bit integer
+  types, and index constraints on objects and array subtypes. `for` loop
+  parameters over a subtype, `T'Range` or `A'Range` of an object with
+  declared bounds get that range.
+
+- A function's `SPARK_Mode` is also taken from a `pragma SPARK_Mode` written
+  before its compilation unit, and from the configuration pragmas of the
+  project it belongs to (`Compiler'Local_Configuration_Pragmas`,
+  `Builder'Global_Configuration_Pragmas`). A function in SPARK, or in a
+  unit declared `Pure`, is treated as free of side effects, so a call to it
+  no longer discards what is known about other objects.
+
+### Changed
+
+- An index outside an object's own static index constraint (`Buffer (20)`
+  for `Buffer : String (1 .. 10)`) is now a `Definite_Error`, and reported
+  by `Known_Index_Check_Failure`; it was previously `Proved_Safe`.
+- The proof-path evidence has 62 routes over 20 producers.
+
 ## [1.6.0] - 2026-09-30
 
 Minor release. `--verify` now applies contracts written on a separate spec

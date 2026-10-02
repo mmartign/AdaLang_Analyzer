@@ -70,7 +70,10 @@ package Adalang_Analyzer.Flow_Domain is
    --  The range implied by a known exact value: both bounds equal Value.
 
    function Range_Union (Left, Right : Abstract_Range) return Abstract_Range;
-   --  The tightest range covering both Left and Right.
+   --  The tightest range covering both Left and Right. An empty range
+   --  (Low > High) holds no value, which is how narrowing records a branch
+   --  that cannot be taken, so it contributes nothing: the union with it is
+   --  the other operand.
 
    --  A binding tracks the Abstract_Int, Abstract_Bool, and Abstract_Range
    --  a variable may be statically known to hold. Only one of Value /
@@ -86,6 +89,22 @@ package Adalang_Analyzer.Flow_Domain is
       Range_Value : Abstract_Range := Unknown_Range;
       Initialized : Abstract_Bool := Bool_Unknown;
    end record;
+
+   --  How far facts about an object can be trusted between two points of
+   --  the program:
+   --    Tracked    an ordinary object: only its own name changes it;
+   --    Untracked  it can change without being named (volatile, atomic,
+   --               exported or aliased), so no fact is ever held about it;
+   --    Aliasing   its name may denote storage that another name also
+   --               denotes (a renaming, an address overlay, an imported
+   --               object), so no fact is held about it and a write
+   --               through it discards every other value fact too.
+   type Object_Class is (Tracked, Untracked, Aliasing);
+
+   function Classify
+     (Key : Libadalang.Analysis.Ada_Node) return Object_Class;
+   --  The class of the object whose defining name is Key. Anything that is
+   --  not an object declaration (a parameter, a loop parameter) is Tracked.
 
    type Flow_State is private;
 
@@ -154,6 +173,14 @@ package Adalang_Analyzer.Flow_Domain is
       Key   : Libadalang.Analysis.Ada_Node);
    --  Marks Key as no longer statically known in any domain, e.g. because
    --  it was passed to a call this analysis can't see through.
+
+   procedure Flow_Forget_Value
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node);
+   procedure Flow_Forget_All_Values (State : in out Flow_State);
+   --  Drop what is known about the value of Key, or of every object, while
+   --  keeping initialization: code the analysis does not follow can change
+   --  a value, but can only ever initialize.
 
    procedure Flow_Copy_Key
      (State    : in out Flow_State;

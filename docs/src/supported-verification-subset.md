@@ -30,8 +30,8 @@ interpreted as proof of safety.
 |---|---|---|
 | Division by zero | Exact/range exclusion of zero; otherwise scalar `divisor /= 0` VC | Integer scalar divisor only |
 | Integer overflow | Operation base-type range; otherwise scalar bounds VC | Integer `+`, `-`, `*`, `/`, and selected power checks |
-| Range | Resolved scalar subtype bounds; otherwise scalar bounds VC | Integer scalar initialization, assignment, and conversion |
-| Index | Resolved index subtype per dimension; otherwise scalar bounds VC | Statically modeled array types and scalar indices |
+| Range | Both bounds of the target subtype, resolved as of its elaboration; otherwise scalar bounds VC against those same two bounds | Integer scalar initialization, assignment, and conversion into a signed or modular subtype whose two bounds are both known; a subtype with a bound that is not (`range 1 .. N` for a variable or unconstrained `N`) is `Unproved` |
+| Index | The indexed object's own bounds per dimension -- the index constraint on its declaration, or its constrained array type or subtype -- otherwise scalar bounds VC against those bounds; or, with no bounds a declaration fixes, either the index is the parameter of a `for` loop over that same dimension of that same object (`for I in A'Range`, `A'Range (N)`, or `A'First .. A'Last`), or a scalar VC places it between the object's own `'First` and `'Last` taken as symbols (first dimension only) | Array objects whose bounds a declaration fixes, and scalar indices. An object of an unconstrained array type with no index constraint of its own (a formal parameter, or an object that takes its bounds from its initializer) proves only in the own-range loop form: its index subtype says what its bounds may be, not what they are |
 | Discriminant | The prefix object's own static discriminant constraint (an integer expression or an enumeration literal) selects the variant declaring the component; a constrained object's discriminants never change | A component of a top-level variant part, selected directly from an object declared with an explicit discriminant constraint; a constant, variable, or subtype-name constraint or choice is never resolved by spelling and stays `Unproved` |
 | Initialization | Flow-sensitive definite-initialization state | Tracked scalar objects and documented composite write summaries |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
@@ -60,14 +60,97 @@ with explicit `sort-mismatch` provenance rather than being inferred from the
 absence of interval facts.
 
 `X'First`, `X'Last`, and `X'Length` (default dimension only, no explicit
-dimension argument) translate to a literal constant when `X`'s bounds are
-statically known. When `X` is an unconstrained array object (a formal
-parameter, most commonly) and only `'Length` is referenced, translation
-falls back to a fresh symbol lower-bounded at `0` -- the one fact the
-language itself guarantees regardless of the actual (unknown) bounds --
-rather than stopping translation outright. `'First`/`'Last` on an
-unconstrained array object, and any attribute reference with an explicit
-dimension argument, remain unsupported.
+dimension argument) translate to a literal constant when a declaration fixes
+`X`'s bounds. Otherwise, when `X` names an array object -- a declared object
+or a parameter, directly or by an expanded name -- each of the three is a
+symbol of its own: the bounds of such an object never change while its name
+is visible. The three are tied by what the language guarantees, `'Length`
+being `'Last - 'First + 1` when that is positive and `0` for an empty array,
+and `X in A'Range` is `A'First <= X and X <= A'Last`. Facts that mention
+only such symbols are kept at the entry of a loop body, where every fact
+about a variable is dropped; the parameter of a `for` loop over `A'Range`,
+or over bounds that cannot change during the loop, is known to lie within
+them. A component, a dereference or a call as the prefix, and any attribute
+reference with an explicit dimension argument, remain unsupported.
+
+A bound written in a subtype, array type or object declaration is
+resolved to the value it had when that declaration was elaborated. It is
+used only when every name in it denotes something that cannot have changed
+since -- a constant, a named number, an `in` parameter, a loop parameter, an
+enumeration literal or another subtype -- so `subtype Window is Integer
+range 1 .. Size` has no known upper bound when `Size` is a variable, whatever
+`Size` holds at the point of use. A range or index check is decided only
+against a target with both bounds known; one known bound alone proves
+nothing.
+
+`X in S` and `X not in S`, where `S` is a subtype mark, are range tests only
+when neither `S` nor any subtype or type it is declared from carries a
+`Predicate`, `Static_Predicate` or `Dynamic_Predicate`. For a predicated
+subtype the scalar VC translation is unsupported, and interval narrowing
+uses only the one-way fact that a member lies within the subtype's range.
+
+A membership test on an identifier narrows that identifier's interval the
+way a comparison does. When the test holds, the interval is intersected with
+the hull of the alternatives (static values, `..` ranges, and integer
+subtype marks). When it does not hold, an alternative is removed only where
+it covers an end of the interval already known -- `X not in 0 .. 3` turns
+`0 .. 10` into `4 .. 10`, but tells an interval nothing about `X not in 3 ..
+5` -- and never when it is a predicated subtype.
+
+Values of `Character`, `Wide_Character` and `Wide_Wide_Character` are not
+given a position range, so nothing is proved about them from their type
+alone.
+
+Modular `+`, `-`, `*`, `**` and unary `-` are reduced by the modulus on both
+proof paths. When the modulus is not known (a `mod 2 ** 64` type, a formal or
+private type, a type that does not resolve), the result is unknown. In the
+scalar VC language a modular sum, difference or product by a constant is the
+term reduced with `mod`; the product of two unknown modular values is only
+known to be some value of the type, the same one for the same two operands.
+
+## Objects and effects the analysis does not follow
+
+A fact about an object is kept only while nothing but the object's own name
+can change it. An expanded name -- `Pkg.Obj`, or a local qualified by its
+own subprogram -- is the object's own name: it denotes the same object as
+the direct name, for reads and writes alike.
+
+- A renaming, an object with an address clause or aspect, and an imported
+  object hold no fact, and a write through one discards every value fact:
+  the name may denote storage another name also denotes.
+- A volatile, atomic, exported or aliased object holds no fact: it can
+  change with no name at all.
+- A function called in an expression may write whatever it can see, unless
+  it is known not to: its effect summary has no global write, its `Global`
+  contract names no output, its unit is declared `Pure`, it is under an
+  explicit `SPARK_Mode` -- on the declaration, on an enclosing unit, in a
+  pragma before the compilation unit, or in the configuration pragmas of
+  the project it belongs to -- it is a predefined operator or attribute, or
+  its body is available and only computes. Otherwise the expression is
+  evaluated in a state that omits what the call may write: the outputs its
+  summary or contract names, or every object declared outside the
+  subprogram under analysis, or every object when the callee is nested in
+  it. The symbolic state is dropped at such an expression.
+- A subprogram that declares or assigns an object whose type may run user
+  code implicitly -- anything other than a scalar, an access value, or an
+  array or untagged record of those whose component defaults call nothing
+  with side effects -- keeps no value fact about objects declared outside
+  it, and none at all when that type is declared inside it. This is what
+  covers `Initialize`, `Adjust` and `Finalize` of controlled types.
+
+Tasking is outside this model: an object shared between tasks is expected
+to be volatile, atomic or protected.
+
+## Assertions as assumptions
+
+An `Assert`, `Assert_And_Cut` or `Check` is an obligation at its own position
+and an assumption for what follows it, whether or not the obligation was
+proved, as in deductive verification generally. A `Proved_Safe` result after
+an `Unproved` assertion therefore holds on the condition that the assertion
+does; with assertion checks disabled at run time, nothing enforces that
+condition. A leading loop invariant is carried past the loop only when it is
+proved both initially and at the end of an arbitrary iteration, the last one
+included.
 
 Machine-width safety is a separate overflow obligation. A solver refutation
 of an assertion containing potentially overflowing arithmetic is not promoted

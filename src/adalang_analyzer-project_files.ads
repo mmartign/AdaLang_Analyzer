@@ -36,4 +36,11 @@ package Adalang_Analyzer.Project_Files is
    --  switch overrides a scenario variable's project-file default or
    --  ambient environment-variable value.
 
+   function Under_Project_SPARK_Mode (Filename : String) return Boolean;
+   --  True when Filename is a source of a loaded project whose
+   --  configuration pragmas (Compiler'Local_Configuration_Pragmas or
+   --  Builder'Global_Configuration_Pragmas) contain "pragma SPARK_Mode;" or
+   --  "pragma SPARK_Mode (On);". Such a source is in SPARK unless it says
+   --  otherwise itself.
+
 end Adalang_Analyzer.Project_Files;

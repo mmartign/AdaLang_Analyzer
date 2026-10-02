@@ -79,7 +79,100 @@ package body Adalang_Analyzer.Flow_Eval is
          return Unknown_Int;
    end Safe_Pow;
 
-   function Integer_Value  --  adalang-analyzer: ignore Cyclomatic_Complexity
+   --  Whether an operator node computes in a modular type, and with which
+   --  modulus when that is known. Modular "+", "-", "*", "**" and unary "-"
+   --  wrap instead of overflowing, so their mathematical result is the
+   --  Ada result only after reduction: 255 + 1 is 0 for a "mod 256" type
+   --  (FP-091).
+   type Modular_Info is record
+      Is_Modular : Boolean := False;
+      Modulus    : Abstract_Int := Unknown_Int;
+   end record;
+
+   function Modular_Type_Of
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Modular_Info;
+
+   function Expanded_Name_Target
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Dotted_Name
+        or else Node.As_Dotted_Name.F_Suffix.Kind /=
+          Libadalang.Common.Ada_Identifier
+      then
+         return Libadalang.Analysis.No_Ada_Node;
+      end if;
+
+      --  A selected component resolves to a component or discriminant; an
+      --  expanded name resolves to the entity itself.
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Node.As_Dotted_Name.F_Suffix.P_Referenced_Decl;
+      begin
+         if not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
+                               | Libadalang.Common.Ada_Param_Spec
+                               | Libadalang.Common.Ada_For_Loop_Var_Decl
+         then
+            return Libadalang.Analysis.Ada_Node
+              (Node.As_Dotted_Name.F_Suffix);
+         end if;
+      end;
+      return Libadalang.Analysis.No_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Expanded_Name_Target;
+
+   --  Expanded_Name_Target for a name that is only going to be looked up
+   --  in State: resolving a name is costly, and a lookup can only find an
+   --  object State holds a binding for, so the name is resolved only when
+   --  State has a binding spelled like its last identifier.
+   function Tracked_Expanded_Name
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Dotted_Name
+        or else Binding_Count (State) = 0
+      then
+         return Libadalang.Analysis.No_Ada_Node;
+      end if;
+
+      declare
+         Name : constant String :=
+           Text_Utils.Normalize_Rule_Name
+             (Ada_Text.Node_Text (Node.As_Dotted_Name.F_Suffix));
+      begin
+         for Index in 1 .. Binding_Count (State) loop
+            if Text_Utils.Normalize_Rule_Name
+                 (Ada_Text.Node_Text (Binding_At (State, Index).Decl)) = Name
+            then
+               return Expanded_Name_Target (Node);
+            end if;
+         end loop;
+      end;
+      return Libadalang.Analysis.No_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Tracked_Expanded_Name;
+
+   --  The identifier Node stands for when it names an object directly or
+   --  by an expanded name; No_Ada_Node otherwise.
+   function Object_Identifier
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node is
+     (if Libadalang.Analysis.Is_Null (Node)
+        then Libadalang.Analysis.No_Ada_Node
+      elsif Node.Kind = Libadalang.Common.Ada_Identifier
+        then Libadalang.Analysis.Ada_Node (Node)
+      else Expanded_Name_Target (Node));
+
+   function Integer_Value_Unwrapped  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State := Empty_Flow_State) return Abstract_Int
    is
@@ -239,6 +332,36 @@ package body Adalang_Analyzer.Flow_Eval is
    exception
       when others =>
          return Unknown_Int;
+   end Integer_Value_Unwrapped;
+
+   function Integer_Value
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State := Empty_Flow_State) return Abstract_Int
+   is
+      Target : constant Libadalang.Analysis.Ada_Node :=
+        Tracked_Expanded_Name (Node, State);
+      Result : constant Abstract_Int :=
+        (if Libadalang.Analysis.Is_Null (Target)
+         then Integer_Value_Unwrapped (Node, State)
+         else Integer_Value_Unwrapped (Target, State));
+   begin
+      if not Result.Known
+        or else Node.Kind not in Libadalang.Common.Ada_Un_Op
+                               | Libadalang.Common.Ada_Bin_Op_Range
+      then
+         return Result;
+      end if;
+
+      declare
+         Modular : constant Modular_Info := Modular_Type_Of (Node);
+      begin
+         if not Modular.Is_Modular then
+            return Result;
+         elsif Modular.Modulus.Known then
+            return Known_Int (Result.Value mod Modular.Modulus.Value);
+         end if;
+         return Unknown_Int;
+      end;
    end Integer_Value;
 
    function Is_Static_Zero
@@ -369,7 +492,7 @@ package body Adalang_Analyzer.Flow_Eval is
       end case;
    end Compare_Integers;
 
-   function Range_Value
+   function Range_Value_Unwrapped
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State) return Abstract_Range
    is
@@ -526,6 +649,46 @@ package body Adalang_Analyzer.Flow_Eval is
       else
          return Range_From_Int (Integer_Value (Node, State));
       end if;
+   end Range_Value_Unwrapped;
+
+   function Range_Value
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Abstract_Range
+   is
+      Target : constant Libadalang.Analysis.Ada_Node :=
+        Tracked_Expanded_Name (Node, State);
+      Result : constant Abstract_Range :=
+        (if Libadalang.Analysis.Is_Null (Target)
+         then Range_Value_Unwrapped (Node, State)
+         else Range_Value_Unwrapped (Target, State));
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind not in Libadalang.Common.Ada_Un_Op
+                               | Libadalang.Common.Ada_Bin_Op_Range
+      then
+         return Result;
+      end if;
+
+      declare
+         Modular : constant Modular_Info := Modular_Type_Of (Node);
+      begin
+         if not Modular.Is_Modular
+           or else
+             (Result.Has_Low and then Result.Has_High
+              and then Result.Low >= 0
+              and then Modular.Modulus.Known
+              and then Result.High < Modular.Modulus.Value)
+         then
+            return Result;
+         elsif Modular.Modulus.Known then
+            --  Somewhere in the computed interval the operation wraps, so
+            --  only the type's own range is left.
+            return
+              (Has_Low => True, Low => 0,
+               Has_High => True, High => Modular.Modulus.Value - 1);
+         end if;
+         return Unknown_Range;
+      end;
    end Range_Value;
 
    function Compare_Range
@@ -593,6 +756,10 @@ package body Adalang_Analyzer.Flow_Eval is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return Bool_Unknown;
+      elsif not Libadalang.Analysis.Is_Null
+                  (Tracked_Expanded_Name (Node, State))
+      then
+         return Boolean_Value (Tracked_Expanded_Name (Node, State), State);
       end if;
 
       case Node.Kind is
@@ -954,6 +1121,202 @@ package body Adalang_Analyzer.Flow_Eval is
             Ada.Exceptions.Exception_Message (Exc));
    end Narrow_Identifier_By_Comparison;
 
+   --  State narrowed by the two outcomes of a membership test taken as
+   --  "in", whatever its own operator: Member is the state in which the
+   --  tested identifier belongs to one of the alternatives, Other the one
+   --  in which it belongs to none.
+   type Membership_States is record
+      Member : Flow_State;
+      Other  : Flow_State;
+   end record;
+
+   --  Narrows the tracked range of the identifier tested by Expr. As with
+   --  a comparison, an outcome the tracked range already rules out gets an
+   --  empty range (Low > High), which marks that state as infeasible and
+   --  adds nothing to a later join.
+   function Narrow_Identifier_By_Membership
+     (Expr  : Libadalang.Analysis.Membership_Expr;
+      State : Flow_State) return Membership_States
+   is
+      --  Bounds holds every member of one alternative; Exact says that
+      --  every value within Bounds is a member too, which is what excluding
+      --  the alternative on the "not a member" side needs.
+      type Alternative_Set is record
+         Bounds : Abstract_Range := Unknown_Range;
+         Exact  : Boolean := False;
+      end record;
+
+      function Is_Empty (Bounds : Abstract_Range) return Boolean is
+        (Bounds.Has_Low and then Bounds.Has_High
+         and then Bounds.Low > Bounds.High);
+
+      function Set_Of
+        (Alternative : Libadalang.Analysis.Ada_Node) return Alternative_Set
+      is
+         Result : Alternative_Set;
+      begin
+         if Alternative.Kind in Libadalang.Common.Ada_Bin_Op_Range
+           and then Alternative.As_Bin_Op.F_Op =
+             Libadalang.Common.Ada_Op_Double_Dot
+         then
+            declare
+               Low  : constant Abstract_Int :=
+                 Integer_Value (Alternative.As_Bin_Op.F_Left, State);
+               High : constant Abstract_Int :=
+                 Integer_Value (Alternative.As_Bin_Op.F_Right, State);
+            begin
+               Result.Bounds :=
+                 (Has_Low => Low.Known, Low => Low.Value,
+                  Has_High => High.Known, High => High.Value);
+               Result.Exact := Low.Known and then High.Known;
+            end;
+            return Result;
+         end if;
+
+         if Alternative.Kind in Libadalang.Common.Ada_Name then
+            declare
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Alternative.As_Name.P_Referenced_Decl;
+            begin
+               if not Libadalang.Analysis.Is_Null (Decl)
+                 and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+               then
+                  --  A subtype mark: Type_Range resolves only the bounds
+                  --  that still hold their elaboration-time value.
+                  Result.Bounds := Type_Range (Decl.As_Base_Type_Decl, State);
+                  Result.Exact :=
+                    Result.Bounds.Has_Low and then Result.Bounds.Has_High
+                    and then not Has_Subtype_Predicate
+                      (Decl.As_Base_Type_Decl);
+                  return Result;
+               end if;
+            end;
+         end if;
+
+         declare
+            Value : constant Abstract_Int :=
+              Integer_Value (Alternative, State);
+         begin
+            if Value.Known then
+               Result := (Bounds => Range_From_Int (Value), Exact => True);
+            end if;
+         end;
+         return Result;
+      end Set_Of;
+
+      Result : Membership_States := (Member => State, Other => State);
+      Count  : constant Natural := Expr.F_Membership_Exprs.Children_Count;
+      Sets   : array (1 .. Count) of Alternative_Set;
+      Key    : Libadalang.Analysis.Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Object_Identifier (Expr.F_Expr)) then
+         return Result;
+      end if;
+      Key := Libadalang.Analysis.Ada_Node
+        (Object_Identifier (Expr.F_Expr).As_Name
+           .P_Referenced_Defining_Name);
+      if Libadalang.Analysis.Is_Null (Key) then
+         return Result;
+      end if;
+
+      for I in Sets'Range loop
+         Sets (I) := Set_Of (Expr.F_Membership_Exprs.Child (I));
+      end loop;
+
+      --  A member lies within the hull of the alternatives that can hold
+      --  anything at all.
+      declare
+         Existing : constant Abstract_Range := Flow_Range_Lookup (State, Key);
+         Hull     : Abstract_Range := Unknown_Range;
+         Seen     : Boolean := False;
+         Narrowed : Abstract_Range := Existing;
+      begin
+         for Set of Sets loop
+            if not Is_Empty (Set.Bounds) then
+               if Seen then
+                  Hull := Range_Union (Hull, Set.Bounds);
+               else
+                  Hull := Set.Bounds;
+                  Seen := True;
+               end if;
+            end if;
+         end loop;
+
+         if Seen then
+            if Hull.Has_Low
+              and then (not Narrowed.Has_Low or else Narrowed.Low < Hull.Low)
+            then
+               Narrowed.Has_Low := True;
+               Narrowed.Low := Hull.Low;
+            end if;
+            if Hull.Has_High
+              and then
+                (not Narrowed.Has_High or else Narrowed.High > Hull.High)
+            then
+               Narrowed.Has_High := True;
+               Narrowed.High := Hull.High;
+            end if;
+            if Narrowed /= Existing then
+               Flow_Range_Set (Result.Member, Key, Narrowed);
+            end if;
+         end if;
+      end;
+
+      --  A non-member is outside every alternative, but an interval can
+      --  only drop an alternative that covers one of its own ends. Repeat
+      --  until stable, so that trimming one end past an alternative lets
+      --  the next alternative trim it further.
+      declare
+         Existing : constant Abstract_Range := Flow_Range_Lookup (State, Key);
+         Narrowed : Abstract_Range := Existing;
+         Changed  : Boolean := True;
+      begin
+         while Changed and then not Is_Empty (Narrowed) loop
+            Changed := False;
+            for Set of Sets loop
+               if Set.Exact and then not Is_Empty (Set.Bounds)
+                 and then not Is_Empty (Narrowed)
+               then
+                  declare
+                     Trimmed : Abstract_Range := Narrowed;
+                  begin
+                     if Trimmed.Has_Low
+                       and then Trimmed.Low in
+                         Set.Bounds.Low .. Set.Bounds.High
+                       and then Set.Bounds.High < Long_Long_Integer'Last
+                     then
+                        Trimmed.Low := Set.Bounds.High + 1;
+                     end if;
+                     if Trimmed.Has_High
+                       and then Trimmed.High in
+                         Set.Bounds.Low .. Set.Bounds.High
+                       and then Set.Bounds.Low > Long_Long_Integer'First
+                     then
+                        Trimmed.High := Set.Bounds.Low - 1;
+                     end if;
+                     if Trimmed /= Narrowed then
+                        Narrowed := Trimmed;
+                        Changed := True;
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end loop;
+
+         if Narrowed /= Existing then
+            Flow_Range_Set (Result.Other, Key, Narrowed);
+         end if;
+      end;
+
+      return Result;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping membership narrowing: " &
+            Ada.Exceptions.Exception_Message (Exc));
+         return (Member => State, Other => State);
+   end Narrow_Identifier_By_Membership;
+
    procedure Narrow_By_Condition  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Cond        : Libadalang.Analysis.Ada_Node'Class;
       State       : Flow_State;
@@ -981,6 +1344,25 @@ package body Adalang_Analyzer.Flow_Eval is
          --  narrowed states are Inner's swapped.
          Narrow_By_Condition
            (Cond.As_Un_Op.F_Expr, State, False_State, True_State);
+         return;
+      end if;
+
+      if Cond.Kind = Libadalang.Common.Ada_Membership_Expr then
+         declare
+            Narrowed : constant Membership_States :=
+              Narrow_Identifier_By_Membership
+                (Cond.As_Membership_Expr, State);
+         begin
+            --  "not in" is true exactly when "in" is false, as for "not".
+            if Cond.As_Membership_Expr.F_Op = Libadalang.Common.Ada_Op_In
+            then
+               True_State := Narrowed.Member;
+               False_State := Narrowed.Other;
+            else
+               True_State := Narrowed.Other;
+               False_State := Narrowed.Member;
+            end if;
+         end;
          return;
       end if;
 
@@ -1026,21 +1408,25 @@ package body Adalang_Analyzer.Flow_Eval is
                | Libadalang.Common.Ada_Op_Gt | Libadalang.Common.Ada_Op_Gte
                | Libadalang.Common.Ada_Op_Eq =>
                declare
+                  Left_Id     : constant Libadalang.Analysis.Ada_Node :=
+                    Object_Identifier (Expr.F_Left);
+                  Right_Id    : constant Libadalang.Analysis.Ada_Node :=
+                    Object_Identifier (Expr.F_Right);
                   Left_Is_Id  : constant Boolean :=
-                    Expr.F_Left.Kind = Libadalang.Common.Ada_Identifier;
+                    not Libadalang.Analysis.Is_Null (Left_Id);
                   Right_Is_Id : constant Boolean :=
-                    Expr.F_Right.Kind = Libadalang.Common.Ada_Identifier;
+                    not Libadalang.Analysis.Is_Null (Right_Id);
                begin
                   if Left_Is_Id and then not Right_Is_Id then
                      Narrow_Identifier_By_Comparison
                        (Libadalang.Analysis.Ada_Node
-                          (Expr.F_Left.As_Name.P_Referenced_Defining_Name),
+                          (Left_Id.As_Name.P_Referenced_Defining_Name),
                         Op, Integer_Value (Expr.F_Right, State),
                         True_State, False_State);
                   elsif Right_Is_Id and then not Left_Is_Id then
                      Narrow_Identifier_By_Comparison
                        (Libadalang.Analysis.Ada_Node
-                          (Expr.F_Right.As_Name.P_Referenced_Defining_Name),
+                          (Right_Id.As_Name.P_Referenced_Defining_Name),
                         Mirror_Comparison (Op), Integer_Value (Expr.F_Left, State),
                         True_State, False_State);
                   end if;
@@ -1079,6 +1465,410 @@ package body Adalang_Analyzer.Flow_Eval is
       return (Known => False, Low => 0, High => 0);
    end Choice_Interval;
 
+   --  True when Expr still has the value it had when the declaration it
+   --  belongs to was elaborated: every name in it denotes a constant, a
+   --  named number, an "in" parameter, a loop parameter, an enumeration
+   --  literal, a subtype or a package. A subtype or array bound that reads a
+   --  variable was fixed at elaboration, so the variable's value in a later
+   --  state says nothing about it (FP-087).
+   function Is_Elaboration_Stable
+     (Expr : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      function Is_Stable_Name
+        (Name : Libadalang.Analysis.Name) return Boolean
+      is
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Name.P_Referenced_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Decl) then
+            return False;
+         end if;
+
+         case Decl.Kind is
+            when Libadalang.Common.Ada_Number_Decl
+               | Libadalang.Common.Ada_For_Loop_Var_Decl
+               | Libadalang.Common.Ada_Enum_Literal_Decl
+               | Libadalang.Common.Ada_Base_Type_Decl
+               | Libadalang.Common.Ada_Base_Package_Decl
+               | Libadalang.Common.Ada_Package_Renaming_Decl
+               | Libadalang.Common.Ada_Generic_Package_Instantiation =>
+               return True;
+            when Libadalang.Common.Ada_Object_Decl_Range =>
+               return Decl.As_Object_Decl.F_Has_Constant
+                 and then Libadalang.Analysis.Is_Null
+                   (Decl.As_Object_Decl.F_Renaming_Clause);
+            when Libadalang.Common.Ada_Param_Spec =>
+               return Decl.As_Param_Spec.F_Mode.Kind in
+                 Libadalang.Common.Ada_Mode_In
+                   | Libadalang.Common.Ada_Mode_Default;
+            when others =>
+               return False;
+         end case;
+      end Is_Stable_Name;
+   begin
+      if Libadalang.Analysis.Is_Null (Expr) then
+         return False;
+      end if;
+
+      case Expr.Kind is
+         when Libadalang.Common.Ada_Identifier =>
+            return Is_Stable_Name (Expr.As_Name);
+         when Libadalang.Common.Ada_Attribute_Ref =>
+            --  The attribute designator is an identifier node too, but
+            --  names nothing.
+            return Is_Elaboration_Stable (Expr.As_Attribute_Ref.F_Prefix)
+              and then
+                (Libadalang.Analysis.Is_Null (Expr.As_Attribute_Ref.F_Args)
+                 or else Is_Elaboration_Stable
+                   (Expr.As_Attribute_Ref.F_Args));
+         when others =>
+            for I in 1 .. Expr.Children_Count loop
+               if not Libadalang.Analysis.Is_Null (Expr.Child (I))
+                 and then not Is_Elaboration_Stable (Expr.Child (I))
+               then
+                  return False;
+               end if;
+            end loop;
+            return True;
+      end case;
+   exception
+      when others =>
+         return False;
+   end Is_Elaboration_Stable;
+
+   function Declared_Bound_Value
+     (Bound : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Abstract_Int;
+
+   --  True when Expr is 2 ** 63, written as that power or as a literal,
+   --  parenthesized or not: the magnitude a 64-bit type's first value is
+   --  written with, which Long_Long_Integer cannot hold, so the ordinary
+   --  evaluation reports it unknown.
+   function Is_Two_To_The_63
+     (Expr  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Expr) then
+         return False;
+      elsif Expr.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Is_Two_To_The_63 (Expr.As_Paren_Expr.F_Expr, State);
+      elsif Expr.Kind = Libadalang.Common.Ada_Int_Literal then
+         declare
+            Image  : constant String := Ada_Text.Node_Text (Expr);
+            Digit  : String (1 .. Image'Length);
+            Length : Natural := 0;
+         begin
+            for Item of Image loop
+               if Item /= '_' then
+                  Length := Length + 1;
+                  Digit (Length) := Item;
+               end if;
+            end loop;
+            return Digit (1 .. Length) in
+              "9223372036854775808" | "16#8000000000000000#";
+         end;
+      elsif Expr.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+        or else Expr.As_Bin_Op.F_Op /= Libadalang.Common.Ada_Op_Pow
+      then
+         return False;
+      end if;
+
+      declare
+         Base     : constant Abstract_Int :=
+           Declared_Bound_Value (Expr.As_Bin_Op.F_Left, State);
+         Exponent : constant Abstract_Int :=
+           Declared_Bound_Value (Expr.As_Bin_Op.F_Right, State);
+      begin
+         return Base.Known and then Base.Value = 2
+           and then Exponent.Known and then Exponent.Value = 63;
+      end;
+   end Is_Two_To_The_63;
+
+   --  The value a bound written in a declaration had when that declaration
+   --  was elaborated: "T'First" / "T'Last" of an integer subtype, or any
+   --  elaboration-stable expression Integer_Value can fold in State.
+   function Declared_Bound_Value
+     (Bound : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Abstract_Int
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Bound) then
+         return Unknown_Int;
+      end if;
+
+      if Bound.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Declared_Bound_Value (Bound.As_Paren_Expr.F_Expr, State);
+      end if;
+
+      if Bound.Kind = Libadalang.Common.Ada_Attribute_Ref then
+         declare
+            Attr : constant Libadalang.Analysis.Attribute_Ref :=
+              Bound.As_Attribute_Ref;
+            Name : constant String :=
+              Text_Utils.Normalize_Rule_Name
+                (Ada_Text.Node_Text (Attr.F_Attribute));
+            Decl : Libadalang.Analysis.Basic_Decl :=
+              Libadalang.Analysis.No_Basic_Decl;
+         begin
+            if Name in "first" | "last"
+              and then
+                (Libadalang.Analysis.Is_Null (Attr.F_Args)
+                 or else Attr.F_Args.Children_Count = 0)
+            then
+               Decl := Attr.F_Prefix.P_Referenced_Decl;
+            end if;
+
+            if not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+            then
+               declare
+                  Prefix_Range : constant Abstract_Range :=
+                    Type_Range (Decl.As_Base_Type_Decl, State);
+               begin
+                  if Name = "first" and then Prefix_Range.Has_Low then
+                     return Known_Int (Prefix_Range.Low);
+                  elsif Name = "last" and then Prefix_Range.Has_High then
+                     return Known_Int (Prefix_Range.High);
+                  end if;
+               end;
+            end if;
+            return Unknown_Int;
+         end;
+      end if;
+
+      if not Is_Elaboration_Stable (Bound) then
+         return Unknown_Int;
+      end if;
+
+      declare
+         Folded : constant Abstract_Int := Integer_Value (Bound, State);
+      begin
+         if Folded.Known then
+            return Folded;
+         end if;
+      end;
+
+      --  State tracks neither named numbers nor constants declared outside
+      --  the subprogram under analysis, so follow those to their own
+      --  initializers, through the arithmetic a bound is usually written
+      --  with ("Max - 1").
+      case Bound.Kind is
+         when Libadalang.Common.Ada_Identifier
+            | Libadalang.Common.Ada_Dotted_Name =>
+            declare
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Bound.As_Name.P_Referenced_Decl;
+            begin
+               if Libadalang.Analysis.Is_Null (Decl) then
+                  return Unknown_Int;
+               elsif Decl.Kind = Libadalang.Common.Ada_Number_Decl then
+                  return Declared_Bound_Value
+                    (Decl.As_Number_Decl.F_Expr, State);
+               elsif Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range then
+                  --  Is_Elaboration_Stable has established it is a
+                  --  constant.
+                  return Declared_Bound_Value
+                    (Decl.As_Object_Decl.F_Default_Expr, State);
+               end if;
+               return Unknown_Int;
+            end;
+
+         when Libadalang.Common.Ada_Un_Op =>
+            declare
+               Operand : constant Abstract_Int :=
+                 Declared_Bound_Value (Bound.As_Un_Op.F_Expr, State);
+            begin
+               if not Operand.Known then
+                  --  "-(2 ** 63)", the first value of a 64-bit type: its
+                  --  operand alone is one past Long_Long_Integer'Last.
+                  if Bound.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Minus
+                    and then Is_Two_To_The_63 (Bound.As_Un_Op.F_Expr, State)
+                  then
+                     return Known_Int (Long_Long_Integer'First);
+                  end if;
+                  return Unknown_Int;
+               elsif Bound.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Plus then
+                  return Operand;
+               elsif Bound.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Minus then
+                  return Safe_Sub (0, Operand.Value);
+               end if;
+               return Unknown_Int;
+            end;
+
+         when Libadalang.Common.Ada_Bin_Op_Range =>
+            declare
+               Left  : constant Abstract_Int :=
+                 Declared_Bound_Value (Bound.As_Bin_Op.F_Left, State);
+               Right : constant Abstract_Int :=
+                 Declared_Bound_Value (Bound.As_Bin_Op.F_Right, State);
+            begin
+               --  "2 ** 63 - 1", the last value of a 64-bit type, by the
+               --  same token.
+               if not Left.Known and then Right.Known
+                 and then Right.Value >= 1
+                 and then Bound.As_Bin_Op.F_Op =
+                   Libadalang.Common.Ada_Op_Minus
+                 and then Is_Two_To_The_63 (Bound.As_Bin_Op.F_Left, State)
+               then
+                  return Known_Int
+                    (Long_Long_Integer'Last - (Right.Value - 1));
+               end if;
+
+               if not Left.Known or else not Right.Known then
+                  return Unknown_Int;
+               end if;
+
+               case Libadalang.Common.Ada_Node_Kind_Type'
+                 (Bound.As_Bin_Op.F_Op)
+               is
+                  when Libadalang.Common.Ada_Op_Plus =>
+                     return Safe_Add (Left.Value, Right.Value);
+                  when Libadalang.Common.Ada_Op_Minus =>
+                     return Safe_Sub (Left.Value, Right.Value);
+                  when Libadalang.Common.Ada_Op_Mult =>
+                     return Safe_Mul (Left.Value, Right.Value);
+                  when Libadalang.Common.Ada_Op_Pow =>
+                     return Safe_Pow (Left.Value, Right.Value);
+                  when others =>
+                     return Unknown_Int;
+               end case;
+            end;
+
+         when others =>
+            return Unknown_Int;
+      end case;
+   exception
+      when others =>
+         return Unknown_Int;
+   end Declared_Bound_Value;
+
+   --  0 .. Modulus - 1 when Typ is a modular type, or a subtype or derived
+   --  type of one that adds no range constraint of its own; Unknown_Range
+   --  otherwise, including for a modulus Long_Long_Integer cannot hold.
+   function Unconstrained_Modular_Range
+     (Typ   : Libadalang.Analysis.Base_Type_Decl;
+      State : Flow_State) return Abstract_Range
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+      Parent    : Libadalang.Analysis.Subtype_Indication;
+   begin
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Unknown_Range;
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            Parent := Current.As_Subtype_Decl.F_Subtype;
+         elsif Current.Kind not in Libadalang.Common.Ada_Type_Decl then
+            return Unknown_Range;
+         elsif Current.As_Type_Decl.F_Type_Def.Kind =
+           Libadalang.Common.Ada_Mod_Int_Type_Def
+         then
+            declare
+               Modulus : constant Abstract_Int :=
+                 Declared_Bound_Value
+                   (Current.As_Type_Decl.F_Type_Def.As_Mod_Int_Type_Def
+                      .F_Expr,
+                    State);
+            begin
+               if Modulus.Known and then Modulus.Value >= 1 then
+                  return
+                    (Has_Low => True, Low => 0,
+                     Has_High => True, High => Modulus.Value - 1);
+               end if;
+               return Unknown_Range;
+            end;
+         elsif Current.As_Type_Decl.F_Type_Def.Kind =
+           Libadalang.Common.Ada_Derived_Type_Def
+         then
+            Parent :=
+              Current.As_Type_Decl.F_Type_Def.As_Derived_Type_Def
+                .F_Subtype_Indication;
+         else
+            return Unknown_Range;
+         end if;
+
+         if not Libadalang.Analysis.Is_Null (Parent.F_Constraint) then
+            return Unknown_Range;
+         end if;
+         Current := Parent.P_Designated_Type_Decl;
+      end loop;
+      return Unknown_Range;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Unconstrained_Modular_Range;
+
+   function Modular_Type_Of
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Modular_Info
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind not in Libadalang.Common.Ada_Expr
+      then
+         return (others => <>);
+      end if;
+
+      Current := Node.As_Expr.P_Expression_Type;
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return (others => <>);
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            Current :=
+              Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         elsif Current.Kind not in Libadalang.Common.Ada_Type_Decl then
+            return (others => <>);
+         elsif Current.As_Type_Decl.F_Type_Def.Kind =
+           Libadalang.Common.Ada_Mod_Int_Type_Def
+         then
+            declare
+               Modulus : constant Abstract_Int :=
+                 Declared_Bound_Value
+                   (Current.As_Type_Decl.F_Type_Def.As_Mod_Int_Type_Def
+                      .F_Expr,
+                    Empty_Flow_State);
+            begin
+               return
+                 (Is_Modular => True,
+                  Modulus    =>
+                    (if Modulus.Known and then Modulus.Value >= 1
+                     then Modulus else Unknown_Int));
+            end;
+         elsif Current.As_Type_Decl.F_Type_Def.Kind =
+           Libadalang.Common.Ada_Derived_Type_Def
+         then
+            Current :=
+              Current.As_Type_Decl.F_Type_Def.As_Derived_Type_Def
+                .F_Subtype_Indication.P_Designated_Type_Decl;
+         elsif Current.As_Type_Decl.F_Type_Def.Kind =
+           Libadalang.Common.Ada_Private_Type_Def
+         then
+            --  A private type may be completed by a modular one.
+            return (Is_Modular => True, Modulus => Unknown_Int);
+         else
+            return (others => <>);
+         end if;
+      end loop;
+      return (Is_Modular => True, Modulus => Unknown_Int);
+   exception
+      when others =>
+         --  An operator whose type cannot be resolved is not assumed to be
+         --  free of wrap-around.
+         return (Is_Modular => True, Modulus => Unknown_Int);
+   end Modular_Type_Of;
+
+   function Expression_Modulus
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      Is_Modular : out Boolean) return Abstract_Int
+   is
+      Info : constant Modular_Info := Modular_Type_Of (Node);
+   begin
+      Is_Modular := Info.Is_Modular;
+      return Info.Modulus;
+   end Expression_Modulus;
+
    function Type_Range
      (Typ   : Libadalang.Analysis.Base_Type_Decl;
       State : Flow_State) return Abstract_Range
@@ -1091,13 +1881,21 @@ package body Adalang_Analyzer.Flow_Eval is
          return Result;
       end if;
 
+      Result := Unconstrained_Modular_Range (Typ, State);
+      if Result.Has_Low and then Result.Has_High then
+         return Result;
+      end if;
+      Result := Unknown_Range;
+
       declare
          Bounds : constant Libadalang.Analysis.Discrete_Range :=
            Typ.P_Discrete_Range;
          Low    : constant Abstract_Int :=
-           Integer_Value (Libadalang.Analysis.Low_Bound (Bounds), State);
+           Declared_Bound_Value
+             (Libadalang.Analysis.Low_Bound (Bounds), State);
          High   : constant Abstract_Int :=
-           Integer_Value (Libadalang.Analysis.High_Bound (Bounds), State);
+           Declared_Bound_Value
+             (Libadalang.Analysis.High_Bound (Bounds), State);
       begin
          if Low.Known then
             Result.Has_Low := True;
@@ -1114,59 +1912,355 @@ package body Adalang_Analyzer.Flow_Eval is
          return Unknown_Range;
    end Type_Range;
 
+   function Has_Subtype_Predicate
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Boolean
+   is
+      Max_Depth : constant := 64;
+
+      function Declares_Predicate
+        (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+      is
+         function Has_Named_Aspect (Name : String) return Boolean is
+           (Libadalang.Analysis.Exists
+              (Decl.P_Get_Aspect
+                 (Langkit_Support.Text.To_Unbounded_Text
+                    (Langkit_Support.Text.To_Text (Name)))));
+      begin
+         return Has_Named_Aspect ("Predicate")
+           or else Has_Named_Aspect ("Static_Predicate")
+           or else Has_Named_Aspect ("Dynamic_Predicate");
+      end Declares_Predicate;
+
+      Current : Libadalang.Analysis.Base_Type_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return True;
+      end if;
+      Current := Typ.As_Base_Type_Decl;
+
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return True;
+         end if;
+
+         --  A predicate may sit on either view of a private type.
+         for Part of Current.P_All_Parts loop
+            if Declares_Predicate (Part) then
+               return True;
+            end if;
+         end loop;
+
+         if Current.P_Is_Private then
+            Current := Current.P_Full_View;
+            if Libadalang.Analysis.Is_Null (Current) then
+               return True;
+            end if;
+         end if;
+
+         if Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            Current :=
+              Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         elsif Current.Kind in Libadalang.Common.Ada_Type_Decl then
+            declare
+               Definition : constant Libadalang.Analysis.Type_Def :=
+                 Current.As_Type_Decl.F_Type_Def;
+            begin
+               case Definition.Kind is
+                  when Libadalang.Common.Ada_Derived_Type_Def =>
+                     Current :=
+                       Definition.As_Derived_Type_Def.F_Subtype_Indication
+                         .P_Designated_Type_Decl;
+                  when Libadalang.Common.Ada_Enum_Type_Def
+                     | Libadalang.Common.Ada_Signed_Int_Type_Def
+                     | Libadalang.Common.Ada_Mod_Int_Type_Def =>
+                     --  A root discrete type: nothing left to inherit from.
+                     return False;
+                  when others =>
+                     --  A formal type's actual may carry a predicate.
+                     return True;
+               end case;
+            end;
+         else
+            return True;
+         end if;
+      end loop;
+
+      return True;
+   exception
+      when others =>
+         return True;
+   end Has_Subtype_Predicate;
+
+   function Discrete_Definition_Range
+     (Definition : Libadalang.Analysis.Ada_Node'Class;
+      State      : Flow_State) return Abstract_Range
+   is
+      function Subtype_Mark_Range
+        (Name : Libadalang.Analysis.Name) return Abstract_Range
+      is
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Name.P_Referenced_Decl;
+      begin
+         if not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+         then
+            return Type_Range (Decl.As_Base_Type_Decl, State);
+         end if;
+         return Unknown_Range;
+      end Subtype_Mark_Range;
+   begin
+      if Libadalang.Analysis.Is_Null (Definition) then
+         return Unknown_Range;
+      end if;
+
+      if Definition.Kind in Libadalang.Common.Ada_Bin_Op_Range
+        and then Definition.As_Bin_Op.F_Op =
+          Libadalang.Common.Ada_Op_Double_Dot
+      then
+         declare
+            Low  : constant Abstract_Int :=
+              Declared_Bound_Value (Definition.As_Bin_Op.F_Left, State);
+            High : constant Abstract_Int :=
+              Declared_Bound_Value (Definition.As_Bin_Op.F_Right, State);
+         begin
+            return
+              (Has_Low => Low.Known, Low => Low.Value,
+               Has_High => High.Known, High => High.Value);
+         end;
+      elsif Definition.Kind in Libadalang.Common.Ada_Subtype_Indication_Range
+      then
+         declare
+            Indication : constant Libadalang.Analysis.Subtype_Indication :=
+              Definition.As_Subtype_Indication;
+         begin
+            if Libadalang.Analysis.Is_Null (Indication.F_Constraint) then
+               return Subtype_Mark_Range (Indication.F_Name);
+            elsif Indication.F_Constraint.Kind =
+              Libadalang.Common.Ada_Range_Constraint
+            then
+               return Discrete_Definition_Range
+                 (Indication.F_Constraint.As_Range_Constraint.F_Range
+                    .F_Range,
+                  State);
+            end if;
+            return Unknown_Range;
+         end;
+      elsif Definition.Kind = Libadalang.Common.Ada_Attribute_Ref then
+         if Text_Utils.Normalize_Rule_Name
+              (Ada_Text.Node_Text (Definition.As_Attribute_Ref.F_Attribute)) =
+              "range"
+           and then
+             (Libadalang.Analysis.Is_Null (Definition.As_Attribute_Ref.F_Args)
+              or else
+                Definition.As_Attribute_Ref.F_Args.Children_Count = 0)
+         then
+            declare
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Definition.As_Attribute_Ref.F_Prefix.P_Referenced_Decl;
+            begin
+               --  "Arr'Range" of a constrained array subtype, as well as
+               --  "Index'Range" of an integer one.
+               if not Libadalang.Analysis.Is_Null (Decl)
+                 and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+                 and then Decl.As_Base_Type_Decl.P_Is_Array_Type
+               then
+                  return Array_Index_Range
+                    (Decl.As_Base_Type_Decl, 1, State);
+               end if;
+            end;
+            return Subtype_Mark_Range (Definition.As_Attribute_Ref.F_Prefix);
+         end if;
+         return Unknown_Range;
+      elsif Definition.Kind in Libadalang.Common.Ada_Identifier
+                             | Libadalang.Common.Ada_Dotted_Name
+      then
+         return Subtype_Mark_Range (Definition.As_Name);
+      end if;
+      return Unknown_Range;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Discrete_Definition_Range;
+
+   --  The Dimension-th range of an index constraint such as the
+   --  "(1 .. 10)" of "String (1 .. 10)"; Unknown_Range for any other
+   --  constraint.
+   function Index_Constraint_Range
+     (Constraint : Libadalang.Analysis.Constraint;
+      Dimension  : Positive;
+      State      : Flow_State) return Abstract_Range
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Constraint)
+        or else Constraint.Kind /= Libadalang.Common.Ada_Composite_Constraint
+        or else not Constraint.As_Composite_Constraint.P_Is_Index_Constraint
+        or else Constraint.As_Composite_Constraint.F_Constraints
+          .Children_Count < Dimension
+      then
+         return Unknown_Range;
+      end if;
+
+      return Discrete_Definition_Range
+        (Constraint.As_Composite_Constraint.F_Constraints.Child (Dimension)
+           .As_Composite_Constraint_Assoc.F_Constraint_Expr,
+         State);
+   exception
+      when others =>
+         return Unknown_Range;
+   end Index_Constraint_Range;
+
    function Array_Index_Range
      (Array_Type : Libadalang.Analysis.Base_Type_Decl;
       Dimension  : Positive;
       State      : Flow_State) return Abstract_Range
    is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Array_Type;
+
+      --  Follows a subtype or derived type to what it is declared from:
+      --  Result is that declaration's own index constraint when it has
+      --  one; otherwise Current moves on to the type it names.
+      procedure Step
+        (Indication : Libadalang.Analysis.Subtype_Indication;
+         Result     : out Abstract_Range;
+         Done       : out Boolean) is
+      begin
+         Result := Unknown_Range;
+         if Libadalang.Analysis.Is_Null (Indication.F_Constraint) then
+            Current := Indication.P_Designated_Type_Decl;
+            Done := False;
+         else
+            Result :=
+              Index_Constraint_Range
+                (Indication.F_Constraint, Dimension, State);
+            Done := True;
+         end if;
+      end Step;
    begin
-      if not Libadalang.Analysis.Is_Null (Array_Type)
-        and then Array_Type.Kind in Libadalang.Common.Ada_Type_Decl
-      then
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Unknown_Range;
+         end if;
+
          declare
-            Definition : constant Libadalang.Analysis.Type_Def :=
-              Array_Type.As_Type_Decl.F_Type_Def;
+            Result : Abstract_Range;
+            Done   : Boolean;
          begin
-            if Definition.Kind = Libadalang.Common.Ada_Array_Type_Def then
+            if Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+               Step (Current.As_Subtype_Decl.F_Subtype, Result, Done);
+            elsif Current.Kind in Libadalang.Common.Ada_Type_Decl then
                declare
-                  Indices : constant Libadalang.Analysis.Array_Indices :=
-                    Definition.As_Array_Type_Def.F_Indices;
+                  Definition : constant Libadalang.Analysis.Type_Def :=
+                    Current.As_Type_Decl.F_Type_Def;
                begin
-                  if Indices.Kind in
-                    Libadalang.Common.Ada_Constrained_Array_Indices_Range
-                    and then Indices.As_Constrained_Array_Indices.F_List
-                      .Children_Count >= Dimension
+                  if Definition.Kind = Libadalang.Common.Ada_Array_Type_Def
                   then
                      declare
-                        Constraint : constant Libadalang.Analysis.Ada_Node :=
-                          Indices.As_Constrained_Array_Indices.F_List
-                            .Child (Dimension);
-                        Interval : constant Static_Interval :=
-                          Choice_Interval (Constraint, State);
+                        Indices : constant Libadalang.Analysis.Array_Indices :=
+                          Definition.As_Array_Type_Def.F_Indices;
                      begin
-                        if Interval.Known then
-                           return
-                             (Has_Low => True, Low => Interval.Low,
-                              Has_High => True, High => Interval.High);
-                        elsif Constraint.Kind in
-                          Libadalang.Common.Ada_Subtype_Indication_Range
+                        --  An unconstrained array type has no bounds of
+                        --  its own: each object brings its own, and the
+                        --  index subtype only limits what those can be
+                        --  (FP-088).
+                        if Indices.Kind in
+                          Libadalang.Common.Ada_Constrained_Array_Indices_Range
+                          and then Indices.As_Constrained_Array_Indices
+                            .F_List.Children_Count >= Dimension
                         then
-                           return Type_Range
-                             (Constraint.As_Subtype_Indication
-                                .P_Designated_Type_Decl,
+                           return Discrete_Definition_Range
+                             (Indices.As_Constrained_Array_Indices.F_List
+                                .Child (Dimension),
                               State);
                         end if;
+                        return Unknown_Range;
                      end;
+                  elsif Definition.Kind =
+                    Libadalang.Common.Ada_Derived_Type_Def
+                  then
+                     Step
+                       (Definition.As_Derived_Type_Def.F_Subtype_Indication,
+                        Result, Done);
+                  else
+                     return Unknown_Range;
                   end if;
                end;
+            else
+               return Unknown_Range;
+            end if;
+
+            if Done then
+               return Result;
             end if;
          end;
-      end if;
+      end loop;
 
-      return Type_Range (Array_Type.P_Index_Type (Dimension - 1), State);
+      return Unknown_Range;
    exception
       when others =>
          return Unknown_Range;
    end Array_Index_Range;
+
+   function Array_Object_Index_Range
+     (Prefix    : Libadalang.Analysis.Ada_Node'Class;
+      Dimension : Positive;
+      State     : Flow_State) return Abstract_Range
+   is
+      Type_Expr : Libadalang.Analysis.Type_Expr :=
+        Libadalang.Analysis.No_Type_Expr;
+   begin
+      if Libadalang.Analysis.Is_Null (Prefix)
+        or else Prefix.Kind not in Libadalang.Common.Ada_Expr
+      then
+         return Unknown_Range;
+      end if;
+
+      --  An object or component declared with its own index constraint
+      --  ("Buffer : String (1 .. 80)") has the unconstrained type as its
+      --  expression type, so the constraint is read off the declaration.
+      if Prefix.Kind in Libadalang.Common.Ada_Identifier
+                      | Libadalang.Common.Ada_Dotted_Name
+      then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Prefix.As_Name.P_Referenced_Decl;
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl) then
+               if Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range then
+                  Type_Expr := Decl.As_Object_Decl.F_Type_Expr;
+               elsif Decl.Kind = Libadalang.Common.Ada_Component_Decl then
+                  Type_Expr :=
+                    Decl.As_Component_Decl.F_Component_Def.F_Type_Expr;
+               end if;
+            end if;
+         end;
+
+         if not Libadalang.Analysis.Is_Null (Type_Expr)
+           and then Type_Expr.Kind in
+             Libadalang.Common.Ada_Subtype_Indication_Range
+           and then not Libadalang.Analysis.Is_Null
+             (Type_Expr.As_Subtype_Indication.F_Constraint)
+         then
+            return Index_Constraint_Range
+              (Type_Expr.As_Subtype_Indication.F_Constraint, Dimension,
+               State);
+         end if;
+      end if;
+
+      declare
+         Array_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Prefix.As_Expr.P_Expression_Type;
+      begin
+         if Libadalang.Analysis.Is_Null (Array_Type)
+           or else not Array_Type.P_Is_Array_Type
+         then
+            return Unknown_Range;
+         end if;
+         return Array_Index_Range (Array_Type, Dimension, State);
+      end;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Array_Object_Index_Range;
 
 end Adalang_Analyzer.Flow_Eval;

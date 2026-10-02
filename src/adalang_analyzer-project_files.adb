@@ -12,6 +12,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Characters.Handling;
 with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Exceptions;
@@ -21,6 +22,8 @@ with GPR2;
 with GPR2.Build.Source;
 with GPR2.Build.Source.Sets;
 with GPR2.Options;
+with GPR2.Path_Name;
+with GPR2.Project.Registry.Attribute;
 with GPR2.Project.Tree;
 with GPR2.Project.View;
 
@@ -30,6 +33,80 @@ with Adalang_Analyzer.Text_Utils;
 package body Adalang_Analyzer.Project_Files is
 
    use type GPR2.Language_Id;
+
+   package PRA renames GPR2.Project.Registry.Attribute;
+
+   --  Sources of the projects whose configuration pragmas turn SPARK_Mode
+   --  on.
+   SPARK_Sources : File_Name_Vectors.Vector;
+
+   --  True when the configuration pragma file at Path holds "pragma
+   --  SPARK_Mode;" or "pragma SPARK_Mode (On);". Comments are ignored, as
+   --  are case and spacing.
+   function File_Sets_SPARK_Mode (Path : String) return Boolean is
+      File  : Ada.Text_IO.File_Type;
+      Found : Boolean := False;
+   begin
+      if not Ada.Directories.Exists (Path) then
+         return False;
+      end if;
+
+      Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Path);
+      while not Found and then not Ada.Text_IO.End_Of_File (File) loop
+         declare
+            Line    : constant String := Ada.Text_IO.Get_Line (File);
+            Compact : String (1 .. Line'Length);
+            Length  : Natural := 0;
+         begin
+            for Index in Line'Range loop
+               exit when Line (Index) = '-'
+                 and then Index < Line'Last
+                 and then Line (Index + 1) = '-';
+               if Line (Index) not in ' ' | ASCII.HT | ASCII.CR then
+                  Length := Length + 1;
+                  Compact (Length) :=
+                    Ada.Characters.Handling.To_Lower (Line (Index));
+               end if;
+            end loop;
+            Found := Compact (1 .. Length) in
+              "pragmaspark_mode;" | "pragmaspark_mode(on);";
+         end;
+      end loop;
+      Ada.Text_IO.Close (File);
+      return Found;
+   exception
+      when others =>
+         if Ada.Text_IO.Is_Open (File) then
+            Ada.Text_IO.Close (File);
+         end if;
+         return False;
+   end File_Sets_SPARK_Mode;
+
+   --  True when View names a configuration pragma file, through Attribute,
+   --  that turns SPARK_Mode on.
+   function View_Sets_SPARK_Mode
+     (View      : GPR2.Project.View.Object;
+      Attribute : GPR2.Q_Attribute_Id) return Boolean
+   is
+   begin
+      if not View.Has_Attribute (Attribute) then
+         return False;
+      end if;
+
+      declare
+         Name : constant String :=
+           String (View.Attribute (Attribute).Value.Text);
+      begin
+         return Name /= ""
+           and then File_Sets_SPARK_Mode
+             (if Name (Name'First) = '/' then Name
+              else View.Dir_Name.Compose
+                (GPR2.Filename_Type (Name)).String_Value);
+      end;
+   exception
+      when others =>
+         return False;
+   end View_Sets_SPARK_Mode;
 
    function Vector_Contains
      (Items : File_Name_Vectors.Vector; Item : String) return Boolean is
@@ -41,6 +118,9 @@ package body Adalang_Analyzer.Project_Files is
       end loop;
       return False;
    end Vector_Contains;
+
+   function Under_Project_SPARK_Mode (Filename : String) return Boolean is
+     (Vector_Contains (SPARK_Sources, Filename));
 
    --  Keep the historical command-line behavior when explicit files and a
    --  project both name the same source. GPR2 itself has already resolved
@@ -113,13 +193,22 @@ package body Adalang_Analyzer.Project_Files is
       end if;
 
       declare
-         Sources : constant GPR2.Build.Source.Sets.Object :=
+         Sources  : constant GPR2.Build.Source.Sets.Object :=
            Tree.Root_Project.Sources;
+         In_SPARK : constant Boolean :=
+           View_Sets_SPARK_Mode
+             (Tree.Root_Project, PRA.Compiler.Local_Configuration_Pragmas)
+           or else View_Sets_SPARK_Mode
+             (Tree.Root_Project, PRA.Builder.Global_Configuration_Pragmas);
       begin
          for Src of Sources loop
             if Src.Language = GPR2.Ada_Language then
                Append_Or_Replace_By_Simple_Name
                  (Files, String (Src.Path_Name.Value));
+               if In_SPARK then
+                  File_Name_Vectors.Append
+                    (SPARK_Sources, String (Src.Path_Name.Value));
+               end if;
             end if;
          end loop;
       end;

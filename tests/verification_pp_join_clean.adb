@@ -1,12 +1,15 @@
 --  Proof-path evidence: join sub-boundary. A fact established before a branch
 --  survives an if/elsif/else merge and a case merge when every arm agrees,
---  and a branch predicate is available inside its own arm.
+--  and a branch predicate is available inside its own arm. Floor is bounded
+--  only relative to X, so what is known about it lives in the symbolic
+--  state alone and needs the solver.
 procedure Verification_PP_Join_Clean
   (X : Integer;
+   Floor : Integer;
    Sel : Integer;
    Sink : out Integer)
 with SPARK_Mode,
-     Pre => X in 0 .. 10 and then Sel in 1 .. 3
+     Pre => X in 0 .. 10 and then Floor <= X and then Sel in 1 .. 3
 is
    Y : Integer;
 begin
@@ -19,8 +22,9 @@ begin
       Y := 5;
    end if;
 
-   --  fact about X survives the if/else merge
+   --  facts about X and Floor survive the if/else merge
    pragma Assert (X >= 0);
+   pragma Assert (Floor <= X);
 
    --  fact survives a case merge where every alternative agrees
    case Sel is
@@ -29,6 +33,7 @@ begin
       when others => Y := X + 3;
    end case;
    pragma Assert (X <= 10);
+   pragma Assert (Floor <= 10);
 
    Sink := Y - Y + X;
 end Verification_PP_Join_Clean;

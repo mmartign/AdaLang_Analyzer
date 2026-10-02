@@ -377,7 +377,7 @@ scalar VC sub-boundaries within them -- individual operators (`*`, unary and
 Boolean connectives, relational comparison, non-zero `/`/`mod`/`rem`, and the
 unsupported `**` edge), scalar types (statically bounded subtype,
 enumeration, modular, and the `'Length`-on-unconstrained-formal attribute
-fallback with its unsupported `'First`/`'Last` edge), branch and case joins
+symbol with its unsupported explicit-dimension edge), branch and case joins
 (a pre-branch fact that must survive a merge, versus a conflicting binding
 that must be dropped), and the exception-handler edge (an obligation before a
 `raise`, and one on the non-exceptional path through a handler-bearing block,
@@ -396,7 +396,13 @@ aggregates stay outside the scalar VC subset, and a write through one access
 value leaves no stale fact about a read through another), and contracts on
 a separate spec (a spec precondition narrows the conforming body's
 parameters but never a same-name overload's, and a spec postcondition is
-decided against the body's exit state). Each
+decided against the body's exit state). A third group covers bounds and
+membership: an index proves against the object's own declared bounds or as
+the parameter of a loop over that object's own range, and never against the
+index subtype of an unconstrained formal; a subtype bound that reads a
+variable is unknown once the variable may have changed; a membership test
+narrows an interval on both outcomes, except that a non-member of a
+predicated subtype is not placed outside its range. Each
 route has positive and adversarial evidence, while solver-dependent routes
 also exercise unsupported translation and unavailable solvers. The gate
 compares the manifest with stable `proof-path` source tags, so a new
@@ -413,7 +419,9 @@ the project still needs:
 1. Proof paths that make the composite and access sub-boundaries more than
    conservative: record-component and access-designated values are checked
    against their subtypes but never carried as facts, and handler entry
-   drops even precondition facts.
+   drops even precondition facts. Array bounds are symbolic for the first
+   dimension of a declared object or a parameter only; other dimensions,
+   components and array elements themselves are not represented.
 2. A larger routinely executed differential corpus beyond the current clean
    and broken units.
 3. Broader unsupported-provenance coverage for the remaining expression and
