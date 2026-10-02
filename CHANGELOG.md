@@ -5,7 +5,12 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.2] - 2026-10-02
+
+Corrective release for 1.6.1. Running 1.6.1 on all eleven benchmark corpora
+found a severe `--verify` slowdown on large projects and two false
+`Definite_Error` results, all introduced by 1.6.1. No false-safe result is
+involved: every `Proved_Safe` result of 1.6.1 stands.
 
 ### Fixed
 
