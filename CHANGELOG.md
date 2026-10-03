@@ -5,7 +5,13 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.7.0] - 2026-10-03
+
+A `--verify` precision release: one false `Definite_Error` fixed and two
+additions to what array bounds are known. All eleven benchmark corpora were
+re-run: zero possible unsoundness and zero false positives wherever
+GNATprove is an oracle, and nothing that was `Proved_Safe` stopped being so
+(`quality/external_corpus_findings.md`).
 
 ### Fixed
 
