@@ -2283,10 +2283,10 @@ package body Adalang_Analyzer.Flow_Interp is
                      --  index may still be provably within them: against
                      --  the object's own 'First and 'Last as symbols.
                      if (not Bounds.Has_Low or else not Bounds.Has_High)
-                       and then Dimension = 1
                        and then not Libadalang.Analysis.Is_Null (Indexed)
                        and then VC.Decide_Index_In_Object
-                         (Index_Value, Indexed.F_Name, State, Symbols)
+                         (Index_Value, Indexed.F_Name, State, Symbols,
+                          Dimension)
                            .Result = VC.VC_Proved
                      then
                         --  proof-path: index-symbolic-bounds
@@ -3869,6 +3869,11 @@ package body Adalang_Analyzer.Flow_Interp is
       Reachable : Boolean_Array (States'Range) := (others => False);
       Updates   : Natural_Array (States'Range) := (others => 0);
 
+      --  How many CFG edges end at each node. A node only one edge leads to
+      --  has exactly the state that edge carries, so a later visit replaces
+      --  its state instead of joining the new one with the one before.
+      In_Degree : Natural_Array (States'Range) := (others => 0);
+
       --  The function calls evaluated by each CFG node's own expression
       --  that may change state: a call to a function that is not known to
       --  be free of side effects, in a condition, an initializer, an
@@ -4841,11 +4846,21 @@ package body Adalang_Analyzer.Flow_Interp is
             return;
          end if;
 
-         Joined := Flow_Join (States (Target), Incoming_State);
-         Joined_Symbols :=
-           VC.Join
-             (Symbolic_States (Target), Incoming_Symbols, Joined,
-              Merge_Tag => Positive (Target));
+         if In_Degree (Target) = 1 and then Updates (Target) <= 64 then
+            --  The worklist may reach Target before its only predecessor
+            --  has its final state, which a join arriving late there then
+            --  changes. Joining that with what Target held would keep
+            --  nothing the two disagree on, and give objects that are
+            --  related in both (Y = X + 1, say) unrelated values.
+            Joined := Incoming_State;
+            Joined_Symbols := Incoming_Symbols;
+         else
+            Joined := Flow_Join (States (Target), Incoming_State);
+            Joined_Symbols :=
+              VC.Join
+                (Symbolic_States (Target), Incoming_Symbols, Joined,
+                 Merge_Tag => Positive (Target));
+         end if;
          if CFG.Node_At (Graph, Target).Kind = CFG.Loop_Header_Node
            and then Updates (Target) >= 3
          then
@@ -7209,6 +7224,16 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
          end;
       end if;
+
+      for Edge_Index in 1 .. CFG.Edge_Count (Graph) loop
+         declare
+            To : constant CFG.Node_Id := CFG.Edge_At (Graph, Edge_Index).To;
+         begin
+            if To in In_Degree'Range then
+               In_Degree (To) := In_Degree (To) + 1;
+            end if;
+         end;
+      end loop;
 
       Reachable (CFG.Entry_Id (Graph)) := True;
       States (CFG.Entry_Id (Graph)) := Initial;

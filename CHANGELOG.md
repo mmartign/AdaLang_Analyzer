@@ -5,6 +5,42 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `--verify` no longer loses what it knows about related objects after an
+  `if` whose branch holds two or more statements (`FP-101`). The fixed
+  point visited the statements after such an `if` before its branches had
+  been joined, and the second visit joined its state with the first instead
+  of replacing it, which gave every object the two disagreed on a value of
+  its own. After `Y := X + 1; X := X + 1;` the condition `Y = X` was then
+  not known to hold: its `else` branch looked reachable and a division by
+  `N - N` there was a `Definite_Error`, although it can never run. A node
+  that only one edge leads to now takes exactly the state that edge
+  carries. Found by the seeded-defect probe `h07`; five of its marked safe
+  divisions that were `Unproved` are now `Proved_Safe`.
+
+### Added
+
+- Symbolic array bounds for every dimension. `A'First (2)`, `A'Last (2)`,
+  `A'Length (2)` and `A'Range (2)` of an object whose bounds no declaration
+  fixes are symbols of their own, so an index into the second dimension of
+  an unconstrained formal proves from a precondition, a guard or a loop
+  over that dimension, as one into the first already did. The dimension
+  must be written as an integer literal.
+- An object of an unconstrained array subtype has the bounds of its initial
+  value when that is a string literal or another array object whose bounds
+  are known: `Word : constant String := "abcd";` is `1 .. 4`, and an index
+  outside it is a `Definite_Error`.
+
+### Changed
+
+- `tests/run_performance_smoke.sh` takes its default limit from the size of
+  the analyzer's own source, which is its workload: 0.55 ms for each line,
+  and at least 15 s. `ADALANG_MAX_SMOKE_SECONDS` still overrides it.
+- The proof-path evidence has 63 routes over 20 producers.
+
 ## [1.6.2] - 2026-10-02
 
 Corrective release for 1.6.1. Running 1.6.1 on all eleven benchmark corpora

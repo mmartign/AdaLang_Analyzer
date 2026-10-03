@@ -31,7 +31,7 @@ interpreted as proof of safety.
 | Division by zero | Exact/range exclusion of zero; otherwise scalar `divisor /= 0` VC | Integer scalar divisor only |
 | Integer overflow | Operation base-type range; otherwise scalar bounds VC | Integer `+`, `-`, `*`, `/`, and selected power checks |
 | Range | Both bounds of the target subtype, resolved as of its elaboration; otherwise scalar bounds VC against those same two bounds | Integer scalar initialization, assignment, and conversion into a signed or modular subtype whose two bounds are both known; a subtype with a bound that is not (`range 1 .. N` for a variable or unconstrained `N`) is `Unproved` |
-| Index | The indexed object's own bounds per dimension -- the index constraint on its declaration, or its constrained array type or subtype -- otherwise scalar bounds VC against those bounds; or, with no bounds a declaration fixes, either the index is the parameter of a `for` loop over that same dimension of that same object (`for I in A'Range`, `A'Range (N)`, or `A'First .. A'Last`), or a scalar VC places it between the object's own `'First` and `'Last` taken as symbols (first dimension only) | Array objects whose bounds a declaration fixes, and scalar indices. An object of an unconstrained array type with no index constraint of its own (a formal parameter, or an object that takes its bounds from its initializer) proves only in the own-range loop form: its index subtype says what its bounds may be, not what they are |
+| Index | The indexed object's own bounds per dimension -- the index constraint on its declaration, or its constrained array type or subtype -- otherwise scalar bounds VC against those bounds; or, with no bounds a declaration fixes, either the index is the parameter of a `for` loop over that same dimension of that same object (`for I in A'Range`, `A'Range (N)`, or `A'First .. A'Last`), or a scalar VC places it between the object's own `'First` and `'Last` taken as symbols, one pair per dimension | Array objects whose bounds a declaration fixes, and scalar indices. An object of an unconstrained array type that takes its bounds from a string literal, or from another object whose bounds are known, has those bounds. One with no bounds anything fixes (a formal parameter, or an object initialized from one, from a call or from an aggregate) proves only in the own-range loop form or against those symbols: its index subtype says what its bounds may be, not what they are |
 | Discriminant | The prefix object's own static discriminant constraint (an integer expression or an enumeration literal) selects the variant declaring the component; a constrained object's discriminants never change | A component of a top-level variant part, selected directly from an object declared with an explicit discriminant constraint; a constant, variable, or subtype-name constraint or choice is never resolved by spelling and stays `Unproved` |
 | Initialization | Flow-sensitive definite-initialization state | Tracked scalar objects and documented composite write summaries |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
@@ -59,19 +59,21 @@ positions. Unsupported scalar types and inconsistent bindings stop translation
 with explicit `sort-mismatch` provenance rather than being inferred from the
 absence of interval facts.
 
-`X'First`, `X'Last`, and `X'Length` (default dimension only, no explicit
-dimension argument) translate to a literal constant when a declaration fixes
-`X`'s bounds. Otherwise, when `X` names an array object -- a declared object
+`X'First`, `X'Last`, and `X'Length` (of the first dimension, or of the one
+an integer literal names, as in `X'Last (2)`) translate to a literal constant
+when a declaration fixes `X`'s bounds. Otherwise, when `X` names an array object -- a declared object
 or a parameter, directly or by an expanded name -- each of the three is a
-symbol of its own: the bounds of such an object never change while its name
-is visible. The three are tied by what the language guarantees, `'Length`
+symbol of its own, one set per dimension: the bounds of such an object never
+change while its name is visible. The three are tied by what the language guarantees, `'Length`
 being `'Last - 'First + 1` when that is positive and `0` for an empty array,
-and `X in A'Range` is `A'First <= X and X <= A'Last`. Facts that mention
+and `X in A'Range` is `A'First <= X and X <= A'Last`, likewise for
+`A'Range (2)`. Facts that mention
 only such symbols are kept at the entry of a loop body, where every fact
 about a variable is dropped; the parameter of a `for` loop over `A'Range`,
 or over bounds that cannot change during the loop, is known to lie within
-them. A component, a dereference or a call as the prefix, and any attribute
-reference with an explicit dimension argument, remain unsupported.
+them. A component, a dereference or a call as the prefix, a dimension that
+is not written as an integer literal, and a dimension other than the first
+on a subtype mark, remain unsupported.
 
 A bound written in a subtype, array type or object declaration is
 resolved to the value it had when that declaration was elaborated. It is

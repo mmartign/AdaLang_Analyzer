@@ -215,8 +215,9 @@ sh tests/run_performance_smoke.sh
 ```
 
 The performance smoke test scans the analyzer's own sources with every check
-and uses a deliberately generous 15-second default ceiling to catch accidental
-algorithmic regressions rather than normal machine-to-machine variation.
+and uses a deliberately generous default ceiling to catch accidental
+algorithmic regressions rather than normal machine-to-machine variation: 0.55
+milliseconds for each line of those sources, and at least 15 seconds.
 Override it with `ADALANG_MAX_SMOKE_SECONDS` on controlled benchmark workers.
 
 JSON reports include proof-obligation details alongside ordinary findings.

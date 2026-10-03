@@ -150,12 +150,13 @@ package Adalang_Analyzer.VC_Prover is
    --  VC_Unsupported when Bounds carries neither side.
 
    function Decide_Index_In_Object
-     (Index   : Libadalang.Analysis.Expr'Class;
-      Prefix  : Libadalang.Analysis.Name'Class;
-      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
-      Symbols : Symbolic_State) return VC_Outcome;
-   --  Decides "Prefix'First <= Index and Index <= Prefix'Last" for the
-   --  first dimension of the array object Prefix names, with the object's
+     (Index     : Libadalang.Analysis.Expr'Class;
+      Prefix    : Libadalang.Analysis.Name'Class;
+      State     : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols   : Symbolic_State;
+      Dimension : Positive := 1) return VC_Outcome;
+   --  Decides "Prefix'First (Dimension) <= Index and Index <= Prefix'Last
+   --  (Dimension)" for the array object Prefix names, with the object's
    --  bounds as symbols where no declaration fixes them. This is the index
    --  check for an object whose bounds are not known as numbers: an
    --  unconstrained formal, most often.

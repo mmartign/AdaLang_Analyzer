@@ -2208,6 +2208,58 @@ package body Adalang_Analyzer.Flow_Eval is
    is
       Type_Expr : Libadalang.Analysis.Type_Expr :=
         Libadalang.Analysis.No_Type_Expr;
+      Initial   : Libadalang.Analysis.Expr := Libadalang.Analysis.No_Expr;
+
+      --  The bounds an object of an unconstrained array subtype takes from
+      --  Initial, its initial value, and keeps: those of a string literal,
+      --  which starts at the index subtype's first value, or those of the
+      --  array object Initial names. Unknown_Range for any other value.
+      function Initial_Value_Range return Abstract_Range is
+         Designated : constant Libadalang.Analysis.Base_Type_Decl :=
+           Type_Expr.P_Designated_Type_Decl;
+         Value      : Libadalang.Analysis.Expr := Initial;
+      begin
+         if Libadalang.Analysis.Is_Null (Designated)
+           or else not Designated.P_Is_Array_Type
+           or else Designated.P_Is_Definite_Subtype (Prefix)
+         then
+            return Unknown_Range;
+         end if;
+
+         while Value.Kind = Libadalang.Common.Ada_Paren_Expr loop
+            Value := Value.As_Paren_Expr.F_Expr;
+         end loop;
+
+         if Value.Kind = Libadalang.Common.Ada_String_Literal then
+            declare
+               Index : constant Abstract_Range :=
+                 (if Dimension = 1
+                    and then Designated.P_Index_Type (0).P_Is_Int_Type
+                  then Type_Range (Designated.P_Index_Type (0), State)
+                  else Unknown_Range);
+               Count : constant Long_Long_Integer :=
+                 Long_Long_Integer
+                   (Value.As_String_Literal.P_Denoted_Value'Length);
+            begin
+               if not Index.Has_Low then
+                  return Unknown_Range;
+               end if;
+               return
+                 (Has_Low => True, Low => Index.Low,
+                  Has_High => True, High => Index.Low + Count - 1);
+            end;
+         elsif Value.Kind = Libadalang.Common.Ada_Identifier
+           and then not Libadalang.Analysis."="
+             (Libadalang.Analysis.Ada_Node (Value),
+              Libadalang.Analysis.Ada_Node (Prefix))
+         then
+            return Array_Object_Index_Range (Value, Dimension, State);
+         end if;
+         return Unknown_Range;
+      exception
+         when others =>
+            return Unknown_Range;
+      end Initial_Value_Range;
    begin
       if Libadalang.Analysis.Is_Null (Prefix)
         or else Prefix.Kind not in Libadalang.Common.Ada_Expr
@@ -2228,6 +2280,11 @@ package body Adalang_Analyzer.Flow_Eval is
             if not Libadalang.Analysis.Is_Null (Decl) then
                if Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range then
                   Type_Expr := Decl.As_Object_Decl.F_Type_Expr;
+                  if Libadalang.Analysis.Is_Null
+                       (Decl.As_Object_Decl.F_Renaming_Clause)
+                  then
+                     Initial := Decl.As_Object_Decl.F_Default_Expr;
+                  end if;
                elsif Decl.Kind = Libadalang.Common.Ada_Component_Decl then
                   Type_Expr :=
                     Decl.As_Component_Decl.F_Component_Def.F_Type_Expr;
@@ -2244,6 +2301,16 @@ package body Adalang_Analyzer.Flow_Eval is
             return Index_Constraint_Range
               (Type_Expr.As_Subtype_Indication.F_Constraint, Dimension,
                State);
+         elsif not Libadalang.Analysis.Is_Null (Type_Expr)
+           and then not Libadalang.Analysis.Is_Null (Initial)
+         then
+            declare
+               Result : constant Abstract_Range := Initial_Value_Range;
+            begin
+               if Result.Has_Low or else Result.Has_High then
+                  return Result;
+               end if;
+            end;
          end if;
       end if;
 

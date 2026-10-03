@@ -972,3 +972,27 @@ overflow bounds (`Flow_Interp.Arithmetic_Overflow_Refuted`). A value
 computed without overflow that lies outside its subtype is still a
 `Definite_Error`. Regression:
 `tests/verification_fp100_overflow_before_range.adb`.
+
+## Corpus re-run for 1.7.0 (2026-10-03)
+
+All eleven corpora were re-run with the `FP-101` fix, symbolic array bounds
+for every dimension and bounds taken from an initial value, before the
+release. No `Definite_Error` anywhere, zero possible unsoundness and zero
+false positives wherever GNATprove is an oracle. Nothing that was
+`Proved_Safe` stopped being so; the changes are obligations that moved from
+`Unproved` to `Proved_Safe`:
+
+| Corpus | `Proved_Safe` | Note |
+| --- | ---: | --- |
+| project_bias | 651 -> 665 | |
+| libkeccak | 3,318 -> 3,330 | both-safe pairs 57 -> 67; `ascon.adb` indices `Pos .. Pos + 3` after `Pos := Data'First + Offset` |
+| AWS | 6,219 -> 6,221 | |
+| SPARKNaCl | 4,584 -> 4,585 | |
+| coap_spark | 3,755 -> 3,756 | `Query_Prefix (Query_Prefix'First)`, a constant initialized with a string literal |
+| SPARK testsuite | | both-safe pairs 41 -> 42 |
+| gnatcoll-core, saatana, cubedos, tokeneer | unchanged | |
+
+The libkeccak and project_bias gains come from `FP-101`: related objects
+keep their relation after an `if` with a branch of several statements. The
+`benchmarks/*/RESULTS_2026-10-02.md` files describe the 1.6.2 run and are
+left as they are.

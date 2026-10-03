@@ -375,13 +375,13 @@ boundary cases; none may become `Proved_Safe` unexpectedly.
 construction; it rejects a `Proved_Safe` or `Unreachable` result on a marked
 defect and pins the outcome of every marked line.
 `tests/run_proof_path_evidence.sh` separately inventories every source-level
-`Record_Proved_Safe` producer and checks 48 method-specific routes. The first
+`Record_Proved_Safe` producer and checks 63 method-specific routes. The first
 23 are organised by obligation kind and method; a further 25 exercise the
 scalar VC sub-boundaries within them -- individual operators (`*`, unary and
 Boolean connectives, relational comparison, non-zero `/`/`mod`/`rem`, and the
 unsupported `**` edge), scalar types (statically bounded subtype,
 enumeration, modular, and the `'Length`-on-unconstrained-formal attribute
-symbol with its unsupported explicit-dimension edge), branch and case joins
+symbol with its unsupported named-dimension edge), branch and case joins
 (a pre-branch fact that must survive a merge, versus a conflicting binding
 that must be dropped), and the exception-handler edge (an obligation before a
 `raise`, and one on the non-exceptional path through a handler-bearing block,
@@ -403,7 +403,8 @@ parameters but never a same-name overload's, and a spec postcondition is
 decided against the body's exit state). A third group covers bounds and
 membership: an index proves against the object's own declared bounds or as
 the parameter of a loop over that object's own range, and never against the
-index subtype of an unconstrained formal; a subtype bound that reads a
+index subtype of an unconstrained formal, each dimension against bounds of
+its own; a subtype bound that reads a
 variable is unknown once the variable may have changed; a membership test
 narrows an interval on both outcomes, except that a non-member of a
 predicated subtype is not placed outside its range. Each

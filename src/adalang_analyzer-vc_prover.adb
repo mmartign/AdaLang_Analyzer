@@ -968,19 +968,64 @@ package body Adalang_Analyzer.VC_Prover is
          return Libadalang.Analysis.No_Ada_Node;
    end Array_Object_Key;
 
+   --  The dimension an attribute reference names: 1 without an argument,
+   --  the argument's value when it is a plain decimal literal, and 0 for
+   --  anything else.
+   function Attribute_Dimension
+     (Attr : Libadalang.Analysis.Attribute_Ref) return Natural
+   is
+   begin
+      if Attr.F_Args.Children_Count = 0 then
+         return 1;
+      elsif Attr.F_Args.Children_Count /= 1 then
+         return 0;
+      end if;
+
+      declare
+         Arg  : constant Libadalang.Analysis.Ada_Node := Attr.F_Args.Child (1);
+         Expr : constant Libadalang.Analysis.Ada_Node :=
+           (if Arg.Kind = Libadalang.Common.Ada_Param_Assoc
+            then Libadalang.Analysis.Ada_Node (Arg.As_Param_Assoc.F_R_Expr)
+            else Arg);
+      begin
+         if Expr.Kind /= Libadalang.Common.Ada_Int_Literal then
+            return 0;
+         end if;
+         declare
+            Image : constant String :=
+              Adalang_Analyzer.Ada_Text.Node_Text (Expr);
+         begin
+            if Image'Length not in 1 .. 2
+              or else (for some Item of Image => Item not in '0' .. '9')
+            then
+               return 0;
+            end if;
+            return Natural'Value (Image);
+         end;
+      end;
+   exception
+      when others =>
+         return 0;
+   end Attribute_Dimension;
+
    --  The term for Prefix'First, Prefix'Last or Prefix'Length (Name, in
-   --  normalized form; default dimension only). A bound a declaration
+   --  normalized form) of the Dimension-th index. A bound a declaration
    --  fixes is its literal value. Otherwise, for an array object, the
    --  three attributes are symbols of their own -- the bounds of a
    --  declared object or a parameter never change -- tied together by
    --  what the language guarantees: Length is Last - First + 1 when that
    --  is positive, and 0 for an empty array.
    function Array_Attribute_Term
-     (Prefix  : Libadalang.Analysis.Name;
-      Name    : String;
-      Node    : Libadalang.Analysis.Ada_Node'Class;
-      Context : in out Translation_Context) return Unbounded_String
+     (Prefix    : Libadalang.Analysis.Name;
+      Name      : String;
+      Node      : Libadalang.Analysis.Ada_Node'Class;
+      Context   : in out Translation_Context;
+      Dimension : Positive := 1) return Unbounded_String
    is
+      --  The first dimension keeps the plain names; a later one carries
+      --  its number, which the extra underscore keeps apart from them.
+      Tag : constant String :=
+        (if Dimension = 1 then "" else Natural_Image (Dimension) & "_");
       Prefix_Decl : Libadalang.Analysis.Basic_Decl :=
         Libadalang.Analysis.No_Basic_Decl;
       Bounds      : Domain.Abstract_Range := Domain.Unknown_Range;
@@ -994,11 +1039,16 @@ package body Adalang_Analyzer.VC_Prover is
       then
          --  X'First/'Last/'Length where X is itself a discrete subtype
          --  mark (e.g. Some_Subtype'Last).
+         if Dimension /= 1 then
+            Mark_Unsupported (Context, Node, Unsupported_Attribute);
+            return Null_Unbounded_String;
+         end if;
          Bounds := Eval.Type_Range
            (Prefix_Decl.As_Base_Type_Decl, Context.State);
       else
          --  X'First/'Last/'Length where X is an array object.
-         Bounds := Eval.Array_Object_Index_Range (Prefix, 1, Context.State);
+         Bounds :=
+           Eval.Array_Object_Index_Range (Prefix, Dimension, Context.State);
       end if;
 
       if Name = "first" and then Bounds.Has_Low then
@@ -1023,9 +1073,9 @@ package body Adalang_Analyzer.VC_Prover is
 
          declare
             Key    : constant Symbol_Key := Plain_Key (Object_Key);
-            First  : constant String := Root_Name (Key, "af");
-            Last   : constant String := Root_Name (Key, "al");
-            Length : constant String := Root_Name (Key, "an");
+            First  : constant String := Root_Name (Key, "af" & Tag);
+            Last   : constant String := Root_Name (Key, "al" & Tag);
+            Length : constant String := Root_Name (Key, "an" & Tag);
             Link   : constant Unbounded_String :=
               To_Unbounded_String
                 ("(= " & Length & " (ite (<= " & First & " " & Last &
@@ -1369,19 +1419,21 @@ package body Adalang_Analyzer.VC_Prover is
                  Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
                    (Adalang_Analyzer.Ada_Text.Node_Text (Attr.F_Attribute));
             begin
-               --  'First/'Last/'Length only, on the default (first)
-               --  dimension: no explicit dimension argument, and no
-               --  attempt at 'Range (not itself integer-valued) or any
-               --  other attribute. A wrong guess here only costs
-               --  Unsupported, never an incorrect bound.
-               if Attr.F_Args.Children_Count > 0
+               --  'First/'Last/'Length only, of the dimension a literal
+               --  argument names (the first without one), and no attempt
+               --  at 'Range (not itself integer-valued) or any other
+               --  attribute. A wrong guess here only costs Unsupported,
+               --  never an incorrect bound.
+               if Attribute_Dimension (Attr) = 0
                  or else Name not in "first" | "last" | "length"
                then
                   Mark_Unsupported (Context, Node, Unsupported_Attribute);
                   return Null_Unbounded_String;
                end if;
 
-               return Array_Attribute_Term (Attr.F_Prefix, Name, Node, Context);
+               return Array_Attribute_Term
+                 (Attr.F_Prefix, Name, Node, Context,
+                  Attribute_Dimension (Attr));
             end;
 
          when Libadalang.Common.Ada_Dotted_Name =>
@@ -1846,19 +1898,21 @@ package body Adalang_Analyzer.VC_Prover is
                     and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
                       (Adalang_Analyzer.Ada_Text.Node_Text
                          (Alternative.As_Attribute_Ref.F_Attribute)) = "range"
-                    and then Alternative.As_Attribute_Ref.F_Args
-                      .Children_Count = 0
+                    and then Attribute_Dimension
+                      (Alternative.As_Attribute_Ref) /= 0
                   then
                      --  "X in A'Range" is "X in A'First .. A'Last".
                      declare
+                        Dimension : constant Positive :=
+                          Attribute_Dimension (Alternative.As_Attribute_Ref);
                         Low  : constant Unbounded_String :=
                           Array_Attribute_Term
                             (Alternative.As_Attribute_Ref.F_Prefix, "first",
-                             Alternative, Context);
+                             Alternative, Context, Dimension);
                         High : constant Unbounded_String :=
                           Array_Attribute_Term
                             (Alternative.As_Attribute_Ref.F_Prefix, "last",
-                             Alternative, Context);
+                             Alternative, Context, Dimension);
                      begin
                         if not Context.Supported then
                            return Null_Unbounded_String;
@@ -3033,10 +3087,11 @@ package body Adalang_Analyzer.VC_Prover is
    end Decide_Bounds;
 
    function Decide_Index_In_Object
-     (Index   : Libadalang.Analysis.Expr'Class;
-      Prefix  : Libadalang.Analysis.Name'Class;
-      State   : Domain.Flow_State;
-      Symbols : Symbolic_State) return VC_Outcome
+     (Index     : Libadalang.Analysis.Expr'Class;
+      Prefix    : Libadalang.Analysis.Name'Class;
+      State     : Domain.Flow_State;
+      Symbols   : Symbolic_State;
+      Dimension : Positive := 1) return VC_Outcome
    is
       Context : Translation_Context :=
         (State => State, Symbols => Symbols, Supported => Symbols.Supported,
@@ -3051,11 +3106,13 @@ package body Adalang_Analyzer.VC_Prover is
       Term := Integer_Term (Index, Context);
       if Context.Supported and then Length (Term) > 0 then
          First :=
-           Array_Attribute_Term (Prefix.As_Name, "first", Index, Context);
+           Array_Attribute_Term
+             (Prefix.As_Name, "first", Index, Context, Dimension);
       end if;
       if Context.Supported and then Length (First) > 0 then
          Last :=
-           Array_Attribute_Term (Prefix.As_Name, "last", Index, Context);
+           Array_Attribute_Term
+             (Prefix.As_Name, "last", Index, Context, Dimension);
       end if;
       if not Context.Supported or else Length (Last) = 0 then
          if Context.Supported then
@@ -3173,7 +3230,7 @@ package body Adalang_Analyzer.VC_Prover is
                  and then Fixed (Expr.As_Bin_Op.F_Left)
                  and then Fixed (Expr.As_Bin_Op.F_Right);
             when Libadalang.Common.Ada_Attribute_Ref =>
-               return Expr.As_Attribute_Ref.F_Args.Children_Count = 0
+               return Attribute_Dimension (Expr.As_Attribute_Ref) /= 0
                  and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
                    (Adalang_Analyzer.Ada_Text.Node_Text
                       (Expr.As_Attribute_Ref.F_Attribute)) in
@@ -3203,18 +3260,18 @@ package body Adalang_Analyzer.VC_Prover is
         and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
           (Adalang_Analyzer.Ada_Text.Node_Text
              (Iteration.As_Attribute_Ref.F_Attribute)) = "range"
-        and then Iteration.As_Attribute_Ref.F_Args.Children_Count = 0
+        and then Attribute_Dimension (Iteration.As_Attribute_Ref) /= 0
         and then not Libadalang.Analysis.Is_Null
           (Array_Object_Key (Context, Iteration.As_Attribute_Ref.F_Prefix))
       then
          Low :=
            Array_Attribute_Term
              (Iteration.As_Attribute_Ref.F_Prefix, "first", Iteration,
-              Context);
+              Context, Attribute_Dimension (Iteration.As_Attribute_Ref));
          High :=
            Array_Attribute_Term
              (Iteration.As_Attribute_Ref.F_Prefix, "last", Iteration,
-              Context);
+              Context, Attribute_Dimension (Iteration.As_Attribute_Ref));
       elsif Iteration.Kind in Libadalang.Common.Ada_Bin_Op_Range
         and then Iteration.As_Bin_Op.F_Op =
           Libadalang.Common.Ada_Op_Double_Dot
