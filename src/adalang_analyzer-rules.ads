@@ -259,7 +259,20 @@ package Adalang_Analyzer.Rules is
       Non_Component_In_Barrier,
       Identifier_Casing,
       Identifier_Prefixes,
-      Identifier_Suffixes
+      Identifier_Suffixes,
+      Constant_Overlay,
+      Non_Constant_Overlay,
+      Nonoverlay_Address_Specification,
+      Not_Imported_Overlay,
+      Address_Of_Non_Volatile_Object,
+      Access_To_Local_Object,
+      Bit_Record_Without_Layout,
+      No_Scalar_Storage_Order,
+      Incomplete_Representation_Specification,
+      Misplaced_Representation_Item,
+      Representation_Specification,
+      Unchecked_Address_Conversion,
+      Unchecked_Conversion_As_Actual
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -2720,7 +2733,142 @@ package Adalang_Analyzer.Rules is
            ("Rename the entity to follow the project's suffix " &
             "convention."),
          Quality     => Quality_Maintainability,
-         Severity    => Severity_Low)
+         Severity    => Severity_Low),
+      Constant_Overlay =>
+        (Name        => To_Unbounded_String ("Constant_Overlay"),
+         Description => To_Unbounded_String
+           ("Find address specifications that make a variable, or a " &
+            "volatile object, overlay a constant object."),
+         Guidance    => To_Unbounded_String
+           ("Declare the overlaying object constant, or do not overlay " &
+            "a constant."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Non_Constant_Overlay =>
+        (Name        => To_Unbounded_String ("Non_Constant_Overlay"),
+         Description => To_Unbounded_String
+           ("Find address specifications that make a constant or a " &
+            "non-volatile object overlay a variable that can change " &
+            "underneath it."),
+         Guidance    => To_Unbounded_String
+           ("Declare both objects volatile, or remove the overlay."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Nonoverlay_Address_Specification =>
+        (Name        => To_Unbounded_String
+           ("Nonoverlay_Address_Specification"),
+         Description => To_Unbounded_String
+           ("Find address specifications of objects whose address is " &
+            "not the Address of another object."),
+         Guidance    => To_Unbounded_String
+           ("Isolate hardware addresses in a dedicated package, or " &
+            "express the mapping as an overlay."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Not_Imported_Overlay =>
+        (Name        => To_Unbounded_String ("Not_Imported_Overlay"),
+         Description => To_Unbounded_String
+           ("Find objects that overlay another object without being " &
+            "imported, so that default initialization may overwrite the " &
+            "overlaid object."),
+         Guidance    => To_Unbounded_String
+           ("Add the Import aspect to the overlaying object."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Address_Of_Non_Volatile_Object =>
+        (Name        => To_Unbounded_String ("Address_Of_Non_Volatile_Object"),
+         Description => To_Unbounded_String
+           ("Find the Address attribute applied to a variable that is " &
+            "not volatile, atomic or shared."),
+         Guidance    => To_Unbounded_String
+           ("Declare the object volatile, or avoid taking its address."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Access_To_Local_Object =>
+        (Name        => To_Unbounded_String ("Access_To_Local_Object"),
+         Description => To_Unbounded_String
+           ("Find the Access attribute applied to an object, or part of " &
+            "an object, that is a parameter or is declared in a " &
+            "subprogram, task, entry, protected body or block."),
+         Guidance    => To_Unbounded_String
+           ("Take the access of a library-level object, or pass the " &
+            "object as a parameter."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Bit_Record_Without_Layout =>
+        (Name        => To_Unbounded_String ("Bit_Record_Without_Layout"),
+         Description => To_Unbounded_String
+           ("Find packed record types with a modular component or " &
+            "discriminant and no record representation clause."),
+         Guidance    => To_Unbounded_String
+           ("Give the record an explicit representation clause."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      No_Scalar_Storage_Order =>
+        (Name        => To_Unbounded_String ("No_Scalar_Storage_Order"),
+         Description => To_Unbounded_String
+           ("Find record types with a record representation clause, " &
+            "their own or inherited, that do not specify " &
+            "Scalar_Storage_Order."),
+         Guidance    => To_Unbounded_String
+           ("Specify Scalar_Storage_Order (and Bit_Order) on the type."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Incomplete_Representation_Specification =>
+        (Name        => To_Unbounded_String
+           ("Incomplete_Representation_Specification"),
+         Description => To_Unbounded_String
+           ("Find record types with a record representation clause that " &
+            "do not also have both a Size and a Pack specification."),
+         Guidance    => To_Unbounded_String
+           ("Complete the representation with Size and Pack."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Misplaced_Representation_Item =>
+        (Name        => To_Unbounded_String ("Misplaced_Representation_Item"),
+         Description => To_Unbounded_String
+           ("Find representation clauses and representation pragmas " &
+            "that do not directly follow the declaration they apply to, " &
+            "other representation items of the same entity aside."),
+         Guidance    => To_Unbounded_String
+           ("Move the representation item next to the declaration it " &
+            "applies to."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Representation_Specification =>
+        (Name        => To_Unbounded_String ("Representation_Specification"),
+         Description => To_Unbounded_String
+           ("Find record and enumeration representation clauses and " &
+            "declarations that carry a representation aspect; with the " &
+            "record_rep_clauses_only parameter set to true, only record " &
+            "representation clauses are reported."),
+         Guidance    => To_Unbounded_String
+           ("Remove the representation item, or confine it to a " &
+            "hardware-boundary package."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Unchecked_Address_Conversion =>
+        (Name        => To_Unbounded_String ("Unchecked_Address_Conversion"),
+         Description => To_Unbounded_String
+           ("Find instantiations of Ada.Unchecked_Conversion from " &
+            "System.Address to an access type; with the all parameter " &
+            "set to true, any instantiation involving System.Address is " &
+            "reported."),
+         Guidance    => To_Unbounded_String
+           ("Use System.Address_To_Access_Conversions, or an address " &
+            "specification."),
+         Quality     => Quality_Security,
+         Severity    => Severity_High),
+      Unchecked_Conversion_As_Actual =>
+        (Name        => To_Unbounded_String ("Unchecked_Conversion_As_Actual"),
+         Description => To_Unbounded_String
+           ("Find calls to an instance of Ada.Unchecked_Conversion used " &
+            "as an actual parameter or as a default parameter value."),
+         Guidance    => To_Unbounded_String
+           ("Assign the converted value to a constant first and " &
+            "validate it."),
+         Quality     => Quality_Security,
+         Severity    => Severity_Medium)
    );
 
    function Lookup_Rule_Kind
