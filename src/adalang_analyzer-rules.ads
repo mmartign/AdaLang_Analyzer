@@ -307,7 +307,17 @@ package Adalang_Analyzer.Rules is
       Complex_Inlined_Subprogram,
       Call_In_Exception_Handler,
       Ada_2022_In_Ghost_Code,
-      Actual_Parameter
+      Actual_Parameter,
+      Same_Logic,
+      Suspicious_Equality,
+      Non_Visible_Exception,
+      Outbound_Protected_Assignment,
+      Outside_Reference_From_Subprogram,
+      Variable_Scoping,
+      Out_Parameter_Read_In_Exception_Handler,
+      Predicate_Testing,
+      Profile_Discrepancy,
+      Side_Effect_Parameter
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -3255,6 +3265,111 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Pass an object the project's rules allow for that " &
             "parameter."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Same_Logic =>
+        (Name        => To_Unbounded_String ("Same_Logic"),
+         Description => To_Unbounded_String
+           ("Find conditions joined by one logical operator in which " &
+            "the same operand appears twice."),
+         Guidance    => To_Unbounded_String
+           ("Remove the repeated operand, or correct the one that was " &
+            "meant to differ."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Suspicious_Equality =>
+        (Name        => To_Unbounded_String ("Suspicious_Equality"),
+         Description => To_Unbounded_String
+           ("Find conditions that test the same name for equality with " &
+            "two literals joined by and, or for inequality with two " &
+            "literals joined by or."),
+         Guidance    => To_Unbounded_String
+           ("Correct the operator: such a test is never, respectively " &
+            "always, true."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Non_Visible_Exception =>
+        (Name        => To_Unbounded_String ("Non_Visible_Exception"),
+         Description => To_Unbounded_String
+           ("Find exceptions declared in a subprogram body, task body " &
+            "or block that the same scope does not handle, and handlers " &
+            "that raise or re-raise such a local exception."),
+         Guidance    => To_Unbounded_String
+           ("Handle the local exception in its scope, or declare it " &
+            "where callers can name it."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Outbound_Protected_Assignment =>
+        (Name        => To_Unbounded_String ("Outbound_Protected_Assignment"),
+         Description => To_Unbounded_String
+           ("Find assignments in a protected body to an object declared " &
+            "outside the protected unit."),
+         Guidance    => To_Unbounded_String
+           ("Keep protected operations to the protected object's own " &
+            "components."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Outside_Reference_From_Subprogram =>
+        (Name        => To_Unbounded_String
+           ("Outside_Reference_From_Subprogram"),
+         Description => To_Unbounded_String
+           ("Find references in a nested subprogram to a local object " &
+            "or a parameter of an enclosing subprogram."),
+         Guidance    => To_Unbounded_String
+           ("Pass the object to the nested subprogram as a parameter."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Variable_Scoping =>
+        (Name        => To_Unbounded_String ("Variable_Scoping"),
+         Description => To_Unbounded_String
+           ("Find local variables without an initial value that are " &
+            "used only inside one declare block of the subprogram, " &
+            "outside any loop."),
+         Guidance    => To_Unbounded_String
+           ("Declare the variable in that block."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Out_Parameter_Read_In_Exception_Handler =>
+        (Name        => To_Unbounded_String
+           ("Out_Parameter_Read_In_Exception_Handler"),
+         Description => To_Unbounded_String
+           ("Find out and in out actuals of a call that an exception " &
+            "handler of an enclosing block reads; the call may have " &
+            "raised before assigning them."),
+         Guidance    => To_Unbounded_String
+           ("Give the object a defined value before the call, or do not " &
+            "read it in the handler."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_High),
+      Predicate_Testing =>
+        (Name        => To_Unbounded_String ("Predicate_Testing"),
+         Description => To_Unbounded_String
+           ("Find membership tests naming a subtype with a predicate, " &
+            "and Valid attributes of an object of such a subtype."),
+         Guidance    => To_Unbounded_String
+           ("Avoid the implicit predicate evaluation, or make it " &
+            "explicit with a named function."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Low),
+      Profile_Discrepancy =>
+        (Name        => To_Unbounded_String ("Profile_Discrepancy"),
+         Description => To_Unbounded_String
+           ("Find subprogram and entry bodies whose parameter profile " &
+            "is written differently from their declaration: grouping of " &
+            "names, explicit modes or the spelling of type names."),
+         Guidance    => To_Unbounded_String
+           ("Write the body's profile exactly as the declaration's."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Side_Effect_Parameter =>
+        (Name        => To_Unbounded_String ("Side_Effect_Parameter"),
+         Description => To_Unbounded_String
+           ("Find calls and instantiations whose actuals call the same " &
+            "function, listed by fully qualified name in the functions " &
+            "parameter, more than once; nothing is reported when none " &
+            "is configured."),
+         Guidance    => To_Unbounded_String
+           ("Call the function once per statement and pass the results."),
          Quality     => Quality_Reliability,
          Severity    => Severity_Medium)
    );
