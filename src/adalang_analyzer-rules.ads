@@ -296,7 +296,18 @@ package Adalang_Analyzer.Rules is
       Direct_Call_To_Primitive,
       Downward_View_Conversion,
       Specific_Parent_Type_Invariant,
-      No_Inherited_Classwide_Pre
+      No_Inherited_Classwide_Pre,
+      Non_SPARK_Attribute,
+      Nested_Path,
+      Essential_Complexity,
+      Maximum_Expression_Complexity,
+      Improperly_Located_Instantiation,
+      Function_Style_Procedure,
+      Exception_As_Control_Flow,
+      Complex_Inlined_Subprogram,
+      Call_In_Exception_Handler,
+      Ada_2022_In_Ghost_Code,
+      Actual_Parameter
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -3130,6 +3141,120 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Give the root operation a Pre'Class aspect, even if it is " &
             "True."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Non_SPARK_Attribute =>
+        (Name        => To_Unbounded_String ("Non_SPARK_Attribute"),
+         Description => To_Unbounded_String
+           ("Find attributes outside the SPARK 2005 attribute subset."),
+         Guidance    => To_Unbounded_String
+           ("Use an attribute of the subset, or an explicit " &
+            "computation."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Nested_Path =>
+        (Name        => To_Unbounded_String ("Nested_Path"),
+         Description => To_Unbounded_String
+           ("Find statements kept inside one branch of an if statement " &
+            "whose other branch always leaves it by return, raise, exit " &
+            "or goto."),
+         Guidance    => To_Unbounded_String
+           ("Move the statements after the if statement."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Essential_Complexity =>
+        (Name        => To_Unbounded_String ("Essential_Complexity"),
+         Description => To_Unbounded_String
+           ("Find subprogram bodies whose essential complexity (one " &
+            "plus the compound statements left early by a return, " &
+            "raise, exit or goto) exceeds the n parameter (default 3)."),
+         Guidance    => To_Unbounded_String
+           ("Restructure the subprogram around single-exit constructs."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Maximum_Expression_Complexity =>
+        (Name        => To_Unbounded_String ("Maximum_Expression_Complexity"),
+         Description => To_Unbounded_String
+           ("Find expressions with more names, literals, conditional " &
+            "and quantified expressions and aggregates than the n " &
+            "parameter allows (default 10)."),
+         Guidance    => To_Unbounded_String
+           ("Split the expression using named constants or functions."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Improperly_Located_Instantiation =>
+        (Name        => To_Unbounded_String
+           ("Improperly_Located_Instantiation"),
+         Description => To_Unbounded_String
+           ("Find generic instantiations in a library package " &
+            "specification or in a subprogram body."),
+         Guidance    => To_Unbounded_String
+           ("Instantiate the generic as a library unit or in a package " &
+            "body."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Function_Style_Procedure =>
+        (Name        => To_Unbounded_String ("Function_Style_Procedure"),
+         Description => To_Unbounded_String
+           ("Find procedures with a single out parameter of a " &
+            "non-limited type, no in out parameter and no Global " &
+            "aspect."),
+         Guidance    => To_Unbounded_String
+           ("Declare a function that returns the value."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Exception_As_Control_Flow =>
+        (Name        => To_Unbounded_String ("Exception_As_Control_Flow"),
+         Description => To_Unbounded_String
+           ("Find raise statements whose exception is handled in the " &
+            "same subprogram body."),
+         Guidance    => To_Unbounded_String
+           ("Use ordinary control flow instead of a local exception."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Complex_Inlined_Subprogram =>
+        (Name        => To_Unbounded_String ("Complex_Inlined_Subprogram"),
+         Description => To_Unbounded_String
+           ("Find inlined subprograms whose body declares a nested " &
+            "unit, contains a loop, case or if statement, or has more " &
+            "statements than the n parameter allows (default 5)."),
+         Guidance    => To_Unbounded_String
+           ("Remove Inline, or simplify the subprogram."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Call_In_Exception_Handler =>
+        (Name        => To_Unbounded_String ("Call_In_Exception_Handler"),
+         Description => To_Unbounded_String
+           ("Find exception handlers that call a subprogram listed, by " &
+            "fully qualified name, in the subprograms parameter; " &
+            "nothing is reported when none is configured."),
+         Guidance    => To_Unbounded_String
+           ("Keep the listed subprograms out of exception handlers."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Ada_2022_In_Ghost_Code =>
+        (Name        => To_Unbounded_String ("Ada_2022_In_Ghost_Code"),
+         Description => To_Unbounded_String
+           ("Find Ada 2022 constructs used outside ghost code and " &
+            "generic units: Image of a composite object, reduction, " &
+            "declare expressions, target names, delta and iterated " &
+            "aggregates, user-defined literals and aspects on " &
+            "parameters and formal subprograms."),
+         Guidance    => To_Unbounded_String
+           ("Restrict the construct to ghost code, or rewrite it in Ada " &
+            "2012."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Actual_Parameter =>
+        (Name        => To_Unbounded_String ("Actual_Parameter"),
+         Description => To_Unbounded_String
+           ("Find calls that pass a listed object to a listed formal " &
+            "parameter; the forbidden parameter holds comma-separated " &
+            "subprogram:formal:object triples of fully qualified names. " &
+            "Nothing is reported when none is configured."),
+         Guidance    => To_Unbounded_String
+           ("Pass an object the project's rules allow for that " &
+            "parameter."),
          Quality     => Quality_Reliability,
          Severity    => Severity_Medium)
    );
