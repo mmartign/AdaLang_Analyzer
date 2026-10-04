@@ -5,7 +5,15 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.0] - 2026-10-04
+
+A coding-standard release: 167 opt-in checks take the catalogue from 127
+to 294 and cover all but eight of GNATcheck's general-purpose rules, checks
+can take parameters, and names of imported projects now resolve. No preset
+changes; on code split across projects the existing checks and `--verify`
+see more than before (`FP-102`). All GNATcheck corpus comparisons were
+re-run, and the analyzer side of the GNATprove comparisons: zero possible
+unsoundness and zero false positives wherever GNATprove is an oracle.
 
 ### Added
 
