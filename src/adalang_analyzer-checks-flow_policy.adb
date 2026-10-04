@@ -16,6 +16,7 @@ with Adalang_Analyzer.Ada_Text;   use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;
+with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;      use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Text_Utils; use Adalang_Analyzer.Text_Utils;
 
@@ -927,7 +928,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
                Value : constant Natural := Essential_Complexity (Node);
             begin
                if Value > Limit then
-                  Report_Finding
+                  Adalang_Analyzer.Report.Report_Rule_Violation
                     (Unit, Node, Essential_Complexity,
                      "essential complexity " & To_Decimal (Value)
                      & " exceeds " & To_Decimal (Limit));

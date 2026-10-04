@@ -924,7 +924,7 @@ package body Adalang_Analyzer.Checks.Readability is
       Total : constant Natural := Logical_Lines (Node);
    begin
       if Total > Limit then
-         Report_Finding
+         Adalang_Analyzer.Report.Report_Rule_Violation
            (Unit, Node, Logical_SLOC,
             "unit has " & To_Decimal (Total)
             & " logical source lines, more than " & To_Decimal (Limit));

@@ -13,6 +13,7 @@ with Libadalang.Common;
 with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
+with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;    use Adalang_Analyzer.Rules;
 
 package body Adalang_Analyzer.Checks.Representation is
@@ -602,7 +603,7 @@ package body Adalang_Analyzer.Checks.Representation is
       if not Is_Set (Representation_Specification, "record_rep_clauses_only")
         and then Has_Representation_Aspect (Item.As_Basic_Decl)
       then
-         Report_Finding
+         Adalang_Analyzer.Report.Report_Rule_Violation
            (Unit, Item, Representation_Specification,
             "declaration has a representation aspect");
       end if;
@@ -793,7 +794,7 @@ package body Adalang_Analyzer.Checks.Representation is
                                    (Representation_Specification,
                                     "record_rep_clauses_only"))
          then
-            Report_Finding
+            Adalang_Analyzer.Report.Report_Rule_Violation
               (Unit, Node, Representation_Specification,
                "representation clause used");
          elsif Kind in Libadalang.Common.Ada_Basic_Decl then
