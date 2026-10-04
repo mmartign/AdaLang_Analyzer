@@ -40,16 +40,31 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   fixture for every new check that runs without parameters, and one
   regression case from the corpus runs.
 
+### Fixed
+
+- With a project file (`-P`), names that denote entities of an imported
+  project now resolve (`FP-102`). The analyzer looked up units only among
+  the root project's own sources, so on a code base split across projects
+  every check that needs a type or a declaration went quiet, and
+  `skippedChecks` grew large (10,823 on gnatcoll-core, now 55). The sources
+  of imported projects are added to the name lookup; they are still not
+  analyzed. Found by running the coding-standard checks against GNATcheck
+  on the benchmark corpora, where gnatcoll-core went from 13,007 to 19,903
+  of GNATcheck's 19,916 findings.
+
+  This changes results on multi-project code for the existing checks too:
+  more calls resolve, so `Dead_Store`, `Exception_Propagation`,
+  `Missing_Global_Contract` and others report findings they could not see
+  before. `--verify` results on such code can change for the same reason;
+  the GNATprove comparisons in `benchmarks/` have not been re-run yet.
+
 ### Known limitations
 
-- On the ten external benchmark corpora, GNATcheck confirms 99.4% of
-  the new checks' findings in the files both tools analysed, and the new
-  checks report 90.0% of GNATcheck's (`benchmarks/README.md`). The
-  shortfall has two causes in the analyzer itself, which predate these
-  checks: with a project file it resolves names only among the root
-  project's sources, so checks that need a type or a declaration fall
-  short on code that imports other projects; and it reports nothing for a
-  source file that contains preprocessor directives.
+- On the ten external benchmark corpora, GNATcheck confirms 99.7% of the new
+  checks' findings in the files both tools analysed, and the new checks
+  report 99.5% of GNATcheck's (`benchmarks/README.md`).
+- The analyzer reports nothing for a source file that contains preprocessor
+  directives; this accounts for most of what the new checks still miss.
 - GNATcheck also reports inside the instances of generic units; the new
   checks do not follow instantiations.
 - `Missing_Header` and `Actual_Parameter` were not compared with GNATcheck:

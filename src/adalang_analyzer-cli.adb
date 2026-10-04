@@ -1563,14 +1563,26 @@ package body Adalang_Analyzer.CLI is
       --  The auto provider records the actual paths supplied directly or
       --  discovered through -P, making semantic checks independent of where
       --  the analyzer was launched.
+      --  The sources of imported projects join the lookup, after the
+      --  analyzed ones, so that a name denoting one of their entities
+      --  resolves. They are not analyzed themselves.
       declare
-         Input_Files : GNATCOLL.VFS.File_Array
-           (File_Name_Vectors.First_Index (Files_To_Process) ..
-              File_Name_Vectors.Last_Index (Files_To_Process));
+         Lookup_Files : constant File_Name_Vectors.Vector :=
+           Adalang_Analyzer.Project_Files.Lookup_Sources (Files_To_Process);
+         Input_Files  : GNATCOLL.VFS.File_Array
+           (File_Name_Vectors.First_Index (Lookup_Files) ..
+              File_Name_Vectors.Last_Index (Lookup_Files));
       begin
+         Log_Verbose
+           ("Unit lookup covers " &
+            To_Decimal (Natural (File_Name_Vectors.Length (Lookup_Files))) &
+            " sources, " &
+            To_Decimal (Natural (File_Name_Vectors.Length (Files_To_Process))) &
+            " of them analyzed");
+
          for Index in Input_Files'Range loop
             Input_Files (Index) := GNATCOLL.VFS.Create_From_UTF8
-              (File_Name_Vectors.Element (Files_To_Process, Index),
+              (File_Name_Vectors.Element (Lookup_Files, Index),
                Normalize => True);
          end loop;
 

@@ -46,13 +46,13 @@ code, with one deliberate exception (`Declaration_In_Block`, below).
 
 The 153 of them that run without configuration were then run over the ten
 external benchmark corpora (`benchmarks/README.md`, "GNATcheck oracle
-comparison"). Over the files both tools analysed, GNATcheck reports 83101 of
-AdaLang's 83612 findings at the same file and line (99.4%), and
-AdaLang reports 90.0% of GNATcheck's 92293. The agreement is
-complete or nearly so where both tools resolve the code; what AdaLang
-misses comes from two limitations of the analyzer, not of the checks: it
-resolves names only within the root project, and it reports nothing for a
-file with preprocessor directives.
+comparison"). Over the files both tools analysed, GNATcheck reports 91838 of
+AdaLang's 92095 findings at the same file and line (99.7%), and AdaLang
+reports 99.5% of GNATcheck's 92293. That run exposed and led to the fix of
+`FP-102` (names were resolved only within the root project). What AdaLang
+still misses is mostly in files with preprocessor directives, for which it
+reports nothing, and in the instances of generic units, which it does not
+follow.
 
 ## AdaLang rules with a direct or close GNATcheck counterpart
 
@@ -407,11 +407,11 @@ Rule coverage is now close to GNATcheck's, but AdaLang Analyzer is not a
 drop-in replacement for it and does not claim to be (see `positioning.md`):
 
 - The pairing is by behaviour on the code both tools were run on. On the
-  external corpora AdaLang's findings are confirmed by GNATcheck almost
-  everywhere, but AdaLang misses findings that depend on units of an
-  imported project, and GNATcheck also reports inside the instances of
-  generic units, which AdaLang does not follow. Several object-oriented
-  checks still rest on few findings.
+  external corpora the two agree on about 99% of findings in either
+  direction, but AdaLang reports nothing for a file with preprocessor
+  directives, and GNATcheck also reports inside the instances of generic
+  units, which AdaLang does not follow. Several object-oriented checks
+  still rest on few findings.
 - GNATcheck's rules are written in LKQL and can be extended without
   rebuilding the tool; AdaLang's are compiled in.
 - Where the two tools cannot resolve a unit the same way (a missing

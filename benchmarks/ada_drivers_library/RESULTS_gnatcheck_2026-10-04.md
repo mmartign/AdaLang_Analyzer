@@ -1,6 +1,6 @@
 # Ada_Drivers_Library: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
-Current results, refreshed 2026-10-04. This file replaces the earlier dated runs, which remain in the Git history. The refresh adds the rule pairs of the 167 opt-in coding-standard checks (153 of them run here; the other 14 report nothing until configured and are not in the rule map). The pairs that were already compared on 2026-09-24 are run again unchanged.
+Current results, refreshed 2026-10-04. This file replaces the earlier dated runs, which remain in the Git history. The refresh adds the rule pairs of the 167 opt-in coding-standard checks (153 of them run here; the other 14 report nothing until configured and are not in the rule map). The pairs that were already compared on 2026-09-24 are run again; the analyzer now also resolves names through imported projects (`FP-102`), which can change their numbers too.
 
 ## Environment
 
@@ -35,7 +35,7 @@ The 153 new pairs, counted over all files: 6178 AdaLang findings, 6045 matched b
 The two tools do not analyse the same set of files (see the notes below), so the same pairs are also counted over the files both analysed: 6178 AdaLang findings and 6053 GNATcheck findings, 6045 at the same file and line; 133 AdaLang-only, 8 GNATcheck-only.
 
 - This corpus is analysed as two synthetic projects because variant directories hold files with the same name; the comparator matches on file basename, so a finding in one variant can be matched against, or missed in, the other.
-- GNATcheck-only findings: 8. AdaLang-only findings: 133, mainly `Representation_Specification` (33), `Positional_Parameter` (32), `Predefined_Numeric_Type` (24) and `Complex_Inlined_Subprogram` (22). They sit in the STM32 driver units whose `HAL` and SVD dependencies are outside the analysed projects; they have not been examined one by one.
+- GNATcheck-only findings: 8. AdaLang-only findings: 133, mainly `Representation_Specification` (33), `Positional_Parameter` (32), `Predefined_Numeric_Type` (24) and `Complex_Inlined_Subprogram` (22). This lane analyses synthetic projects written for the benchmark, which do not import the projects the drivers depend on, so about 1,500 checks are still skipped here and the `FP-102` fix does not apply. The differences have not been examined one by one.
 - This run found and fixed two defects: `Global_Variable` reported a renaming of a constant as a variable, and `Uninitialized_Global_Variable` reported local variables whose enclosing scope could not be resolved.
 
 ## Duplicate branches
@@ -466,4 +466,3 @@ The two tools do not analyse the same set of files (see the notes below), so the
 - `No_Multiple_Return`/`improper_returns` differ in granularity (per subprogram vs. per return); `Too_Many_Parameters`/`maximum_parameters` report spec vs. body and use different default thresholds; `Missing_Global_Contract` deliberately also fires outside `SPARK_Mode`.
 - `Identical_Branches`/`Identical_Case_Alternative` vs. `duplicate_branches` (run with `min_stmt=1,min_size=1`, matched on the line GNATcheck names as the duplicate): AdaLang compares adjacent branches only, so GNATcheck's non-adjacent pairs stay GNATcheck-only; GNATcheck reports one pair per `if`/`case`, so the later members of a run of identical adjacent branches stay AdaLang-only.
 - The two tools analyse different file sets: AdaLang takes the sources of the root project, GNATcheck the closure it loads. The shared-file figures above leave out findings in files only one tool analysed.
-- AdaLang resolves names only among the sources of the root project. Units of an imported project stay unresolved here, so checks that need a type or a declaration (positional associations, predefined numeric types, slices, array returns, object-oriented checks) report less than GNATcheck, and checks that ask whether a body has a separate declaration can report a body GNATcheck attributes to its specification. This is a limitation of the analyzer's project support, not of the individual checks; `skippedChecks` in the AdaLang JSON report counts the affected queries.

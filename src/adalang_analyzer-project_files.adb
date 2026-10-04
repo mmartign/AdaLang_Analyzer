@@ -14,8 +14,10 @@
 
 with Ada.Characters.Handling;
 with Ada.Command_Line;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Directories;
 with Ada.Exceptions;
+with Ada.Strings.Hash;
 with Ada.Text_IO;
 
 with GPR2;
@@ -39,6 +41,7 @@ package body Adalang_Analyzer.Project_Files is
    --  Sources of the projects whose configuration pragmas turn SPARK_Mode
    --  on.
    SPARK_Sources : File_Name_Vectors.Vector;
+   Import_Sources : File_Name_Vectors.Vector;
 
    --  True when the configuration pragma file at Path holds "pragma
    --  SPARK_Mode;" or "pragma SPARK_Mode (On);". Comments are ignored, as
@@ -107,6 +110,30 @@ package body Adalang_Analyzer.Project_Files is
       when others =>
          return False;
    end View_Sets_SPARK_Mode;
+
+   function Lookup_Sources
+     (Files : File_Name_Vectors.Vector) return File_Name_Vectors.Vector
+   is
+      package Name_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+        (Element_Type        => String,
+         Hash                => Ada.Strings.Hash,
+         Equivalent_Elements => "=");
+
+      Known  : Name_Sets.Set;
+      Result : File_Name_Vectors.Vector := Files;
+   begin
+      for F of Files loop
+         Known.Include (Ada.Directories.Simple_Name (F));
+      end loop;
+
+      for F of Import_Sources loop
+         if not Known.Contains (Ada.Directories.Simple_Name (F)) then
+            Known.Include (Ada.Directories.Simple_Name (F));
+            File_Name_Vectors.Append (Result, F);
+         end if;
+      end loop;
+      return Result;
+   end Lookup_Sources;
 
    function Vector_Contains
      (Items : File_Name_Vectors.Vector; Item : String) return Boolean is
@@ -212,6 +239,20 @@ package body Adalang_Analyzer.Project_Files is
             end if;
          end loop;
       end;
+
+      --  The other projects of the tree only serve name resolution.
+      for View of Tree loop
+         if not GPR2.Project.View."=" (View, Tree.Root_Project)
+           and then not View.Is_Runtime
+         then
+            for Src of View.Sources loop
+               if Src.Language = GPR2.Ada_Language then
+                  File_Name_Vectors.Append
+                    (Import_Sources, String (Src.Path_Name.Value));
+               end if;
+            end loop;
+         end if;
+      end loop;
 
       Tree.Unload;
    exception

@@ -1,6 +1,6 @@
 # coap_spark: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
-Current results, refreshed 2026-10-04. This file replaces the earlier dated runs, which remain in the Git history. The refresh adds the rule pairs of the 167 opt-in coding-standard checks (153 of them run here; the other 14 report nothing until configured and are not in the rule map). The pairs that were already compared on 2026-09-24 are run again unchanged.
+Current results, refreshed 2026-10-04. This file replaces the earlier dated runs, which remain in the Git history. The refresh adds the rule pairs of the 167 opt-in coding-standard checks (153 of them run here; the other 14 report nothing until configured and are not in the rule map). The pairs that were already compared on 2026-09-24 are run again; the analyzer now also resolves names through imported projects (`FP-102`), which can change their numbers too.
 
 ## Environment
 
@@ -16,21 +16,22 @@ Current results, refreshed 2026-10-04. This file replaces the earlier dated runs
 
 | | 2026-10-04, all pairs | 2026-10-04, pairs of 2026-09-24 | 2026-09-24 |
 | --- | ---: | ---: | ---: |
-| AdaLang findings | 13354 | 3066 | 3066 |
-| &nbsp;&nbsp;matched by GNATcheck | 12379 (92.7%) | 2092 (68.2%) | 2092 (68.2%) |
+| AdaLang findings | 13387 | 3073 | 3066 |
+| &nbsp;&nbsp;matched by GNATcheck | 12406 (92.7%) | 2092 (68.1%) | 2092 (68.2%) |
 | GNATcheck findings | 43268 | 10094 | 10094 |
-| &nbsp;&nbsp;matched by AdaLang | 12379 (28.6%) | 2092 (20.7%) | 2092 (20.7%) |
+| &nbsp;&nbsp;matched by AdaLang | 12406 (28.7%) | 2092 (20.7%) | 2092 (20.7%) |
 
-Every pair of 2026-09-24 has the same numbers as then.
+Pairs of 2026-09-24 whose numbers changed (findings, tool-only), all others are identical:
+
+- `Missing_Global_Contract`: 24 findings, 24 AdaLang-only then; 31, 31 now.
 
 ## Coding-standard checks
 
-The 153 new pairs, counted over all files: 10288 AdaLang findings, 10287 matched by GNATcheck (100.0%); 33174 GNATcheck findings, 10287 matched by AdaLang (31.0%). 74 of the 153 checks have a finding from one tool or the other on this corpus.
+The 153 new pairs, counted over all files: 10314 AdaLang findings, 10314 matched by GNATcheck (100.0%); 33174 GNATcheck findings, 10314 matched by AdaLang (31.1%). 74 of the 153 checks have a finding from one tool or the other on this corpus.
 
-The two tools do not analyse the same set of files (see the notes below), so the same pairs are also counted over the files both analysed: 10288 AdaLang findings and 10314 GNATcheck findings, 10287 at the same file and line; 1 AdaLang-only, 27 GNATcheck-only.
+The two tools do not analyse the same set of files (see the notes below), so the same pairs are also counted over the files both analysed: 10314 AdaLang findings and 10314 GNATcheck findings, 10314 at the same file and line; 0 AdaLang-only, 0 GNATcheck-only.
 
-- The 27 GNATcheck-only findings are in `coap_spark-channel.adb`, `coap_spark-messages*.adb` and one generated session file, at calls into the wolfSSL binding and other units outside the root project, which AdaLang does not resolve (see the notes below).
-- The one AdaLang-only finding is `Function_Style_Procedure` on a body whose declaration AdaLang could not resolve.
+- Every finding of the new checks is reported by both tools at the same file and line. Before `FP-102` was fixed, 27 GNATcheck findings at calls into the wolfSSL binding and other imported units were missed.
 
 ## Duplicate branches
 
@@ -49,8 +50,8 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Aliasing_Between_Parameters | direct | 1 | 1 | 0.0% |
 | Anonymous_Access_Type | direct | 0 | 0 | n/a |
 | Anonymous_Array_Type | direct | 0 | 0 | n/a |
-| Anonymous_Subtype | direct | 292 | 0 | 100.0% |
-| Array_Slice | direct | 160 | 0 | 100.0% |
+| Anonymous_Subtype | direct | 293 | 0 | 100.0% |
+| Array_Slice | direct | 162 | 0 | 100.0% |
 | Binary_Case_Statement | direct | 5 | 0 | 100.0% |
 | Bit_Record_Without_Layout | direct | 0 | 0 | n/a |
 | Boolean_Relational_Operator | direct | 89 | 0 | 100.0% |
@@ -67,7 +68,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Deep_Library_Hierarchy | direct | 0 | 0 | n/a |
 | Deep_Nesting | direct | 2 | 2 | 0.0% |
 | Deeply_Nested_Generic | direct | 0 | 0 | n/a |
-| Deeply_Nested_Instantiation | direct | 0 | 0 | n/a |
+| Deeply_Nested_Instantiation | direct | 2 | 0 | 100.0% |
 | Default_Parameter | direct | 84 | 0 | 100.0% |
 | Default_Value_For_Record_Component | direct | 86 | 0 | 100.0% |
 | Dependency_Limit | direct | 0 | 0 | n/a |
@@ -100,7 +101,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Fixed_Equality | direct | 0 | 0 | n/a |
 | Floating_Equality | direct | 0 | 0 | n/a |
 | Function_Out_Parameter | direct | 0 | 0 | n/a |
-| Function_Style_Procedure | direct | 63 | 1 | 98.4% |
+| Function_Style_Procedure | direct | 62 | 0 | 100.0% |
 | Generic_In_Out_Object | direct | 0 | 0 | n/a |
 | Generic_In_Subprogram | direct | 0 | 0 | n/a |
 | Global_Variable | direct | 0 | 0 | n/a |
@@ -129,7 +130,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Membership_Test | direct | 93 | 0 | 100.0% |
 | Misnamed_Controlling_Parameter | direct | 1 | 0 | 100.0% |
 | Misplaced_Representation_Item | direct | 0 | 0 | n/a |
-| Missing_Global_Contract | close | 24 | 24 | 0.0% |
+| Missing_Global_Contract | close | 31 | 31 | 0.0% |
 | Missing_Overriding_Indicator | direct | 0 | 0 | n/a |
 | Multiple_Protected_Entries | direct | 0 | 0 | n/a |
 | Naming_Convention | close | 36 | 18 | 50.0% |
@@ -150,7 +151,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | No_Use_Package_Clause | direct | 11 | 0 | 100.0% |
 | Non_Component_In_Barrier | direct | 0 | 0 | n/a |
 | Non_Constant_Overlay | direct | 0 | 0 | n/a |
-| Non_Qualified_Aggregate | direct | 236 | 0 | 100.0% |
+| Non_Qualified_Aggregate | direct | 237 | 0 | 100.0% |
 | Non_SPARK_Attribute | direct | 1258 | 0 | 100.0% |
 | Non_Short_Circuit_Condition | direct | 23 | 13 | 43.5% |
 | Non_Tagged_Derived_Type | direct | 3 | 0 | 100.0% |
@@ -181,10 +182,10 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Pos_On_Enumeration_Type | direct | 1 | 0 | 100.0% |
 | Positional_Component | direct | 14 | 0 | 100.0% |
 | Positional_Defaulted_Generic_Parameter | direct | 4 | 0 | 100.0% |
-| Positional_Defaulted_Parameter | direct | 46 | 0 | 100.0% |
+| Positional_Defaulted_Parameter | direct | 49 | 0 | 100.0% |
 | Positional_Generic_Parameter | direct | 19 | 0 | 100.0% |
-| Positional_Parameter | direct | 2268 | 0 | 100.0% |
-| Predefined_Numeric_Type | direct | 146 | 0 | 100.0% |
+| Positional_Parameter | direct | 2281 | 0 | 100.0% |
+| Predefined_Numeric_Type | direct | 147 | 0 | 100.0% |
 | Predicate_Testing | direct | 0 | 0 | n/a |
 | Printable_ASCII | direct | 0 | 0 | n/a |
 | Profile_Discrepancy | direct | 0 | 0 | n/a |
@@ -207,7 +208,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Specific_Pre_Post | direct | 0 | 0 | n/a |
 | Specific_Type_Invariant | direct | 0 | 0 | n/a |
 | Suspicious_Equality | direct | 0 | 0 | n/a |
-| Too_Many_Generic_Dependencies | direct | 0 | 0 | n/a |
+| Too_Many_Generic_Dependencies | direct | 2 | 0 | 100.0% |
 | Too_Many_Parameters | direct | 12 | 3 | 75.0% |
 | Too_Many_Parents | direct | 0 | 0 | n/a |
 | Too_Many_Primitives | direct | 0 | 0 | n/a |
@@ -218,7 +219,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Uncommented_Begin_In_Package_Body | direct | 1 | 0 | 100.0% |
 | Uncommented_End_Record | direct | 1 | 0 | 100.0% |
 | Unconditional_Exit | direct | 6 | 0 | 100.0% |
-| Unconstrained_Array_Return | direct | 30 | 0 | 100.0% |
+| Unconstrained_Array_Return | direct | 31 | 0 | 100.0% |
 | Unconstrained_Array_Type | direct | 1 | 0 | 100.0% |
 | Uninitialized_Global_Variable | direct | 2 | 0 | 100.0% |
 | Uninitialized_Output | close | 1 | 1 | 0.0% |
@@ -235,7 +236,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Use_If_Expression | direct | 27 | 0 | 100.0% |
 | Use_Membership | direct | 0 | 0 | n/a |
 | Use_Range | direct | 2 | 0 | 100.0% |
-| Use_Record_Aggregate | direct | 9 | 0 | 100.0% |
+| Use_Record_Aggregate | direct | 10 | 0 | 100.0% |
 | Use_Simple_Loop | direct | 0 | 0 | n/a |
 | Use_While_Loop | direct | 0 | 0 | n/a |
 | Variable_Scoping | direct | 1 | 0 | 100.0% |
@@ -257,7 +258,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `address_specifications_for_local_objects` | 0 | 0 | n/a |
 | `anonymous_access` | 0 | 0 | n/a |
 | `anonymous_arrays` | 0 | 0 | n/a |
-| `anonymous_subtypes` | 933 | 641 | 31.3% |
+| `anonymous_subtypes` | 933 | 640 | 31.4% |
 | `at_representation_clauses` | 0 | 0 | n/a |
 | `binary_case_statements` | 5 | 0 | 100.0% |
 | `bit_records_without_layout_definition` | 0 | 0 | n/a |
@@ -275,7 +276,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `deep_inheritance_hierarchies` | 0 | 0 | n/a |
 | `deep_library_hierarchy` | 7 | 7 | 0.0% |
 | `deeply_nested_generics` | 0 | 0 | n/a |
-| `deeply_nested_instantiations` | 10 | 10 | 0.0% |
+| `deeply_nested_instantiations` | 10 | 8 | 20.0% |
 | `default_parameters` | 176 | 92 | 47.7% |
 | `default_values_for_record_components` | 143 | 57 | 60.1% |
 | `deriving_from_predefined_type` | 12 | 9 | 25.0% |
@@ -339,7 +340,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `no_scalar_storage_order_specified` | 0 | 0 | n/a |
 | `non_component_in_barriers` | 0 | 0 | n/a |
 | `non_constant_overlays` | 0 | 0 | n/a |
-| `non_qualified_aggregates` | 1964 | 1728 | 12.0% |
+| `non_qualified_aggregates` | 1964 | 1727 | 12.1% |
 | `non_short_circuit_operators` | 3231 | 3221 | 0.3% |
 | `non_spark_attributes` | 4082 | 2824 | 30.8% |
 | `non_tagged_derived_types` | 23 | 20 | 13.0% |
@@ -371,12 +372,12 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `parameters_out_of_order` | 729 | 498 | 31.7% |
 | `pos_on_enumeration_types` | 1 | 0 | 100.0% |
 | `positional_actuals_for_defaulted_generic_parameters` | 10 | 6 | 40.0% |
-| `positional_actuals_for_defaulted_parameters` | 68 | 22 | 67.6% |
+| `positional_actuals_for_defaulted_parameters` | 68 | 19 | 72.1% |
 | `positional_components` | 61 | 47 | 23.0% |
 | `positional_generic_parameters` | 52 | 33 | 36.5% |
-| `positional_parameters` | 7279 | 5011 | 31.2% |
+| `positional_parameters` | 7279 | 4998 | 31.3% |
 | `potential_parameters_aliasing` | 0 | 0 | n/a |
-| `predefined_numeric_types` | 241 | 95 | 60.6% |
+| `predefined_numeric_types` | 241 | 94 | 61.0% |
 | `predicate_testing` | 0 | 0 | n/a |
 | `printable_ascii` | 0 | 0 | n/a |
 | `profile_discrepancies` | 25 | 25 | 0.0% |
@@ -398,7 +399,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `simple_loop_statements` | 15 | 15 | 0.0% |
 | `single_value_enumeration_types` | 4 | 0 | 100.0% |
 | `size_attribute_for_types` | 170 | 2 | 98.8% |
-| `slices` | 196 | 36 | 81.6% |
+| `slices` | 196 | 34 | 82.7% |
 | `spark_procedures_without_globals` | 371 | 371 | 0.0% |
 | `specific_parent_type_invariant` | 0 | 0 | n/a |
 | `specific_pre_post` | 202 | 202 | 0.0% |
@@ -408,7 +409,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `subprogram_access` | 179 | 179 | 0.0% |
 | `suspicious_equalities` | 0 | 0 | n/a |
 | `too_many_dependencies` | 32 | 32 | 0.0% |
-| `too_many_generic_dependencies` | 2 | 2 | 0.0% |
+| `too_many_generic_dependencies` | 2 | 0 | 100.0% |
 | `too_many_parents` | 0 | 0 | n/a |
 | `too_many_primitives` | 0 | 0 | n/a |
 | `trivial_exception_handlers` | 0 | 0 | n/a |
@@ -419,7 +420,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `uncommented_begin_in_package_bodies` | 1 | 0 | 100.0% |
 | `uncommented_end_record` | 1 | 0 | 100.0% |
 | `unconditional_exits` | 18 | 12 | 33.3% |
-| `unconstrained_array_returns` | 47 | 17 | 63.8% |
+| `unconstrained_array_returns` | 47 | 16 | 66.0% |
 | `unconstrained_arrays` | 17 | 16 | 5.9% |
 | `uninitialized_global_variables` | 15 | 13 | 13.3% |
 | `universal_ranges` | 1 | 1 | 0.0% |
@@ -433,7 +434,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `use_memberships` | 0 | 0 | n/a |
 | `use_package_clauses` | 128 | 117 | 8.6% |
 | `use_ranges` | 7 | 5 | 28.6% |
-| `use_record_aggregates` | 10 | 1 | 90.0% |
+| `use_record_aggregates` | 10 | 0 | 100.0% |
 | `use_simple_loops` | 0 | 0 | n/a |
 | `use_while_loops` | 0 | 0 | n/a |
 | `variable_scoping` | 3 | 2 | 33.3% |
@@ -459,4 +460,3 @@ The two tools do not analyse the same set of files (see the notes below), so the
 - `No_Multiple_Return`/`improper_returns` differ in granularity (per subprogram vs. per return); `Too_Many_Parameters`/`maximum_parameters` report spec vs. body and use different default thresholds; `Missing_Global_Contract` deliberately also fires outside `SPARK_Mode`.
 - `Identical_Branches`/`Identical_Case_Alternative` vs. `duplicate_branches` (run with `min_stmt=1,min_size=1`, matched on the line GNATcheck names as the duplicate): AdaLang compares adjacent branches only, so GNATcheck's non-adjacent pairs stay GNATcheck-only; GNATcheck reports one pair per `if`/`case`, so the later members of a run of identical adjacent branches stay AdaLang-only.
 - The two tools analyse different file sets: AdaLang takes the sources of the root project, GNATcheck the closure it loads. The shared-file figures above leave out findings in files only one tool analysed.
-- AdaLang resolves names only among the sources of the root project. Units of an imported project stay unresolved here, so checks that need a type or a declaration (positional associations, predefined numeric types, slices, array returns, object-oriented checks) report less than GNATcheck, and checks that ask whether a body has a separate declaration can report a body GNATcheck attributes to its specification. This is a limitation of the analyzer's project support, not of the individual checks; `skippedChecks` in the AdaLang JSON report counts the affected queries.

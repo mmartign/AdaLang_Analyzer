@@ -32,7 +32,8 @@ names given on the command line are analyzed together with the project's
 sources. Project files are evaluated with GPR2, including scenario variables,
 `case` statements, naming rules, source exclusions, recursive source
 directories, and project extension. The visible Ada sources of the root
-project are analyzed. As with `gprbuild`, imported project files and the Ada
+project are analyzed. The sources of the projects it imports are not
+analyzed, but they are used to resolve the names that refer to them. As with `gprbuild`, imported project files and the Ada
 toolchain must be discoverable through the GPR environment. For an Alire
 workspace, run the analyzer through `alr exec --` as above; otherwise configure
 `GPR_PROJECT_PATH` and the GPR2 knowledge base for the target toolchain.
