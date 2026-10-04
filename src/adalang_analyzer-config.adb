@@ -12,6 +12,8 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Characters.Handling;
+with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Strings.Hash;
 with Ada.Text_IO;
@@ -24,6 +26,47 @@ package body Adalang_Analyzer.Config is
       Equivalent_Elements => "=");
 
    Reported_Diagnostics : Diagnostic_Sets.Set;
+
+   package Parameter_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => String,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   Rule_Parameters : Parameter_Maps.Map;
+
+   function Parameter_Key
+     (Rule : Rules.Rule_Kind; Name : String) return String
+   is (Rules.Rule_Kind'Image (Rule) & "."
+       & Ada.Characters.Handling.To_Lower (Name));
+
+   procedure Set_Rule_Parameter
+     (Rule : Rules.Rule_Kind; Name : String; Value : String) is
+   begin
+      Rule_Parameters.Include (Parameter_Key (Rule, Name), Value);
+   end Set_Rule_Parameter;
+
+   function Rule_Parameter
+     (Rule : Rules.Rule_Kind; Name : String; Default : String) return String
+   is
+      Position : constant Parameter_Maps.Cursor :=
+        Rule_Parameters.Find (Parameter_Key (Rule, Name));
+   begin
+      return (if Parameter_Maps.Has_Element (Position)
+              then Parameter_Maps.Element (Position)
+              else Default);
+   end Rule_Parameter;
+
+   function Rule_Parameter
+     (Rule : Rules.Rule_Kind; Name : String; Default : Natural) return Natural
+   is
+      Text : constant String := Rule_Parameter (Rule, Name, "");
+   begin
+      return (if Text = "" then Default else Natural'Value (Text));
+   exception
+      when Constraint_Error =>
+         return Default;
+   end Rule_Parameter;
 
    function Canonical_Diagnostic (Message : String) return String is
       Memoized_Suffix : constant String := " (memoized)";

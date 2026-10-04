@@ -20,10 +20,14 @@ with Libadalang.Common;
 with Langkit_Support.Text;
 
 with Adalang_Analyzer.Ada_Text;             use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Checks.Coding_Standard;
 with Adalang_Analyzer.Checks.Control_Flow;
 with Adalang_Analyzer.Checks.Data_Flow;
 with Adalang_Analyzer.Checks.Declarations;
 with Adalang_Analyzer.Checks.Expressions;
+with Adalang_Analyzer.Checks.Object_Policy;
+with Adalang_Analyzer.Checks.Readability;
+with Adalang_Analyzer.Checks.Typed_Policy;
 with Adalang_Analyzer.Config;               use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Flow_Domain;          use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;            use Adalang_Analyzer.Flow_Eval;
@@ -1127,6 +1131,7 @@ package body Adalang_Analyzer.Checks is
 
       if Libadalang.Analysis.Is_Null (Node.Parent) then
          Declarations.Begin_Traversal;
+         Readability.Analyze_Unit (Unit);
          begin
             if Rule_States (Generic_Instantiation_Limit) = Enabled then
                declare
@@ -2287,6 +2292,11 @@ package body Adalang_Analyzer.Checks is
             when Exc : others =>
                Note_Skipped_Check (Node, Exc);
          end;
+
+         Coding_Standard.Analyze_Node (Unit, Node);
+         Readability.Analyze_Node (Unit, Node);
+         Typed_Policy.Analyze_Node (Unit, Node);
+         Object_Policy.Analyze_Node (Unit, Node);
 
          --  Apply node-specific checks before recursively visiting descendants.
          Analyze_Bug_Finding_Node (Unit, Node);

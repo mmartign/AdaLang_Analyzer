@@ -157,6 +157,10 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line
         ("  -line-length-threshold=<n> Set line length limit (default: 120)");
       Ada.Text_IO.Put_Line
+        ("  -rule-param=<check>.<name>=<value>");
+      Ada.Text_IO.Put_Line
+        ("                           Set a named parameter of one check");
+      Ada.Text_IO.Put_Line
         ("  -generic-threshold=<n> Set generic-instantiation limit (default: 10)");
       Ada.Text_IO.Put_Line
         ("  -dependency-threshold=<n> Set with-clause limit (default: 20)");
@@ -532,6 +536,28 @@ package body Adalang_Analyzer.CLI is
            ("adalang-analyzer: invalid parameter threshold '" & Text & "'");
          Invalid_Options := True;
    end Set_Parameter_Threshold;
+
+   --  Applies a "-rule-param=<check>.<name>=<value>" option.
+   procedure Parse_Rule_Parameter (Text : String) is
+      Dot    : constant Natural := Ada.Strings.Fixed.Index (Text, ".");
+      Equals : constant Natural := Ada.Strings.Fixed.Index (Text, "=");
+      Kind   : Rule_Kind;
+      Found  : Boolean := False;
+   begin
+      if Dot > Text'First and then Equals > Dot + 1 then
+         Kind := Lookup_Rule_Kind (Text (Text'First .. Dot - 1), Found);
+      end if;
+
+      if Found then
+         Set_Rule_Parameter
+           (Kind, Text (Dot + 1 .. Equals - 1), Text (Equals + 1 .. Text'Last));
+      else
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: expected -rule-param=<check>.<name>=<value>, " &
+            "got '" & Text & "'");
+         Invalid_Options := True;
+      end if;
+   end Parse_Rule_Parameter;
 
    --  Parses the -line-length-threshold value; records an invalid-option
    --  error instead of raising when Text isn't a positive integer.
@@ -1257,6 +1283,12 @@ package body Adalang_Analyzer.CLI is
                then
                   Set_Parameter_Threshold
                     (Arg (Arg'First + 21 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+               elsif Arg'Length > 12  --  adalang-analyzer: ignore Magic_Number
+                 and then Arg (Arg'First .. Arg'First + 11) =  --  adalang-analyzer: ignore Magic_Number
+                   "-rule-param="
+               then
+                  Parse_Rule_Parameter
+                    (Arg (Arg'First + 12 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
                elsif Arg = "-line-length-threshold" then
                   if Current_Arg = Argument_Count then
                      Ada.Text_IO.Put_Line
