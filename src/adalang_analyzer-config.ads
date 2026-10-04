@@ -57,6 +57,19 @@ package Adalang_Analyzer.Config is
    Generic_Threshold     : Positive := Default_Generic_Threshold;
    Dependency_Threshold  : Positive := Default_Dependency_Threshold;
 
+   procedure Set_Rule_Parameter
+     (Rule : Rules.Rule_Kind; Name : String; Value : String);
+   --  Records a named parameter of one check, as given by
+   --  "-rule-param=<check>.<name>=<value>". Name is case-insensitive; a
+   --  later value for the same check and name replaces the earlier one.
+
+   function Rule_Parameter
+     (Rule : Rules.Rule_Kind; Name : String; Default : String) return String;
+   function Rule_Parameter
+     (Rule : Rules.Rule_Kind; Name : String; Default : Natural) return Natural;
+   --  The parameter's recorded value, or Default when none was given (or,
+   --  for the numeric form, when the recorded text is not a number).
+
    procedure Log_Verbose (Message : String);
    --  Prints a diagnostic line when Verbose_Mode is set and Quiet_Mode isn't.
 

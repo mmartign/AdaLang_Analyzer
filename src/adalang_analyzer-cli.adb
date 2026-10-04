@@ -157,6 +157,10 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line
         ("  -line-length-threshold=<n> Set line length limit (default: 120)");
       Ada.Text_IO.Put_Line
+        ("  -rule-param=<check>.<name>=<value>");
+      Ada.Text_IO.Put_Line
+        ("                           Set a named parameter of one check");
+      Ada.Text_IO.Put_Line
         ("  -generic-threshold=<n> Set generic-instantiation limit (default: 10)");
       Ada.Text_IO.Put_Line
         ("  -dependency-threshold=<n> Set with-clause limit (default: 20)");
@@ -532,6 +536,28 @@ package body Adalang_Analyzer.CLI is
            ("adalang-analyzer: invalid parameter threshold '" & Text & "'");
          Invalid_Options := True;
    end Set_Parameter_Threshold;
+
+   --  Applies a "-rule-param=<check>.<name>=<value>" option.
+   procedure Parse_Rule_Parameter (Text : String) is
+      Dot    : constant Natural := Ada.Strings.Fixed.Index (Text, ".");
+      Equals : constant Natural := Ada.Strings.Fixed.Index (Text, "=");
+      Kind   : Rule_Kind;
+      Found  : Boolean := False;
+   begin
+      if Dot > Text'First and then Equals > Dot + 1 then
+         Kind := Lookup_Rule_Kind (Text (Text'First .. Dot - 1), Found);
+      end if;
+
+      if Found then
+         Set_Rule_Parameter
+           (Kind, Text (Dot + 1 .. Equals - 1), Text (Equals + 1 .. Text'Last));
+      else
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: expected -rule-param=<check>.<name>=<value>, " &
+            "got '" & Text & "'");
+         Invalid_Options := True;
+      end if;
+   end Parse_Rule_Parameter;
 
    --  Parses the -line-length-threshold value; records an invalid-option
    --  error instead of raising when Text isn't a positive integer.
@@ -1257,6 +1283,12 @@ package body Adalang_Analyzer.CLI is
                then
                   Set_Parameter_Threshold
                     (Arg (Arg'First + 21 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
+               elsif Arg'Length > 12  --  adalang-analyzer: ignore Magic_Number
+                 and then Arg (Arg'First .. Arg'First + 11) =  --  adalang-analyzer: ignore Magic_Number
+                   "-rule-param="
+               then
+                  Parse_Rule_Parameter
+                    (Arg (Arg'First + 12 .. Arg'Last));  --  adalang-analyzer: ignore Magic_Number
                elsif Arg = "-line-length-threshold" then
                   if Current_Arg = Argument_Count then
                      Ada.Text_IO.Put_Line
@@ -1531,14 +1563,26 @@ package body Adalang_Analyzer.CLI is
       --  The auto provider records the actual paths supplied directly or
       --  discovered through -P, making semantic checks independent of where
       --  the analyzer was launched.
+      --  The sources of imported projects join the lookup, after the
+      --  analyzed ones, so that a name denoting one of their entities
+      --  resolves. They are not analyzed themselves.
       declare
-         Input_Files : GNATCOLL.VFS.File_Array
-           (File_Name_Vectors.First_Index (Files_To_Process) ..
-              File_Name_Vectors.Last_Index (Files_To_Process));
+         Lookup_Files : constant File_Name_Vectors.Vector :=
+           Adalang_Analyzer.Project_Files.Lookup_Sources (Files_To_Process);
+         Input_Files  : GNATCOLL.VFS.File_Array
+           (File_Name_Vectors.First_Index (Lookup_Files) ..
+              File_Name_Vectors.Last_Index (Lookup_Files));
       begin
+         Log_Verbose
+           ("Unit lookup covers " &
+            To_Decimal (Natural (File_Name_Vectors.Length (Lookup_Files))) &
+            " sources, " &
+            To_Decimal (Natural (File_Name_Vectors.Length (Files_To_Process))) &
+            " of them analyzed");
+
          for Index in Input_Files'Range loop
             Input_Files (Index) := GNATCOLL.VFS.Create_From_UTF8
-              (File_Name_Vectors.Element (Files_To_Process, Index),
+              (File_Name_Vectors.Element (Lookup_Files, Index),
                Normalize => True);
          end loop;
 

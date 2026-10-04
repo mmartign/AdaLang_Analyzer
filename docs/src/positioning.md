@@ -96,7 +96,7 @@ position, not equivalence of check names or raw check counts.
 
 | Tool | Primary purpose | Relationship to AdaLang Analyzer |
 | --- | --- | --- |
-| GNATcheck | Enforce syntactic and semantic Ada coding rules, including custom LKQL rules | Closest direct overlap. AdaLang has curated built-in policies and some deeper flow-sensitive checks, but does not match GNATcheck's maturity or rule extensibility. |
+| GNATcheck | Enforce syntactic and semantic Ada coding rules, including custom LKQL rules | Closest direct overlap. AdaLang covers all but eight of GNATcheck's 212 general rules and adds flow-sensitive checks GNATcheck does not attempt, but does not match GNATcheck's maturity or rule extensibility. |
 | GNATtest | Generate AUnit test skeletons, harnesses, and drivers | Complementary. AdaLang neither generates nor executes tests. |
 | GNATprove | Check SPARK legality, analyze information flow, and prove selected run-time and contract properties | Downstream verification tool. AdaLang can discharge some bounded scalar obligations and identify readiness issues, but is not a substitute for GNATprove. |
 | CodePeer / GNAT SAS | Whole-program Ada defect and vulnerability analysis via abstract interpretation and symbolic execution, with qualification credit for specific checks under DO-178B and EN 50128 SIL 4 | The closest commercial analog to AdaLang's core "find defects in ordinary Ada via flow analysis" purpose. Commercial and license-gated, and its whole-program model needs a fully closed, compilable project the same way GNATprove does; AdaLang is free, its checks are directly inspectable, and it tolerates partial or scoped file sets a whole-program tool cannot analyze at all. |
@@ -116,37 +116,46 @@ and [Polyspace Products for Ada](https://www.mathworks.com/products/polyspace-ad
 
 GNATcheck is the strongest direct comparator for rule enforcement. It has an
 established predefined-rule catalog and an LKQL mechanism for adding rules
-without rebuilding the tool. AdaLang Analyzer should not claim general
-GNATcheck replacement until it has demonstrated comparable project handling,
-rule coverage, configurability, scalability, and diagnostic stability.
+without rebuilding the tool.
 
-AdaLang's defensible distinction is a curated combination of rules,
-flow-sensitive defect findings, safety profiles, and SPARK-readiness feedback
-in one inspectable implementation.
+AdaLang Analyzer now covers nearly all of that catalog.
+`gnatcheck-rule-comparison.md` maps AdaLang's 294 checks against GNATcheck's
+predefined rules: 174 are a direct match, 28 close, 14 are paired through
+check parameters, 17 overlap only through a GNATcheck generic mechanism
+(`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), and 61 have no
+predefined-rule counterpart at all. In the reverse direction, of
+GNATcheck's 212 rules (its 123 `kp_*` compiler known-problem detectors
+aside) all but eight have an AdaLang counterpart; four of the eight need
+whole-program analysis and are left out on purpose.
 
-`GNATCHECK_RULE_COMPARISON.md` maps AdaLang's 126 checks against GNATcheck's
-predefined-rule catalog by name and intent. Of the 126, 19 are a direct
-match, 18 close, 19 overlap only through a GNATcheck generic mechanism
-(`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), and 70 have no
-predefined-rule counterpart at all -- mostly the flow-sensitive defect,
-SPARK-contract-consistency, and DO-178C-traceability checks that are
-AdaLang's actual differentiator. The reverse direction is larger still:
-GNATcheck's catalog has entire unmatched families (identifier casing/
-readability, OOP-depth metrics, portability, "prefer this modern Ada
-construct" style suggestions) that AdaLang does not attempt.
+Most of that coverage comes from 167 opt-in coding-standard checks
+(naming, layout, restricted constructs, object-oriented design,
+representation items, complexity limits). They belong to no preset, so they
+do not change what `--recommended`, `--spark`, `--automotive` or
+`--do178c` report; a project selects the ones its coding standard requires.
+Their scope follows the paired GNATcheck rule, and each was compared with
+GNATcheck by file and line on fixtures and on this project's own sources.
 
-This started as a documentation-only comparison (no `gnatcheck` binary was
-available; a from-source build later changed that) but has since been
-backed by an actual same-corpus run: `benchmarks/README.md`'s "GNATcheck
-oracle comparison" section runs both tools against all ten of this
-project's external validation corpora and measures real agreement/
-disagreement rates per rule pair, not just name-level intent. That run
-found two genuine AdaLang coverage gaps this documentation-only comparison
-could not have caught (`FP-053`, `FP-054` in
-`quality/known_analysis_issues.tsv`) and confirmed several of the "Close"
-labels above understate a real scope difference rather than a reporting
-artifact -- see the annotations in `GNATCHECK_RULE_COMPARISON.md` itself
-for specifics.
+AdaLang Analyzer should still not claim to be a general GNATcheck
+replacement. On the ten external benchmark corpora the two tools agree on
+about 99% of these checks' findings in either direction, but AdaLang
+reports nothing for a file with preprocessor directives, does not follow
+generic instantiations, and its rules are compiled in where GNATcheck's are
+user-extensible.
+
+AdaLang's defensible distinction is unchanged: flow-sensitive defect
+findings, safety profiles, and SPARK-readiness feedback, in the same
+inspectable implementation as the coding-standard checks. Those 61 checks
+are what GNATcheck's catalog does not attempt.
+
+For the checks that predate this coverage work, the comparison is backed by
+a same-corpus run: `benchmarks/README.md`'s "GNATcheck oracle comparison"
+section runs both tools against the project's external validation corpora
+and measures agreement per rule pair. That run found genuine AdaLang
+coverage gaps a name-level comparison could not have caught (`FP-053`,
+`FP-054` and later entries in `quality/known_analysis_issues.tsv`) and
+confirmed that several "Close" labels understate a real scope difference;
+see the annotations in `gnatcheck-rule-comparison.md`.
 
 ### GNATtest
 
@@ -214,7 +223,7 @@ mgrojo/coap_spark, a CoAP (RFC 7252) protocol implementation whose message
 parsers/encoders are generated by AdaCore/RecordFlux -- the first corpus in
 this set from a domain (network protocol message parsing and session state)
 none of the other four touch, rather than another cryptographic primitive:
-across 942 proof obligations both tools could evaluate at the same location,
+across 951 proof obligations both tools could evaluate at the same location,
 again zero possible unsoundness and zero false positives -- see
 `benchmarks/coap_spark/RESULTS_2026-10-02.md`. Getting a comparable run out
 of this corpus required substituting a version-matched SPARKlib for the one
@@ -237,7 +246,7 @@ directory's own run/compare convention; its earlier findings (the first
 four confirmed analyzer false positives, `FP-004`-`FP-007`) are recorded in
 `quality/external_corpus_findings.md` instead. Together with SPARKNaCl,
 Saatana, libkeccak, and coap_spark, it completes the five independently
-authored, fully-proved corpora behind the 2,366-obligation figure
+authored, fully-proved corpora behind the 2,375-obligation figure
 summarized in `benchmarks/README.md`.
 
 The intended workflow is:

@@ -1,0 +1,4 @@
+procedure Precision_Printable_Ascii_Finding is
+begin
+	null;
+end Precision_Printable_Ascii_Finding;

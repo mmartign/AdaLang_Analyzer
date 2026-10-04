@@ -5,6 +5,78 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- 167 opt-in coding-standard checks, taking the catalogue from 127 to 294:
+  naming conventions (`Identifier_Casing`, `Identifier_Prefixes`,
+  `Identifier_Suffixes`), layout and comments, restricted constructs,
+  positional associations, object-oriented design, representation items
+  and address overlays, complexity and size limits, and "this can be
+  written more directly" suggestions. No preset enables them, so
+  `--recommended`, `--spark`, `--verify`, `--automotive` and `--do178c`
+  report exactly what they did; a project selects the ones its coding
+  standard requires with `-checks=`.
+- `-rule-param=<check>.<name>=<value>` sets a named parameter of one check:
+  a limit (`Maximum_Subprogram_Lines.n`), a scheme
+  (`Identifier_Casing.type`), or a comma-separated list
+  (`Forbidden_Attribute.forbidden`). Checks that state a project convention
+  report nothing until their parameters are set.
+- Each new check is paired with a GNATcheck rule and follows its behaviour.
+  With them, all but eight of GNATcheck's 212 general-purpose rules have an
+  AdaLang counterpart (its 123 `kp_*` compiler known-problem detectors are
+  out of scope); four of the eight need whole-program analysis and are left
+  out on purpose. Every pairing was compared with GNATcheck by file and
+  line on the check's fixtures, on this repository's other test fixtures
+  and on the analyzer's own sources. `docs/src/gnatcheck-rule-comparison.md`
+  lists them, including the one deliberate difference
+  (`Declaration_In_Block` follows GNATcheck's manual where GNATcheck's
+  implementation does not).
+
+### Changed
+
+- The precision corpus grows from 345 to 598 cases: a finding and a clean
+  fixture for every new check that runs without parameters, and one
+  regression case from the corpus runs.
+
+### Fixed
+
+- With a project file (`-P`), names that denote entities of an imported
+  project now resolve (`FP-102`). The analyzer looked up units only among
+  the root project's own sources, so on a code base split across projects
+  every check that needs a type or a declaration went quiet, and
+  `skippedChecks` grew large (10,823 on gnatcoll-core, now 55). The sources
+  of imported projects are added to the name lookup; they are still not
+  analyzed. Found by running the coding-standard checks against GNATcheck
+  on the benchmark corpora, where gnatcoll-core went from 13,007 to 19,903
+  of GNATcheck's 19,916 findings.
+
+  This changes results on multi-project code for the existing checks too:
+  more calls resolve, so `Dead_Store`, `Exception_Propagation`,
+  `Missing_Global_Contract` and others report findings they could not see
+  before. `--verify` results on such code change for the same reason:
+  re-running the analyzer side of the GNATprove comparisons in
+  `benchmarks/` keeps zero possible unsoundness and zero false positives,
+  with nine more matched pairs on coap_spark and one more on CubedOS,
+  where the `Unsupported` obligations drop from 667 to 32.
+
+### Known limitations
+
+- On the ten external benchmark corpora, GNATcheck confirms 99.7% of the new
+  checks' findings in the files both tools analysed, and the new checks
+  report 99.5% of GNATcheck's (`benchmarks/README.md`).
+- The analyzer reports nothing for a source file that contains preprocessor
+  directives; this accounts for most of what the new checks still miss.
+- GNATcheck also reports inside the instances of generic units; the new
+  checks do not follow instantiations.
+- `Missing_Header` and `Actual_Parameter` were not compared with GNATcheck:
+  the local GNATcheck build did not accept their parameters on the command
+  line.
+- `quality/corpus_exercise_coverage.tsv` covers the preset runs only, so it
+  lists the new checks as not exercised although the GNATcheck lane ran
+  them.
+
 ## [1.7.0] - 2026-10-03
 
 A `--verify` precision release: one false `Definite_Error` fixed and two

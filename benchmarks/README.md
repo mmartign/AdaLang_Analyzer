@@ -36,18 +36,18 @@ only — see `git log` for prior snapshots).
 | [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 890 | 0 | 0 |
 | [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 101 | 0 | 0 |
 | [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 212 | 0 | 0 |
-| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 942 | 0 | 0 |
+| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 951 | 0 | 0 |
 | [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 221 | 0 | 0 |
-| [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 7 | 0 | 0 |
+| [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 8 | 0 | 0 |
 | [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 427 | 0 | 0 |
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark, Tokeneer) — 2,366 proof obligations both
+Saatana, libkeccak, coap_spark, Tokeneer) — 2,375 proof obligations both
 tools could independently evaluate at the same location, spanning five
 different authors/origins and five structurally different domains —
 AdaLang has never once called something safe that GNATprove could not
 prove, and never once called something a definite error that GNATprove
-proved safe.** CubedOS's 7 matched pairs (not a fully-proved corpus, so a
+proved safe.** CubedOS's 8 matched pairs (not a fully-proved corpus, so a
 weaker oracle) show the same zero-disagreement pattern on a much smaller
 sample.
 
@@ -71,7 +71,7 @@ consistent with `POSITIONING.md`'s framing of `--verify` as "a much
 narrower scalar subset," not a competitor to full SMT-backed proof. The
 "both safe" share of each corpus's matched pairs varies a lot by code
 style: sparknacl 74/890 (~8%), tokeneer 27/221 (~12%), libkeccak 57/212
-(~27%), coap_spark 4/942 (~0.4%) — coap_spark's RecordFlux-generated
+(~27%), coap_spark 6/951 (~0.6%) — coap_spark's RecordFlux-generated
 protocol contracts and session-state logic remain the hardest code shape
 for AdaLang's bounded verifier to independently prove, even though it
 never gets one *wrong* there.
@@ -116,18 +116,94 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-09-24.md) | 1986 | 1752 (88.2%) | 2196 | 1752 (79.8%) |
-| [aws](aws/RESULTS_gnatcheck_2026-09-24.md) | 6701 | 3635 (54.2%) | 12991 | 3625 (27.9%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-09-24.md) | 2108 | 1269 (60.2%) | 2943 | 1267 (43.1%) |
-| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-09-24.md) | 860 | 425 (49.4%) | 1136 | 425 (37.4%) |
-| [cubedos](cubedos/RESULTS_gnatcheck_2026-09-24.md) | 304 | 258 (84.9%) | 862 | 258 (29.9%) |
-| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-09-24.md) | 3066 | 2092 (68.2%) | 10094 | 2092 (20.7%) |
-| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-09-24.md) | 1852 | 1629 (88.0%) | 1941 | 1629 (83.9%) |
-| [saatana](saatana/RESULTS_gnatcheck_2026-09-24.md) | 204 | 134 (65.7%) | 167 | 134 (80.2%) |
-| [project_bias](project_bias/RESULTS_gnatcheck_2026-09-24.md) | 387 | 295 (76.2%) | 440 | 295 (67.0%) |
-| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-09-24.md) | 772 | 611 (79.1%) | 1851 | 592 (32.0%) |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-10-04.md) | 5527 | 5293 (95.8%) | 5737 | 5293 (92.3%) |
+| [aws](aws/RESULTS_gnatcheck_2026-10-04.md) | 46293 | 42524 (91.9%) | 124245 | 42514 (34.2%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-10-04.md) | 23102 | 21183 (91.7%) | 24471 | 21181 (86.6%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-10-04.md) | 7038 | 6469 (91.9%) | 7188 | 6469 (90.0%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-10-04.md) | 1987 | 1844 (92.8%) | 4161 | 1844 (44.3%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-10-04.md) | 13387 | 12406 (92.7%) | 43268 | 12406 (28.7%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-10-04.md) | 5433 | 5210 (95.9%) | 5522 | 5210 (94.3%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-10-04.md) | 1057 | 963 (91.1%) | 996 | 963 (96.7%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-10-04.md) | 1814 | 1720 (94.8%) | 1865 | 1720 (92.2%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-10-04.md) | 6462 | 6299 (97.5%) | 7810 | 6280 (80.4%) |
 
-Each corpus keeps one current results file, `RESULTS_gnatcheck_2026-09-24.md`
+These totals include the 153 rule pairs of the opt-in coding-standard
+checks, added to the lane on 2026-10-04 (the other 14 coding-standard checks
+report nothing until configured and are not in the rule map). Each results
+file also shows the totals for the pairs that were already compared on
+2026-09-24, next to the numbers of that run.
+
+For the coding-standard checks alone, counted over the files both tools
+analysed:
+
+| Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
+| --- | ---: | ---: | ---: | ---: |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-10-04.md) | 3541 | 3541 (100.0%) | 3541 | 3541 (100.0%) |
+| [aws](aws/RESULTS_gnatcheck_2026-10-04.md) | 39041 | 38932 (99.7%) | 39094 | 38932 (99.6%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-10-04.md) | 19917 | 19903 (99.9%) | 19916 | 19903 (99.9%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-10-04.md) | 6178 | 6045 (97.8%) | 6053 | 6045 (99.9%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-10-04.md) | 1576 | 1576 (100.0%) | 1577 | 1576 (99.9%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-10-04.md) | 10314 | 10314 (100.0%) | 10314 | 10314 (100.0%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-10-04.md) | 3581 | 3581 (100.0%) | 3581 | 3581 (100.0%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-10-04.md) | 830 | 829 (99.9%) | 829 | 829 (100.0%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-10-04.md) | 1427 | 1427 (100.0%) | 1427 | 1427 (100.0%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-10-04.md) | 5690 | 5690 (100.0%) | 5961 | 5690 (95.5%) |
+
+Across the ten corpora that is 92095 AdaLang findings, of which GNATcheck
+reports 91838 (99.7%) at the same file and line, against 92293 GNATcheck
+findings (99.5% matched). What remains has these causes, set out in the
+results files:
+
+- **Preprocessor directives.** AdaLang reports nothing for a source file
+  that contains them; all 271 GNATcheck-only findings on Tokeneer are in
+  four such files.
+- **Generic instances.** For rules that follow instantiations GNATcheck
+  also reports inside the instances of generic units; AdaLang reports on
+  the generic's own source only.
+- **Ada_Drivers_Library's synthetic projects.** That lane analyses projects
+  written for the benchmark, which do not import what the drivers depend
+  on, so about 1,500 checks are skipped there and 133 AdaLang findings are
+  unmatched.
+- **A few checks that still differ on AWS**, chiefly
+  `Outside_Reference_From_Subprogram` and
+  `Out_Parameter_Read_In_Exception_Handler`, which have not been run down.
+- **Different file sets.** GNATcheck analyses the closure it loads, AdaLang
+  the root project's sources; the table above counts shared files only.
+
+The first run of these pairs exposed `FP-102`: with a project file,
+AdaLang resolved names only among the root project's own sources, so on a
+corpus whose root project imports another, everything that depended on an
+imported unit went unresolved. Before the fix the same table read 83,101
+matched of 92,293 GNATcheck findings (90.0%); gnatcoll-core alone went from
+13,007 to 19,903 of 19,916, and CubedOS from 922 to 1,576 of 1,577. The fix
+adds the sources of imported projects to the name lookup without analysing
+them. It also changes the pairs compared earlier on those corpora, in both
+directions: more calls resolve, so checks such as `Dead_Store`,
+`Exception_Propagation` and `Missing_Global_Contract` report more, and
+`Floating_Equality` now matches GNATcheck where it used to miss. The
+analyzer side of the GNATprove comparisons above was re-run after the fix
+against the saved 2026-10-02 GNATprove output: still zero possible
+unsoundness and zero false positives on every corpus. The single-project
+corpora are unchanged; coap_spark gains nine matched pairs (942 to 951)
+and CubedOS one (7 to 8), and CubedOS, gnatcoll-core and AWS get verdicts
+for obligations that were `Unsupported` before (CubedOS 667 to 32). Each
+of those corpora's `RESULTS_2026-10-02.md` has a 2026-10-04 section.
+
+The run also found four defects in the new checks, all fixed before these
+numbers were taken: `Outside_Reference_From_Subprogram` reported inside
+generic bodies, `Global_Variable` reported renamings of constants,
+`Uninitialized_Global_Variable` reported locals whose scope was not
+resolved, and `Deriving_From_Predefined_Type` covered the children of
+`Ada`, `System` and `Interfaces`.
+
+GNATcheck worker crashes were frequent with about 185 plain rules in one
+invocation, to the point of never completing on the larger corpora. For
+this refresh each GNATcheck invocation was repeated until it finished
+without a crash, and the plain rules were run in batches of at most 25
+(split further when a batch kept crashing); no rule had to be left out.
+The runner scripts in this directory do not do this themselves yet.
+
+Each corpus keeps one current results file, `RESULTS_gnatcheck_2026-10-04.md`
 (earlier runs are in the Git history), with per-rule tables for both
 tools and the known, explained differences. The 2026-09-24 refresh
 corrected two harness defects: the Ada_Drivers_Library runner had split
@@ -287,7 +363,7 @@ it's actually positioned as (`POSITIONING.md`): a fast, no-setup-required
 first pass.
 
 **Where the evidence is strong.** Zero false positives and zero possible
-unsoundness across 2,366 matched proof obligations spanning five
+unsoundness across 2,375 matched proof obligations spanning five
 independently-authored, fully-proved SPARK corpora — a hash family, two
 crypto primitives, a protocol parser, a security-critical access-control
 system — is the property that matters most for trusting a tool's output,
@@ -301,9 +377,9 @@ server or crypto primitive): GNATprove hard-stops on a SPARK-illegal
 aspect 41 units into the project, while AdaLang completes a full pass.
 
 **Where the tradeoff bites.** AdaLang rarely proves anything independently
-on harder code shapes — on coap_spark it leaves 937 of 942 comparable
+on harder code shapes — on coap_spark it leaves 944 of 951 comparable
 obligations `Unproved`/`Unsupported` and matches GNATprove's own proof on
-only 4, so its `Proved_Safe` verdicts are a bonus on top of GNATprove
+only 6, so its `Proved_Safe` verdicts are a bonus on top of GNATprove
 where both are available, not a substitute, and its
 `Unproved`/`Unsupported` results mean "no information," not "probably
 fine." Two of the five oracle corpora (saatana: 101 matched pairs;

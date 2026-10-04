@@ -29,12 +29,21 @@ package Adalang_Analyzer.Project_Files is
       Seen          : in out File_Name_Vectors.Vector;
       Scenario_Vars : File_Name_Vectors.Vector := File_Name_Vectors.Empty_Vector);
    --  Loads Project_File (appending ".gpr" if omitted) with GPR2 and appends
-   --  the visible Ada sources of its root project to Files. Seen avoids
+   --  the visible Ada sources of its root project to Files; the sources
+   --  of the projects it imports are recorded for Imported_Sources. Seen avoids
    --  loading a project more than once when it is repeated on the command
    --  line. Scenario_Vars holds "name=value" pairs collected from -X
    --  command-line switches and is applied the same way gprbuild's own -X
    --  switch overrides a scenario variable's project-file default or
    --  ambient environment-variable value.
+
+   function Lookup_Sources
+     (Files : File_Name_Vectors.Vector) return File_Name_Vectors.Vector;
+   --  Files followed by the Ada sources of the projects that the loaded
+   --  projects import, directly or not (the run-time library aside). The
+   --  added sources are not analyzed: they are there so that names in the
+   --  analyzed sources that denote entities of an imported project can be
+   --  resolved. A source whose file name Files already holds is not added.
 
    function Under_Project_SPARK_Mode (Filename : String) return Boolean;
    --  True when Filename is a source of a loaded project whose

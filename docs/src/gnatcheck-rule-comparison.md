@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This document maps AdaLang Analyzer's 127 checks
+This document maps AdaLang Analyzer's 294 checks
 (`src/adalang_analyzer-rules.ads`) against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -19,19 +19,40 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 127 checks:
+Of AdaLang Analyzer's 294 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
-| Direct | 22 | Same check, essentially the same semantics |
-| Close | 27 | Same intent, minor scope difference |
+| Direct | 174 | Same check, essentially the same semantics |
+| Close | 28 | Same intent, minor scope difference |
+| Paired through configuration | 14 | Same check, but it reports nothing until its parameters say what to look for, so the benchmark corpora cannot run it |
 | Partial | 17 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
 | No GNATcheck counterpart | 61 | Nothing in the predefined catalog does this |
 
-GNATcheck's own catalog runs to roughly 180 predefined rules; large families
-of it (identifier casing/prefixes/readability, OOP-depth metrics,
-portability, and "prefer modern Ada construct X over Y" style suggestions)
-have no AdaLang Analyzer counterpart at all -- see the last section.
+Seen from GNATcheck's side: its catalog holds 335 rules, of which 123 are
+`kp_*` detectors for known problems in specific GNAT compiler releases and
+are out of scope here. Of the other 212, all but eight have an AdaLang
+counterpart; the eight are listed in the last section.
+
+167 of the Direct, Close and configuration-paired checks were added
+together as opt-in coding-standard checks. None of them belongs to a preset:
+each is selected by name, and those with a limit or a list take it from
+`-rule-param=<check>.<name>=<value>` (see `configuration.md`). Their scope
+follows the behaviour of the GNATcheck rule they are paired with, and each
+was compared with GNATcheck, by file and line, on its own fixtures, on the
+rest of this repository's test fixtures (about 700 files) and on the
+analyzer's own sources. They agree everywhere both tools can resolve the
+code, with one deliberate exception (`Declaration_In_Block`, below).
+
+The 153 of them that run without configuration were then run over the ten
+external benchmark corpora (`benchmarks/README.md`, "GNATcheck oracle
+comparison"). Over the files both tools analysed, GNATcheck reports 91838 of
+AdaLang's 92095 findings at the same file and line (99.7%), and AdaLang
+reports 99.5% of GNATcheck's 92293. That run exposed and led to the fix of
+`FP-102` (names were resolved only within the root project). What AdaLang
+still misses is mostly in files with preprocessor directives, for which it
+reports nothing, and in the instances of generic units, which it does not
+follow.
 
 ## AdaLang rules with a direct or close GNATcheck counterpart
 
@@ -86,6 +107,159 @@ have no AdaLang Analyzer counterpart at all -- see the last section.
 | Redundant_Type_Conversion | Warnings (`-gnatwr`, "redundant conversion") | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`) |
 | Self_Assignment | Warnings (`-gnatwr`, "useless assignment of X to itself") | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`) |
 | Constant_Condition | Warnings (`-gnatwc`) | Close (through GNATcheck's `Warnings` rule, which passes GNAT compiler warnings through; the comparator splits the `-gnatw` letter by message, see `benchmarks/gnatcheck_compare.awk`). GNAT's constant-condition warnings cover fewer shapes than AdaLang's flow domain |
+| No_Use_Package_Clause | `use_package_clauses` | Direct |
+| Others_In_Case_Statement | `others_in_case_statements` | Direct |
+| Others_In_Exception_Handler | `others_in_exception_handlers` | Direct |
+| Others_In_Aggregate | `others_in_aggregates` | Direct |
+| Unnamed_Exit | `unnamed_exits` | Direct |
+| Unnamed_Block_Or_Loop | `unnamed_blocks_and_loops` | Direct |
+| Implicit_In_Mode | `implicit_in_mode_parameters` | Direct |
+| Function_Out_Parameter | `function_out_parameters` | Direct |
+| Raising_Predefined_Exception | `raising_predefined_exceptions` | Direct |
+| Anonymous_Array_Type | `anonymous_arrays` | Direct |
+| Enumeration_Representation_Clause | `enumeration_representation_clauses` | Direct |
+| Relative_Delay | `relative_delay_statements` | Direct |
+| No_Block_Statement | `blocks` | Direct |
+| Global_Variable | `global_variables` | Direct |
+| Predefined_Numeric_Type | `predefined_numeric_types` | Direct |
+| Abstract_Type_Declaration | `abstract_type_declarations` | Direct |
+| Exit_From_Conditional_Loop | `exits_from_conditional_loops` | Direct |
+| Expanded_Loop_Exit_Name | `expanded_loop_exit_names` | Direct |
+| Conditional_Expression | `conditional_expressions` | Direct |
+| Quantified_Expression | `quantified_expressions` | Direct |
+| Membership_Test | `membership_tests` | Direct |
+| Generic_In_Out_Object | `generic_in_out_objects` | Direct |
+| Generic_In_Subprogram | `generics_in_subprograms` | Direct |
+| Local_Use_Clause | `local_use_clauses` | Direct |
+| Library_Level_Subprogram | `library_level_subprograms` | Direct |
+| Multiple_Protected_Entries | `multiple_entries_in_protected_definitions` | Direct |
+| Non_Tagged_Derived_Type | `non_tagged_derived_types` | Direct |
+| No_Closing_Name | `no_closing_names` | Direct |
+| Operator_Renaming | `operator_renamings` | Direct |
+| Overloaded_Operator | `overloaded_operators` | Direct |
+| Single_Value_Enumeration_Type | `single_value_enumeration_types` | Direct |
+| Unconstrained_Array_Type | `unconstrained_arrays` | Direct |
+| Unconditional_Exit | `unconditional_exits` | Direct |
+| Binary_Case_Statement | `binary_case_statements` | Direct |
+| Concurrent_Interface | `concurrent_interfaces` | Direct |
+| Anonymous_Access_Type | `anonymous_access` | Direct |
+| Renaming_Declaration | `renamings` | Direct |
+| Separate_Unit | `separates` | Direct |
+| Array_Slice | `slices` | Direct |
+| Number_Declaration | `number_declarations` | Direct |
+| Local_Package | `local_packages` | Direct |
+| Declaration_In_Block | `declarations_in_blocks` | Close (follows GNATcheck's reference manual: a block whose declarative part is empty or holds only pragmas and use clauses is not reported. GNATcheck's implementation reports every `declare` block) |
+| Outer_Loop_Exit | `outer_loop_exits` | Direct |
+| Exit_Without_Loop_Name | `exit_statements_with_no_loop_name` | Direct |
+| Expression_Function | `expression_functions` | Direct (also reports an expression function that is itself a library unit, as GNATcheck does) |
+| Size_Attribute_For_Type | `size_attribute_for_types` | Direct |
+| Enumeration_Range_In_Case_Statement | `enumeration_ranges_in_case_statements` | Direct |
+| Lowercase_Keyword | `lowercase_keywords` | Direct |
+| Printable_ASCII | `printable_ascii` | Direct |
+| End_Of_Line_Comment | `end_of_line_comments` | Direct |
+| Maximum_Lines | `maximum_lines` | Direct |
+| Maximum_Identifier_Length | `max_identifier_length` | Direct |
+| Numeric_Format | `numeric_format` | Direct |
+| Parameters_Out_Of_Order | `parameters_out_of_order` | Direct |
+| Maximum_Subprogram_Lines | `maximum_subprogram_lines` | Direct |
+| Maximum_Out_Parameters | `maximum_out_parameters` | Direct |
+| Default_Parameter | `default_parameters` | Direct |
+| Uncommented_Begin | `uncommented_begin` | Direct |
+| Uncommented_Begin_In_Package_Body | `uncommented_begin_in_package_bodies` | Direct |
+| Uncommented_End_Record | `uncommented_end_record` | Direct |
+| Object_Declaration_Out_Of_Order | `object_declarations_out_of_order` | Direct |
+| One_Construct_Per_Line | `one_construct_per_line` | Direct |
+| Logical_SLOC | `metrics_lsloc` | Direct (the default limit differs: 200 here, 5 in GNATcheck; the benchmark lane runs GNATcheck with 200) |
+| Positional_Parameter | `positional_parameters` | Direct |
+| Positional_Defaulted_Parameter | `positional_actuals_for_defaulted_parameters` | Direct |
+| Positional_Generic_Parameter | `positional_generic_parameters` | Direct |
+| Positional_Component | `positional_components` | Direct |
+| Non_Qualified_Aggregate | `non_qualified_aggregates` | Direct |
+| Nested_Subprogram | `nested_subprograms` | Direct |
+| Boolean_Relational_Operator | `boolean_relational_operators` | Direct |
+| Fixed_Equality | `fixed_equality_checks` | Direct |
+| Unconstrained_Array_Return | `unconstrained_array_returns` | Direct |
+| Deriving_From_Predefined_Type | `deriving_from_predefined_type` | Direct |
+| Visible_Component | `visible_components` | Direct |
+| Object_Of_Anonymous_Type | `objects_of_anonymous_types` | Direct |
+| Numeric_Indexing | `numeric_indexing` | Direct |
+| Local_Instantiation | `local_instantiations` | Direct |
+| Explicit_Inlining | `explicit_inlining` | Direct |
+| Pos_On_Enumeration_Type | `pos_on_enumeration_types` | Direct |
+| Implicit_Small | `implicit_small_for_fixed_point_types` | Direct |
+| Ada05_Formal_Package | `ada05_formal_packages` | Direct |
+| Separate_Numeric_Error_Handler | `separate_numeric_error_handlers` | Direct |
+| One_Tagged_Type_Per_Package | `one_tagged_type_per_package` | Direct |
+| Explicit_Full_Discrete_Range | `explicit_full_discrete_ranges` | Direct |
+| Universal_Range | `universal_ranges` | Direct |
+| Default_Value_For_Record_Component | `default_values_for_record_components` | Direct |
+| Uninitialized_Global_Variable | `uninitialized_global_variables` | Direct |
+| Deep_Library_Hierarchy | `deep_library_hierarchy` | Direct |
+| Deeply_Nested_Generic | `deeply_nested_generics` | Direct |
+| Overly_Nested_Scope | `overly_nested_scopes` | Direct |
+| Specific_Type_Invariant | `specific_type_invariants` | Direct |
+| Volatile_Object_Without_Address | `volatile_objects_without_address_clauses` | Direct |
+| Too_Many_Primitives | `too_many_primitives` | Direct |
+| Deep_Inheritance_Hierarchy | `deep_inheritance_hierarchies` | Direct |
+| Too_Many_Parents | `too_many_parents` | Direct |
+| Specific_Pre_Post | `specific_pre_post` | Direct |
+| Constructor | `constructors` | Direct |
+| Misnamed_Controlling_Parameter | `misnamed_controlling_parameters` | Direct |
+| Non_Component_In_Barrier | `non_component_in_barriers` | Direct |
+| Constant_Overlay | `constant_overlays` | Direct |
+| Non_Constant_Overlay | `non_constant_overlays` | Direct |
+| Nonoverlay_Address_Specification | `nonoverlay_address_specifications` | Direct |
+| Not_Imported_Overlay | `not_imported_overlays` | Direct |
+| Address_Of_Non_Volatile_Object | `address_attribute_for_non_volatile_objects` | Direct |
+| Access_To_Local_Object | `access_to_local_objects` | Direct |
+| Bit_Record_Without_Layout | `bit_records_without_layout_definition` | Direct |
+| No_Scalar_Storage_Order | `no_scalar_storage_order_specified` | Direct |
+| Incomplete_Representation_Specification | `incomplete_representation_specifications` | Direct |
+| Misplaced_Representation_Item | `misplaced_representation_items` | Direct |
+| Representation_Specification | `representation_specifications` | Direct |
+| Unchecked_Address_Conversion | `unchecked_address_conversions` | Direct |
+| Unchecked_Conversion_As_Actual | `unchecked_conversions_as_actuals` | Direct |
+| Use_Simple_Loop | `use_simple_loops` | Direct |
+| Use_While_Loop | `use_while_loops` | Direct |
+| Use_For_Loop | `use_for_loops` | Direct |
+| Use_Range | `use_ranges` | Direct |
+| Use_Membership | `use_memberships` | Direct |
+| Use_If_Expression | `use_if_expressions` | Direct |
+| Use_Case_Statement | `use_case_statements` | Direct |
+| Use_Record_Aggregate | `use_record_aggregates` | Direct (like GNATcheck, only for a simple or expanded object name: `V (I).F := ...` is not considered) |
+| Use_For_Of_Loop | `use_for_of_loops` | Direct |
+| Use_Array_Slice | `use_array_slices` | Direct |
+| Discriminated_Record | `discriminated_records` | Direct |
+| Anonymous_Subtype | `anonymous_subtypes` | Direct |
+| No_Explicit_Real_Range | `no_explicit_real_range` | Direct |
+| Membership_For_Validity | `membership_for_validity` | Direct |
+| Positional_Defaulted_Generic_Parameter | `positional_actuals_for_defaulted_generic_parameters` | Direct |
+| Deeply_Nested_Instantiation | `deeply_nested_instantiations` | Direct |
+| Too_Many_Generic_Dependencies | `too_many_generic_dependencies` | Direct |
+| Raising_External_Exception | `raising_external_exceptions` | Direct |
+| Final_Package | `final_package` | Direct |
+| Direct_Call_To_Primitive | `direct_calls_to_primitives` | Direct |
+| Downward_View_Conversion | `downward_view_conversions` | Direct |
+| Specific_Parent_Type_Invariant | `specific_parent_type_invariant` | Direct |
+| No_Inherited_Classwide_Pre | `no_inherited_classwide_pre` | Direct |
+| Non_SPARK_Attribute | `non_spark_attributes` | Direct |
+| Nested_Path | `nested_paths` | Direct |
+| Essential_Complexity | `metrics_essential_complexity` | Direct |
+| Maximum_Expression_Complexity | `maximum_expression_complexity` | Direct |
+| Improperly_Located_Instantiation | `improperly_located_instantiations` | Direct |
+| Function_Style_Procedure | `function_style_procedures` | Direct |
+| Exception_As_Control_Flow | `exceptions_as_control_flow` | Direct |
+| Complex_Inlined_Subprogram | `complex_inlined_subprograms` | Direct |
+| Ada_2022_In_Ghost_Code | `ada_2022_in_ghost_code` | Direct |
+| Same_Logic | `same_logic` | Direct |
+| Suspicious_Equality | `suspicious_equalities` | Direct |
+| Non_Visible_Exception | `non_visible_exceptions` | Direct |
+| Outbound_Protected_Assignment | `outbound_protected_assignments` | Direct |
+| Outside_Reference_From_Subprogram | `outside_references_from_subprograms` | Direct |
+| Variable_Scoping | `variable_scoping` | Direct |
+| Out_Parameter_Read_In_Exception_Handler | `out_parameter_read_in_exception_handler` | Direct |
+| Predicate_Testing | `predicate_testing` | Direct |
+| Profile_Discrepancy | `profile_discrepancies` | Direct |
 
 ## AdaLang rules that only partially overlap GNATcheck
 
@@ -112,9 +286,40 @@ cover a different-shaped case than the nearest predefined rule.
 | No_Runtime_Check_Suppression | Restrictions / Forbidden_Pragmas | Only via generic wrappers, not a dedicated suppression-policy rule |
 | Entry_Barrier_Side_Effect | Non_Component_In_Barriers | Related construct (protected entry barrier expressions), different specific defect: GNATcheck flags a barrier referencing something other than a protected-object component, AdaLang flags a barrier calling a function with an `out`/`in out` parameter (found 2026-08-19 while cross-checking this document against `gnatcheck --list-rules`'s real output; was previously miscategorized as "no GNATcheck counterpart") |
 
+## AdaLang rules paired with a GNATcheck rule through configuration
+
+These checks express a project convention that has no default: until their
+parameters are set they report nothing, in either tool. The benchmark
+corpora therefore cannot exercise them, and
+`quality/tool_function_evidence.tsv` records no independent oracle for
+them. They were compared with GNATcheck on fixtures, with matching
+parameters on both sides, except `Missing_Header` and `Actual_Parameter`,
+whose GNATcheck parameters this project's GNATcheck build did not accept on
+the command line.
+
+| AdaLang rule | GNATcheck rule | Parameters |
+| --- | --- | --- |
+| Missing_Header | `headers` | `header` |
+| Annotated_Comment | `annotated_comments` | `s` |
+| Forbidden_Identifier | `name_clashes` | `forbidden` |
+| Forbidden_Aspect | `forbidden_aspects` | `forbidden`, `allowed`, `all` |
+| Forbidden_Attribute | `forbidden_attributes` | `forbidden`, `allowed`, `all` |
+| Forbidden_Dependence | `no_dependence` | `unit_names` |
+| Missing_Others_Handler | `no_others_in_exception_handlers` | `all_handlers`, `subprogram`, `task` |
+| Identifier_Casing | `identifier_casing` | `type`, `enum`, `constant`, `exception`, `others`, `exclude` |
+| Identifier_Prefixes | `identifier_prefixes` | `type`, `concurrent`, `access`, `class_access`, `subprogram_access`, `derived`, `constant`, `exception`, `enum`, `exclusive` |
+| Identifier_Suffixes | `identifier_suffixes` | `type_suffix`, `access_suffix`, `access_access_suffix`, `class_access_suffix`, `class_subtype_suffix`, `constant_suffix`, `renaming_suffix`, `access_obj_suffix`, `interrupt_suffix`, `default` |
+| Direct_Equality | `direct_equalities` | `actuals` |
+| Call_In_Exception_Handler | `calls_in_exception_handlers` | `subprograms` |
+| Actual_Parameter | `actual_parameters` | `forbidden` |
+| Side_Effect_Parameter | `side_effect_parameters` | `functions` |
+
+`Identifier_Casing`'s `exclude` parameter takes the dictionary inline, as a
+comma-separated list, where GNATcheck reads it from a file.
+
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-61 of AdaLang's 127 rules do something GNATcheck's predefined catalog does
+61 of AdaLang's 294 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -169,62 +374,53 @@ listed here until 2026-09-23 and are now paired through GNATcheck's
 formerly listed here too, but is a `Direct` match on
 `Overriding_Indicators`.)
 
-## GNATcheck rule families with no AdaLang Analyzer counterpart
+## GNATcheck rules with no AdaLang Analyzer counterpart
 
-GNATcheck's predefined catalog has entire families AdaLang does not attempt:
+Eight of GNATcheck's 212 rules (the `kp_*` detectors aside) are not
+covered:
 
-- **Identifier readability/naming**: Identifier_Casing, Identifier_Prefixes,
-  Identifier_Suffixes, Max_Identifier_Length, Headers, End_Of_Line_Comments,
-  Object_Declarations_Out_Of_Order, One_Construct_Per_Line, Numeric_Format,
-  Uncommented_BEGIN(_In_Package_Bodies), Uncommented_End_Record,
-  Name_Clashes, Misnamed_Controlling_Parameters. AdaLang has exactly one
-  naming rule (Naming_Convention, single-character identifiers).
-- **OOP structural metrics**: Deep_Inheritance_Hierarchies, Too_Many_Parents,
-  Too_Many_Primitives, Constructors, Visible_Components,
-  One_Tagged_Type_Per_Package, Specific_Pre_Post, Specific_Type_Invariants,
-  Direct_Calls_To_Primitives, Downward_View_Conversions.
-- **Portability**: Bit_Records_Without_Layout_Definition,
-  No_Scalar_Storage_Order_Specified, Predefined_Numeric_Types,
-  Printable_ASCII, Implicit_SMALL_For_Fixed_Point_Types,
-  Incomplete_Representation_Specifications.
-- **"Prefer modern Ada construct" style suggestions**: Use_Case_Statements,
-  Use_If_Expressions, Use_For_Loops, Use_For_Of_Loops, Use_Ranges,
-  Use_Record_Aggregates, Use_Memberships, Use_Array_Slices,
-  Use_Simple_Loops, Use_While_Loops, Expression_Functions,
-  Conditional_Expressions, Quantified_Expressions.
-- **Positional-actual/parameter-ordering style**: Positional_Parameters,
-  Positional_Components, Positional_Generic_Parameters,
-  Positional_Actuals_For_Defaulted_Parameters,
-  Positional_Actuals_For_Defaulted_Generic_Parameters,
-  Parameters_Out_Of_Order.
-- **Generic policy wrappers** with no fixed AdaLang equivalent because
-  AdaLang's rules are individually named rather than configured through one
-  umbrella mechanism: `Restrictions` (wraps `pragma Restrictions`),
-  `Warnings` (wraps compiler warnings), `Style_Checks` (wraps `-gnaty`
-  switches). The benchmark comparison does use `Warnings` and
-  `Style_Checks` as oracles for individual AdaLang checks (see the table
-  above), each one pinned to the single `-gnatw`/`-gnaty` letter and message
-  the check corresponds to.
-- **Everything else with no AdaLang analog**: USE_Clauses,
-  USE_PACKAGE_Clauses, Local_USE_Clauses, Renamings, Operator_Renamings,
-  Separates, Nested_Subprograms, Local_Packages, Local_Instantiations,
-  Anonymous_Arrays, Anonymous_Subtypes, Discriminated_Records,
-  Unconstrained_Arrays, Unconstrained_Array_Returns, and roughly 50 more
-  narrowly-scoped Feature Usage / Programming Practice rules not itemized
-  here (see the reference manual for the full list).
+- **Rules that need whole-program analysis**, which GNATcheck itself marks
+  "global analysis required": `deeply_nested_inlining`,
+  `integer_types_as_enum`, `same_instantiations` and
+  `unavailable_body_calls`. AdaLang Analyzer's opt-in policy checks look at
+  one compilation unit at a time. A per-unit approximation would miss
+  cases without saying so, which is worse in a qualification context than a
+  gap that is stated; they are left out on purpose.
+- **Generic wrappers** around compiler mechanisms: `restrictions` (wraps
+  `pragma Restrictions`), `warnings` (wraps compiler warnings) and
+  `style_checks` (wraps the `-gnaty` switches). AdaLang's checks are named
+  individually instead of being configured through one umbrella rule. The
+  benchmark comparison uses `warnings` and `style_checks` as oracles for
+  individual AdaLang checks (see the first table), each one pinned to the
+  single `-gnatw`/`-gnaty` letter and message the check corresponds to.
+- **`use_clauses`**, which differs from `use_package_clauses` (paired with
+  `No_Use_Package_Clause`) only in reporting each package name of a clause
+  and in its `allowed` and `exempt_operator_packages` parameters.
+
+The 123 `kp_*` rules flag source constructs affected by known problems in
+particular GNAT Pro releases. They are specific to that compiler's defect
+history and are not attempted.
 
 ## Reading this comparison
 
-AdaLang Analyzer is not a GNATcheck replacement and does not claim to be
-(see `positioning.md`). The rules that don't map are not a coverage gap to
-close one-for-one -- most of GNATcheck's unmatched catalog is style/
-readability preference (naming conventions, "prefer this Ada 2012+
-construct") that AdaLang deliberately doesn't attempt, while most of
-AdaLang's unmatched rules are exactly the flow-sensitive and SPARK-contract
-checks that are its actual differentiator (see "AdaLang's defensible
-distinction" in `positioning.md`'s GNATcheck section). The useful reading is
-per-family: where AdaLang has a direct/close match, GNATcheck's version is
-almost certainly more mature and configurable; where AdaLang has no match,
-that's either intentionally out of scope (naming/readability) or the actual
-value proposition (flow-sensitive defects, SPARK contract consistency,
-DO-178C traceability).
+Rule coverage is now close to GNATcheck's, but AdaLang Analyzer is not a
+drop-in replacement for it and does not claim to be (see `positioning.md`):
+
+- The pairing is by behaviour on the code both tools were run on. On the
+  external corpora the two agree on about 99% of findings in either
+  direction, but AdaLang reports nothing for a file with preprocessor
+  directives, and GNATcheck also reports inside the instances of generic
+  units, which AdaLang does not follow. Several object-oriented checks
+  still rest on few findings.
+- GNATcheck's rules are written in LKQL and can be extended without
+  rebuilding the tool; AdaLang's are compiled in.
+- Where the two tools cannot resolve a unit the same way (a missing
+  specification, an unavailable library), they can differ: GNATcheck drops
+  a whole unit from a unit-level rule when one name in it fails to resolve.
+- Rule parameters use different syntax, and diagnostics are worded
+  differently.
+
+In the other direction, 61 AdaLang checks have no GNATcheck counterpart:
+the flow-sensitive defect, SPARK-contract-consistency and DO-178C
+traceability checks that remain its differentiator (see "AdaLang's
+defensible distinction" in `positioning.md`'s GNATcheck section).

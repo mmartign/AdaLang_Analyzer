@@ -175,4 +175,28 @@ grep -F "unknown option '-cli_dash_named.adb'" "$work/out" >/dev/null || {
    exit 1
 }
 
+#  -P resolves names through imported projects without analyzing them. The
+#  call below passes two positional actuals to a subprogram declared in the
+#  imported project: Positional_Parameter can only report it when that
+#  declaration resolves. The imported project's own body holds the same
+#  call, which must not be reported because its sources are not analyzed.
+status=0
+"$analyzer" -P tests/verification_cross_project/main.gpr \
+  -checks='-*,Positional_Parameter' >"$work/out" 2>"$work/err" || status=$?
+if [ "$status" -ne 1 ]; then
+   echo "a call into an imported project was not resolved (status $status)" >&2
+   cat "$work/out" "$work/err" >&2
+   exit 1
+fi
+grep -F "cross_project_positional.adb:5:" "$work/out" | grep -F "[Positional_Parameter]" >/dev/null || {
+   echo "Positional_Parameter missed a call to a subprogram of an imported project" >&2
+   cat "$work/out" >&2
+   exit 1
+}
+if grep -F "dep_pkg.adb" "$work/out" >/dev/null; then
+   echo "sources of an imported project were analyzed, not only used for name resolution" >&2
+   cat "$work/out" >&2
+   exit 1
+fi
+
 echo "cli parameter effects tests passed"

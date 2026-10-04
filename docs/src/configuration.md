@@ -32,7 +32,8 @@ names given on the command line are analyzed together with the project's
 sources. Project files are evaluated with GPR2, including scenario variables,
 `case` statements, naming rules, source exclusions, recursive source
 directories, and project extension. The visible Ada sources of the root
-project are analyzed. As with `gprbuild`, imported project files and the Ada
+project are analyzed. The sources of the projects it imports are not
+analyzed, but they are used to resolve the names that refer to them. As with `gprbuild`, imported project files and the Ada
 toolchain must be discoverable through the GPR environment. For an Alire
 workspace, run the analyzer through `alr exec --` as above; otherwise configure
 `GPR_PROJECT_PATH` and the GPR2 knowledge base for the target toolchain.
@@ -47,6 +48,26 @@ analyzes the same project under more than one scenario:
 ```sh
 alr exec -- ./bin/adalang_analyzer -checks='*' -X BUILD_MODE=release -P adalang_analyzer.gpr
 ```
+
+Some checks take named parameters: a limit, a naming scheme, or a list of
+forbidden names. Set one with `-rule-param=<check>.<name>=<value>`,
+repeated for each parameter. Lists are comma-separated, and a later value
+for the same check and name replaces the earlier one:
+
+```sh
+./bin/adalang_analyzer \
+  -checks='-*,Identifier_Casing,Maximum_Subprogram_Lines,Forbidden_Attribute' \
+  -rule-param=Identifier_Casing.type=mixed \
+  -rule-param=Identifier_Casing.constant=upper \
+  -rule-param=Maximum_Subprogram_Lines.n=200 \
+  -rule-param=Forbidden_Attribute.forbidden=Address,Unchecked_Access \
+  src/*.adb
+```
+
+`-list-checks` names the parameters of each check and their defaults. A
+check whose parameters state a project convention (for example
+`Identifier_Casing` or `Forbidden_Attribute`) reports nothing until they
+are set.
 
 Useful options include:
 

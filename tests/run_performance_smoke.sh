@@ -4,10 +4,13 @@ set -eu
 analyzer=${ANALYZER:-./bin/adalang_analyzer}
 
 #  The workload is the analyzer's own source, which grows with every
-#  release, so the default limit grows with it: 0.55 ms for each source
+#  release, so the default limit grows with it: 1.05 ms for each source
 #  line, about half as much again as a run takes, and never under 15 s.
+#  The figure was 0.55 ms while "-checks='*'" meant 127 checks; it covers
+#  294 since the coding-standard checks were added, and those resolve
+#  every name of sources analyzed here without their project.
 lines=$(cat src/*.adb src/*.ads | wc -l)
-default_seconds=$((lines * 55 / 100000))
+default_seconds=$((lines * 105 / 100000))
 if [ "$default_seconds" -lt 15 ]; then
    default_seconds=15
 fi
