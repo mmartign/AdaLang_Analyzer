@@ -41,13 +41,16 @@ package body Adalang_Analyzer.Config is
        & Ada.Characters.Handling.To_Lower (Name));
 
    procedure Set_Rule_Parameter
-     (Rule : Rules.Rule_Kind; Name : String; Value : String) is
+     (Rule : Rules.Rule_Kind; Name : String; Value : String) is  --  adalang-analyzer: ignore Swappable_Parameters
    begin
       Rule_Parameters.Include (Parameter_Key (Rule, Name), Value);
    end Set_Rule_Parameter;
 
    function Rule_Parameter
-     (Rule : Rules.Rule_Kind; Name : String; Default : String) return String
+     (Rule    : Rules.Rule_Kind;
+      Name    : String;
+      Default : String)  --  adalang-analyzer: ignore Swappable_Parameters
+      return String
    is
       Position : constant Parameter_Maps.Cursor :=
         Rule_Parameters.Find (Parameter_Key (Rule, Name));

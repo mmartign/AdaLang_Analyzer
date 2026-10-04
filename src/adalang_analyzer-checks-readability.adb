@@ -16,6 +16,8 @@ with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;   use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Checks.Policy_Support;
+use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;     use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Report;     use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;      use Adalang_Analyzer.Rules;
@@ -151,7 +153,7 @@ package body Adalang_Analyzer.Checks.Readability is
    --  markers in Markers: the marker's first character directly after
    --  "--", and the rest of the marker after any blanks that follow.
    function Is_Annotated_Comment
-     (Comment : String; Markers : String) return Boolean
+     (Comment : String; Markers : String) return Boolean  --  adalang-analyzer: ignore Swappable_Parameters
    is
       Found : Boolean := False;
 
@@ -814,11 +816,10 @@ package body Adalang_Analyzer.Checks.Readability is
            | Libadalang.Common.Ada_Extended_Return_Stmt_Object_Decl
            | Libadalang.Common.Ada_Named_Stmt_Decl
            | Libadalang.Common.Ada_Accept_Stmt_Body
-      then
-         return False;
-      elsif Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
-        and then not Libadalang.Analysis.Is_Null (Node.Parent)
-        and then Node.Parent.Kind in Libadalang.Common.Ada_Generic_Formal
+        or else (Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
+                 and then not Libadalang.Analysis.Is_Null (Node.Parent)
+                 and then Node.Parent.Kind in
+                            Libadalang.Common.Ada_Generic_Formal)
       then
          return False;
       elsif Kind in Libadalang.Common.Ada_Use_Clause then
@@ -981,24 +982,6 @@ package body Adalang_Analyzer.Checks.Readability is
       end if;
    end Analyze_Defining_Name;
 
-   --  Runs one check procedure with its own exception boundary.
-   procedure Guarded
-     (Unit  : Libadalang.Analysis.Analysis_Unit;
-      Node  : Libadalang.Analysis.Ada_Node'Class;
-      Rule  : Rule_Kind;
-      Check : not null access procedure
-        (Unit : Libadalang.Analysis.Analysis_Unit;
-         Node : Libadalang.Analysis.Ada_Node'Class))
-   is
-   begin
-      if Rule_States (Rule) = Enabled then
-         Check (Unit, Node);
-      end if;
-   exception
-      when Exc : others =>
-         Note_Skipped_Check (Node, Exc);
-   end Guarded;
-
    procedure Analyze_Node
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Ada_Node'Class)
@@ -1006,7 +989,7 @@ package body Adalang_Analyzer.Checks.Readability is
       Kind : constant Libadalang.Common.Ada_Node_Kind_Type := Node.Kind;
    begin
       Guarded
-        (Unit, Node, One_Construct_Per_Line, Analyze_Line_Sharing'Access);
+        (Unit, Node, On (One_Construct_Per_Line), Analyze_Line_Sharing'Access);
 
       if Kind = Libadalang.Common.Ada_Defining_Name then
          begin
@@ -1025,7 +1008,7 @@ package body Adalang_Analyzer.Checks.Readability is
          end if;
       elsif Kind = Libadalang.Common.Ada_Param_Spec then
          Guarded
-           (Unit, Node, Parameters_Out_Of_Order,
+           (Unit, Node, On (Parameters_Out_Of_Order),
             Analyze_Parameter_Order'Access);
       elsif Kind = Libadalang.Common.Ada_Params then
          if Rule_States (Default_Parameter) = Enabled then
@@ -1052,10 +1035,10 @@ package body Adalang_Analyzer.Checks.Readability is
          end;
       elsif Kind = Libadalang.Common.Ada_Record_Def then
          Guarded
-           (Unit, Node, Uncommented_End_Record, Analyze_End_Record'Access);
+           (Unit, Node, On (Uncommented_End_Record), Analyze_End_Record'Access);
       elsif Kind in Libadalang.Common.Ada_Object_Decl_Range then
          Guarded
-           (Unit, Node, Object_Declaration_Out_Of_Order,
+           (Unit, Node, On (Object_Declaration_Out_Of_Order),
             Analyze_Object_Order'Access);
       end if;
 
@@ -1066,7 +1049,7 @@ package body Adalang_Analyzer.Checks.Readability is
            | Libadalang.Common.Ada_Classic_Subp_Decl
       then
          Guarded
-           (Unit, Node, Maximum_Out_Parameters,
+           (Unit, Node, On (Maximum_Out_Parameters),
             Analyze_Out_Parameter_Count'Access);
       end if;
 
@@ -1081,7 +1064,7 @@ package body Adalang_Analyzer.Checks.Readability is
            | Libadalang.Common.Ada_Protected_Type_Decl
            | Libadalang.Common.Ada_Protected_Body
       then
-         Guarded (Unit, Node, Logical_SLOC, Analyze_Logical_Lines'Access);
+         Guarded (Unit, Node, On (Logical_SLOC), Analyze_Logical_Lines'Access);
       end if;
    end Analyze_Node;
 

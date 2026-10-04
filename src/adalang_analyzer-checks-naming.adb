@@ -98,7 +98,10 @@ package body Adalang_Analyzer.Checks.Naming is
    --  Casing  --
    --------------
 
-   function Has_Wrong_Casing (Word : String; Scheme : String) return Boolean
+   function Has_Wrong_Casing
+     (Word   : String;
+      Scheme : String)  --  adalang-analyzer: ignore Swappable_Parameters
+      return Boolean
    is
       At_Start : Boolean := True;
    begin
@@ -128,7 +131,9 @@ package body Adalang_Analyzer.Checks.Naming is
    --  whole identifier, "abc*" to a first word, "*abc" to a last word and
    --  "*abc*" to any word; the last matching entry wins.
    function Imposed_Spelling
-     (Word : String; Exclusions : String; Form : Character) return String
+     (Word       : String;
+      Exclusions : String;  --  adalang-analyzer: ignore Swappable_Parameters
+      Form       : Character) return String
    is
       Start  : Positive := Exclusions'First;
       Result : String (1 .. Word'Length) := (others => ' ');
@@ -165,7 +170,10 @@ package body Adalang_Analyzer.Checks.Naming is
    end Imposed_Spelling;
 
    function Breaks_Casing
-     (Name : String; Scheme : String; Exclusions : String) return Boolean
+     (Name       : String;
+      Scheme     : String;  --  adalang-analyzer: ignore Swappable_Parameters
+      Exclusions : String)  --  adalang-analyzer: ignore Swappable_Parameters
+      return Boolean
    is
       Whole : constant String := Imposed_Spelling (Name, Exclusions, 'W');
       First : Positive := Name'First;
@@ -346,7 +354,9 @@ package body Adalang_Analyzer.Checks.Naming is
    --  kind of entity, or "" when it carries none. Exclusive lists the
    --  kinds whose prefix Name must not use; Expected is its own prefix.
    function Foreign_Prefix
-     (Name : String; Expected : String; Exclusive : Prefix_Set) return String
+     (Name      : String;
+      Expected  : String;  --  adalang-analyzer: ignore Swappable_Parameters
+      Exclusive : Prefix_Set) return String
    is
    begin
       if Lower (Text_Parameter (Identifier_Prefixes, "exclusive")) = "false"
@@ -372,7 +382,7 @@ package body Adalang_Analyzer.Checks.Naming is
 
    function Prefix_Complaint
      (Name      : String;
-      Expected  : String;
+      Expected  : String;  --  adalang-analyzer: ignore Swappable_Parameters
       Own       : Prefix_Kind;
       Also_Free : Prefix_Set := (others => False)) return String
    is
@@ -617,7 +627,10 @@ package body Adalang_Analyzer.Checks.Naming is
    --  Suffixes  --
    ----------------
 
-   function Suffix_Parameter (Name : String; Default : String) return String
+   function Suffix_Parameter
+     (Name    : String;
+      Default : String)  --  adalang-analyzer: ignore Swappable_Parameters
+      return String
    is
       Given : constant String := Text_Parameter (Identifier_Suffixes, Name);
    begin
@@ -640,7 +653,7 @@ package body Adalang_Analyzer.Checks.Naming is
       Kind  : constant Node_Kind := Owner.Kind;
       Outer : constant Libadalang.Analysis.Ada_Node := Owner.Parent;
 
-      procedure Set (Value : String; Text : String) is
+      procedure Set (Value : String; Text : String) is  --  adalang-analyzer: ignore Swappable_Parameters
       begin
          Suffix := Langkit_Support.Text.To_Unbounded_Text
            (Langkit_Support.Text.To_Text (Value));
@@ -664,7 +677,8 @@ package body Adalang_Analyzer.Checks.Naming is
       Interrupt       : constant String :=
         Suffix_Parameter ("interrupt_suffix", "");
    begin
-      Set ("", "");
+      Suffix := Langkit_Support.Text.To_Unbounded_Text ("");
+      Label := Langkit_Support.Text.To_Unbounded_Text ("");
 
       if Kind = Libadalang.Common.Ada_Subp_Spec and then Interrupt /= "" then
          if not Libadalang.Analysis.Is_Null (Outer)
@@ -718,8 +732,6 @@ package body Adalang_Analyzer.Checks.Naming is
          if Is_First_Declaration (Owner) then
             Set (Class_Subtype, "class-wide subtypes");
          end if;
-      elsif Kind in Libadalang.Common.Ada_Incomplete_Type_Decl_Range then
-         null;
       elsif Kind in Libadalang.Common.Ada_Type_Decl then
          if Type_Suffix /= "" and then Is_First_Declaration (Owner) then
             Set (Type_Suffix, "types");
@@ -727,6 +739,7 @@ package body Adalang_Analyzer.Checks.Naming is
       elsif Kind = Libadalang.Common.Ada_Package_Renaming_Decl then
          Set (Renaming_Suffix, "package renamings");
       elsif not Libadalang.Analysis.Is_Null (Outer)
+        and then Kind not in Libadalang.Common.Ada_Incomplete_Type_Decl_Range
         and then Libadalang.Analysis.Is_Null
                    (Node.As_Defining_Name.P_Previous_Part)
       then

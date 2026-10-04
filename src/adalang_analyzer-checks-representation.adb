@@ -52,7 +52,7 @@ package body Adalang_Analyzer.Checks.Representation is
    function Ultimate_Alias
      (Name            : Libadalang.Analysis.Ada_Node'Class;
       All_Nodes       : Boolean := True;
-      Strip_Component : Boolean := False) return Node
+      Strip_Component : Boolean := False) return Node  --  adalang-analyzer: ignore Swappable_Parameters
    is
       Decl : Libadalang.Analysis.Basic_Decl;
    begin

@@ -30,20 +30,6 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
    function Is_Null (Item : Libadalang.Analysis.Ada_Node'Class) return Boolean
      renames Libadalang.Analysis.Is_Null;
 
-   function Referenced
-     (Name : Libadalang.Analysis.Ada_Node'Class) return Node
-   is
-   begin
-      if Is_Null (Name) or else Name.Kind not in Libadalang.Common.Ada_Name
-      then
-         return Libadalang.Analysis.No_Ada_Node;
-      end if;
-      return Name.As_Name.P_Referenced_Decl.As_Ada_Node;
-   exception
-      when others =>
-         return Libadalang.Analysis.No_Ada_Node;
-   end Referenced;
-
    --  The fully qualified name, in lower case, of what Name denotes, or "".
    function Denoted_Name
      (Name : Libadalang.Analysis.Ada_Node'Class) return String
@@ -65,22 +51,6 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
          return "";
    end Denoted_Name;
 
-   --  The exception declaration Name denotes, looking through renamings.
-   function Canonical_Exception
-     (Name : Libadalang.Analysis.Ada_Node'Class) return Node
-   is
-      Decl : Node := Referenced (Name);
-   begin
-      for Step in 1 .. 16 loop
-         exit when Is_Null (Decl)
-           or else Decl.Kind /= Libadalang.Common.Ada_Exception_Decl
-           or else Is_Null (Decl.As_Exception_Decl.F_Renames);
-         Decl := Referenced
-           (Decl.As_Exception_Decl.F_Renames.F_Renamed_Object);
-      end loop;
-      return Decl;
-   end Canonical_Exception;
-
    function Enclosing_Body
      (Item : Libadalang.Analysis.Ada_Node'Class) return Node
    is
@@ -93,30 +63,6 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
       end loop;
       return Current;
    end Enclosing_Body;
-
-   --  Calls Visit on every node below Root, without entering the bodies
-   --  nested in it when Skip_Nested_Bodies is set.
-   procedure For_Each_Below
-     (Root               : Libadalang.Analysis.Ada_Node'Class;
-      Visit              : not null access procedure (Item : Node);
-      Skip_Nested_Bodies : Boolean := False)
-   is
-   begin
-      for I in 1 .. Root.Children_Count loop
-         declare
-            Child : constant Node := Root.Child (I);
-         begin
-            if not Is_Null (Child) then
-               Visit (Child);
-               if not (Skip_Nested_Bodies
-                       and then Child.Kind in Libadalang.Common.Ada_Body_Node)
-               then
-                  For_Each_Below (Child, Visit, Skip_Nested_Bodies);
-               end if;
-            end if;
-         end;
-      end loop;
-   end For_Each_Below;
 
    -------------------
    --  Complexity   --
@@ -408,8 +354,8 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
             Found := True;
          end if;
       exception
-         when others =>
-            null;
+         when Exc : others =>
+            Note_Skipped_Check (Candidate, Exc);
       end Visit;
    begin
       if Forbidden = "" then
@@ -539,9 +485,9 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
       elsif Item.Kind = Libadalang.Common.Ada_Subp_Renaming_Decl then
          Result := Referenced
            (Item.As_Subp_Renaming_Decl.F_Renames.F_Renamed_Object);
-         if Is_Null (Result) then
-            return Result;
-         elsif Result.Kind in Libadalang.Common.Ada_Base_Subp_Body then
+         if Is_Null (Result)
+           or else Result.Kind in Libadalang.Common.Ada_Base_Subp_Body
+         then
             return Result;
          end if;
          return Result.As_Basic_Decl.P_Body_Part_For_Decl.As_Ada_Node;
@@ -770,8 +716,8 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
                return True;
             end if;
          exception
-            when others =>
-               null;
+            when Exc : others =>
+               Note_Skipped_Check (Current, Exc);
          end;
          Current := Current.Parent;
       end loop;

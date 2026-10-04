@@ -39,20 +39,6 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
        and then Is_Simple_Name (Right.Kind)
        and then Canonical_Text (Left) = Canonical_Text (Right));
 
-   function Referenced
-     (Name : Libadalang.Analysis.Ada_Node'Class) return Node
-   is
-   begin
-      if Is_Null (Name) or else Name.Kind not in Libadalang.Common.Ada_Name
-      then
-         return Libadalang.Analysis.No_Ada_Node;
-      end if;
-      return Name.As_Name.P_Referenced_Decl.As_Ada_Node;
-   exception
-      when others =>
-         return Libadalang.Analysis.No_Ada_Node;
-   end Referenced;
-
    function Definition_Of
      (Name : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Defining_Name
@@ -114,34 +100,6 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
 
    function Is_Generic_Unit (Kind : Node_Kind) return Boolean
    is (Kind in Libadalang.Common.Ada_Generic_Decl);
-
-   --  Calls Visit on every node below Root, without entering the bodies
-   --  nested in it when Skip_Nested_Bodies is set.
-   procedure For_Each_Below
-     (Root               : Libadalang.Analysis.Ada_Node'Class;
-      Visit              : not null access procedure (Item : Node);
-      Skip_Nested_Bodies : Boolean := False)
-   is
-   begin
-      if Is_Null (Root) then
-         return;
-      end if;
-
-      for I in 1 .. Root.Children_Count loop
-         declare
-            Child : constant Node := Root.Child (I);
-         begin
-            if not Is_Null (Child)
-              and then not (Skip_Nested_Bodies
-                            and then Child.Kind in
-                                       Libadalang.Common.Ada_Body_Node)
-            then
-               Visit (Child);
-               For_Each_Below (Child, Visit, Skip_Nested_Bodies);
-            end if;
-         end;
-      end loop;
-   end For_Each_Below;
 
    --------------------
    --  Conditions    --
@@ -291,21 +249,6 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
    --------------------
    --  Exceptions    --
    --------------------
-
-   function Canonical_Exception
-     (Name : Libadalang.Analysis.Ada_Node'Class) return Node
-   is
-      Decl : Node := Referenced (Name);
-   begin
-      for Step in 1 .. 16 loop
-         exit when Is_Null (Decl)
-           or else Decl.Kind /= Libadalang.Common.Ada_Exception_Decl
-           or else Is_Null (Decl.As_Exception_Decl.F_Renames);
-         Decl := Referenced
-           (Decl.As_Exception_Decl.F_Renames.F_Renamed_Object);
-      end loop;
-      return Decl;
-   end Canonical_Exception;
 
    --  The statements and declarations of a subprogram body, task body or
    --  declare block, or null nodes for any other construct.
@@ -520,8 +463,8 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
                & "subprogram");
          end if;
       exception
-         when others =>
-            null;
+         when Exc : others =>
+            Note_Skipped_Check (Candidate, Exc);
       end Visit;
    begin
       if Has_Ancestor (Item, Is_Generic_Unit'Access) then
@@ -621,8 +564,8 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
             Read := True;
          end if;
       exception
-         when others =>
-            null;
+         when Exc : others =>
+            Note_Skipped_Check (Candidate, Exc);
       end Visit;
    begin
       if Assoc.F_R_Expr.Kind not in Libadalang.Common.Ada_Identifier

@@ -92,10 +92,75 @@ package body Adalang_Analyzer.Checks.Policy_Support is
                    Libadalang.Common.Ada_Generic_Formal_Obj_Decl)
        or else Has_Semantic_Ancestor (Node, Is_Local_Scope'Access));
 
+   function Referenced
+     (Name : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Name)
+        or else Name.Kind not in Libadalang.Common.Ada_Name
+      then
+         return Libadalang.Analysis.No_Ada_Node;
+      end if;
+      return Name.As_Name.P_Referenced_Decl.As_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Referenced;
+
+   function Canonical_Exception
+     (Name : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+      Decl : Libadalang.Analysis.Ada_Node := Referenced (Name);
+   begin
+      --  The bound only guards against a malformed renaming cycle.
+      for Step in 1 .. 16 loop
+         exit when Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.Kind /= Libadalang.Common.Ada_Exception_Decl
+           or else Libadalang.Analysis.Is_Null
+                     (Decl.As_Exception_Decl.F_Renames);
+         Decl := Referenced
+           (Decl.As_Exception_Decl.F_Renames.F_Renamed_Object);
+      end loop;
+      return Decl;
+   end Canonical_Exception;
+
+   procedure For_Each_Below
+     (Root               : Libadalang.Analysis.Ada_Node'Class;
+      Visit              : not null access procedure
+        (Item : Libadalang.Analysis.Ada_Node);
+      Skip_Nested_Bodies : Boolean := False)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Root) then
+         return;
+      end if;
+
+      for I in 1 .. Root.Children_Count loop
+         declare
+            Child : constant Libadalang.Analysis.Ada_Node := Root.Child (I);
+         begin
+            if not Libadalang.Analysis.Is_Null (Child)
+              and then not (Skip_Nested_Bodies
+                            and then Child.Kind in
+                                       Libadalang.Common.Ada_Body_Node)
+            then
+               Visit (Child);
+               For_Each_Below (Child, Visit, Skip_Nested_Bodies);
+            end if;
+         end;
+      end loop;
+   end For_Each_Below;
+
    function Lower (Text : String) return String
      renames Ada.Characters.Handling.To_Lower;
 
-   function Is_Listed (Item : String; List : String) return Boolean is
+   function Is_Listed
+     (Item : String;
+      List : String)  --  adalang-analyzer: ignore Swappable_Parameters
+      return Boolean
+   is
       Wanted : constant String := Lower (Item);
       Start  : Positive := List'First;
    begin

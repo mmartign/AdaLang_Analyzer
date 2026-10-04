@@ -60,20 +60,6 @@ package body Adalang_Analyzer.Checks.Design_Policy is
       return False;
    end Any_Node;
 
-   function Referenced
-     (Name : Libadalang.Analysis.Ada_Node'Class) return Node
-   is
-   begin
-      if Is_Null (Name) or else Name.Kind not in Libadalang.Common.Ada_Name
-      then
-         return Libadalang.Analysis.No_Ada_Node;
-      end if;
-      return Name.As_Name.P_Referenced_Decl.As_Ada_Node;
-   exception
-      when others =>
-         return Libadalang.Analysis.No_Ada_Node;
-   end Referenced;
-
    function Names_A_Type
      (Name : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is

@@ -13,6 +13,8 @@ with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Checks.Policy_Support;
+use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;   use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Report;   use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;    use Adalang_Analyzer.Rules;
@@ -519,24 +521,6 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       end;
    end Analyze_Identifier;
 
-   --  True when some ancestor of Node has a kind for which Match holds.
-   function Has_Ancestor
-     (Node  : Libadalang.Analysis.Ada_Node'Class;
-      Match : not null access function
-        (Kind : Libadalang.Common.Ada_Node_Kind_Type) return Boolean)
-      return Boolean
-   is
-      Current : Libadalang.Analysis.Ada_Node := Node.Parent;
-   begin
-      while not Libadalang.Analysis.Is_Null (Current) loop
-         if Match (Current.Kind) then
-            return True;
-         end if;
-         Current := Current.Parent;
-      end loop;
-      return False;
-   end Has_Ancestor;
-
    function Is_Subprogram_Body
      (Kind : Libadalang.Common.Ada_Node_Kind_Type) return Boolean
    is (Kind in Libadalang.Common.Ada_Base_Subp_Body);
@@ -949,24 +933,6 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       end;
    end Analyze_Size_Attribute;
 
-   --  Runs one check procedure with its own exception boundary.
-   procedure Guarded
-     (Unit  : Libadalang.Analysis.Analysis_Unit;
-      Node  : Libadalang.Analysis.Ada_Node'Class;
-      Rule  : Rule_Kind;
-      Check : not null access procedure
-        (Unit : Libadalang.Analysis.Analysis_Unit;
-         Node : Libadalang.Analysis.Ada_Node'Class))
-   is
-   begin
-      if Rule_States (Rule) = Enabled then
-         Check (Unit, Node);
-      end if;
-   exception
-      when Exc : others =>
-         Note_Skipped_Check (Node, Exc);
-   end Guarded;
-
    --  Reports a construct whose mere presence a check restricts.
    procedure Restrict
      (Unit    : Libadalang.Analysis.Analysis_Unit;
@@ -1002,15 +968,15 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          end if;
          if Kind = Libadalang.Common.Ada_Decl_Block then
             Guarded
-              (Unit, Node, Declaration_In_Block,
+              (Unit, Node, On (Declaration_In_Block),
                Analyze_Block_Declarations'Access);
          end if;
          Guarded
-           (Unit, Node, Unnamed_Block_Or_Loop,
+           (Unit, Node, On (Unnamed_Block_Or_Loop),
             Analyze_Compound_Statement_Name'Access);
       elsif Kind = Libadalang.Common.Ada_Raise_Stmt then
          Guarded
-           (Unit, Node, Raising_Predefined_Exception, Analyze_Raise'Access);
+           (Unit, Node, On (Raising_Predefined_Exception), Analyze_Raise'Access);
       elsif Kind = Libadalang.Common.Ada_Delay_Stmt then
          if Node.As_Delay_Stmt.F_Has_Until.Kind =
               Libadalang.Common.Ada_Until_Absent
@@ -1020,7 +986,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          end if;
       elsif Kind = Libadalang.Common.Ada_Case_Stmt then
          Guarded
-           (Unit, Node, Binary_Case_Statement, Analyze_Case_Shape'Access);
+           (Unit, Node, On (Binary_Case_Statement), Analyze_Case_Shape'Access);
       end if;
    end Analyze_Statement;
 
@@ -1033,7 +999,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
    begin
       if Kind = Libadalang.Common.Ada_Identifier then
          Guarded
-           (Unit, Node, Predefined_Numeric_Type, Analyze_Identifier'Access);
+           (Unit, Node, On (Predefined_Numeric_Type), Analyze_Identifier'Access);
       elsif Kind = Libadalang.Common.Ada_Others_Designator then
          begin
             Analyze_Others_Choice (Unit, Node);
@@ -1043,7 +1009,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          end;
       elsif Kind = Libadalang.Common.Ada_Alternatives_List then
          Guarded
-           (Unit, Node, Enumeration_Range_In_Case_Statement,
+           (Unit, Node, On (Enumeration_Range_In_Case_Statement),
             Analyze_Case_Choices'Access);
       elsif Kind in Libadalang.Common.Ada_If_Expr
               | Libadalang.Common.Ada_Case_Expr
@@ -1057,10 +1023,10 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       elsif Kind = Libadalang.Common.Ada_Membership_Expr then
          Restrict (Unit, Node, Membership_Test, "membership test used");
       elsif Kind = Libadalang.Common.Ada_Call_Expr then
-         Guarded (Unit, Node, Array_Slice, Analyze_Slice'Access);
+         Guarded (Unit, Node, On (Array_Slice), Analyze_Slice'Access);
       elsif Kind = Libadalang.Common.Ada_Attribute_Ref then
          Guarded
-           (Unit, Node, Size_Attribute_For_Type,
+           (Unit, Node, On (Size_Attribute_For_Type),
             Analyze_Size_Attribute'Access);
       end if;
    end Analyze_Expression;
@@ -1077,16 +1043,16 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
            | Libadalang.Common.Ada_Private_Type_Def
       then
          Guarded
-           (Unit, Node, Abstract_Type_Declaration,
+           (Unit, Node, On (Abstract_Type_Declaration),
             Analyze_Abstract_Type'Access);
       end if;
 
       if Kind = Libadalang.Common.Ada_Derived_Type_Def then
          Guarded
-           (Unit, Node, Non_Tagged_Derived_Type, Analyze_Derived_Type'Access);
+           (Unit, Node, On (Non_Tagged_Derived_Type), Analyze_Derived_Type'Access);
       elsif Kind = Libadalang.Common.Ada_Array_Type_Def then
          Guarded
-           (Unit, Node, Unconstrained_Array_Type, Analyze_Array_Type'Access);
+           (Unit, Node, On (Unconstrained_Array_Type), Analyze_Array_Type'Access);
       elsif Kind = Libadalang.Common.Ada_Enum_Type_Def then
          if Node.As_Enum_Type_Def.F_Enum_Literals.Children_Count < 2 then
             Restrict
@@ -1101,9 +1067,9 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
            (Unit, Node, Concurrent_Interface, "concurrent interface declared");
       elsif Kind = Libadalang.Common.Ada_Anonymous_Type_Decl then
          Guarded
-           (Unit, Node, Anonymous_Array_Type, Analyze_Anonymous_Type'Access);
+           (Unit, Node, On (Anonymous_Array_Type), Analyze_Anonymous_Type'Access);
          Guarded
-           (Unit, Node, Anonymous_Access_Type,
+           (Unit, Node, On (Anonymous_Access_Type),
             Analyze_Anonymous_Access'Access);
       end if;
    end Analyze_Type_Definition;
@@ -1122,7 +1088,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
            | Libadalang.Common.Ada_Classic_Subp_Decl
       then
          Guarded
-           (Unit, Node, Function_Out_Parameter,
+           (Unit, Node, On (Function_Out_Parameter),
             Analyze_Function_Profile'Access);
       end if;
 
@@ -1131,7 +1097,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
            | Libadalang.Common.Ada_Generic_Subp_Instantiation
       then
          Guarded
-           (Unit, Node, Overloaded_Operator,
+           (Unit, Node, On (Overloaded_Operator),
             Analyze_Operator_Declaration'Access);
       end if;
 
@@ -1147,7 +1113,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
 
       if Kind = Libadalang.Common.Ada_Subp_Renaming_Decl then
          Guarded
-           (Unit, Node, Operator_Renaming, Analyze_Operator_Renaming'Access);
+           (Unit, Node, On (Operator_Renaming), Analyze_Operator_Renaming'Access);
       elsif Kind = Libadalang.Common.Ada_Expr_Function
         and then Is_Package_Level_Declaration (Node)
       then
@@ -1181,13 +1147,13 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
                "use clause outside the context clause");
          end if;
       elsif Kind = Libadalang.Common.Ada_Param_Spec then
-         Guarded (Unit, Node, Implicit_In_Mode, Analyze_Parameter_Mode'Access);
+         Guarded (Unit, Node, On (Implicit_In_Mode), Analyze_Parameter_Mode'Access);
       elsif Kind = Libadalang.Common.Ada_Enum_Rep_Clause then
          Restrict
            (Unit, Node, Enumeration_Representation_Clause,
             "enumeration representation clause used");
       elsif Kind = Libadalang.Common.Ada_Object_Decl then
-         Guarded (Unit, Node, Global_Variable, Analyze_Global_Variable'Access);
+         Guarded (Unit, Node, On (Global_Variable), Analyze_Global_Variable'Access);
       elsif Kind = Libadalang.Common.Ada_Generic_Formal_Obj_Decl then
          declare
             Formal : constant Libadalang.Analysis.Basic_Decl :=
@@ -1206,10 +1172,10 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
               | Libadalang.Common.Ada_Generic_Subp_Decl
       then
          Guarded
-           (Unit, Node, Generic_In_Subprogram,
+           (Unit, Node, On (Generic_In_Subprogram),
             Analyze_Generic_Declaration'Access);
       elsif Kind = Libadalang.Common.Ada_Entry_Decl then
-         Guarded (Unit, Node, Multiple_Protected_Entries, Analyze_Entry'Access);
+         Guarded (Unit, Node, On (Multiple_Protected_Entries), Analyze_Entry'Access);
       elsif Kind = Libadalang.Common.Ada_Renaming_Clause then
          Restrict
            (Unit, Node, Renaming_Declaration, "renaming declaration used");
@@ -1220,7 +1186,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       end if;
 
       if Kind = Libadalang.Common.Ada_Package_Decl then
-         Guarded (Unit, Node, Local_Package, Analyze_Local_Package'Access);
+         Guarded (Unit, Node, On (Local_Package), Analyze_Local_Package'Access);
       end if;
 
       if Kind in Libadalang.Common.Ada_Subp_Body
@@ -1233,7 +1199,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
            | Libadalang.Common.Ada_Protected_Type_Decl
            | Libadalang.Common.Ada_Single_Protected_Decl
       then
-         Guarded (Unit, Node, No_Closing_Name, Analyze_Closing_Name'Access);
+         Guarded (Unit, Node, On (No_Closing_Name), Analyze_Closing_Name'Access);
       end if;
    end Analyze_Declaration;
 

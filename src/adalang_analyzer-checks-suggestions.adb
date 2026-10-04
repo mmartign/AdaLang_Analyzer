@@ -357,8 +357,8 @@ package body Adalang_Analyzer.Checks.Suggestions is
             end if;
          end if;
       exception
-         when others =>
-            null;
+         when Exc : others =>
+            Note_Skipped_Check (Candidate, Exc);
       end Visit;
 
       Current : Node := Comp.Parent;

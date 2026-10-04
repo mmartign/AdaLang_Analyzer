@@ -7,7 +7,6 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
-with Ada.Characters.Handling;
 with Ada.Strings.Fixed;
 
 with Langkit_Support.Slocs;
@@ -15,6 +14,8 @@ with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Checks.Policy_Support;
+use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;   use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Report;   use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;    use Adalang_Analyzer.Rules;
@@ -28,31 +29,6 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
    use type Libadalang.Common.Ada_Node_Kind_Type;
 
    subtype Node_Kind is Libadalang.Common.Ada_Node_Kind_Type;
-
-   function Lower (Text : String) return String
-     renames Ada.Characters.Handling.To_Lower;
-
-   --  True when Item is one of the comma-separated entries of List,
-   --  compared without regard to case.
-   function Is_Listed (Item : String; List : String) return Boolean is
-      Start : Positive := List'First;
-   begin
-      for I in List'First .. List'Last + 1 loop
-         if I > List'Last or else List (I) = ',' then
-            if Lower
-                 (Ada.Strings.Fixed.Trim (List (Start .. I - 1), Ada.Strings.Both))
-               = Lower (Item)
-            then
-               return True;
-            end if;
-            Start := I + 1;
-         end if;
-      end loop;
-      return False;
-   end Is_Listed;
-
-   function Is_Set (Rule : Rule_Kind; Name : String) return Boolean
-   is (Lower (Rule_Parameter (Rule, Name, "false")) = "true");
 
    --  The declaration an operator symbol or operator call resolves to is
    --  predefined when there is none, or when Libadalang says so.
@@ -77,38 +53,6 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
       end loop;
       return 0;
    end Position;
-
-   function Has_Semantic_Ancestor
-     (Node  : Libadalang.Analysis.Ada_Node'Class;
-      Match : not null access function (Kind : Node_Kind) return Boolean)
-      return Boolean
-   is
-      Current : Libadalang.Analysis.Ada_Node := Node.P_Semantic_Parent;
-   begin
-      while not Libadalang.Analysis.Is_Null (Current) loop
-         if Match (Current.Kind) then
-            return True;
-         end if;
-         Current := Current.P_Semantic_Parent;
-      end loop;
-      return False;
-   end Has_Semantic_Ancestor;
-
-   function Has_Ancestor
-     (Node  : Libadalang.Analysis.Ada_Node'Class;
-      Match : not null access function (Kind : Node_Kind) return Boolean)
-      return Boolean
-   is
-      Current : Libadalang.Analysis.Ada_Node := Node.Parent;
-   begin
-      while not Libadalang.Analysis.Is_Null (Current) loop
-         if Match (Current.Kind) then
-            return True;
-         end if;
-         Current := Current.Parent;
-      end loop;
-      return False;
-   end Has_Ancestor;
 
    function Is_Executable_Body (Kind : Node_Kind) return Boolean
    is (Kind in Libadalang.Common.Ada_Base_Subp_Body
@@ -1167,46 +1111,6 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
       end if;
    end Analyze_Dependence;
 
-   --  Runs one check procedure with its own exception boundary.
-   procedure Guarded
-     (Unit  : Libadalang.Analysis.Analysis_Unit;
-      Node  : Libadalang.Analysis.Ada_Node'Class;
-      Rule  : Rule_Kind;
-      Check : not null access procedure
-        (Unit : Libadalang.Analysis.Analysis_Unit;
-         Node : Libadalang.Analysis.Ada_Node'Class))
-   is
-   begin
-      if Rule_States (Rule) = Enabled then
-         Check (Unit, Node);
-      end if;
-   exception
-      when Exc : others =>
-         Note_Skipped_Check (Node, Exc);
-   end Guarded;
-
-   --  As Guarded, for a procedure that serves several checks and tests
-   --  their states itself.
-   procedure Guarded_Any
-     (Unit    : Libadalang.Analysis.Analysis_Unit;
-      Node    : Libadalang.Analysis.Ada_Node'Class;
-      Enabled : Boolean;
-      Check   : not null access procedure
-        (Unit : Libadalang.Analysis.Analysis_Unit;
-         Node : Libadalang.Analysis.Ada_Node'Class))
-   is
-   begin
-      if Enabled then
-         Check (Unit, Node);
-      end if;
-   exception
-      when Exc : others =>
-         Note_Skipped_Check (Node, Exc);
-   end Guarded_Any;
-
-   function On (Rule : Rule_Kind) return Boolean
-   is (Rule_States (Rule) = Enabled);
-
    --  Checks keyed on an expression, name or association kind.
    procedure Analyze_Expression
      (Unit : Libadalang.Analysis.Analysis_Unit;
@@ -1215,7 +1119,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
       Kind : constant Node_Kind := Node.Kind;
    begin
       if Kind = Libadalang.Common.Ada_Param_Assoc then
-         Guarded_Any
+         Guarded
            (Unit, Node,
             On (Positional_Parameter)
             or else On (Positional_Defaulted_Parameter)
@@ -1224,29 +1128,29 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
       elsif Kind in Libadalang.Common.Ada_Aggregate
               | Libadalang.Common.Ada_Bracket_Aggregate
       then
-         Guarded_Any
+         Guarded
            (Unit, Node,
             On (Positional_Component) or else On (Non_Qualified_Aggregate),
             Analyze_Aggregate'Access);
       elsif Kind = Libadalang.Common.Ada_Relation_Op then
-         Guarded_Any
+         Guarded
            (Unit, Node,
             On (Boolean_Relational_Operator) or else On (Fixed_Equality),
             Analyze_Relation'Access);
       elsif Kind = Libadalang.Common.Ada_Int_Literal then
-         Guarded (Unit, Node, Numeric_Indexing, Analyze_Numeric_Index'Access);
+         Guarded (Unit, Node, On (Numeric_Indexing), Analyze_Numeric_Index'Access);
       elsif Kind = Libadalang.Common.Ada_Attribute_Ref then
-         Guarded_Any
+         Guarded
            (Unit, Node,
             On (Pos_On_Enumeration_Type) or else On (Forbidden_Attribute),
             Analyze_Attribute'Access);
       elsif Kind = Libadalang.Common.Ada_Bin_Op then
-         Guarded_Any
+         Guarded
            (Unit, Node,
             On (Universal_Range) or else On (Explicit_Full_Discrete_Range),
             Analyze_Range'Access);
       elsif Kind = Libadalang.Common.Ada_Composite_Constraint then
-         Guarded (Unit, Node, Universal_Range, Analyze_Index_Constraint'Access);
+         Guarded (Unit, Node, On (Universal_Range), Analyze_Index_Constraint'Access);
       elsif Kind = Libadalang.Common.Ada_Aspect_Assoc then
          if On (Forbidden_Aspect) then
             declare
@@ -1272,7 +1176,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
       end if;
 
       if Kind in Libadalang.Common.Ada_Name then
-         Guarded (Unit, Node, Forbidden_Dependence, Analyze_Dependence'Access);
+         Guarded (Unit, Node, On (Forbidden_Dependence), Analyze_Dependence'Access);
 
          if Kind in Libadalang.Common.Ada_Base_Id
            and then not Libadalang.Analysis.Is_Null (Node.Parent)
@@ -1282,7 +1186,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                       Libadalang.Common.Ada_Exception_Handler
          then
             Guarded
-              (Unit, Node, Separate_Numeric_Error_Handler,
+              (Unit, Node, On (Separate_Numeric_Error_Handler),
                Analyze_Handler_Choice'Access);
          end if;
       end if;
@@ -1302,8 +1206,8 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
            | Libadalang.Common.Ada_Generic_Subp_Instantiation
       then
          Guarded
-           (Unit, Node, Nested_Subprogram, Analyze_Nested_Subprogram'Access);
-         Guarded (Unit, Node, Explicit_Inlining, Analyze_Inlining'Access);
+           (Unit, Node, On (Nested_Subprogram), Analyze_Nested_Subprogram'Access);
+         Guarded (Unit, Node, On (Explicit_Inlining), Analyze_Inlining'Access);
       end if;
 
       if Kind in Libadalang.Common.Ada_Abstract_Subp_Decl
@@ -1313,13 +1217,13 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
            | Libadalang.Common.Ada_Subp_Body_Stub
       then
          Guarded
-           (Unit, Node, Unconstrained_Array_Return,
+           (Unit, Node, On (Unconstrained_Array_Return),
             Analyze_Array_Return'Access);
       end if;
 
       if Kind in Libadalang.Common.Ada_Generic_Instantiation then
          Guarded
-           (Unit, Node, Local_Instantiation, Analyze_Instantiation'Access);
+           (Unit, Node, On (Local_Instantiation), Analyze_Instantiation'Access);
 
          if Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
            and then not Libadalang.Analysis.Is_Null (Node.Parent)
@@ -1327,19 +1231,19 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                       Libadalang.Common.Ada_Generic_Formal_Package
          then
             Guarded
-              (Unit, Node, Ada05_Formal_Package,
+              (Unit, Node, On (Ada05_Formal_Package),
                Analyze_Formal_Package'Access);
          end if;
       elsif Kind = Libadalang.Common.Ada_Derived_Type_Def then
          Guarded
-           (Unit, Node, Deriving_From_Predefined_Type,
+           (Unit, Node, On (Deriving_From_Predefined_Type),
             Analyze_Derivation'Access);
       elsif Kind in Libadalang.Common.Ada_Type_Decl then
          Guarded
-           (Unit, Node, Visible_Component, Analyze_Visible_Components'Access);
+           (Unit, Node, On (Visible_Component), Analyze_Visible_Components'Access);
          if Kind /= Libadalang.Common.Ada_Formal_Type_Decl then
             Guarded
-              (Unit, Node, Implicit_Small, Analyze_Fixed_Point_Small'Access);
+              (Unit, Node, On (Implicit_Small), Analyze_Fixed_Point_Small'Access);
          end if;
       elsif Kind in Libadalang.Common.Ada_Object_Decl_Range then
          if On (Object_Of_Anonymous_Type)
@@ -1353,7 +1257,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
          end if;
       elsif Kind in Libadalang.Common.Ada_Base_Package_Decl then
          Guarded
-           (Unit, Node, One_Tagged_Type_Per_Package,
+           (Unit, Node, On (One_Tagged_Type_Per_Package),
             Analyze_Tagged_Types'Access);
       end if;
 
@@ -1362,7 +1266,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
            | Libadalang.Common.Ada_Task_Body
       then
          Guarded
-           (Unit, Node, Missing_Others_Handler,
+           (Unit, Node, On (Missing_Others_Handler),
             Analyze_Handler_Completeness'Access);
       end if;
    end Analyze_Declaration;

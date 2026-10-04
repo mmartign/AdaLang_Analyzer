@@ -7,10 +7,11 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
-with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;   use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Checks.Policy_Support;
+use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;     use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Report;     use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;      use Adalang_Analyzer.Rules;
@@ -23,11 +24,6 @@ package body Adalang_Analyzer.Checks.Object_Policy is
    use type Libadalang.Common.Ada_Node_Kind_Type;
 
    subtype Node_Kind is Libadalang.Common.Ada_Node_Kind_Type;
-
-   function Aspect_Name
-     (Name : String) return Langkit_Support.Text.Unbounded_Text_Type
-   is (Langkit_Support.Text.To_Unbounded_Text
-         (Langkit_Support.Text.To_Text (Name)));
 
    function Is_Scope (Kind : Node_Kind) return Boolean
    is (Kind in Libadalang.Common.Ada_Base_Package_Decl
@@ -43,60 +39,11 @@ package body Adalang_Analyzer.Checks.Object_Policy is
          | Libadalang.Common.Ada_Entry_Body
          | Libadalang.Common.Ada_Block_Stmt);
 
-   function Is_Local_Scope (Kind : Node_Kind) return Boolean
-   is (Kind in Libadalang.Common.Ada_Basic_Subp_Decl
-         | Libadalang.Common.Ada_Subp_Body
-         | Libadalang.Common.Ada_Task_Body
-         | Libadalang.Common.Ada_Expr_Function
-         | Libadalang.Common.Ada_Block_Stmt
-         | Libadalang.Common.Ada_Entry_Body
-         | Libadalang.Common.Ada_Protected_Body);
-
-   --  The number of ancestors of Node whose kind satisfies Match.
-   function Count_Ancestors
-     (Node  : Libadalang.Analysis.Ada_Node'Class;
-      Match : not null access function (Kind : Node_Kind) return Boolean)
-      return Natural
-   is
-      Current : Libadalang.Analysis.Ada_Node := Node.Parent;
-      Total   : Natural := 0;
-   begin
-      while not Libadalang.Analysis.Is_Null (Current) loop
-         if Match (Current.Kind) then
-            Total := Total + 1;
-         end if;
-         Current := Current.Parent;
-      end loop;
-      return Total;
-   end Count_Ancestors;
-
    function Is_Generic_Unit (Kind : Node_Kind) return Boolean
    is (Kind in Libadalang.Common.Ada_Generic_Decl);
 
    function Is_Protected_Definition (Kind : Node_Kind) return Boolean
    is (Kind = Libadalang.Common.Ada_Protected_Def);
-
-   function Has_Local_Scope
-     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
-   is
-      Current : Libadalang.Analysis.Ada_Node;
-   begin
-      if not Libadalang.Analysis.Is_Null (Node.Parent)
-        and then Node.Parent.Kind =
-                   Libadalang.Common.Ada_Generic_Formal_Obj_Decl
-      then
-         return True;
-      end if;
-
-      Current := Node.P_Semantic_Parent;
-      while not Libadalang.Analysis.Is_Null (Current) loop
-         if Is_Local_Scope (Current.Kind) then
-            return True;
-         end if;
-         Current := Current.P_Semantic_Parent;
-      end loop;
-      return False;
-   end Has_Local_Scope;
 
    --  The nearest package specification or body around Node.
    function Enclosing_Package
@@ -527,27 +474,6 @@ package body Adalang_Analyzer.Checks.Object_Policy is
             & "protected object");
       end if;
    end Analyze_Barrier;
-
-   --  Runs one check procedure with its own exception boundary.
-   procedure Guarded
-     (Unit    : Libadalang.Analysis.Analysis_Unit;
-      Node    : Libadalang.Analysis.Ada_Node'Class;
-      Enabled : Boolean;
-      Check   : not null access procedure
-        (Unit : Libadalang.Analysis.Analysis_Unit;
-         Node : Libadalang.Analysis.Ada_Node'Class))
-   is
-   begin
-      if Enabled then
-         Check (Unit, Node);
-      end if;
-   exception
-      when Exc : others =>
-         Note_Skipped_Check (Node, Exc);
-   end Guarded;
-
-   function On (Rule : Rule_Kind) return Boolean
-   is (Rule_States (Rule) = Enabled);
 
    --  The nesting and hierarchy depth checks.
    procedure Analyze_Depth

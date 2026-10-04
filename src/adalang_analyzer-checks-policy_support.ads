@@ -60,6 +60,26 @@ private package Adalang_Analyzer.Checks.Policy_Support is
    --  declared in a subprogram, task body, entry body, protected body or
    --  block.
 
+   function Referenced
+     (Name : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node;
+   --  The declaration Name denotes, or a null node when Name is not a
+   --  name or cannot be resolved.
+
+   function Canonical_Exception
+     (Name : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node;
+   --  The exception declaration Name denotes, looking through exception
+   --  renamings.
+
+   procedure For_Each_Below
+     (Root               : Libadalang.Analysis.Ada_Node'Class;
+      Visit              : not null access procedure
+        (Item : Libadalang.Analysis.Ada_Node);
+      Skip_Nested_Bodies : Boolean := False);
+   --  Calls Visit on every node below Root, in source order. With
+   --  Skip_Nested_Bodies, the bodies nested in Root are left out.
+
    function Is_Listed (Item : String; List : String) return Boolean;
    --  True when Item is one of the comma-separated entries of List,
    --  compared without regard to case or surrounding blanks.
