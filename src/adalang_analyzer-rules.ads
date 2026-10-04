@@ -272,7 +272,17 @@ package Adalang_Analyzer.Rules is
       Misplaced_Representation_Item,
       Representation_Specification,
       Unchecked_Address_Conversion,
-      Unchecked_Conversion_As_Actual
+      Unchecked_Conversion_As_Actual,
+      Use_Simple_Loop,
+      Use_While_Loop,
+      Use_For_Loop,
+      Use_Range,
+      Use_Membership,
+      Use_If_Expression,
+      Use_Case_Statement,
+      Use_Record_Aggregate,
+      Use_For_Of_Loop,
+      Use_Array_Slice
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -2868,7 +2878,104 @@ package Adalang_Analyzer.Rules is
            ("Assign the converted value to a constant first and " &
             "validate it."),
          Quality     => Quality_Security,
-         Severity    => Severity_Medium)
+         Severity    => Severity_Medium),
+      Use_Simple_Loop =>
+        (Name        => To_Unbounded_String ("Use_Simple_Loop"),
+         Description => To_Unbounded_String
+           ("Find while loops whose condition is statically true."),
+         Guidance    => To_Unbounded_String
+           ("Write a plain loop."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_While_Loop =>
+        (Name        => To_Unbounded_String ("Use_While_Loop"),
+         Description => To_Unbounded_String
+           ("Find plain loops whose first statement is an exit from " &
+            "that loop."),
+         Guidance    => To_Unbounded_String
+           ("Write a while loop with the negated exit condition."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_For_Loop =>
+        (Name        => To_Unbounded_String ("Use_For_Loop"),
+         Description => To_Unbounded_String
+           ("Find while loops that test a local counter and increment " &
+            "or decrement it by one as their last statement, where the " &
+            "counter is not otherwise written and not used after the " &
+            "loop."),
+         Guidance    => To_Unbounded_String
+           ("Write a for loop over the counter's range."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_Range =>
+        (Name        => To_Unbounded_String ("Use_Range"),
+         Description => To_Unbounded_String
+           ("Find T'First .. T'Last ranges, and T'Range of a discrete " &
+            "subtype used as a loop range, a membership choice or a " &
+            "case choice."),
+         Guidance    => To_Unbounded_String
+           ("Write the subtype mark, or the Range attribute."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_Membership =>
+        (Name        => To_Unbounded_String ("Use_Membership"),
+         Description => To_Unbounded_String
+           ("Find Boolean expressions that only compare one variable " &
+            "with several values or ranges; with the short_circuit " &
+            "parameter set to true, 'or else' and 'and then' forms are " &
+            "reported too."),
+         Guidance    => To_Unbounded_String
+           ("Write a membership test."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_If_Expression =>
+        (Name        => To_Unbounded_String ("Use_If_Expression"),
+         Description => To_Unbounded_String
+           ("Find if statements with an else part whose every branch is " &
+            "a single return statement, or a single assignment to the " &
+            "same target."),
+         Guidance    => To_Unbounded_String
+           ("Write one return or assignment with an if expression."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_Case_Statement =>
+        (Name        => To_Unbounded_String ("Use_Case_Statement"),
+         Description => To_Unbounded_String
+           ("Find if statements with elsif parts whose conditions all " &
+            "compare the same discrete variable or component with a " &
+            "static value."),
+         Guidance    => To_Unbounded_String
+           ("Write a case statement."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_Record_Aggregate =>
+        (Name        => To_Unbounded_String ("Use_Record_Aggregate"),
+         Description => To_Unbounded_String
+           ("Find consecutive assignments that set every component of " &
+            "an untagged record without discriminants one by one."),
+         Guidance    => To_Unbounded_String
+           ("Assign an aggregate."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_For_Of_Loop =>
+        (Name        => To_Unbounded_String ("Use_For_Of_Loop"),
+         Description => To_Unbounded_String
+           ("Find for loops over the Range of a one-dimensional array " &
+            "that use the loop parameter only to index that array."),
+         Guidance    => To_Unbounded_String
+           ("Write a for-of loop over the array."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Use_Array_Slice =>
+        (Name        => To_Unbounded_String ("Use_Array_Slice"),
+         Description => To_Unbounded_String
+           ("Find for loops whose only statement assigns to an array " &
+            "component indexed by the loop parameter a static value or " &
+            "the same-indexed component of another array."),
+         Guidance    => To_Unbounded_String
+           ("Write an array slice assignment."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low)
    );
 
    function Lookup_Rule_Kind
