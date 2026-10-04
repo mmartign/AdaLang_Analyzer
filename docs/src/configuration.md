@@ -48,6 +48,26 @@ analyzes the same project under more than one scenario:
 alr exec -- ./bin/adalang_analyzer -checks='*' -X BUILD_MODE=release -P adalang_analyzer.gpr
 ```
 
+Some checks take named parameters: a limit, a naming scheme, or a list of
+forbidden names. Set one with `-rule-param=<check>.<name>=<value>`,
+repeated for each parameter. Lists are comma-separated, and a later value
+for the same check and name replaces the earlier one:
+
+```sh
+./bin/adalang_analyzer \
+  -checks='-*,Identifier_Casing,Maximum_Subprogram_Lines,Forbidden_Attribute' \
+  -rule-param=Identifier_Casing.type=mixed \
+  -rule-param=Identifier_Casing.constant=upper \
+  -rule-param=Maximum_Subprogram_Lines.n=200 \
+  -rule-param=Forbidden_Attribute.forbidden=Address,Unchecked_Access \
+  src/*.adb
+```
+
+`-list-checks` names the parameters of each check and their defaults. A
+check whose parameters state a project convention (for example
+`Identifier_Casing` or `Forbidden_Attribute`) reports nothing until they
+are set.
+
 Useful options include:
 
 ```text

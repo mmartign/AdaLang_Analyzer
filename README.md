@@ -10,7 +10,7 @@ gaps while they are still inexpensive to fix.**
 
 [![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-1.7.0-5b4ee5.svg)](CHANGELOG.md)
-[![Checks](https://img.shields.io/badge/checks-127-0f766e.svg)](https://mmartign.github.io/AdaLang_Analyzer/checks.html)
+[![Checks](https://img.shields.io/badge/checks-294-0f766e.svg)](https://mmartign.github.io/AdaLang_Analyzer/checks.html)
 [![Docs](https://img.shields.io/badge/docs-site-1f6feb.svg)](https://mmartign.github.io/AdaLang_Analyzer/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -32,7 +32,7 @@ is justified, its SPARK-readiness checks help teams spend proof effort on the
 code that is ready for it.
 
 Built on [Libadalang](https://github.com/AdaCore/libadalang) and maintained by
-[Spazio IT](https://spazioit.com/), the analyzer combines **127 curated
+[Spazio IT](https://spazioit.com/), the analyzer combines **294
 checks**, bounded scalar verification, safety-oriented profiles, stable
 baselines, and text/JSON/SARIF reporting in one open implementation.
 
@@ -89,11 +89,19 @@ guide on the team.
 
 ### 2. Enforceable engineering policy
 
-Select any combination of 127 checks, tune complexity/nesting/parameter/line
+Select any combination of 294 checks, tune complexity/nesting/parameter/line
 length thresholds, and commit the configuration with the project. Every rule
 has a reliability, security, or maintainability classification and a severity
 that survives into JSON and SARIF. Browse the full
 [checks catalogue](https://mmartign.github.io/AdaLang_Analyzer/checks.html).
+
+167 of them are opt-in coding-standard checks — naming conventions, layout,
+restricted constructs, object-oriented design, representation items,
+complexity limits — configured with `-rule-param=<check>.<name>=<value>`.
+Together with the rest of the catalogue they cover all but eight of
+GNATcheck's 212 general-purpose rules; the
+[GNATcheck rule comparison](https://mmartign.github.io/AdaLang_Analyzer/gnatcheck-rule-comparison.html)
+lists every pairing and how it was checked.
 
 ### 3. A bridge into SPARK
 
@@ -191,7 +199,7 @@ site: **<https://mmartign.github.io/AdaLang_Analyzer/>**
 - [Configuration and usage reference](https://mmartign.github.io/AdaLang_Analyzer/configuration.html)
   — every flag, the project configuration file, and output formats.
 - [Checks catalogue](https://mmartign.github.io/AdaLang_Analyzer/checks.html)
-  — all 127 checks with category, severity, and purpose.
+  — all 294 checks with category, severity, and purpose.
 - [Positioning and approved claims](https://mmartign.github.io/AdaLang_Analyzer/positioning.html),
   [assurance model](https://mmartign.github.io/AdaLang_Analyzer/assurance-model.html),
   [supported verification subset](https://mmartign.github.io/AdaLang_Analyzer/supported-verification-subset.html),

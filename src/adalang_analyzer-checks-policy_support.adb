@@ -17,6 +17,7 @@ package body Adalang_Analyzer.Checks.Policy_Support is
 
    use type Adalang_Analyzer.Config.Rule_State;
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Libadalang.Common.Ref_Result_Kind;
 
    function On (Rule : Rules.Rule_Kind) return Boolean
    is (Config.Rule_States (Rule) = Config.Enabled);
@@ -132,7 +133,20 @@ package body Adalang_Analyzer.Checks.Policy_Support is
       then
          return Libadalang.Analysis.No_Ada_Node;
       end if;
-      return Name.As_Name.P_Referenced_Decl.As_Ada_Node;
+      --  The failsafe query reports a resolution failure as a result
+      --  instead of raising: unwinding an exception for every unresolved
+      --  name dominates the run when a unit's dependencies are missing.
+      declare
+         Result : constant Libadalang.Analysis.Refd_Decl :=
+           Name.As_Name.P_Failsafe_Referenced_Decl;
+      begin
+         if Libadalang.Analysis.Kind (Result) =
+              Libadalang.Common.Precise
+         then
+            return Libadalang.Analysis.Decl (Result).As_Ada_Node;
+         end if;
+         return Libadalang.Analysis.No_Ada_Node;
+      end;
    exception
       when others =>
          return Libadalang.Analysis.No_Ada_Node;

@@ -845,10 +845,8 @@ package body Adalang_Analyzer.Checks.Design_Policy is
       Owner    : Libadalang.Analysis.Base_Type_Decl;
       Current  : Node := Item.Parent;
    begin
-      if not Item.As_Name.P_Is_Static_Call then
-         return;
-      end if;
-
+      --  Most names denote objects and types: look at what this one
+      --  denotes before asking whether it is a statically bound call.
       Callee := Referenced (Item);
       for Step in 1 .. 8 loop
          exit when Is_Null (Callee)
@@ -857,8 +855,18 @@ package body Adalang_Analyzer.Checks.Design_Policy is
            (Callee.As_Subp_Renaming_Decl.F_Renames.F_Renamed_Object);
       end loop;
 
+      if Is_Null (Callee)
+        or else Callee.Kind not in Libadalang.Common.Ada_Basic_Subp_Decl
+                  | Libadalang.Common.Ada_Base_Subp_Body
+                  | Libadalang.Common.Ada_Subp_Body_Stub
+                  | Libadalang.Common.Ada_Generic_Subp_Instantiation
+      then
+         return;
+      end if;
+
       Owner := Tagged_Type_Of (Callee);
       if Is_Null (Owner)
+        or else not Item.As_Name.P_Is_Static_Call
         or else not Owner.P_Most_Visible_Part (Item).As_Base_Type_Decl
                       .P_Is_Tagged_Type
       then

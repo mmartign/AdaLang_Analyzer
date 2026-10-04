@@ -8,6 +8,11 @@ The project contains code derived from AdaCore's open-source
 libadalang-tools project. Copyright notices and licensing terms applicable
 to inherited material are preserved in the relevant source files.
 
+The opt-in coding-standard checks follow the documented and observed
+behaviour of the corresponding rules of AdaCore's GNATcheck, which is
+distributed under the GNU General Public License version 3. They are an
+independent implementation in Ada; no GNATcheck source code is included.
+
 AdaLang Analyzer is not endorsed, sponsored, or officially supported by
 AdaCore.
 

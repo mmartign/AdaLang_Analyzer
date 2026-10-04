@@ -5,6 +5,49 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- 167 opt-in coding-standard checks, taking the catalogue from 127 to 294:
+  naming conventions (`Identifier_Casing`, `Identifier_Prefixes`,
+  `Identifier_Suffixes`), layout and comments, restricted constructs,
+  positional associations, object-oriented design, representation items
+  and address overlays, complexity and size limits, and "this can be
+  written more directly" suggestions. No preset enables them, so
+  `--recommended`, `--spark`, `--verify`, `--automotive` and `--do178c`
+  report exactly what they did; a project selects the ones its coding
+  standard requires with `-checks=`.
+- `-rule-param=<check>.<name>=<value>` sets a named parameter of one check:
+  a limit (`Maximum_Subprogram_Lines.n`), a scheme
+  (`Identifier_Casing.type`), or a comma-separated list
+  (`Forbidden_Attribute.forbidden`). Checks that state a project convention
+  report nothing until their parameters are set.
+- Each new check is paired with a GNATcheck rule and follows its behaviour.
+  With them, all but eight of GNATcheck's 212 general-purpose rules have an
+  AdaLang counterpart (its 123 `kp_*` compiler known-problem detectors are
+  out of scope); four of the eight need whole-program analysis and are left
+  out on purpose. Every pairing was compared with GNATcheck by file and
+  line on the check's fixtures, on this repository's other test fixtures
+  and on the analyzer's own sources. `docs/src/gnatcheck-rule-comparison.md`
+  lists them, including the one deliberate difference
+  (`Declaration_In_Block` follows GNATcheck's manual where GNATcheck's
+  implementation does not).
+
+### Changed
+
+- The precision corpus grows from 345 to 597 cases: a finding and a clean
+  fixture for every new check that runs without parameters.
+
+### Known limitations
+
+- The new checks have not yet been run over the external benchmark corpora;
+  `quality/corpus_exercise_coverage.tsv` lists them as not exercised. The
+  object-oriented checks in particular rest on a few fixture findings.
+- `Missing_Header` and `Actual_Parameter` were not compared with GNATcheck:
+  the local GNATcheck build did not accept their parameters on the command
+  line.
+
 ## [1.7.0] - 2026-10-03
 
 A `--verify` precision release: one false `Definite_Error` fixed and two

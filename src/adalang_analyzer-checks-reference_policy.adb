@@ -437,12 +437,14 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
          if Is_Null (Target) then
             return;
          elsif Target.Kind in Libadalang.Common.Ada_Object_Decl_Range then
-            if Has_Local_Scope (Target) then
-               Home := Enclosing (Target, Is_Body'Access);
-               if not Is_Null (Home)
-                 and then Home.Kind in Libadalang.Common.Ada_Base_Subp_Body
-                 and then Home /= Item.As_Ada_Node
-               then
+            --  The common case is an object of this very body: rule it
+            --  out before the costlier scope query.
+            Home := Enclosing (Target, Is_Body'Access);
+            if not Is_Null (Home)
+              and then Home.Kind in Libadalang.Common.Ada_Base_Subp_Body
+              and then Home /= Item.As_Ada_Node
+            then
+               if Has_Local_Scope (Target) then
                   Report_Finding
                     (Unit, Candidate, Outside_Reference_From_Subprogram,
                      "subprogram refers to a local object of an enclosing "
