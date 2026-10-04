@@ -70,7 +70,9 @@ jobs:
       - name: Run test suite
         # Shared CI runners are slower and noisier than a local machine, so
         # relax the performance smoke test's threshold to avoid flaky
-        # failures unrelated to an actual regression.
+        # failures unrelated to an actual regression. The test runs every
+        # check: 30 s covered 127 of them (23 s on macOS), 90 s covers the
+        # 294 there are since 1.8.0 (54 s on macOS).
         env:
-          ADALANG_MAX_SMOKE_SECONDS: 30
+          ADALANG_MAX_SMOKE_SECONDS: 90
         run: sh tests/run_all.sh
