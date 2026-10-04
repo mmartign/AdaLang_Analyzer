@@ -55,8 +55,11 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   This changes results on multi-project code for the existing checks too:
   more calls resolve, so `Dead_Store`, `Exception_Propagation`,
   `Missing_Global_Contract` and others report findings they could not see
-  before. `--verify` results on such code can change for the same reason;
-  the GNATprove comparisons in `benchmarks/` have not been re-run yet.
+  before. `--verify` results on such code change for the same reason:
+  re-running the analyzer side of the GNATprove comparisons in
+  `benchmarks/` keeps zero possible unsoundness and zero false positives,
+  with nine more matched pairs on coap_spark and one more on CubedOS,
+  where the `Unsupported` obligations drop from 667 to 32.
 
 ### Known limitations
 
