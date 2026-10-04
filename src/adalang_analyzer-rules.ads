@@ -256,7 +256,10 @@ package Adalang_Analyzer.Rules is
       Specific_Pre_Post,
       Constructor,
       Misnamed_Controlling_Parameter,
-      Non_Component_In_Barrier
+      Non_Component_In_Barrier,
+      Identifier_Casing,
+      Identifier_Prefixes,
+      Identifier_Suffixes
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -2677,7 +2680,47 @@ package Adalang_Analyzer.Rules is
            ("Write the barrier in terms of the protected object's own " &
             "components."),
          Quality     => Quality_Reliability,
-         Severity    => Severity_Medium)
+         Severity    => Severity_Medium),
+      Identifier_Casing =>
+        (Name        => To_Unbounded_String ("Identifier_Casing"),
+         Description => To_Unbounded_String
+           ("Find defining names whose casing differs from the scheme " &
+            "(upper, lower or mixed) given by the type, enum, constant, " &
+            "exception and others parameters; the exclude parameter " &
+            "lists words with a fixed spelling. Nothing is reported for " &
+            "a kind whose scheme is not configured."),
+         Guidance    => To_Unbounded_String
+           ("Rename the entity to follow the project's casing " &
+            "convention."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Identifier_Prefixes =>
+        (Name        => To_Unbounded_String ("Identifier_Prefixes"),
+         Description => To_Unbounded_String
+           ("Find defining names that lack the prefix required for " &
+            "their kind by the type, concurrent, access, class_access, " &
+            "subprogram_access, derived, constant, exception and enum " &
+            "parameters, or that carry a prefix reserved for another " &
+            "kind (unless the exclusive parameter is false)."),
+         Guidance    => To_Unbounded_String
+           ("Rename the entity to follow the project's prefix " &
+            "convention."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Identifier_Suffixes =>
+        (Name        => To_Unbounded_String ("Identifier_Suffixes"),
+         Description => To_Unbounded_String
+           ("Find defining names that lack the suffix required for " &
+            "their kind by the type_suffix, access_suffix, " &
+            "access_access_suffix, class_access_suffix, " &
+            "class_subtype_suffix, constant_suffix, renaming_suffix, " &
+            "access_obj_suffix and interrupt_suffix parameters; the " &
+            "default parameter selects _T, _A, _C and _R."),
+         Guidance    => To_Unbounded_String
+           ("Rename the entity to follow the project's suffix " &
+            "convention."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low)
    );
 
    function Lookup_Rule_Kind

@@ -1,0 +1,86 @@
+--  AdaLang Analyzer
+--
+--  Copyright (C) 2026, Spazio IT
+--
+--  AdaLang Analyzer is developed and supported by Spazio IT.
+--  This project is not endorsed or sponsored by AdaCore.
+--
+--  SPDX-License-Identifier: GPL-3.0-or-later
+
+with Langkit_Support.Text;
+with Libadalang.Analysis;
+with Libadalang.Common;
+
+with Adalang_Analyzer.Rules;
+
+--  Helpers shared by the opt-in policy check packages (Coding_Standard,
+--  Readability, Typed_Policy, Object_Policy, Naming, Representation,
+--  Suggestions): ancestor queries, check-parameter access and the
+--  per-check exception boundary. Private to the Checks subsystem.
+private package Adalang_Analyzer.Checks.Policy_Support is
+
+   subtype Node_Kind is Libadalang.Common.Ada_Node_Kind_Type;
+
+   function On (Rule : Rules.Rule_Kind) return Boolean;
+   --  True when Rule is enabled.
+
+   procedure Guarded
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Enabled : Boolean;
+      Check   : not null access procedure
+        (Unit : Libadalang.Analysis.Analysis_Unit;
+         Node : Libadalang.Analysis.Ada_Node'Class));
+   --  Runs Check on Node when Enabled, with its own exception boundary: a
+   --  Libadalang property failure is counted as a skipped check on Node
+   --  and does not reach the caller.
+
+   function Has_Ancestor
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Match : not null access function (Kind : Node_Kind) return Boolean)
+      return Boolean;
+   --  True when some syntactic ancestor of Node has a kind Match accepts.
+
+   function Count_Ancestors
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Match : not null access function (Kind : Node_Kind) return Boolean)
+      return Natural;
+   --  The number of syntactic ancestors of Node whose kind Match accepts.
+
+   function Has_Semantic_Ancestor
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Match : not null access function (Kind : Node_Kind) return Boolean)
+      return Boolean;
+   --  As Has_Ancestor, following semantic parents: a body's parent is then
+   --  the scope of its declaration, not the unit it is written in.
+
+   function Has_Local_Scope
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Node is a generic formal object's declaration or is
+   --  declared in a subprogram, task body, entry body, protected body or
+   --  block.
+
+   function Is_Listed (Item : String; List : String) return Boolean;
+   --  True when Item is one of the comma-separated entries of List,
+   --  compared without regard to case or surrounding blanks.
+
+   function Is_Set (Rule : Rules.Rule_Kind; Name : String) return Boolean;
+   --  True when the check parameter Name of Rule is "true".
+
+   function Text_Parameter
+     (Rule : Rules.Rule_Kind; Name : String) return String;
+   --  The check parameter Name of Rule, or "" when it is not set.
+
+   function Aspect_Name
+     (Name : String) return Langkit_Support.Text.Unbounded_Text_Type;
+   --  Name in the form Libadalang's aspect queries take.
+
+   function Has_Aspect
+     (Decl : Libadalang.Analysis.Basic_Decl'Class; Name : String)
+      return Boolean;
+   --  True when Decl has the aspect Name, by aspect, pragma or clause.
+
+   function Lower (Text : String) return String;
+   --  Text in lower case.
+
+end Adalang_Analyzer.Checks.Policy_Support;

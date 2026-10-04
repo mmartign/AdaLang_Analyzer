@@ -25,6 +25,7 @@ with Adalang_Analyzer.Checks.Control_Flow;
 with Adalang_Analyzer.Checks.Data_Flow;
 with Adalang_Analyzer.Checks.Declarations;
 with Adalang_Analyzer.Checks.Expressions;
+with Adalang_Analyzer.Checks.Naming;
 with Adalang_Analyzer.Checks.Object_Policy;
 with Adalang_Analyzer.Checks.Readability;
 with Adalang_Analyzer.Checks.Typed_Policy;
@@ -2297,6 +2298,7 @@ package body Adalang_Analyzer.Checks is
          Readability.Analyze_Node (Unit, Node);
          Typed_Policy.Analyze_Node (Unit, Node);
          Object_Policy.Analyze_Node (Unit, Node);
+         Naming.Analyze_Node (Unit, Node);
 
          --  Apply node-specific checks before recursively visiting descendants.
          Analyze_Bug_Finding_Node (Unit, Node);
