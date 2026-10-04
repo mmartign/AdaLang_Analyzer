@@ -282,7 +282,21 @@ package Adalang_Analyzer.Rules is
       Use_Case_Statement,
       Use_Record_Aggregate,
       Use_For_Of_Loop,
-      Use_Array_Slice
+      Use_Array_Slice,
+      Discriminated_Record,
+      Anonymous_Subtype,
+      No_Explicit_Real_Range,
+      Direct_Equality,
+      Membership_For_Validity,
+      Positional_Defaulted_Generic_Parameter,
+      Deeply_Nested_Instantiation,
+      Too_Many_Generic_Dependencies,
+      Raising_External_Exception,
+      Final_Package,
+      Direct_Call_To_Primitive,
+      Downward_View_Conversion,
+      Specific_Parent_Type_Invariant,
+      No_Inherited_Classwide_Pre
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -2975,7 +2989,149 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Write an array slice assignment."),
          Quality     => Quality_Maintainability,
-         Severity    => Severity_Low)
+         Severity    => Severity_Low),
+      Discriminated_Record =>
+        (Name        => To_Unbounded_String ("Discriminated_Record"),
+         Description => To_Unbounded_String
+           ("Find type declarations with a known discriminant part, " &
+            "other than private types and derived types that only pass " &
+            "their discriminants on to the parent type."),
+         Guidance    => To_Unbounded_String
+           ("Use separate types, or a non-discriminated record, where " &
+            "the coding standard excludes discriminants."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Anonymous_Subtype =>
+        (Name        => To_Unbounded_String ("Anonymous_Subtype"),
+         Description => To_Unbounded_String
+           ("Find constrained subtype indications, ranges and Range " &
+            "attributes used where a named subtype could be, other than " &
+            "in a subtype declaration, a type definition or a " &
+            "constraint that depends on a discriminant."),
+         Guidance    => To_Unbounded_String
+           ("Declare a named subtype and use it."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      No_Explicit_Real_Range =>
+        (Name        => To_Unbounded_String ("No_Explicit_Real_Range"),
+         Description => To_Unbounded_String
+           ("Find floating-point and fixed-point types and subtypes " &
+            "that neither declare nor inherit an explicit range."),
+         Guidance    => To_Unbounded_String
+           ("Declare the range of the real type explicitly."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Direct_Equality =>
+        (Name        => To_Unbounded_String ("Direct_Equality"),
+         Description => To_Unbounded_String
+           ("Find equality and inequality tests on the objects listed, " &
+            "by fully qualified name, in the actuals parameter; nothing " &
+            "is reported when no object is configured."),
+         Guidance    => To_Unbounded_String
+           ("Compare the object through the function the project " &
+            "provides for it."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Membership_For_Validity =>
+        (Name        => To_Unbounded_String ("Membership_For_Validity"),
+         Description => To_Unbounded_String
+           ("Find membership tests of an object in its own subtype, " &
+            "written as the subtype mark, T'Range or T'First .. T'Last."),
+         Guidance    => To_Unbounded_String
+           ("Use the Valid attribute."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Positional_Defaulted_Generic_Parameter =>
+        (Name        => To_Unbounded_String
+           ("Positional_Defaulted_Generic_Parameter"),
+         Description => To_Unbounded_String
+           ("Find positional actuals passed to a generic formal object " &
+            "or subprogram that has a default."),
+         Guidance    => To_Unbounded_String
+           ("Use named notation when overriding a generic default."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Deeply_Nested_Instantiation =>
+        (Name        => To_Unbounded_String ("Deeply_Nested_Instantiation"),
+         Description => To_Unbounded_String
+           ("Find instantiations of a generic whose declaration " &
+            "contains an instantiation, to a depth beyond the n " &
+            "parameter (default 3)."),
+         Guidance    => To_Unbounded_String
+           ("Flatten the chain of generic instantiations."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Too_Many_Generic_Dependencies =>
+        (Name        => To_Unbounded_String ("Too_Many_Generic_Dependencies"),
+         Description => To_Unbounded_String
+           ("Find with clauses naming a generic unit that itself " &
+            "depends on generic units through its with clauses, to a " &
+            "depth beyond the n parameter (default 3)."),
+         Guidance    => To_Unbounded_String
+           ("Reduce the chain of generic dependencies."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Raising_External_Exception =>
+        (Name        => To_Unbounded_String ("Raising_External_Exception"),
+         Description => To_Unbounded_String
+           ("Find raise statements in a library package that raise an " &
+            "exception which is neither predefined, nor handled in the " &
+            "same unit, nor declared in the visible part of that " &
+            "package."),
+         Guidance    => To_Unbounded_String
+           ("Declare the exception in the package's visible part, or " &
+            "handle it locally."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Final_Package =>
+        (Name        => To_Unbounded_String ("Final_Package"),
+         Description => To_Unbounded_String
+           ("Find child packages of a package marked with Annotate => " &
+            "(GNATcheck, Final)."),
+         Guidance    => To_Unbounded_String
+           ("Do not extend a package declared final."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Medium),
+      Direct_Call_To_Primitive =>
+        (Name        => To_Unbounded_String ("Direct_Call_To_Primitive"),
+         Description => To_Unbounded_String
+           ("Find statically bound calls to a primitive operation of a " &
+            "tagged type, other than a call to the parent type's " &
+            "operation from its own overriding."),
+         Guidance    => To_Unbounded_String
+           ("Call the operation on a class-wide operand so that it " &
+            "dispatches."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Downward_View_Conversion =>
+        (Name        => To_Unbounded_String ("Downward_View_Conversion"),
+         Description => To_Unbounded_String
+           ("Find view conversions from a tagged type, or an access to " &
+            "one, to a type derived from it."),
+         Guidance    => To_Unbounded_String
+           ("Use dispatching, or a membership test before converting."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Specific_Parent_Type_Invariant =>
+        (Name        => To_Unbounded_String ("Specific_Parent_Type_Invariant"),
+         Description => To_Unbounded_String
+           ("Find type extensions whose parent type, or one of its " &
+            "ancestors, has a Type_Invariant aspect that is not " &
+            "class-wide."),
+         Guidance    => To_Unbounded_String
+           ("Use Type_Invariant'Class on the parent type."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      No_Inherited_Classwide_Pre =>
+        (Name        => To_Unbounded_String ("No_Inherited_Classwide_Pre"),
+         Description => To_Unbounded_String
+           ("Find overriding primitive operations whose overridden root " &
+            "declaration has no Pre'Class aspect."),
+         Guidance    => To_Unbounded_String
+           ("Give the root operation a Pre'Class aspect, even if it is " &
+            "True."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium)
    );
 
    function Lookup_Rule_Kind
