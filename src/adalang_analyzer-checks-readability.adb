@@ -488,7 +488,7 @@ package body Adalang_Analyzer.Checks.Readability is
               and then Sibling.Kind = Libadalang.Common.Ada_Param_Spec
               and then Parameter_Rank (Sibling.As_Param_Spec) < Rank
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Parameters_Out_Of_Order,
                   "parameter out of order");
                return;
@@ -561,7 +561,7 @@ package body Adalang_Analyzer.Checks.Readability is
          return;
       end if;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Node.As_Basic_Decl.P_Defining_Name, Maximum_Out_Parameters,
          "subprogram has " & To_Decimal (Total)
          & " out or in out parameters, more than " & To_Decimal (Limit));
@@ -791,7 +791,7 @@ package body Adalang_Analyzer.Checks.Readability is
          return;
       end if;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Node.As_Basic_Decl.P_Defining_Name,
          Object_Declaration_Out_Of_Order,
          "object declared after the program unit at line "
@@ -870,7 +870,7 @@ package body Adalang_Analyzer.Checks.Readability is
       if End_Line (Last) = Next_Code_Line (Last)
         or else Start_Line (First) = Previous_Code_Line (First)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, One_Construct_Per_Line,
             "more than one construct on the same line");
       end if;
@@ -924,7 +924,7 @@ package body Adalang_Analyzer.Checks.Readability is
       Total : constant Natural := Logical_Lines (Node);
    begin
       if Total > Limit then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Logical_SLOC,
             "unit has " & To_Decimal (Total)
             & " logical source lines, more than " & To_Decimal (Limit));
@@ -950,7 +950,7 @@ package body Adalang_Analyzer.Checks.Readability is
                else Node_Text (Name));
          begin
             if Simple'Length > Limit then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Maximum_Identifier_Length,
                   "identifier is longer than " & To_Decimal (Limit)
                   & " characters");
@@ -974,7 +974,7 @@ package body Adalang_Analyzer.Checks.Readability is
               (Rule_Parameter (Forbidden_Identifier, "forbidden", ""),
                Compare'Access);
             if Clash then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Forbidden_Identifier,
                   "forbidden identifier " & Node_Text (Name) & " declared");
             end if;
@@ -1002,7 +1002,7 @@ package body Adalang_Analyzer.Checks.Readability is
          if Rule_States (Numeric_Format) = Enabled
            and then not Is_Well_Formed_Literal (Node_Text (Node))
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Numeric_Format,
                "numeric literal is not written in the standard format");
          end if;
@@ -1019,7 +1019,7 @@ package body Adalang_Analyzer.Checks.Readability is
                  Count_Parameters (Node.As_Params, Has_Default'Access);
             begin
                if Total > Limit then
-                  Report_Rule_Violation
+                  Report_Finding
                     (Unit, Node, Default_Parameter,
                      To_Decimal (Total) & " parameters have a default "
                      & "value, more than " & To_Decimal (Limit));

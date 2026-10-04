@@ -16,7 +16,6 @@ with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;   use Adalang_Analyzer.Config;
-with Adalang_Analyzer.Report;   use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;    use Adalang_Analyzer.Rules;
 
 package body Adalang_Analyzer.Checks.Coding_Standard is
@@ -162,13 +161,13 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
 
       if Owner.Kind = Libadalang.Common.Ada_Case_Stmt_Alternative then
          if Rule_States (Others_In_Case_Statement) = Enabled then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Others_In_Case_Statement,
                "others choice in case statement");
          end if;
       elsif Owner.Kind = Libadalang.Common.Ada_Exception_Handler then
          if Rule_States (Others_In_Exception_Handler) = Enabled then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Others_In_Exception_Handler,
                "others choice in exception handler");
          end if;
@@ -176,7 +175,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
         and then Rule_States (Others_In_Aggregate) = Enabled
         and then Is_Reportable_Aggregate_Others (Owner)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Others_In_Aggregate, "others choice in aggregate");
       end if;
    end Analyze_Others_Choice;
@@ -203,13 +202,13 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
         and then not Named
         and then Target_Is_Named
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Unnamed_Exit,
             "exit statement does not name the loop it leaves");
       end if;
 
       if Rule_States (Exit_Without_Loop_Name) = Enabled and then not Named then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Exit_Without_Loop_Name,
             "exit statement has no loop name");
       end if;
@@ -217,7 +216,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       if Rule_States (Unconditional_Exit) = Enabled
         and then Libadalang.Analysis.Is_Null (Stmt.F_Cond_Expr)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Unconditional_Exit,
             "exit statement has no condition");
       end if;
@@ -227,7 +226,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
         and then Target.Kind in Libadalang.Common.Ada_For_Loop_Stmt
                    | Libadalang.Common.Ada_While_Loop_Stmt
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Exit_From_Conditional_Loop,
             "exit from a for or while loop");
       end if;
@@ -236,7 +235,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
         and then Named
         and then Loop_Name.Kind = Libadalang.Common.Ada_Dotted_Name
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Expanded_Loop_Exit_Name,
             "exit statement uses an expanded loop name");
       end if;
@@ -252,7 +251,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
                                  (Target.As_Base_Loop_Stmt.F_End_Name.F_Name) =
                                Canonical_Text (Loop_Name))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Outer_Loop_Exit,
             "exit statement leaves an outer loop");
       end if;
@@ -270,14 +269,14 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       end if;
 
       if Node.Kind in Libadalang.Common.Ada_Block_Stmt then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Unnamed_Block_Or_Loop, "block statement has no name");
       elsif Contains_Loop (Node) then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Unnamed_Block_Or_Loop,
             "loop that contains another loop has no name");
       elsif not Libadalang.Analysis.Is_Null (Enclosing_Loop (Node)) then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Unnamed_Block_Or_Loop,
             "loop nested in another loop has no name");
       end if;
@@ -302,7 +301,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          return;
       end if;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Node, Implicit_In_Mode,
          "parameter relies on the default in mode");
    end Analyze_Parameter_Mode;
@@ -352,7 +351,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
                  Libadalang.Common.Ada_Mode_Out
                  | Libadalang.Common.Ada_Mode_In_Out
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Function_Out_Parameter,
                   "function has an out or in out parameter");
                return;
@@ -400,7 +399,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
            or else Full_Name = "standard.tasking_error"
            or else Full_Name = "standard.numeric_error"
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Raising_Predefined_Exception,
                "predefined exception " & Node_Text (Name)
                & " raised explicitly");
@@ -422,7 +421,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
 
       while not Libadalang.Analysis.Is_Null (Current) loop
          if Current.Kind in Libadalang.Common.Ada_Object_Decl_Range then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Anonymous_Array_Type,
                "object declared with an anonymous array type");
             return;
@@ -467,7 +466,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          Current := Current.Parent;
       end loop;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Node, Global_Variable,
          "variable declared in a package specification");
    end Analyze_Global_Variable;
@@ -513,7 +512,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
                          (Decl.P_Canonical_Fully_Qualified_Name)) =
                     "standard." & Name
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Predefined_Numeric_Type,
                "predefined numeric subtype " & Node_Text (Node)
                & " referenced");
@@ -581,7 +580,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       end if;
 
       if Is_Abstract then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Abstract_Type_Declaration, "abstract type declared");
       end if;
    end Analyze_Abstract_Type;
@@ -597,7 +596,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
         and then Def.F_Has_With_Private.Kind =
                    Libadalang.Common.Ada_With_Private_Absent
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Non_Tagged_Derived_Type,
             "derived type is not a type extension");
       end if;
@@ -612,7 +611,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
         and then not Has_Ancestor (Node, Is_Generic_Package'Access)
       then
          --  Reported at the unit itself, past its generic formal part.
-         Report_Rule_Violation
+         Report_Finding
            (Unit,
             (if Node.Kind = Libadalang.Common.Ada_Generic_Subp_Decl
              then Node.As_Generic_Subp_Decl.F_Subp_Decl.As_Ada_Node
@@ -641,7 +640,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
             if not Libadalang.Analysis.Is_Null (Sibling)
               and then Sibling.Kind = Libadalang.Common.Ada_Entry_Decl
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Multiple_Protected_Entries,
                   "more than one entry in a protected definition");
                return;
@@ -690,7 +689,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       end if;
 
       if Missing then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, No_Closing_Name,
             "program unit end does not repeat the unit name");
       end if;
@@ -715,7 +714,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
                   or else Libadalang.Analysis.Is_Null
                             (Node.As_Base_Subp_Body.P_Decl_Part))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Overloaded_Operator, "operator symbol overloaded");
       end if;
    end Analyze_Operator_Declaration;
@@ -730,7 +729,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       if not Libadalang.Analysis.Is_Null (Renamed)
         and then Renamed.P_Is_Operator_Name
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Operator_Renaming, "operator renamed");
       end if;
    end Analyze_Operator_Renaming;
@@ -756,7 +755,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          Owner := Owner.Parent;
       end loop;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Node, Unconstrained_Array_Type,
          "unconstrained array type defined");
    end Analyze_Array_Type;
@@ -780,7 +779,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          end if;
       end loop;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Node, Binary_Case_Statement,
          "case statement with two single-choice alternatives can be an " &
          "if statement");
@@ -830,7 +829,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          if not Libadalang.Analysis.Is_Null (Selector_Type)
            and then Selector_Type.P_Is_Enum_Type
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Enumeration_Range_In_Case_Statement,
                "enumeration range used as a case statement choice");
          end if;
@@ -846,7 +845,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
            Libadalang.Common.Ada_Type_Access_Def
         and then Has_Ancestor (Node, Is_Object_Or_Component'Access)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Anonymous_Access_Type,
             "object or component declared with an anonymous access type");
       end if;
@@ -858,7 +857,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
    is
    begin
       if Node.As_Call_Expr.P_Is_Array_Slice then
-         Report_Rule_Violation (Unit, Node, Array_Slice, "array slice used");
+         Report_Finding (Unit, Node, Array_Slice, "array slice used");
       end if;
    end Analyze_Slice;
 
@@ -870,7 +869,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
       if Has_Ancestor (Node, Is_Package_Declaration'Access)
         and then not Has_Ancestor (Node, Is_Package_Body'Access)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Local_Package,
             "package declared inside a package specification");
       end if;
@@ -897,7 +896,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
                          | Libadalang.Common.Ada_Use_Type_Clause
                          | Libadalang.Common.Ada_Pragma_Node
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Declaration_In_Block,
                   "block statement has local declarations");
                return;
@@ -926,7 +925,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          if not Libadalang.Analysis.Is_Null (Decl)
            and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Size_Attribute_For_Type,
                "Size attribute applied to a type");
          end if;
@@ -942,7 +941,7 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
    is
    begin
       if Rule_States (Rule) = Enabled then
-         Report_Rule_Violation (Unit, Node, Rule, Message);
+         Report_Finding (Unit, Node, Rule, Message);
       end if;
    end Restrict;
 
@@ -1115,11 +1114,14 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          Guarded
            (Unit, Node, On (Operator_Renaming), Analyze_Operator_Renaming'Access);
       elsif Kind = Libadalang.Common.Ada_Expr_Function
-        and then Is_Package_Level_Declaration (Node)
+        and then (Is_Package_Level_Declaration (Node)
+                  or else Node.Parent.Kind =
+                            Libadalang.Common.Ada_Library_Item)
       then
          Restrict
            (Unit, Node, Expression_Function,
-            "expression function declared in a package specification");
+            "expression function declared in a package specification or as a "
+            & "library unit");
       end if;
    end Analyze_Subprogram_Unit;
 

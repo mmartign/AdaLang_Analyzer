@@ -11,6 +11,7 @@ with Ada.Characters.Handling;
 with Ada.Strings.Fixed;
 
 with Adalang_Analyzer.Config;
+with Adalang_Analyzer.Report;
 
 package body Adalang_Analyzer.Checks.Policy_Support is
 
@@ -19,6 +20,35 @@ package body Adalang_Analyzer.Checks.Policy_Support is
 
    function On (Rule : Rules.Rule_Kind) return Boolean
    is (Config.Rule_States (Rule) = Config.Enabled);
+
+   procedure Report_Finding
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Rule    : Rules.Rule_Kind;
+      Message : String)
+   is
+      Target : Libadalang.Analysis.Ada_Node := Node.As_Ada_Node;
+   begin
+      if Node.Kind in Libadalang.Common.Ada_Basic_Decl then
+         begin
+            declare
+               Name : constant Libadalang.Analysis.Defining_Name :=
+                 Node.As_Basic_Decl.P_Defining_Name;
+            begin
+               if not Libadalang.Analysis.Is_Null (Name) then
+                  Target := Name.As_Ada_Node;
+               end if;
+            end;
+         exception
+            when Exc : others =>
+               --  An unnamed or unresolvable declaration is reported at
+               --  its own position.
+               Note_Skipped_Check (Node, Exc);
+         end;
+      end if;
+
+      Report.Report_Rule_Violation (Unit, Target, Rule, Message);
+   end Report_Finding;
 
    procedure Guarded
      (Unit    : Libadalang.Analysis.Analysis_Unit;

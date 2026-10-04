@@ -24,6 +24,16 @@ private package Adalang_Analyzer.Checks.Policy_Support is
    function On (Rule : Rules.Rule_Kind) return Boolean;
    --  True when Rule is enabled.
 
+   procedure Report_Finding
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Rule    : Rules.Rule_Kind;
+      Message : String);
+   --  Reports a violation of Rule. A finding on a declaration is located
+   --  at its defining name, not at its first keyword: that is where
+   --  GNATcheck reports it, and the two differ when a specification
+   --  starts on an earlier line than the name.
+
    procedure Guarded
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Node    : Libadalang.Analysis.Ada_Node'Class;

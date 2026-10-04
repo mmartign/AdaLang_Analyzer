@@ -14,7 +14,6 @@ with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;
-with Adalang_Analyzer.Report;   use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;    use Adalang_Analyzer.Rules;
 
 package body Adalang_Analyzer.Checks.Suggestions is
@@ -111,7 +110,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
         and then Condition.P_Is_Static_Expr
         and then GNATCOLL.GMP.Integers.Image (Condition.P_Eval_As_Int) = "1"
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Use_Simple_Loop,
             "while loop with a condition that is always true can be a "
             & "plain loop");
@@ -220,7 +219,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
             end;
          end if;
 
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Use_For_Loop,
             "while loop over a counter can be a for loop");
       end;
@@ -246,7 +245,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
                                       (Stmt.F_End_Name.F_Name,
                                        First.As_Exit_Stmt.F_Loop_Name)))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Use_While_Loop,
             "loop that starts with an exit can be a while loop");
       end if;
@@ -406,7 +405,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
               and then (Assign.F_Expr.P_Is_Static_Expr
                         or else Is_Array_Index (Assign.F_Expr, Var))
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Item, Use_Array_Slice,
                   "for loop can be an array slice assignment");
             end if;
@@ -494,7 +493,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
             end if;
          end;
 
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Use_For_Of_Loop,
             "for loop over an array's index range can be a for-of loop");
       end;
@@ -559,7 +558,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
          end;
       end if;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Item, Use_Range,
          "range can be written as a subtype mark or a Range attribute");
    end Analyze_Range;
@@ -681,7 +680,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
       if not Is_Null (Id)
         and then Is_Membership_Shape (Operation, Id, Short_Circuit)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Use_Membership,
             "condition can be written as a membership test");
       end if;
@@ -736,7 +735,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
    begin
       if On (Use_If_Expression) then
          if All_Branches_Are (Stmt, Libadalang.Common.Ada_Return_Stmt) then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Item, Use_If_Expression,
                "if statement can be an if expression");
          elsif All_Branches_Are (Stmt, Libadalang.Common.Ada_Assign_Stmt) then
@@ -759,7 +758,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
             begin
                For_Each (Item, Visit'Access);
                if Same then
-                  Report_Rule_Violation
+                  Report_Finding
                     (Unit, Item, Use_If_Expression,
                      "if statement can be an if expression");
                end if;
@@ -814,7 +813,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
             end;
          end loop;
 
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Use_Case_Statement,
             "if statement testing one value can be a case statement");
       end;
@@ -930,7 +929,7 @@ package body Adalang_Analyzer.Checks.Suggestions is
       end loop;
 
       if Assigned = Components then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Use_Record_Aggregate,
             "component assignments can be one aggregate assignment");
       end if;

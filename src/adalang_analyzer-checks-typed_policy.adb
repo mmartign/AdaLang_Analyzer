@@ -147,7 +147,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                         if not Libadalang.Analysis.Is_Null
                                  (Spec.F_Default_Expr)
                         then
-                           Report_Rule_Violation
+                           Report_Finding
                              (Unit, Node, Positional_Defaulted_Parameter,
                               "positional actual for a defaulted parameter");
                         end if;
@@ -204,7 +204,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
             end if;
          end if;
 
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Positional_Parameter,
             "positional parameter association");
       end;
@@ -264,7 +264,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                             (Owner.As_Generic_Instantiation
                                .P_Designated_Generic_Decl) > 1)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Positional_Generic_Parameter,
             "positional generic association");
       end if;
@@ -320,7 +320,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                     and then (Aggregate_Type.P_Is_Array_Type
                               or else Aggregate_Type.P_Is_Record_Type)
                   then
-                     Report_Rule_Violation
+                     Report_Finding
                        (Unit, Node, Positional_Component,
                         "aggregate with a positional component association");
                   end if;
@@ -345,7 +345,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
             end loop;
          end;
 
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Non_Qualified_Aggregate,
             "aggregate is not the operand of a qualified expression");
       end if;
@@ -397,7 +397,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
       end if;
 
       if Has_Semantic_Ancestor (Node, Is_Executable_Body'Access) then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Nested_Subprogram,
             "subprogram declared in an executable body");
       end if;
@@ -429,7 +429,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
         and then Is_Boolean (Relation)
         and then Is_Boolean (Relation.F_Left)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Boolean_Relational_Operator,
             "relational operator applied to Boolean values");
       end if;
@@ -445,7 +445,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
             if not Libadalang.Analysis.Is_Null (Left_Type)
               and then Left_Type.P_Is_Fixed_Point
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Fixed_Equality,
                   "equality operation on fixed-point values");
             end if;
@@ -506,7 +506,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                       .F_Indices.Kind =
                     Libadalang.Common.Ada_Unconstrained_Array_Indices
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Unconstrained_Array_Return,
                "function returns an unconstrained array");
          end if;
@@ -585,7 +585,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
         and then Parent_Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
         and then Is_Predefined_Type (Parent_Decl.As_Base_Type_Decl)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Deriving_From_Predefined_Type,
             "type derived from a predefined type");
       end if;
@@ -642,7 +642,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
         and then (not Is_Set (Visible_Component, "tagged_only")
                   or else Decl.P_Is_Tagged_Type)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Visible_Component,
             "type has publicly accessible components");
       end if;
@@ -708,7 +708,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
             if not Libadalang.Analysis.Is_Null (Prefix_Type)
               and then Prefix_Type.P_Is_Array_Type
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Numeric_Indexing,
                   "integer literal used as an index value");
             end if;
@@ -726,7 +726,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                      Libadalang.Common.Ada_Generic_Formal_Obj_Decl)
         or else Has_Semantic_Ancestor (Node, Is_Local_Scope'Access)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Local_Instantiation, "local generic instantiation");
       end if;
    end Analyze_Instantiation;
@@ -746,7 +746,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                   or else Libadalang.Analysis.Is_Null
                             (Node.As_Body_Node.P_Previous_Part))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Explicit_Inlining, "subprogram marked Inline");
       end if;
    end Analyze_Inlining;
@@ -770,7 +770,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                        (Name,
                         Rule_Parameter (Forbidden_Attribute, "allowed", ""))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Forbidden_Attribute,
             "attribute " & Node_Text (Ref.F_Attribute) & " used");
       end if;
@@ -786,7 +786,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
               and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
               and then Decl.As_Base_Type_Decl.P_Is_Enum_Type
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Pos_On_Enumeration_Type,
                   "Pos attribute applied to an enumeration type");
             end if;
@@ -806,7 +806,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
         and then not Node.As_Basic_Decl.P_Has_Aspect
                        (Langkit_Support.Text.To_Unbounded_Text ("Small"))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Implicit_Small,
             "fixed point type declared without a Small clause");
       end if;
@@ -835,7 +835,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                                          (Params.Child (1).As_Param_Assoc
                                             .F_Designator)))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Ada05_Formal_Package,
             "formal package uses the Ada 2005 partial parameterization");
       end if;
@@ -887,7 +887,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
          end if;
       end loop;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Node, Separate_Numeric_Error_Handler,
          "Constraint_Error and Numeric_Error are not handled together");
    end Analyze_Handler_Choice;
@@ -909,7 +909,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
       end loop;
 
       if Total > 1 then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, One_Tagged_Type_Per_Package,
             "more than one tagged type declared in the package "
             & "specification");
@@ -964,7 +964,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
         and then Node.Parent.Kind = Libadalang.Common.Ada_For_Loop_Spec
         and then Is_Universal_Range (Node)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Universal_Range,
             "range with universal integer bounds");
       end if;
@@ -979,7 +979,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
         and then Low.As_Attribute_Ref.F_Prefix.P_Referenced_Decl =
                    High.As_Attribute_Ref.F_Prefix.P_Referenced_Decl
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Explicit_Full_Discrete_Range,
             "range can be written as a subtype mark or a Range attribute");
       end if;
@@ -998,7 +998,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                    (Constraint.F_Constraints.Child (1)
                       .As_Composite_Constraint_Assoc.F_Constraint_Expr)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Universal_Range,
             "range with universal integer bounds");
       end if;
@@ -1084,7 +1084,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                Message     => "exception handlers have no others choice");
          end;
       else
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Missing_Others_Handler,
             (if Kind = Libadalang.Common.Ada_Task_Body
              then "task body has no others exception handler"
@@ -1105,7 +1105,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
         and then Node.Parent.Parent.Kind = Libadalang.Common.Ada_With_Clause
         and then Is_Listed (Node_Text (Node), Units)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Forbidden_Dependence,
             "dependence on " & Node_Text (Node) & " is forbidden");
       end if;
@@ -1167,7 +1167,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                                  Rule_Parameter
                                    (Forbidden_Aspect, "allowed", ""))
                then
-                  Report_Rule_Violation
+                  Report_Finding
                     (Unit, Node, Forbidden_Aspect,
                      "aspect " & Name & " used");
                end if;
@@ -1251,7 +1251,7 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
                       Libadalang.Common.Ada_Anonymous_Type
            and then Is_In_Package_Scope (Node)
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Object_Of_Anonymous_Type,
                "object of an anonymous type declared in a package");
          end if;

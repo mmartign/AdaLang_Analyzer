@@ -16,7 +16,6 @@ with Adalang_Analyzer.Ada_Text;   use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;
-with Adalang_Analyzer.Report;     use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;      use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Text_Utils; use Adalang_Analyzer.Text_Utils;
 
@@ -158,7 +157,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
    begin
       For_Each_Below (Item, Visit'Access);
       if Total > Limit then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Maximum_Expression_Complexity,
             "expression has " & To_Decimal (Total)
             & " sub-expressions, more than " & To_Decimal (Limit));
@@ -247,7 +246,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
                  and then Is_Else
                  and then Mine.Kind /= Theirs.Kind)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Nested_Path,
             "statements can be moved out of the if statement, whose other "
             & "path always leaves it");
@@ -330,7 +329,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
       Raised := Canonical_Exception (Name);
       For_Each_Below (Owner, Visit'Access);
       if Handled then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Exception_As_Control_Flow,
             "raised exception is handled in the same subprogram body");
       end if;
@@ -364,7 +363,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
 
       For_Each_Below (Item.As_Exception_Handler.F_Stmts, Visit'Access);
       if Found then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Call_In_Exception_Handler,
             "exception handler calls a forbidden subprogram");
       end if;
@@ -466,7 +465,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
            and then not Is_Limited_Type
                           (Output.F_Type_Expr.P_Designated_Type_Decl)
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Item, Function_Style_Procedure,
                "procedure with a single out parameter can be a function");
          end if;
@@ -564,7 +563,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
       end if;
 
       if Complex then
-         Report_Rule_Violation
+         Report_Finding
            (Unit,
             (if Item.Kind = Libadalang.Common.Ada_Subp_Renaming_Decl
              then Target else Item.As_Ada_Node),
@@ -599,7 +598,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
                      | Libadalang.Common.Ada_Base_Package_Decl)
         or else Has_Ancestor (Item, Is_Subprogram_Body'Access)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item.As_Basic_Decl.P_Defining_Name,
             Improperly_Located_Instantiation,
             (if Has_Ancestor (Item, Is_Subprogram_Body'Access)
@@ -733,7 +732,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
         and then not Has_Ancestor (Item, Is_Generic_Unit'Access)
         and then not Is_In_Ghost_Code (Item)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Ada_2022_In_Ghost_Code,
             "Ada 2022 construct used outside ghost code");
       end if;
@@ -841,7 +840,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
                  (Ada.Strings.Fixed.Trim
                     (Forbidden (Start .. I - 1), Ada.Strings.Both))
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Item, Actual_Parameter,
                   "forbidden object passed as actual parameter");
                return;
@@ -875,7 +874,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
            and then not Is_SPARK_Attribute
                           (Canonical_Text (Node.As_Attribute_Ref.F_Attribute))
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Non_SPARK_Attribute,
                "attribute "
                & Node_Text (Node.As_Attribute_Ref.F_Attribute)
@@ -928,7 +927,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
                Value : constant Natural := Essential_Complexity (Node);
             begin
                if Value > Limit then
-                  Report_Rule_Violation
+                  Report_Finding
                     (Unit, Node, Essential_Complexity,
                      "essential complexity " & To_Decimal (Value)
                      & " exceeds " & To_Decimal (Limit));

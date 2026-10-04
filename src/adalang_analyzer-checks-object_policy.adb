@@ -13,7 +13,6 @@ with Adalang_Analyzer.Ada_Text;   use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;     use Adalang_Analyzer.Config;
-with Adalang_Analyzer.Report;     use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;      use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Text_Utils; use Adalang_Analyzer.Text_Utils;
 
@@ -151,7 +150,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
                             (Aspect_Name ("Post"),
                              Previous_Parts_Only => True))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Specific_Pre_Post,
             "primitive operation has a Pre or Post aspect that is not "
             & "class-wide");
@@ -180,7 +179,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
            and then Returns_It
            and then Controlling_Params = 0
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Constructor, "constructor function declared");
          end if;
 
@@ -193,7 +192,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
                                     (Params (Params'First).F_Type_Expr, Spec))
            and then (not Returns_It or else Controlling_Params > 0)
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Misnamed_Controlling_Parameter,
                "first parameter is not a controlling parameter named This");
          end if;
@@ -265,7 +264,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
             Total : constant Natural := Parent_Count (Decl);
          begin
             if Total > Limit then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Too_Many_Parents,
                   "type has " & To_Decimal (Total) & " parents, more than "
                   & To_Decimal (Limit));
@@ -288,7 +287,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
             Total : constant Natural := Decl.P_Get_Primitives'Length;
          begin
             if Total > Limit then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Decl.P_Defining_Name, Too_Many_Primitives,
                   "tagged type has " & To_Decimal (Total)
                   & " primitives, more than " & To_Decimal (Limit));
@@ -309,7 +308,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
                    (Decl,
                     Rule_Parameter (Deep_Inheritance_Hierarchy, "n", 2) + 1)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Deep_Inheritance_Hierarchy,
             "derivation tree is too deep");
       end if;
@@ -325,7 +324,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
         and then not Decl.F_Has_Constant.P_As_Bool
         and then not Has_Local_Scope (Node)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Uninitialized_Global_Variable,
             "global variable declared without an initial value");
       end if;
@@ -354,7 +353,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
       if Volatile
         and then not Decl.P_Has_Aspect (Aspect_Name ("Address"))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Volatile_Object_Without_Address,
             "volatile object has no address specification");
       end if;
@@ -375,7 +374,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
          if Current.Kind in Libadalang.Common.Ada_Base_Type_Decl
            and then Current.As_Base_Type_Decl.P_Is_Tagged_Type
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Specific_Type_Invariant,
                "Type_Invariant aspect of a tagged type is not class-wide");
             return;
@@ -468,7 +467,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
         and then Barrier_Has_Foreign_Name
                    (Node.As_Entry_Body.F_Barrier, Current.As_Protected_Body)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node.As_Entry_Body.F_Barrier, Non_Component_In_Barrier,
             "barrier refers to something other than a component of the "
             & "protected object");
@@ -487,7 +486,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
         and then Count_Ancestors (Node, Is_Scope'Access) >
                    Rule_Parameter (Overly_Nested_Scope, "n", 10)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Overly_Nested_Scope,
             "nesting level of scopes is too deep");
       end if;
@@ -502,7 +501,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
               Count_Ancestors (Node, Is_Generic_Unit'Access);
          begin
             if Depth > Limit then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node.As_Basic_Decl.P_Defining_Name,
                   Deeply_Nested_Generic,
                   "generic unit is nested in " & To_Decimal (Depth)
@@ -530,7 +529,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
             end loop;
 
             if Dots > Rule_Parameter (Deep_Library_Hierarchy, "n", 3) then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Node, Deep_Library_Hierarchy,
                   "unit has " & To_Decimal (Dots) & " ancestor units");
             end if;
@@ -582,7 +581,7 @@ package body Adalang_Analyzer.Checks.Object_Policy is
                           (Node.As_Component_Decl.F_Default_Expr)
            and then Count_Ancestors (Node, Is_Protected_Definition'Access) = 0
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Default_Value_For_Record_Component,
                "record component has a default value");
          end if;

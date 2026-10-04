@@ -13,7 +13,6 @@ with Libadalang.Common;
 with Adalang_Analyzer.Ada_Text;   use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
-with Adalang_Analyzer.Report;     use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;      use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Text_Utils; use Adalang_Analyzer.Text_Utils;
 
@@ -148,7 +147,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
               and then Canonical_Text (Operands (I)) =
                          Canonical_Text (Operands (J))
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Operands (I), Same_Logic,
                   "the same operand appears twice in this condition");
                return;
@@ -319,7 +318,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
       end if;
 
       if not Handled then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Non_Visible_Exception,
             "local exception is not handled in the scope that declares it");
       end if;
@@ -379,7 +378,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
       end if;
 
       if Leaks then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Non_Visible_Exception,
             "handler propagates a local exception outside its visibility");
       end if;
@@ -414,7 +413,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
          Current := Current.Parent;
       end loop;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Item, Outbound_Protected_Assignment,
          "protected body assigns to an object outside the protected unit");
    end Analyze_Protected_Assignment;
@@ -444,7 +443,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
                  and then Home.Kind in Libadalang.Common.Ada_Base_Subp_Body
                  and then Home /= Item.As_Ada_Node
                then
-                  Report_Rule_Violation
+                  Report_Finding
                     (Unit, Candidate, Outside_Reference_From_Subprogram,
                      "subprogram refers to a local object of an enclosing "
                      & "subprogram");
@@ -457,7 +456,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
                                     .As_Ada_Node = Candidate)
            and then Target.Parent.Parent.Parent /= Own_Spec
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Candidate, Outside_Reference_From_Subprogram,
                "subprogram refers to a parameter of an enclosing "
                & "subprogram");
@@ -525,7 +524,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
         and then Is_Null (Enclosing (Block, Is_Loop'Access))
         and then Enclosing (Block, Is_Body'Access) = Subp
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Variable_Scoping,
             "variable is used only in the block at line "
             & To_Decimal (Natural (Block.Sloc_Range.Start_Line))
@@ -620,7 +619,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
       end loop;
 
       if Read then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Out_Parameter_Read_In_Exception_Handler,
             "out actual " & Node_Text (Assoc.F_R_Expr)
             & " is read in an exception handler of an enclosing block");
@@ -683,7 +682,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
       end if;
 
       if Tested then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Predicate_Testing,
             "expression evaluates a subtype predicate");
       end if;
@@ -817,7 +816,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
       end if;
 
       if Differ then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item.As_Basic_Decl.P_Defining_Name, Profile_Discrepancy,
             "parameter profile is written differently from the declaration "
             & "at line " & To_Decimal (Natural (Decl.Sloc_Range.Start_Line)));
@@ -910,7 +909,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
       end if;
 
       if Repeated then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Side_Effect_Parameter,
             "actuals call the same function with side effects more than "
             & "once");
@@ -933,7 +932,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
                if Is_Suspicious (Node.As_Bin_Op, Conjunction => True)
                  or else Is_Suspicious (Node.As_Bin_Op, Conjunction => False)
                then
-                  Report_Rule_Violation
+                  Report_Finding
                     (Unit, Node, Suspicious_Equality,
                      "the same name is compared with two literals in a way "
                      & "that is always or never true");

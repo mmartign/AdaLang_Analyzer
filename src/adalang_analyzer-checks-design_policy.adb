@@ -14,7 +14,6 @@ with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
 with Adalang_Analyzer.Config;
-with Adalang_Analyzer.Report;   use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;    use Adalang_Analyzer.Rules;
 
 package body Adalang_Analyzer.Checks.Design_Policy is
@@ -156,7 +155,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
                         (Ids.Child (J).As_Defining_Name.F_Name.As_Ada_Node,
                          Decl.F_Type_Def)
                then
-                  Report_Rule_Violation
+                  Report_Finding
                     (Unit, Item, Discriminated_Record,
                      "discriminated record declared");
                   return;
@@ -338,7 +337,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
       end if;
 
       if not Uses_Discriminant_Of (Item, Type_Decl) then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Anonymous_Subtype, "anonymous subtype used");
       end if;
    end Analyze_Anonymous_Subtype;
@@ -395,7 +394,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
       if Item.As_Base_Type_Decl.P_Is_Real_Type
         and then Is_Real_Without_Range (Item.As_Base_Type_Decl)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, No_Explicit_Real_Range,
             "real type declared without a range");
       end if;
@@ -453,7 +452,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
           and then Is_Listed_Object (Operation.F_Left, Actuals))
         or else Is_Listed_Object (Operation.F_Right, Actuals)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Direct_Equality,
             "direct equality test on a listed object");
       end if;
@@ -514,7 +513,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
                             (Choice.As_Bin_Op.F_Right.As_Attribute_Ref
                                .F_Prefix))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Membership_For_Validity,
             "membership test in the object's own subtype instead of Valid");
       end if;
@@ -622,7 +621,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
                                                (Formal.As_Formal_Subp_Decl
                                                   .F_Default_Expr))
                      then
-                        Report_Rule_Violation
+                        Report_Finding
                           (Unit, Item, Positional_Defaulted_Generic_Parameter,
                            "positional actual for a defaulted generic "
                            & "parameter");
@@ -692,7 +691,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
                     Config.Rule_Parameter
                       (Too_Many_Generic_Dependencies, "n", 3))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Too_Many_Generic_Dependencies,
             "unit depends on a chain of generic units that is too long");
       end if;
@@ -809,7 +808,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
          end loop;
       end if;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Item, Raising_External_Exception,
          "raised exception is not declared in the visible part of the "
          & "enclosing library package");
@@ -894,7 +893,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
          end;
       end if;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Item, Direct_Call_To_Primitive,
          "non-dispatching call to a primitive operation");
    end Analyze_Static_Call;
@@ -943,7 +942,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
       if Is_Downward (From, To_Type)
         or else Is_Downward (From.P_Accessed_Type, To_Type.P_Accessed_Type)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Downward_View_Conversion, "downward view conversion");
       end if;
    end Analyze_View_Conversion;
@@ -1007,7 +1006,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
         or else (for some Ancestor of Base.P_Base_Types =>
                    Has_Invariant (Ancestor))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Specific_Parent_Type_Invariant,
             "parent type has a Type_Invariant aspect that is not "
             & "class-wide");
@@ -1037,7 +1036,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
             if Decl.P_Base_Subp_Declarations'Length = 1
               and then not Has_Aspect (Decl, "Pre'Class")
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Item.As_Basic_Decl.P_Defining_Name,
                   No_Inherited_Classwide_Pre,
                   "overriding operation does not inherit a Pre'Class");
@@ -1082,7 +1081,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
                          (Value.As_Base_Aggregate.F_Assocs.Child (2)) =
                        "final"
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Item, Final_Package,
                   "child package of a package annotated as final");
             end if;
@@ -1135,7 +1134,7 @@ package body Adalang_Analyzer.Checks.Design_Policy is
                      Config.Rule_Parameter
                        (Deeply_Nested_Instantiation, "n", 3))
                then
-                  Report_Rule_Violation
+                  Report_Finding
                     (Unit, Node, Deeply_Nested_Instantiation,
                      "instantiation of a generic that is itself built on "
                      & "nested instantiations");

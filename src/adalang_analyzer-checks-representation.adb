@@ -13,7 +13,6 @@ with Libadalang.Common;
 with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
-with Adalang_Analyzer.Report;   use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;    use Adalang_Analyzer.Rules;
 
 package body Adalang_Analyzer.Checks.Representation is
@@ -160,7 +159,7 @@ package body Adalang_Analyzer.Checks.Representation is
                   or else Has_Aspect (Object, "Volatile")
                   or else Has_Aspect (Overlaid, "Volatile"))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Constant_Overlay,
             "non-constant object overlays a constant");
       end if;
@@ -177,7 +176,7 @@ package body Adalang_Analyzer.Checks.Representation is
                                         .Ada_Generic_Formal_Obj_Decl
                            and then not Has_Aspect (Overlaid, "Volatile")))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Non_Constant_Overlay,
             "constant or non-volatile object overlays a variable");
       end if;
@@ -189,7 +188,7 @@ package body Adalang_Analyzer.Checks.Representation is
       if On (Nonoverlay_Address_Specification)
         and then not (Is_Overlay and then Is_Object (Named))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Nonoverlay_Address_Specification,
             "address specification is not an overlay of another object");
       end if;
@@ -199,7 +198,7 @@ package body Adalang_Analyzer.Checks.Representation is
         and then Is_Object (Named)
         and then not Has_Aspect (Object, "Import")
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Not_Imported_Overlay,
             "overlaying object is not imported");
       end if;
@@ -290,7 +289,7 @@ package body Adalang_Analyzer.Checks.Representation is
          if On (Access_To_Local_Object)
            and then Denotes_Local_Object (Ref.F_Prefix)
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Item, Access_To_Local_Object,
                "Access attribute applied to a local object");
          end if;
@@ -313,7 +312,7 @@ package body Adalang_Analyzer.Checks.Representation is
               and then not Has_Aspect (Object, "Atomic")
               and then not Has_Aspect (Object, "Shared")
             then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Item, Address_Of_Non_Volatile_Object,
                   "Address attribute applied to a non-volatile object");
             end if;
@@ -399,7 +398,7 @@ package body Adalang_Analyzer.Checks.Representation is
         and then not (Has_Aspect (Decl, "Size")
                       and then Has_Aspect (Decl, "Pack"))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Incomplete_Representation_Specification,
             "record representation clause without both Size and Pack");
       end if;
@@ -416,7 +415,7 @@ package body Adalang_Analyzer.Checks.Representation is
         and then Has_Aspect (Decl, "Pack")
         and then Has_Modular_Component (Item)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Bit_Record_Without_Layout,
             "packed record with modular components has no layout definition");
       end if;
@@ -440,7 +439,7 @@ package body Adalang_Analyzer.Checks.Representation is
             end loop;
 
             if Laid_Out and then not Inherited then
-               Report_Rule_Violation
+               Report_Finding
                  (Unit, Item, No_Scalar_Storage_Order,
                   "record with a layout does not specify "
                   & "Scalar_Storage_Order");
@@ -531,7 +530,7 @@ package body Adalang_Analyzer.Checks.Representation is
       if Is_Representation_Item (Item)
         and then Is_Misplaced (Item, Represented_Entity (Item))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Misplaced_Representation_Item,
             "representation item does not directly follow the declaration "
             & "it applies to");
@@ -603,7 +602,7 @@ package body Adalang_Analyzer.Checks.Representation is
       if not Is_Set (Representation_Specification, "record_rep_clauses_only")
         and then Has_Representation_Aspect (Item.As_Basic_Decl)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Representation_Specification,
             "declaration has a representation aspect");
       end if;
@@ -662,7 +661,7 @@ package body Adalang_Analyzer.Checks.Representation is
         and then Is_Unchecked_Conversion
                    (Item.As_Call_Expr.P_Referenced_Decl.As_Ada_Node)
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Item, Unchecked_Conversion_As_Actual,
             "instance of Unchecked_Conversion used as an actual parameter "
             & "or default value");
@@ -741,7 +740,7 @@ package body Adalang_Analyzer.Checks.Representation is
          end;
       end if;
 
-      Report_Rule_Violation
+      Report_Finding
         (Unit, Item, Unchecked_Address_Conversion,
          "unchecked conversion from an address to an access value");
    end Analyze_Conversion_Instance;
@@ -794,7 +793,7 @@ package body Adalang_Analyzer.Checks.Representation is
                                    (Representation_Specification,
                                     "record_rep_clauses_only"))
          then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Representation_Specification,
                "representation clause used");
          elsif Kind in Libadalang.Common.Ada_Basic_Decl then

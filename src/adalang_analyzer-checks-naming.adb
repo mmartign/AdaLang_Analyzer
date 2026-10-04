@@ -15,7 +15,6 @@ with Libadalang.Common;
 with Adalang_Analyzer.Ada_Text; use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Checks.Policy_Support;
 use Adalang_Analyzer.Checks.Policy_Support;
-with Adalang_Analyzer.Report;   use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;    use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Text_Utils;
 
@@ -306,7 +305,7 @@ package body Adalang_Analyzer.Checks.Naming is
            (Name, Scheme (Chosen),
             Text_Parameter (Identifier_Casing, "exclude"))
       then
-         Report_Rule_Violation
+         Report_Finding
            (Unit, Node, Identifier_Casing,
             Name & " does not have the casing required for "
             & Label (Chosen)
@@ -619,7 +618,7 @@ package body Adalang_Analyzer.Checks.Naming is
       Message : constant String := Prefix_Message (Node);
    begin
       if Message /= "" then
-         Report_Rule_Violation (Unit, Node, Identifier_Prefixes, Message);
+         Report_Finding (Unit, Node, Identifier_Prefixes, Message);
       end if;
    end Analyze_Prefix;
 
@@ -785,7 +784,7 @@ package body Adalang_Analyzer.Checks.Naming is
            (Langkit_Support.Text.To_Text (Suffix));
       begin
          if Wanted /= "" and then not Ends_With (Name, Wanted) then
-            Report_Rule_Violation
+            Report_Finding
               (Unit, Node, Identifier_Suffixes,
                Name & " does not end with the suffix " & Wanted
                & " required for "
