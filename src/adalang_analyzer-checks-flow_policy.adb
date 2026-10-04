@@ -635,9 +635,6 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
    function Is_Formal_Subprogram (Kind : Node_Kind) return Boolean
    is (Kind in Libadalang.Common.Ada_Formal_Subp_Decl);
 
-   function Is_Generic_Unit (Kind : Node_Kind) return Boolean
-   is (Kind in Libadalang.Common.Ada_Generic_Decl);
-
    function Is_Ada_2022_Construct
      (Item : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
@@ -730,7 +727,7 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
    is
    begin
       if Is_Ada_2022_Construct (Item)
-        and then not Has_Ancestor (Item, Is_Generic_Unit'Access)
+        and then not In_Generic_Template (Item)
         and then not Is_In_Ghost_Code (Item)
       then
          Report_Finding

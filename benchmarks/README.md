@@ -116,18 +116,76 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-09-24.md) | 1986 | 1752 (88.2%) | 2196 | 1752 (79.8%) |
-| [aws](aws/RESULTS_gnatcheck_2026-09-24.md) | 6701 | 3635 (54.2%) | 12991 | 3625 (27.9%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-09-24.md) | 2108 | 1269 (60.2%) | 2943 | 1267 (43.1%) |
-| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-09-24.md) | 860 | 425 (49.4%) | 1136 | 425 (37.4%) |
-| [cubedos](cubedos/RESULTS_gnatcheck_2026-09-24.md) | 304 | 258 (84.9%) | 862 | 258 (29.9%) |
-| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-09-24.md) | 3066 | 2092 (68.2%) | 10094 | 2092 (20.7%) |
-| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-09-24.md) | 1852 | 1629 (88.0%) | 1941 | 1629 (83.9%) |
-| [saatana](saatana/RESULTS_gnatcheck_2026-09-24.md) | 204 | 134 (65.7%) | 167 | 134 (80.2%) |
-| [project_bias](project_bias/RESULTS_gnatcheck_2026-09-24.md) | 387 | 295 (76.2%) | 440 | 295 (67.0%) |
-| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-09-24.md) | 772 | 611 (79.1%) | 1851 | 592 (32.0%) |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-10-04.md) | 5527 | 5293 (95.8%) | 5737 | 5293 (92.3%) |
+| [aws](aws/RESULTS_gnatcheck_2026-10-04.md) | 44655 | 41378 (92.7%) | 124245 | 41368 (33.3%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-10-04.md) | 15287 | 14276 (93.4%) | 24471 | 14274 (58.3%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-10-04.md) | 7038 | 6469 (91.9%) | 7188 | 6469 (90.0%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-10-04.md) | 1248 | 1180 (94.6%) | 4161 | 1180 (28.4%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-10-04.md) | 13354 | 12379 (92.7%) | 43268 | 12379 (28.6%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-10-04.md) | 5433 | 5210 (95.9%) | 5522 | 5210 (94.3%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-10-04.md) | 1057 | 963 (91.1%) | 996 | 963 (96.7%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-10-04.md) | 1814 | 1720 (94.8%) | 1865 | 1720 (92.2%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-10-04.md) | 6462 | 6299 (97.5%) | 7810 | 6280 (80.4%) |
 
-Each corpus keeps one current results file, `RESULTS_gnatcheck_2026-09-24.md`
+These totals include the 153 rule pairs of the opt-in coding-standard
+checks, added to the lane on 2026-10-04 (the other 14 coding-standard checks
+report nothing until configured and are not in the rule map). The pairs
+that were already compared on 2026-09-24 give the same numbers as then on
+nine corpora and differ by two GNATcheck findings on Ada_Drivers_Library;
+each results file shows both.
+
+For the coding-standard checks alone, counted over the files both tools
+analysed:
+
+| Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
+| --- | ---: | ---: | ---: | ---: |
+| [sparknacl](sparknacl/RESULTS_gnatcheck_2026-10-04.md) | 3541 | 3541 (100.0%) | 3541 | 3541 (100.0%) |
+| [aws](aws/RESULTS_gnatcheck_2026-10-04.md) | 37954 | 37772 (99.5%) | 39094 | 37772 (96.6%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-10-04.md) | 13179 | 13007 (98.7%) | 19916 | 13007 (65.3%) |
+| [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-10-04.md) | 6178 | 6045 (97.8%) | 6053 | 6045 (99.9%) |
+| [cubedos](cubedos/RESULTS_gnatcheck_2026-10-04.md) | 944 | 922 (97.7%) | 1577 | 922 (58.5%) |
+| [coap_spark](coap_spark/RESULTS_gnatcheck_2026-10-04.md) | 10288 | 10287 (100.0%) | 10314 | 10287 (99.7%) |
+| [libkeccak](libkeccak/RESULTS_gnatcheck_2026-10-04.md) | 3581 | 3581 (100.0%) | 3581 | 3581 (100.0%) |
+| [saatana](saatana/RESULTS_gnatcheck_2026-10-04.md) | 830 | 829 (99.9%) | 829 | 829 (100.0%) |
+| [project_bias](project_bias/RESULTS_gnatcheck_2026-10-04.md) | 1427 | 1427 (100.0%) | 1427 | 1427 (100.0%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-10-04.md) | 5690 | 5690 (100.0%) | 5961 | 5690 (95.5%) |
+
+Across the ten corpora that is 83612 AdaLang findings, of which GNATcheck
+reports 83101 (99.4%) at the same file and line, against 92293
+GNATcheck findings (90.0% matched). Where both tools resolve
+the code the agreement is complete or nearly so (SPARKNaCl, project_bias,
+libkeccak, Saatana, coap_spark). The gaps have three causes, set out in the
+results files:
+
+- **Imported projects.** AdaLang resolves names only among the sources of
+  the root project. On corpora whose root project imports another
+  (gnatcoll-core, CubedOS, AWS, Ada_Drivers_Library) the checks that need a
+  type or a declaration report less than GNATcheck, and some report a body
+  whose declaration was not resolved. gnatcoll-core shows it most: one
+  check that needs to resolve type names reports nothing against
+  GNATcheck's 1,455 findings, while a purely syntactic check agrees on 187
+  of 188.
+- **Preprocessor directives.** AdaLang reports nothing for a source file
+  that contains them; all 271 GNATcheck-only findings on Tokeneer are in
+  four such files.
+- **Different file sets.** GNATcheck analyses the closure it loads, AdaLang
+  the root project's sources; the table above counts shared files only.
+
+The run also found four defects in the new checks, all fixed before these
+numbers were taken: `Outside_Reference_From_Subprogram` reported inside
+generic bodies, `Global_Variable` reported renamings of constants,
+`Uninitialized_Global_Variable` reported locals whose scope was not
+resolved, and `Deriving_From_Predefined_Type` covered the children of
+`Ada`, `System` and `Interfaces`.
+
+GNATcheck worker crashes were frequent with about 185 plain rules in one
+invocation, to the point of never completing on the larger corpora. For
+this refresh each GNATcheck invocation was repeated until it finished
+without a crash, and the plain rules were run in batches of at most 25
+(split further when a batch kept crashing); no rule had to be left out.
+The runner scripts in this directory do not do this themselves yet.
+
+Each corpus keeps one current results file, `RESULTS_gnatcheck_2026-10-04.md`
 (earlier runs are in the Git history), with per-rule tables for both
 tools and the known, explained differences. The 2026-09-24 refresh
 corrected two harness defects: the Ada_Drivers_Library runner had split

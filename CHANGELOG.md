@@ -36,17 +36,28 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The precision corpus grows from 345 to 597 cases: a finding and a clean
-  fixture for every new check that runs without parameters.
+- The precision corpus grows from 345 to 598 cases: a finding and a clean
+  fixture for every new check that runs without parameters, and one
+  regression case from the corpus runs.
 
 ### Known limitations
 
-- The new checks have not yet been run over the external benchmark corpora;
-  `quality/corpus_exercise_coverage.tsv` lists them as not exercised. The
-  object-oriented checks in particular rest on a few fixture findings.
+- On the ten external benchmark corpora, GNATcheck confirms 99.4% of
+  the new checks' findings in the files both tools analysed, and the new
+  checks report 90.0% of GNATcheck's (`benchmarks/README.md`). The
+  shortfall has two causes in the analyzer itself, which predate these
+  checks: with a project file it resolves names only among the root
+  project's sources, so checks that need a type or a declaration fall
+  short on code that imports other projects; and it reports nothing for a
+  source file that contains preprocessor directives.
+- GNATcheck also reports inside the instances of generic units; the new
+  checks do not follow instantiations.
 - `Missing_Header` and `Actual_Parameter` were not compared with GNATcheck:
   the local GNATcheck build did not accept their parameters on the command
   line.
+- `quality/corpus_exercise_coverage.tsv` covers the preset runs only, so it
+  lists the new checks as not exercised although the GNATcheck lane ran
+  them.
 
 ## [1.7.0] - 2026-10-03
 

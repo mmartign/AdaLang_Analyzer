@@ -116,12 +116,48 @@ package body Adalang_Analyzer.Checks.Policy_Support is
          | Libadalang.Common.Ada_Entry_Body
          | Libadalang.Common.Ada_Protected_Body);
 
+   --  The enclosing constructs are looked at first: they need no name
+   --  resolution, so a declaration written inside a subprogram is local
+   --  even when its unit cannot be resolved.
    function Has_Local_Scope
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is ((not Libadalang.Analysis.Is_Null (Node.Parent)
         and then Node.Parent.Kind =
                    Libadalang.Common.Ada_Generic_Formal_Obj_Decl)
+       or else Has_Ancestor (Node, Is_Local_Scope'Access)
        or else Has_Semantic_Ancestor (Node, Is_Local_Scope'Access));
+
+   function In_Generic_Template
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node := Node.As_Ada_Node;
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind in Libadalang.Common.Ada_Generic_Decl then
+            return True;
+         elsif Current.Kind in Libadalang.Common.Ada_Package_Body
+                 | Libadalang.Common.Ada_Subp_Body
+         then
+            declare
+               Spec : constant Libadalang.Analysis.Ada_Node :=
+                 Current.As_Body_Node.P_Decl_Part.As_Ada_Node;
+            begin
+               if not Libadalang.Analysis.Is_Null (Spec)
+                 and then Spec.Kind in Libadalang.Common.Ada_Generic_Decl
+                            | Libadalang.Common.Ada_Generic_Package_Internal
+                            | Libadalang.Common.Ada_Generic_Subp_Internal
+               then
+                  return True;
+               end if;
+            end;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end In_Generic_Template;
 
    function Referenced
      (Name : Libadalang.Analysis.Ada_Node'Class)

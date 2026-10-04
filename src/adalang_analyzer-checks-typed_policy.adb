@@ -7,8 +7,6 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
-with Ada.Strings.Fixed;
-
 with Langkit_Support.Slocs;
 with Langkit_Support.Text;
 with Libadalang.Common;
@@ -470,7 +468,9 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
          Spec := Node.As_Classic_Subp_Decl.F_Subp_Spec;
       end if;
 
-      if Libadalang.Analysis.Is_Null (Spec.F_Subp_Returns) then
+      if Libadalang.Analysis.Is_Null (Spec.F_Subp_Returns)
+        or else In_Generic_Template (Node)
+      then
          return;
       end if;
 
@@ -513,8 +513,8 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
       end;
    end Analyze_Array_Return;
 
-   --  True when Type_Decl's root type is declared in a predefined library
-   --  hierarchy: Standard, System, Ada or Interfaces.
+   --  True when Type_Decl's root type is declared directly in one of the
+   --  packages Standard, System, Ada or Interfaces.
    function Is_Predefined_Type
      (Type_Decl : Libadalang.Analysis.Base_Type_Decl) return Boolean
    is
@@ -551,17 +551,15 @@ package body Adalang_Analyzer.Checks.Typed_Policy is
          return False;
       end if;
 
+      --  Only the four root library packages themselves count, not their
+      --  children: a type from Ada.Streams or Ada.Strings.Unbounded is an
+      --  ordinary library type.
       declare
          Unit_Name : constant String :=
            Lower (Node_Text (Outer.As_Base_Package_Decl.F_Package_Name));
-         Dot       : constant Natural :=
-           Ada.Strings.Fixed.Index (Unit_Name, ".");
-         Top       : constant String :=
-           (if Dot = 0 then Unit_Name
-            else Unit_Name (Unit_Name'First .. Dot - 1));
       begin
-         return Top = "standard" or else Top = "system"
-           or else Top = "ada" or else Top = "interfaces";
+         return Unit_Name = "standard" or else Unit_Name = "system"
+           or else Unit_Name = "ada" or else Unit_Name = "interfaces";
       end;
    end Is_Predefined_Type;
 

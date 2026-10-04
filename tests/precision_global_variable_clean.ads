@@ -1,5 +1,6 @@
 package Precision_Global_Variable_Clean is
    Limit : constant Integer := 10;
+   Bound : Integer renames Limit;
 
    package Nested is
       Scratch : Integer := 0;

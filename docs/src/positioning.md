@@ -137,10 +137,12 @@ Their scope follows the paired GNATcheck rule, and each was compared with
 GNATcheck by file and line on fixtures and on this project's own sources.
 
 AdaLang Analyzer should still not claim to be a general GNATcheck
-replacement. The 167 checks have not yet been run over the external
-benchmark corpora, GNATcheck's rules are user-extensible and AdaLang's are
-not, and the comparison says nothing yet about comparable project handling,
-scalability, or diagnostic stability across releases.
+replacement. On the ten external benchmark corpora GNATcheck confirms
+nearly all of what these checks report, but AdaLang reports only about
+nine tenths of what GNATcheck does: it resolves names only within the root
+project, so on code split across projects its type-dependent checks fall
+short, and it skips files with preprocessor directives. GNATcheck's rules
+are also user-extensible and AdaLang's are not.
 
 AdaLang's defensible distinction is unchanged: flow-sensitive defect
 findings, safety profiles, and SPARK-readiness feedback, in the same

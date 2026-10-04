@@ -2443,8 +2443,8 @@ package Adalang_Analyzer.Rules is
         (Name        => To_Unbounded_String ("Deriving_From_Predefined_Type"),
          Description => To_Unbounded_String
            ("Find derived types, other than type extensions, whose " &
-            "parent type is declared in Standard, System, Ada or " &
-            "Interfaces."),
+            "parent type is declared directly in package Standard, " &
+            "System, Ada or Interfaces (not in one of their children)."),
          Guidance    => To_Unbounded_String
            ("Declare a new type with an explicit range or precision."),
          Quality     => Quality_Reliability,

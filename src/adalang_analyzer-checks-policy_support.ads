@@ -90,6 +90,12 @@ private package Adalang_Analyzer.Checks.Policy_Support is
    --  Calls Visit on every node below Root, in source order. With
    --  Skip_Nested_Bodies, the bodies nested in Root are left out.
 
+   function In_Generic_Template
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Node is in a generic unit: its declaration, or the body
+   --  of a generic package or subprogram. Such code is a template, not
+   --  code that runs.
+
    function Is_Listed (Item : String; List : String) return Boolean;
    --  True when Item is one of the comma-separated entries of List,
    --  compared without regard to case or surrounding blanks.

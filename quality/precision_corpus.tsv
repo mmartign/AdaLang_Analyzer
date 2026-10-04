@@ -596,3 +596,4 @@ Predicate_Testing	gnatcheck-pair-finding	tests/precision_references.adb	finding	
 Predicate_Testing	gnatcheck-pair-clean	tests/precision_naming_clean.ads	clean	GNATcheck-paired negative control (predicate_testing): the nearest construct the check does not cover must stay clean
 Profile_Discrepancy	gnatcheck-pair-finding	tests/precision_references.adb	finding	GNATcheck-paired boundary (profile_discrepancies): the construct the check reports must be flagged
 Profile_Discrepancy	gnatcheck-pair-clean	tests/precision_naming_clean.ads	clean	GNATcheck-paired negative control (profile_discrepancies): the nearest construct the check does not cover must stay clean
+Outside_Reference_From_Subprogram	negative-generic-body	tests/precision_outside_reference_generic_clean.adb	clean	corpus finding (libkeccak, 2026-10-04): a nested subprogram in the body of a generic unit is a template, which GNATcheck excludes; 826 findings there before the fix

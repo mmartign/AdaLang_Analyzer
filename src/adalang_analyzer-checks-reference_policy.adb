@@ -97,9 +97,6 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
    function Is_Protected_Body (Kind : Node_Kind) return Boolean
    is (Kind = Libadalang.Common.Ada_Protected_Body);
 
-   function Is_Generic_Unit (Kind : Node_Kind) return Boolean
-   is (Kind in Libadalang.Common.Ada_Generic_Decl);
-
    --------------------
    --  Conditions    --
    --------------------
@@ -468,7 +465,7 @@ package body Adalang_Analyzer.Checks.Reference_Policy is
             Note_Skipped_Check (Candidate, Exc);
       end Visit;
    begin
-      if Has_Ancestor (Item, Is_Generic_Unit'Access) then
+      if In_Generic_Template (Item) then
          return;
       end if;
       For_Each_Below (Item, Visit'Access, Skip_Nested_Bodies => True);

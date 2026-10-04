@@ -447,6 +447,16 @@ package body Adalang_Analyzer.Checks.Coding_Standard is
          return;
       end if;
 
+      --  A renaming of a constant, such as an enumeration literal, is not
+      --  a variable either. The query needs name resolution, so it is
+      --  made only for renamings.
+      if not Libadalang.Analysis.Is_Null
+               (Node.As_Object_Decl.F_Renaming_Clause)
+        and then Node.As_Basic_Decl.P_Is_Constant_Object
+      then
+         return;
+      end if;
+
       Part := Node.Parent.Parent;
       if Libadalang.Analysis.Is_Null (Part)
         or else Part.Kind not in Libadalang.Common.Ada_Public_Part
