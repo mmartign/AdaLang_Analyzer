@@ -29,9 +29,15 @@ package body Adalang_Analyzer.Checks.Suggestions is
    function Is_Null (Item : Libadalang.Analysis.Ada_Node'Class) return Boolean
      renames Libadalang.Analysis.Is_Null;
 
+   --  True when Left and Right are the same simple or expanded name. Other
+   --  forms of name, such as an indexed component, never match.
    function Same_Name
      (Left, Right : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is (not Is_Null (Left) and then not Is_Null (Right)
+       and then Left.Kind in Libadalang.Common.Ada_Base_Id
+                  | Libadalang.Common.Ada_Dotted_Name
+       and then Right.Kind in Libadalang.Common.Ada_Base_Id
+                  | Libadalang.Common.Ada_Dotted_Name
        and then Canonical_Text (Left) = Canonical_Text (Right));
 
    function Is_Predefined
