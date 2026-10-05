@@ -18,6 +18,8 @@ with Ada.Containers.Vectors;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 
+with GNATCOLL.GMP.Integers;
+
 with Libadalang.Common;
 with Langkit_Support.Text;
 
@@ -1000,6 +1002,500 @@ package body Adalang_Analyzer.Flow_Interp is
       when others =>
          return Libadalang.Common.Ada_Mode_Default;
    end Formal_Mode;
+
+   --  The subtype a formal parameter is declared with; null when it is
+   --  not found.
+   function Formal_Subtype
+     (Param : Libadalang.Analysis.Defining_Name'Class)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Param);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_Param_Spec then
+            return Current.As_Param_Spec.F_Type_Expr.P_Designated_Type_Decl;
+         end if;
+         Current := Current.Parent;
+      end loop;
+
+      return Libadalang.Analysis.No_Base_Type_Decl;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Type_Decl;
+   end Formal_Subtype;
+
+   --  True when the subtype Typ has every value of its type: a modular
+   --  type, a predefined integer type, or a subtype or a derived type that
+   --  adds no constraint to one. A value of the type needs no range check
+   --  to be stored under such a subtype.
+   function Covers_Its_Type
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Boolean
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+   begin
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return False;
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            if not Libadalang.Analysis.Is_Null
+                     (Current.As_Subtype_Decl.F_Subtype.F_Constraint)
+            then
+               return False;
+            end if;
+            Current :=
+              Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         elsif Current.Kind not in Libadalang.Common.Ada_Type_Decl then
+            return False;
+         else
+            declare
+               Definition : constant Libadalang.Analysis.Type_Def :=
+                 Current.As_Type_Decl.F_Type_Def;
+            begin
+               if Libadalang.Analysis.Is_Null (Definition) then
+                  return False;
+               end if;
+
+               case Definition.Kind is
+                  when Libadalang.Common.Ada_Mod_Int_Type_Def =>
+                     return True;
+                  when Libadalang.Common.Ada_Signed_Int_Type_Def =>
+                     --  Only a predefined type is declared with the whole
+                     --  range of its base type.
+                     declare
+                        Name : constant String :=
+                          Langkit_Support.Text.To_UTF8
+                            (Current.P_Canonical_Fully_Qualified_Name);
+                     begin
+                        return Name'Length > 9
+                          and then Name (Name'First .. Name'First + 8) =
+                            "standard.";
+                     end;
+                  when Libadalang.Common.Ada_Derived_Type_Def =>
+                     if not Libadalang.Analysis.Is_Null
+                              (Definition.As_Derived_Type_Def
+                                 .F_Subtype_Indication.F_Constraint)
+                     then
+                        return False;
+                     end if;
+                     Current :=
+                       Definition.As_Derived_Type_Def.F_Subtype_Indication
+                         .P_Designated_Type_Decl;
+                  when others =>
+                     return False;
+               end case;
+            end;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Covers_Its_Type;
+
+   --  What the declarations Typ is built from say about its values: the
+   --  tightest range among Typ and the subtypes and types it is declared
+   --  from, each of which contains the next.
+   type Subtype_Facts is record
+      Bounds : Abstract_Range := Unknown_Range;
+   end record;
+
+   function Subtype_Chain_Facts
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Subtype_Facts
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+      Result    : Subtype_Facts;
+
+      procedure Tighten (Bounds : Abstract_Range) is
+      begin
+         if Bounds.Has_Low
+           and then (not Result.Bounds.Has_Low
+                     or else Bounds.Low > Result.Bounds.Low)
+         then
+            Result.Bounds.Has_Low := True;
+            Result.Bounds.Low := Bounds.Low;
+         end if;
+         if Bounds.Has_High
+           and then (not Result.Bounds.Has_High
+                     or else Bounds.High < Result.Bounds.High)
+         then
+            Result.Bounds.Has_High := True;
+            Result.Bounds.High := Bounds.High;
+         end if;
+      end Tighten;
+   begin
+      for Depth in 1 .. Max_Depth loop
+         exit when Libadalang.Analysis.Is_Null (Current)
+           or else not Current.P_Is_Int_Type;
+
+         declare
+            Bounds : constant Abstract_Range :=
+              Type_Range (Current, Empty_Flow_State);
+         begin
+            Tighten (Bounds);
+
+            if Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+               Current :=
+                 Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+            elsif Current.Kind not in Libadalang.Common.Ada_Type_Decl
+              or else Libadalang.Analysis.Is_Null
+                        (Current.As_Type_Decl.F_Type_Def)
+            then
+               exit;
+            elsif Current.As_Type_Decl.F_Type_Def.Kind =
+              Libadalang.Common.Ada_Derived_Type_Def
+            then
+               Current :=
+                 Current.As_Type_Decl.F_Type_Def.As_Derived_Type_Def
+                   .F_Subtype_Indication.P_Designated_Type_Decl;
+            else
+               exit;
+            end if;
+         end;
+      end loop;
+      return Result;
+   exception
+      when others =>
+         return (others => <>);
+   end Subtype_Chain_Facts;
+
+   --  True when Typ is Ancestor or a subtype declared, directly or through
+   --  other subtypes, from it: each value of Typ is then one of Ancestor.
+   function Is_Subtype_Of
+     (Typ      : Libadalang.Analysis.Base_Type_Decl;
+      Ancestor : Libadalang.Analysis.Base_Type_Decl) return Boolean
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+   begin
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return False;
+         elsif Libadalang.Analysis.Ada_Node (Current) =
+           Libadalang.Analysis.Ada_Node (Ancestor)
+         then
+            return True;
+         elsif Current.Kind /= Libadalang.Common.Ada_Subtype_Decl then
+            return False;
+         end if;
+         Current := Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Is_Subtype_Of;
+
+   --  The range a compiler can tell Value is in from its form alone, with
+   --  no knowledge of the state: its value when it is static; the range of
+   --  its subtype when it is a name, a call, a conversion or a qualified
+   --  expression; for an arithmetic operation, the interval its operands'
+   --  ranges give. A range check into a subtype that contains this range is
+   --  one a compiler removes, and GNATprove does not have.
+   function Static_Subtype_Range
+     (Value : Libadalang.Analysis.Ada_Node'Class) return Abstract_Range
+   is
+      function Point (Item : Long_Long_Integer) return Abstract_Range
+      is (Has_Low => True, Low => Item, Has_High => True, High => Item);
+
+      function Known (Item : Abstract_Range) return Boolean
+      is (Item.Has_Low and then Item.Has_High);
+
+      procedure Set_Low
+        (Item : in out Abstract_Range; Bound : Abstract_Int) is
+      begin
+         Item.Has_Low := Bound.Known;
+         Item.Low := Bound.Value;
+      end Set_Low;
+
+      procedure Set_High
+        (Item : in out Abstract_Range; Bound : Abstract_Int) is
+      begin
+         Item.Has_High := Bound.Known;
+         Item.High := Bound.Value;
+      end Set_High;
+
+      --  The value of Value when it is a static expression that
+      --  Integer_Value does not fold, such as one with a static attribute.
+      function Static_Value return Abstract_Int is
+      begin
+         if Value.As_Expr.P_Is_Static_Expr then
+            return Known_Int
+              (Long_Long_Integer'Value
+                 (GNATCOLL.GMP.Integers.Image
+                    (Value.As_Expr.P_Eval_As_Int)));
+         end if;
+         return Unknown_Int;
+      exception
+         when others =>
+            return Unknown_Int;
+      end Static_Value;
+
+      --  An interval is of use only with both of its ends: an operation
+      --  whose result may leave it on one side is one a compiler keeps
+      --  the check for.
+      function Within_Base (Item : Abstract_Range) return Abstract_Range
+      is (if Known (Item) then Item else Unknown_Range);
+   begin
+      if Libadalang.Analysis.Is_Null (Value)
+        or else Value.Kind not in Libadalang.Common.Ada_Expr
+      then
+         return Unknown_Range;
+      elsif Value.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Static_Subtype_Range (Value.As_Paren_Expr.F_Expr);
+      end if;
+
+      declare
+         Folded : constant Abstract_Int :=
+           Integer_Value (Value, Empty_Flow_State);
+      begin
+         if Folded.Known then
+            return Point (Folded.Value);
+         end if;
+      end;
+
+      declare
+         Static : constant Abstract_Int := Static_Value;
+      begin
+         if Static.Known then
+            return Point (Static.Value);
+         end if;
+      end;
+
+      case Value.Kind is
+         when Libadalang.Common.Ada_Identifier
+            | Libadalang.Common.Ada_Dotted_Name
+            | Libadalang.Common.Ada_Call_Expr
+            | Libadalang.Common.Ada_Qual_Expr
+            | Libadalang.Common.Ada_Explicit_Deref =>
+            declare
+               Result : Abstract_Range :=
+                 Subtype_Chain_Facts
+                   (Value.As_Expr.P_Expression_Type).Bounds;
+            begin
+               --  A conversion between integer types keeps the value, so
+               --  what is known of the operand holds for the result too.
+               if Value.Kind = Libadalang.Common.Ada_Call_Expr
+                 and then Value.As_Call_Expr.P_Kind in
+                   Libadalang.Common.Type_Conversion
+               then
+                  declare
+                     Suffix  : constant Libadalang.Analysis.Ada_Node :=
+                       Value.As_Call_Expr.F_Suffix;
+                     Operand : constant Libadalang.Analysis.Expr :=
+                       (if Suffix.Kind in Libadalang.Common.Ada_Expr
+                        then Suffix.As_Expr
+                        elsif Suffix.Children_Count = 1
+                          and then Suffix.Child (1).Kind =
+                            Libadalang.Common.Ada_Param_Assoc
+                        then Suffix.Child (1).As_Param_Assoc.F_R_Expr
+                        else Libadalang.Analysis.No_Expr);
+                     Inner   : Abstract_Range := Unknown_Range;
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Operand)
+                       and then not Libadalang.Analysis.Is_Null
+                                      (Operand.P_Expression_Type)
+                       and then Operand.P_Expression_Type.P_Is_Int_Type
+                     then
+                        Inner := Static_Subtype_Range (Operand);
+                     end if;
+                     if Inner.Has_Low
+                       and then (not Result.Has_Low
+                                 or else Inner.Low > Result.Low)
+                     then
+                        Result.Has_Low := True;
+                        Result.Low := Inner.Low;
+                     end if;
+                     if Inner.Has_High
+                       and then (not Result.Has_High
+                                 or else Inner.High < Result.High)
+                     then
+                        Result.Has_High := True;
+                        Result.High := Inner.High;
+                     end if;
+                  end;
+               end if;
+               return Result;
+            end;
+
+         when Libadalang.Common.Ada_Attribute_Ref =>
+            declare
+               Attr   : constant Libadalang.Analysis.Attribute_Ref :=
+                 Value.As_Attribute_Ref;
+               Name   : constant String :=
+                 Text_Utils.Normalize_Rule_Name
+                   (Ada_Text.Node_Text (Attr.F_Attribute));
+               Prefix : constant Libadalang.Analysis.Basic_Decl :=
+                 Attr.F_Prefix.P_Referenced_Decl;
+               --  The type the prefix names, or that of the object it
+               --  names.
+               Typ    : constant Libadalang.Analysis.Base_Type_Decl :=
+                 (if not Libadalang.Analysis.Is_Null (Prefix)
+                    and then Prefix.Kind in
+                      Libadalang.Common.Ada_Base_Type_Decl
+                  then Prefix.As_Base_Type_Decl
+                  else Attr.F_Prefix.P_Expression_Type);
+            begin
+               if Libadalang.Analysis.Is_Null (Typ)
+                 or else
+                   (not Libadalang.Analysis.Is_Null (Attr.F_Args)
+                    and then Attr.F_Args.Children_Count > 0)
+               then
+                  return Unknown_Range;
+               elsif Name = "size" and then Typ.P_Is_Scalar_Type then
+                  --  No scalar is larger than 128 bits.
+                  return
+                    (Has_Low => True, Low => 0,
+                     Has_High => True, High => 128);
+               end if;
+               return Unknown_Range;
+            end;
+
+         when Libadalang.Common.Ada_If_Expr =>
+            --  One of the dependent expressions, whichever it is.
+            declare
+               Expr   : constant Libadalang.Analysis.If_Expr :=
+                 Value.As_If_Expr;
+               Result : Abstract_Range :=
+                 Static_Subtype_Range (Expr.F_Then_Expr);
+
+               procedure Include (Item : Abstract_Range) is
+               begin
+                  Result.Has_Low := Result.Has_Low and then Item.Has_Low;
+                  Result.Has_High := Result.Has_High and then Item.Has_High;
+                  if Result.Has_Low then
+                     Result.Low :=
+                       Long_Long_Integer'Min (Result.Low, Item.Low);
+                  end if;
+                  if Result.Has_High then
+                     Result.High :=
+                       Long_Long_Integer'Max (Result.High, Item.High);
+                  end if;
+               end Include;
+            begin
+               if Libadalang.Analysis.Is_Null (Expr.F_Else_Expr) then
+                  return Unknown_Range;
+               end if;
+               for Part of Expr.F_Alternatives loop
+                  Include
+                    (Static_Subtype_Range
+                       (Part.As_Elsif_Expr_Part.F_Then_Expr));
+               end loop;
+               Include (Static_Subtype_Range (Expr.F_Else_Expr));
+               return Result;
+            end;
+
+         when Libadalang.Common.Ada_Un_Op =>
+            declare
+               Operand : constant Abstract_Range :=
+                 Static_Subtype_Range (Value.As_Un_Op.F_Expr);
+               Result  : Abstract_Range := Unknown_Range;
+            begin
+               if not Known (Operand) then
+                  return Unknown_Range;
+               end if;
+
+               case Value.As_Un_Op.F_Op.Kind is
+                  when Libadalang.Common.Ada_Op_Plus =>
+                     return Operand;
+                  when Libadalang.Common.Ada_Op_Minus =>
+                     Set_Low (Result, Safe_Sub (0, Operand.High));
+                     Set_High (Result, Safe_Sub (0, Operand.Low));
+                  when Libadalang.Common.Ada_Op_Abs =>
+                     if Operand.Low >= 0 then
+                        return Operand;
+                     end if;
+                     Set_Low (Result, Known_Int (0));
+                     Set_High
+                       (Result,
+                        (if Operand.High >= 0
+                           and then Safe_Sub (0, Operand.Low).Known
+                         then Known_Int
+                                (Long_Long_Integer'Max
+                                   (Operand.High, -Operand.Low))
+                         else Safe_Sub (0, Operand.Low)));
+                  when others =>
+                     return Unknown_Range;
+               end case;
+               return Within_Base (Result);
+            end;
+
+         when Libadalang.Common.Ada_Bin_Op =>
+            declare
+               Left   : constant Abstract_Range :=
+                 Static_Subtype_Range (Value.As_Bin_Op.F_Left);
+               Right  : constant Abstract_Range :=
+                 Static_Subtype_Range (Value.As_Bin_Op.F_Right);
+               Result : Abstract_Range := Unknown_Range;
+            begin
+               case Value.As_Bin_Op.F_Op.Kind is
+                  when Libadalang.Common.Ada_Op_Plus =>
+                     if not Known (Left) or else not Known (Right) then
+                        return Unknown_Range;
+                     end if;
+                     Set_Low (Result, Safe_Add (Left.Low, Right.Low));
+                     Set_High (Result, Safe_Add (Left.High, Right.High));
+
+                  when Libadalang.Common.Ada_Op_Minus =>
+                     if not Known (Left) or else not Known (Right) then
+                        return Unknown_Range;
+                     end if;
+                     Set_Low (Result, Safe_Sub (Left.Low, Right.High));
+                     Set_High (Result, Safe_Sub (Left.High, Right.Low));
+
+                  when Libadalang.Common.Ada_Op_Mult =>
+                     --  Of two ranges without a negative value: the sign
+                     --  cases are not needed where a check is removed.
+                     if not Known (Left) or else not Known (Right)
+                       or else Left.Low < 0 or else Right.Low < 0
+                     then
+                        return Unknown_Range;
+                     end if;
+                     Set_Low (Result, Safe_Mul (Left.Low, Right.Low));
+                     Set_High (Result, Safe_Mul (Left.High, Right.High));
+
+                  when Libadalang.Common.Ada_Op_Div =>
+                     if not Known (Left) or else not Known (Right)
+                       or else Left.Low < 0 or else Right.Low < 1
+                     then
+                        return Unknown_Range;
+                     end if;
+                     Set_Low (Result, Known_Int (Left.Low / Right.High));
+                     Set_High (Result, Known_Int (Left.High / Right.Low));
+
+                  when Libadalang.Common.Ada_Op_Mod =>
+                     if not Known (Right) or else Right.Low < 1 then
+                        return Unknown_Range;
+                     end if;
+                     return
+                       (Has_Low => True, Low => 0,
+                        Has_High => True, High => Right.High - 1);
+
+                  when Libadalang.Common.Ada_Op_Rem =>
+                     if not Known (Left) or else not Known (Right)
+                       or else Left.Low < 0 or else Right.Low < 1
+                     then
+                        return Unknown_Range;
+                     end if;
+                     return
+                       (Has_Low => True, Low => 0,
+                        Has_High => True, High => Right.High - 1);
+
+                  when others =>
+                     return Unknown_Range;
+               end case;
+               return Within_Base (Result);
+            end;
+
+         when others =>
+            return Unknown_Range;
+      end case;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Static_Subtype_Range;
 
    function Formal_Is_Writable
      (Param : Libadalang.Analysis.Defining_Name'Class) return Boolean is
@@ -7097,6 +7593,150 @@ package body Adalang_Analyzer.Flow_Interp is
          end;
       end Finalize_Slice_Check;
 
+      --  The value of an actual parameter is to fit the subtype of its
+      --  formal on the way in, and what an "out" or "in out" formal holds at
+      --  the return is to fit the subtype of the actual. One obligation,
+      --  at the actual, which is where GNATprove reports either check. It
+      --  is raised for an integer formal, and only where the check is
+      --  needed: not when the subtype that receives the value has every
+      --  value of the type, nor when the form of the actual alone says it
+      --  fits (see Static_Subtype_Range). A compiler removes the check
+      --  there and GNATprove has none.
+      procedure Finalize_Actual_Check
+        (Param     : Libadalang.Analysis.Defining_Name'Class;
+         Actual    : Libadalang.Analysis.Expr'Class;
+         Container : CFG.Node_Id)
+      is
+         Mode        : constant Libadalang.Common.Ada_Node_Kind_Type :=
+           Formal_Mode (Param);
+         Formal_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Formal_Subtype (Param);
+         Copied_In   : constant Boolean :=
+           Mode /= Libadalang.Common.Ada_Mode_Out;
+         Copied_Back : constant Boolean :=
+           Mode in Libadalang.Common.Ada_Mode_Out
+             | Libadalang.Common.Ada_Mode_In_Out;
+         Message     : constant String :=
+           "actual parameter is outside the formal's subtype range";
+
+         function Within (Inner, Outer : Abstract_Range) return Boolean
+         is (Inner.Has_Low and then Inner.Has_High
+             and then Outer.Has_Low and then Outer.Has_High
+             and then Outer.Low <= Inner.Low
+             and then Inner.High <= Outer.High);
+      begin
+         if Libadalang.Analysis.Is_Null (Formal_Type)
+           or else Libadalang.Analysis.Is_Null (Actual)
+           or else not Formal_Type.P_Is_Int_Type
+         then
+            return;
+         end if;
+
+         declare
+            State  : constant Flow_State := State_At (Container);
+            Formal_Range : constant Abstract_Range :=
+              Type_Range (Formal_Type, Empty_Flow_State);
+            Target : constant Target_Subtype :=
+              (if Copied_Back then Stored_Subtype (Actual, State)
+               else (Typ => Actual.P_Expression_Type, Constraint => <>));
+            Is_Name : constant Boolean :=
+              Actual.Kind in Libadalang.Common.Ada_Identifier
+                | Libadalang.Common.Ada_Dotted_Name
+                | Libadalang.Common.Ada_Call_Expr
+                | Libadalang.Common.Ada_Qual_Expr
+                | Libadalang.Common.Ada_Explicit_Deref;
+            --  The actual is declared with the subtype of the formal.
+            Same   : constant Boolean :=
+              Is_Name
+              and then not Libadalang.Analysis.Is_Null (Target.Typ)
+              and then Libadalang.Analysis.Ada_Node (Target.Typ) =
+                Libadalang.Analysis.Ada_Node (Formal_Type);
+            --  An attribute gives a universal integer, which the type of
+            --  the formal need not hold.
+            Typed  : constant Boolean :=
+              Actual.Kind /= Libadalang.Common.Ada_Attribute_Ref;
+            Needed_In : constant Boolean :=
+              Copied_In
+              and then not Same
+              and then not
+                (Is_Name and then Is_Subtype_Of (Target.Typ, Formal_Type))
+              and then not (Typed and then Covers_Its_Type (Formal_Type))
+              and then not Within
+                             (Static_Subtype_Range (Actual), Formal_Range);
+            Needed_Back : constant Boolean :=
+              Copied_Back
+              and then
+                (if Target.Constraint.Present
+                 then not Within (Formal_Range, Target.Constraint.Bounds)
+                 else not Same
+                   and then not Is_Subtype_Of (Formal_Type, Target.Typ)
+                   and then not Covers_Its_Type (Target.Typ)
+                   and then not Within
+                                  (Formal_Range,
+                                   Type_Range
+                                     (Target.Typ, Empty_Flow_State)));
+         begin
+            if Needed_Back
+              and then not
+                (Needed_In
+                 and then Boundary_Supported
+                 and then not Unreached (Container)
+                 and then Definitely_Outside_Type
+                            (Actual, Formal_Type, State))
+            then
+               --  Nothing is known here of the value the callee leaves in
+               --  its formal beyond the subtype of the formal.
+               if not Boundary_Supported then
+                  Record_Unsupported
+                    (Unit, Actual, Proof.Range_Check,
+                     "the value given back has not been established to " &
+                       "fit the actual parameter");
+               elsif Unreached (Container) then
+                  Record_Unreachable
+                    (Unit, Actual, Proof.Range_Check,
+                     "the containing CFG node is unreachable");
+               else
+                  Record_Unproved
+                    (Unit, Actual, Proof.Range_Check,
+                     Proof.Abstract_Interpretation,
+                     "the value given back is not established to fit the " &
+                       "subtype of the actual parameter",
+                     Imprecision =>
+                       "the formal's subtype is not within the actual's",
+                     Final => True);
+               end if;
+            elsif Needed_In then
+               Finalize_Range_Check
+                 (Actual, Formal_Type, Container,
+                  Rules.Known_Range_Check_Failure, Message);
+            end if;
+         end;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize actual parameter range check",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Actual_Check;
+
+      --  Finalize_Actual_Check for each actual of Call.
+      procedure Finalize_Actual_Checks
+        (Call      : Libadalang.Analysis.Call_Expr;
+         Container : CFG.Node_Id) is
+      begin
+         for Pair of Call.F_Name.P_Call_Params loop
+            Finalize_Actual_Check
+              (Libadalang.Analysis.Param (Pair),
+               Libadalang.Analysis.Actual (Pair), Container);
+         end loop;
+      exception
+         when Exc : others =>
+            Log_Verbose_Once
+              ("actual parameters not paired with formals: " &
+               Ada.Exceptions.Exception_Message (Exc));
+      end Finalize_Actual_Checks;
+
       --  As Finalize_Range_Check, for Division_By_Zero_Check via
       --  Check_Division_By_Zero (see FP-036).
       procedure Finalize_Division_Check
@@ -7798,6 +8438,10 @@ package body Adalang_Analyzer.Flow_Interp is
                   when others =>
                      Is_Plain_Call := False;
                end;
+
+               if Is_Plain_Call then
+                  Finalize_Actual_Checks (Node.As_Call_Expr, Here);
+               end if;
 
                if Is_Plain_Call then
                   begin

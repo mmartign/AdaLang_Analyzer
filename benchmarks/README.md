@@ -106,14 +106,14 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 1,193 | 7.9% |
-| Has the obligation, leaves it unproved | 5,399 | 35.9% |
-| Has the obligation, calls it unsupported | 2,014 | 13.4% |
-| Has no obligation of that kind at that place | 2,657 | 17.7% |
+| Proves it | 1,216 | 8.1% |
+| Has the obligation, leaves it unproved | 5,482 | 36.4% |
+| Has the obligation, calls it unsupported | 2,027 | 13.5% |
+| Has no obligation of that kind at that place | 2,538 | 16.9% |
 | Has no obligation of that kind at all | 3,410 | 22.7% |
 | Raises nothing in that file | 370 | 2.5% |
 
-The ledger has already paid for itself three times. Its first run led to
+The ledger has already paid for itself several times. Its first run led to
 `FP-104`: obligations written in a specification were reported under the
 body's file name, so 949 of them could not be paired with GNATprove's
 checks. It then showed that the largest group without an AdaLang obligation
@@ -121,9 +121,14 @@ was initialization, which GNATprove reports once per object: `--verify` now
 checks each `out` parameter at its subprogram's exit, and the ledger sets
 GNATprove's one check against all of AdaLang's obligations about the same
 object. The next largest group AdaLang could reach was the bounds of a
-slice, for which `--verify` now raises a range check where GNATprove does.
-Before these three steps AdaLang proved 433 of the 15,043 checks and had an
-obligation for 5,954; it now proves 1,193 and has one for 8,606.
+slice, for which `--verify` now raises a range check where GNATprove does,
+and after it the actual parameters, checked against the subtype of their
+formal. Preparing that last one turned up three faults in the checks that
+were already there (`FP-106` to `FP-108`), two of them false-safes that a
+comparison on proved code cannot show: a check AdaLang wrongly proves
+agrees with GNATprove there. Before these steps AdaLang proved 433 of the
+15,043 checks and had an obligation for 5,954; it now proves 1,216 and has
+one for 8,725.
 
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a

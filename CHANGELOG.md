@@ -23,11 +23,22 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   when the slice is known to be null; `Unproved` otherwise, and when the
   slice is given by a subtype name or a `'Range`. GNATprove agrees on every
   slice of the two fixtures added to the differential test for it.
+- `--verify` raises a range-check obligation for an actual parameter,
+  located at the actual as GNATprove's is: its value must fit the subtype
+  of an integer formal on the way in, and what an `out` or `in out` formal
+  gives back must fit the subtype of the actual. It is raised only where
+  the check is needed: not when the receiving subtype has every value of
+  its type (a modular type, a predefined integer type), nor when the form
+  of the actual alone says it fits, as a compiler works it out. The way in
+  is proved, refuted or left `Unproved` as an assignment is; the way back
+  is `Unproved`. GNATprove agrees on every actual of the two fixtures added
+  to the differential test for it; six mutations, and the three seeded
+  parameter-passing defects that raised no obligation now raise one.
 - The gap ledger (`benchmarks/gnatprove_gap_ledger.py`) pairs GNATprove's
   one "initialization of X" check per object with AdaLang's obligations
   about that object. Of the 15,043 checks GNATprove proves on the five fully
-  proved corpora AdaLang now proves 1,193 (467 before) and has an obligation
-  for 8,606 (6,903 before), still with no disagreement in either direction.
+  proved corpora AdaLang now proves 1,216 (467 before) and has an obligation
+  for 8,725 (6,903 before), still with no disagreement in either direction.
 
 ### Fixed
 

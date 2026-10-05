@@ -37,3 +37,9 @@ constraint-array-component	tests/verification_mutation_declared_constraint.adb	r
 constraint-through-renaming	tests/verification_mutation_declared_constraint.adb	range-check	Above	unproved	a renaming under the type name does not widen the renamed object
 deferred-expression-function	tests/verification_mutation_deferred_evaluation.adb	division-by-zero	Divisor	unproved	the divisor is one where the nested expression function is declared and zero where it is called
 deferred-guard	tests/verification_mutation_deferred_evaluation.adb	division-by-zero	(Divisor - 1)	unproved	the guard is true where the nested expression function is declared and unknown where it is called
+actual-unbounded	tests/verification_mutation_actual_range.adb	range-check	Any	unproved	nothing bounds the actual passed to a formal of a narrower subtype
+actual-half-bounded	tests/verification_mutation_actual_range.adb	range-check	Positive_Only	unproved	the precondition bounds the actual below only
+actual-computed	tests/verification_mutation_actual_range.adb	range-check	Last + 1	unproved	the expression leaves the subtype of the formal for the last value
+actual-in-expression	tests/verification_mutation_actual_range.adb	range-check	Loose	unproved	the unbounded actual of a function call inside an expression
+actual-guard-other-object	tests/verification_mutation_actual_range.adb	range-check	Passed	unproved	the membership test before the call is on another object
+actual-copy-back-narrower	tests/verification_mutation_actual_range.adb	range-check	Narrow	unproved	what an out formal gives back may not fit an actual of a narrower subtype

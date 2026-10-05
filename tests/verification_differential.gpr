@@ -27,6 +27,7 @@ project Verification_Differential is
       "verification_output_initialization.adb",
       "verification_slice_bounds.adb",
       "verification_guarded_operand.adb",
-      "verification_declared_constraint.adb");
+      "verification_declared_constraint.adb",
+      "verification_actual_range.adb");
    for Object_Dir use "../obj/verification_differential";
 end Verification_Differential;
