@@ -43,14 +43,14 @@ rest of this repository's test fixtures (about 700 files) and on the
 analyzer's own sources. They agree everywhere both tools can resolve the
 code, with one deliberate exception (`Declaration_In_Block`, below).
 
-The 153 of them that run without configuration were then run over the ten
+The 158 of them that run without configuration were then run over the ten
 external benchmark corpora (`benchmarks/README.md`, "GNATcheck oracle
-comparison"). Over the files both tools analysed, GNATcheck reports 91838 of
-AdaLang's 92095 findings at the same file and line (99.7%), and AdaLang
-reports 99.5% of GNATcheck's 92293. That run exposed and led to the fix of
-`FP-102` (names were resolved only within the root project). What AdaLang
-still misses is mostly in files with preprocessor directives, for which it
-reports nothing, and in the instances of generic units, which it does not
+comparison"). Over the files both tools analysed, GNATcheck reports 93447 of
+AdaLang's 93773 findings at the same file and line (99.7%), and AdaLang
+reports 99.8% of GNATcheck's 93631. Those runs exposed and led to the fix of
+`FP-102` (names were resolved only within the root project) and `FP-103`
+(sources that use the preprocessor did not parse). What AdaLang still
+misses is mostly in the instances of generic units, which it does not
 follow.
 
 ## AdaLang rules with a direct or close GNATcheck counterpart

@@ -24,6 +24,17 @@ and versioning follows [Semantic Versioning](https://semver.org/).
     compiled for semantic checks only, in a temporary directory; they need
     GNAT on the path, and gprbuild when a project file is given.
 
+### Changed
+
+- The ten GNATcheck corpus comparisons were refreshed with the five new
+  rule pairs and the fixes below
+  (`benchmarks/<corpus>/RESULTS_gnatcheck_2026-10-05.md`). For the
+  coding-standard checks, on the files both tools analyze, GNATcheck
+  confirms 99.7% of AdaLang's 93,773 findings and AdaLang reports 99.8% of
+  GNATcheck's 93,631.
+- `Integer_Type_As_Enumeration` and `Same_Instantiation` also take uses in
+  the sources of imported projects into account.
+
 ### Fixed
 
 - With a project file, sources that use the GNAT preprocessor are now
@@ -32,6 +43,9 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   before, such a file failed to parse and no check ran on it. Lines that
   preprocessing leaves out are blanked, so findings keep their positions.
   On Tokeneer this adds 294 findings that GNATcheck reports too.
+  The units of such files are also found from other units now: Libadalang's
+  provider over a list of files leaves out the files that do not parse as
+  they stand.
 
 ## [1.8.0] - 2026-10-04
 

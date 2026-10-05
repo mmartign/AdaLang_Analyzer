@@ -1,25 +1,25 @@
 # coap_spark: AdaLang Analyzer vs. GNATcheck (rule-oracle comparison)
 
-Current results, refreshed 2026-10-04. This file replaces the earlier dated runs, which remain in the Git history. The refresh adds the rule pairs of the 167 opt-in coding-standard checks (153 of them run here; the other 14 report nothing until configured and are not in the rule map). The pairs that were already compared on 2026-09-24 are run again; the analyzer now also resolves names through imported projects (`FP-102`), which can change their numbers too.
+Current results, refreshed 2026-10-05. This file replaces the earlier dated runs, which remain in the Git history. It covers the rule pairs of the 175 opt-in coding-standard checks (158 of them run here; the other 17 report nothing until configured and are not in the rule map), five of them added since the 2026-10-04 run: `Use_Clause`, `Unavailable_Body_Call`, `Deeply_Nested_Inlining`, `Integer_Type_As_Enumeration` and `Same_Instantiation`. The pairs that were already compared on 2026-09-24 are run again; since then the analyzer resolves names through imported projects (`FP-102`) and applies a project's preprocessing switches (`FP-103`), which can change their numbers too.
 
 ## Environment
 
 - Corpus: pinned at `2fa345b8c70d621287b932aee7ea39b3520a5adf` (`COAP_SPARK_REVISION`), unchanged.
-- AdaLang Analyzer: 1.7.0 plus the unreleased coding-standard checks (branch `gnatcheck-rule-parity`).
+- AdaLang Analyzer: 1.8.0 plus the unreleased changes listed in `CHANGELOG.md`.
 - GNATcheck: the same from-source build as prior runs; one pass with the plain `-r` rules, then one pass per column-4 option line of `benchmarks/gnatcheck_rule_map.tsv` (`benchmarks/gnatcheck_rule_args.awk`).
 - Reproduce: `COAP_SPARK_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/coap_spark/run_gnatcheck.sh` (see this directory's README for
   any setup step).
-- GNATcheck worker crashes ("unparsable worker output"): each GNATcheck invocation was repeated until it finished without a crash; the plain rules were run in batches of at most 25 where one pass over all of them kept crashing. Across the attempts logged for this corpus, 9 invocations were repeated. The accepted log has no crash and no GNATcheck error line.
+- GNATcheck worker crashes ("unparsable worker output"): each GNATcheck invocation was repeated until it finished without a crash; the plain rules were run in batches of at most 25 where one pass over all of them kept crashing. Across the attempts logged for this corpus, 9 invocations were repeated. The accepted log has no crash and no GNATcheck error line. The five rules added on 2026-10-05 were run one rule per invocation and appended to it; the analyzer side was then run again against the whole log.
 
 ## Totals
 
-| | 2026-10-04, all pairs | 2026-10-04, pairs of 2026-09-24 | 2026-09-24 |
+| | 2026-10-05, all pairs | 2026-10-05, pairs of 2026-09-24 | 2026-09-24 |
 | --- | ---: | ---: | ---: |
-| AdaLang findings | 13387 | 3073 | 3066 |
-| &nbsp;&nbsp;matched by GNATcheck | 12406 (92.7%) | 2092 (68.1%) | 2092 (68.2%) |
-| GNATcheck findings | 43268 | 10094 | 10094 |
-| &nbsp;&nbsp;matched by AdaLang | 12406 (28.7%) | 2092 (20.7%) | 2092 (20.7%) |
+| AdaLang findings | 13404 | 3073 | 3066 |
+| &nbsp;&nbsp;matched by GNATcheck | 12422 (92.7%) | 2092 (68.1%) | 2092 (68.2%) |
+| GNATcheck findings | 43529 | 10094 | 10094 |
+| &nbsp;&nbsp;matched by AdaLang | 12422 (28.5%) | 2092 (20.7%) | 2092 (20.7%) |
 
 Pairs of 2026-09-24 whose numbers changed (findings, tool-only), all others are identical:
 
@@ -27,11 +27,12 @@ Pairs of 2026-09-24 whose numbers changed (findings, tool-only), all others are 
 
 ## Coding-standard checks
 
-The 153 new pairs, counted over all files: 10314 AdaLang findings, 10314 matched by GNATcheck (100.0%); 33174 GNATcheck findings, 10314 matched by AdaLang (31.1%). 74 of the 153 checks have a finding from one tool or the other on this corpus.
+The 158 new pairs, counted over all files: 10331 AdaLang findings, 10330 matched by GNATcheck (100.0%); 33435 GNATcheck findings, 10330 matched by AdaLang (30.9%). 77 of the 158 checks have a finding from one tool or the other on this corpus.
 
-The two tools do not analyse the same set of files (see the notes below), so the same pairs are also counted over the files both analysed: 10314 AdaLang findings and 10314 GNATcheck findings, 10314 at the same file and line; 0 AdaLang-only, 0 GNATcheck-only.
+The two tools do not analyse the same set of files (see the notes below), so the same pairs are also counted over the files both analysed: 10331 AdaLang findings and 10330 GNATcheck findings, 10330 at the same file and line; 1 AdaLang-only, 0 GNATcheck-only.
 
-- Every finding of the new checks is reported by both tools at the same file and line. Before `FP-102` was fixed, 27 GNATcheck findings at calls into the wolfSSL binding and other imported units were missed.
+- Every GNATcheck finding of the new checks in the shared files is reported by AdaLang. The one AdaLang-only finding is `Integer_Type_As_Enumeration` on `rflx-rflx_builtin_types.ads:31`: the check and GNATcheck's rule both depend on which sources are loaded, and GNATcheck loads 198 files here against AdaLang's 85 analyzed ones.
+- Before `FP-102` was fixed, 27 GNATcheck findings at calls into the wolfSSL binding and other imported units were missed.
 
 ## Duplicate branches
 
@@ -68,6 +69,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Deep_Library_Hierarchy | direct | 0 | 0 | n/a |
 | Deep_Nesting | direct | 2 | 2 | 0.0% |
 | Deeply_Nested_Generic | direct | 0 | 0 | n/a |
+| Deeply_Nested_Inlining | direct | 0 | 0 | n/a |
 | Deeply_Nested_Instantiation | direct | 2 | 0 | 100.0% |
 | Default_Parameter | direct | 84 | 0 | 100.0% |
 | Default_Value_For_Record_Component | direct | 86 | 0 | 100.0% |
@@ -112,6 +114,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Improperly_Located_Instantiation | direct | 22 | 0 | 100.0% |
 | Incomplete_Representation_Specification | direct | 0 | 0 | n/a |
 | Infinite_Loop | close | 0 | 0 | n/a |
+| Integer_Type_As_Enumeration | direct | 1 | 1 | 0.0% |
 | Library_Level_Initialization | close | 0 | 0 | n/a |
 | Library_Level_Subprogram | direct | 0 | 0 | n/a |
 | Local_Instantiation | direct | 16 | 0 | 100.0% |
@@ -197,6 +200,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Relative_Delay | direct | 0 | 0 | n/a |
 | Renaming_Declaration | direct | 13 | 0 | 100.0% |
 | Representation_Specification | direct | 30 | 0 | 100.0% |
+| Same_Instantiation | direct | 0 | 0 | n/a |
 | Same_Logic | direct | 7 | 0 | 100.0% |
 | Same_Operand | direct | 0 | 0 | n/a |
 | Self_Assignment | close | 0 | 0 | n/a |
@@ -213,6 +217,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Too_Many_Parents | direct | 0 | 0 | n/a |
 | Too_Many_Primitives | direct | 0 | 0 | n/a |
 | Trailing_Whitespace | direct | 0 | 0 | n/a |
+| Unavailable_Body_Call | direct | 5 | 0 | 100.0% |
 | Unchecked_Address_Conversion | direct | 0 | 0 | n/a |
 | Unchecked_Conversion_As_Actual | direct | 0 | 0 | n/a |
 | Uncommented_Begin | direct | 176 | 0 | 100.0% |
@@ -231,6 +236,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Unused_With_Clause | close | 1 | 1 | 0.0% |
 | Use_Array_Slice | direct | 0 | 0 | n/a |
 | Use_Case_Statement | direct | 0 | 0 | n/a |
+| Use_Clause | direct | 11 | 0 | 100.0% |
 | Use_For_Loop | direct | 0 | 0 | n/a |
 | Use_For_Of_Loop | direct | 0 | 0 | n/a |
 | Use_If_Expression | direct | 27 | 0 | 100.0% |
@@ -276,6 +282,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `deep_inheritance_hierarchies` | 0 | 0 | n/a |
 | `deep_library_hierarchy` | 7 | 7 | 0.0% |
 | `deeply_nested_generics` | 0 | 0 | n/a |
+| `deeply_nested_inlining` | 0 | 0 | n/a |
 | `deeply_nested_instantiations` | 10 | 8 | 20.0% |
 | `default_parameters` | 176 | 92 | 47.7% |
 | `default_values_for_record_components` | 143 | 57 | 60.1% |
@@ -312,6 +319,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `improper_returns` | 664 | 664 | 0.0% |
 | `improperly_located_instantiations` | 249 | 227 | 8.8% |
 | `incomplete_representation_specifications` | 0 | 0 | n/a |
+| `integer_types_as_enum` | 0 | 0 | n/a |
 | `library_level_subprograms` | 0 | 0 | n/a |
 | `local_instantiations` | 111 | 95 | 14.4% |
 | `local_packages` | 30 | 27 | 10.0% |
@@ -390,6 +398,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `relative_delay_statements` | 0 | 0 | n/a |
 | `renamings` | 327 | 314 | 4.0% |
 | `representation_specifications` | 110 | 80 | 27.3% |
+| `same_instantiations` | 7 | 7 | 0.0% |
 | `same_logic` | 7 | 0 | 100.0% |
 | `same_operands` | 2 | 2 | 0.0% |
 | `same_tests` | 0 | 0 | n/a |
@@ -414,6 +423,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `too_many_primitives` | 0 | 0 | n/a |
 | `trivial_exception_handlers` | 0 | 0 | n/a |
 | `unassigned_out_parameters` | 0 | 0 | n/a |
+| `unavailable_body_calls` | 126 | 121 | 4.0% |
 | `unchecked_address_conversions` | 0 | 0 | n/a |
 | `unchecked_conversions_as_actuals` | 2 | 2 | 0.0% |
 | `uncommented_begin` | 645 | 469 | 27.3% |
@@ -428,6 +438,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | `unnamed_exits` | 0 | 0 | n/a |
 | `use_array_slices` | 0 | 0 | n/a |
 | `use_case_statements` | 0 | 0 | n/a |
+| `use_clauses` | 128 | 117 | 8.6% |
 | `use_for_loops` | 7 | 7 | 0.0% |
 | `use_for_of_loops` | 2 | 2 | 0.0% |
 | `use_if_expressions` | 61 | 34 | 44.3% |
