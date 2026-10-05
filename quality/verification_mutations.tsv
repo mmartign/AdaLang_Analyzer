@@ -56,3 +56,7 @@ global-unlisted-by-call	tests/verification_mutation_flow_contracts.adb	data-depe
 global-output-some-paths	tests/verification_mutation_flow_contracts.adb	initialization-check	Maybe	unproved	an Output global assigned on one path only
 global-output-one-component	tests/verification_mutation_flow_contracts.adb	initialization-check	Both	unproved	an Output global of which one component is assigned
 depends-missing-input	tests/verification_mutation_flow_contracts.adb	flow-dependencies	Depends of Scaled	unproved	an output that depends on an input its Depends aspect puts under null
+expression-function-division	tests/verification_mutation_expression_functions.adb	division-by-zero	Unchecked	unproved	an expression function whose precondition does not exclude a zero divisor
+expression-function-index	tests/verification_mutation_expression_functions.adb	index-check	Loose	unproved	an expression function whose precondition does not bound the index
+expression-function-actual	tests/verification_mutation_expression_functions.adb	range-check	Wide	unproved	an expression function that passes an unbounded actual to a narrower formal
+precondition-call-unguarded	tests/verification_mutation_expression_functions.adb	precondition	Needs (Unknown)	unproved	a call in a precondition whose own precondition nothing establishes

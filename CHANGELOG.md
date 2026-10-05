@@ -67,6 +67,21 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - GNATprove agrees on every aspect of the two flow-contract fixtures added
   to the differential test, which now also runs GNATprove's flow analysis
   on them; seven mutations.
+- `--verify` verifies an expression function as a subprogram, wherever it
+  is declared: its expression is checked from the subtypes of its
+  parameters and what its precondition says, and its postcondition at the
+  exit. Until now only a subprogram body was verified; an expression
+  function at package level raised no obligation at all, and one nested in
+  a subprogram was checked with no state.
+- The checks inside a precondition and a postcondition are obligations of
+  their own, with a final verdict: the precondition is evaluated on entry,
+  before anything is known beyond the subtypes of the parameters, the
+  postcondition at the normal exit. A call there has its precondition
+  checked, under the guard that stands before it. Where the subprogram is
+  outside the verified subset these obligations are `Unsupported`, as those
+  of its body are, and no longer missing.
+- GNATprove agrees on every check of the two fixtures added to the
+  differential test for both; four mutations.
 - The gap ledger (`benchmarks/gnatprove_gap_ledger.py`) pairs GNATprove's
   one "initialization of X" check per object with AdaLang's obligations
   about that object. Of the 15,043 checks GNATprove proves on the five fully

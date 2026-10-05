@@ -119,6 +119,42 @@ package body Adalang_Analyzer.Control_Flow_Graph is
    end Count;
 
    function Build
+     (Subprogram : Libadalang.Analysis.Expr_Function) return Graph
+   is
+      Result : Graph;
+      Value  : Node_Id;
+
+      function Add
+        (Kind   : Node_Kind;
+         Source : Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.No_Ada_Node) return Node_Id
+      is
+         Id : constant Node_Id := Node_Count (Result) + 1;
+      begin
+         Result.Nodes.Append
+           ((Id => Id, Kind => Kind, Source => Source, Supported => True));
+         return Id;
+      end Add;
+   begin
+      Result.Entry_Id := Add (Entry_Node);
+      Result.Normal_Exit_Id := Add (Normal_Exit_Node);
+      Result.Exceptional_Exit_Id := Add (Exceptional_Exit_Node);
+      Value :=
+        Add (Statement_Node, Libadalang.Analysis.Ada_Node (Subprogram.F_Expr));
+      Result.Edges.Append
+        ((From => Result.Entry_Id, To => Value, Kind => Normal_Edge,
+          Source => Libadalang.Analysis.No_Ada_Node));
+      Result.Edges.Append
+        ((From => Value, To => Result.Normal_Exit_Id, Kind => Return_Edge,
+          Source => Libadalang.Analysis.No_Ada_Node));
+      Result.Edges.Append
+        ((From => Value, To => Result.Exceptional_Exit_Id,
+          Kind => Exceptional_Edge,
+          Source => Libadalang.Analysis.No_Ada_Node));
+      return Result;
+   end Build;
+
+   function Build
      (Subprogram : Libadalang.Analysis.Subp_Body) return Graph
    is
       Result : Graph;

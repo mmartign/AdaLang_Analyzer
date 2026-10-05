@@ -243,13 +243,27 @@ a condition the analysis cannot evaluate, such as a call, the state does not
 say whether the operation ever executes; a definite error reported there
 holds if it does.
 
-Code that is declared inside the subprogram and evaluated later is not
-checked in the state at its declaration: a nested expression function, the
-default expression of a record component or of a nested subprogram's
-parameter, a task or entry body. What an enclosing object holds where such
-code is declared says nothing about what it holds where the code runs, so
-its obligations are decided with no state at all. A nested subprogram with
-a body of its own is verified separately.
+An expression function is verified as a subprogram, wherever it is
+declared: its graph is the one evaluation of its expression, entered with
+the subtypes of its parameters and what its precondition says. A nested
+subprogram body or expression function is verified on its own, from its own
+entry state, and what it reads of the enclosing subprogram's objects is
+unknown to it.
+
+The checks inside the precondition and the postcondition of a verified
+subprogram are obligations too. The precondition is evaluated on entry,
+before it is assumed: nothing is known there but the subtypes of the
+parameters, and what the precondition itself establishes operand by
+operand. The postcondition is evaluated in the state at the normal exit.
+Where the subprogram is outside the verified subset these obligations are
+`Unsupported`.
+
+Other code that is declared inside the subprogram and evaluated later is
+not checked in the state at its declaration: the default expression of a
+record component or of a nested subprogram's parameter, a task or entry
+body. What an enclosing object holds where such code is declared says
+nothing about what it holds where the code runs, so its obligations are
+decided with no state at all.
 
 The range a stored value is checked against is the one the declaration of
 the target gives: the constraint of `Held : Integer range 1 .. 5`, of a

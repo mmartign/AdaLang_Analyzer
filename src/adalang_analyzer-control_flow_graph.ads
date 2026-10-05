@@ -75,6 +75,12 @@ package Adalang_Analyzer.Control_Flow_Graph is
    --  completion and return reach Normal_Exit; uncaught explicit or implicit
    --  exceptions reach Exceptional_Exit.
 
+   function Build
+     (Subprogram : Libadalang.Analysis.Expr_Function) return Graph;
+   --  The graph of an expression function: one statement node, whose
+   --  source is the expression, which is evaluated and returned. Evaluating
+   --  it may raise.
+
    function Node_Count (Item : Graph) return Natural;
    function Edge_Count (Item : Graph) return Natural;
    function Node_At (Item : Graph; Id : Node_Id) return CFG_Node;

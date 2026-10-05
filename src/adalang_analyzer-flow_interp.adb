@@ -4640,13 +4640,18 @@ package body Adalang_Analyzer.Flow_Interp is
 
    procedure Verify_Subprogram
      (Unit       : Libadalang.Analysis.Analysis_Unit;
-      Subprogram : Libadalang.Analysis.Subp_Body)
+      Subprogram : Libadalang.Analysis.Base_Subp_Body'Class)
    is
       package CFG renames Adalang_Analyzer.Control_Flow_Graph;
       use type CFG.Edge_Kind;
       use type CFG.Node_Kind;
 
-      Graph : constant CFG.Graph := CFG.Build (Subprogram);
+      --  A subprogram body, or an expression function: its expression is
+      --  the one statement of its graph.
+      Graph : constant CFG.Graph :=
+        (if Subprogram.Kind = Libadalang.Common.Ada_Expr_Function
+         then CFG.Build (Subprogram.As_Expr_Function)
+         else CFG.Build (Subprogram.As_Subp_Body));
 
       type State_Array is array (Positive range <>) of Flow_State;
       type Symbolic_State_Array is
@@ -6557,7 +6562,9 @@ package body Adalang_Analyzer.Flow_Interp is
                elsif Source.Kind in
                  Libadalang.Common.Ada_Return_Stmt
                    | Libadalang.Common.Ada_Raise_Stmt
+                 or else Source.Kind in Libadalang.Common.Ada_Expr
                then
+                  --  An expression here is that of an expression function.
                   Scan_Expression_For_Flow_Bugs
                     (Unit, Source, Input, Input_Symbols);
                end if;
@@ -8161,8 +8168,7 @@ package body Adalang_Analyzer.Flow_Interp is
       --  expressions or statements are not evaluated where it is declared.
       function Evaluated_Later
         (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
-      is (Node.Kind in Libadalang.Common.Ada_Expr_Function
-            | Libadalang.Common.Ada_Task_Body
+      is (Node.Kind in Libadalang.Common.Ada_Task_Body
             | Libadalang.Common.Ada_Entry_Body
             | Libadalang.Common.Ada_Subp_Decl
             | Libadalang.Common.Ada_Abstract_Subp_Decl
@@ -8233,14 +8239,18 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
 
          --  Code that is declared in this subprogram and evaluated later --
-         --  a nested expression function, the default of a component or of
-         --  a nested subprogram's parameter, a task or entry body -- runs
-         --  in a state this pass knows nothing about, not in the state at
-         --  its declaration (FP-108): what an enclosing object held where
-         --  the function was declared says nothing about what it holds
-         --  where the function is called. Its obligations are decided with
-         --  no state at all.
-         if Evaluated_Later (Node) then
+         --  the default of a component or of a nested subprogram's
+         --  parameter, a task or entry body -- runs in a state this pass
+         --  knows nothing about, not in the state at its declaration
+         --  (FP-108): what an enclosing object held there says nothing
+         --  about what it holds where the code runs. Its obligations are
+         --  decided with no state at all. A nested subprogram body or
+         --  expression function is verified on its own, from its own entry
+         --  state, and is not walked here.
+         if Libadalang.Analysis.Ada_Node (Node) /=
+             Libadalang.Analysis.Ada_Node (Subprogram)
+           and then Evaluated_Later (Node)
+         then
             for Index in 1 .. Node.Children_Count loop
                Finalize_Node (Node.Child (Index), CFG.No_Node);
             end loop;
@@ -8585,7 +8595,8 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
 
          for Index in 1 .. Node.Children_Count loop
-            if Node.Kind /= Libadalang.Common.Ada_Subp_Body
+            if Node.Kind not in Libadalang.Common.Ada_Subp_Body
+                 | Libadalang.Common.Ada_Expr_Function
               or else Libadalang.Analysis.Ada_Node (Node) =
                 Libadalang.Analysis.Ada_Node (Subprogram)
             then
@@ -8598,8 +8609,64 @@ package body Adalang_Analyzer.Flow_Interp is
          end loop;
       end Finalize_Node;
 
+      --  The checks inside a contract of the subprogram are obligations
+      --  too. Root is evaluated in State and Symbols, or never when Dead:
+      --  the precondition on entry, before anything is known beyond the
+      --  subtypes of the parameters, the postcondition at the normal exit.
+      --  On entry State does not come from the body: what a precondition
+      --  is evaluated in is known even where the body is outside the
+      --  verified subset. A postcondition's checks are Unsupported there,
+      --  like those of the body, and not missing; they are never evaluated
+      --  when the normal exit is not reached.
+      type Contract_Moment is (On_Entry, At_Exit);
+
+      procedure Finalize_Contract
+        (Root    : Libadalang.Analysis.Expr;
+         State   : Flow_State;
+         Symbols : VC.Symbolic_State;
+         Moment  : Contract_Moment)
+      is
+         Supported : constant Boolean := Boundary_Supported;
+         Dead      : constant Boolean :=
+           Moment = At_Exit
+           and then not Reachable (CFG.Normal_Exit (Graph));
+
+         procedure Clear is
+         begin
+            Operand_Guarded := False;
+            Operand_Dead := False;
+            Operand_Container := CFG.No_Node;
+            Boundary_Supported := Supported;
+         end Clear;
+      begin
+         if Libadalang.Analysis.Is_Null (Root) then
+            return;
+         end if;
+
+         if Moment = On_Entry then
+            Boundary_Supported := True;
+         end if;
+         Operand_Guarded := True;
+         Operand_Dead := Dead;
+         Operand_Container := CFG.No_Node;
+         Operand_State := State;
+         Operand_Symbols := Symbols;
+         Finalize_Node (Root, CFG.No_Node);
+         Clear;
+      exception
+         when E : others =>
+            Clear;
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize contract proof obligations",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Contract;
+
       Initial : Flow_State := Empty_Flow_State;
       Initial_Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
+      --  Initial before the precondition is assumed.
+      Entry_State : Flow_State := Empty_Flow_State;
       Pairs   : constant Parameter_Pair_Vectors.Vector := Parameter_Pairs;
       Pre     : constant Libadalang.Analysis.Expr :=
         Contract_Expression (Subprogram, "Pre");
@@ -8614,6 +8681,7 @@ package body Adalang_Analyzer.Flow_Interp is
       for Pair of Pairs loop
          Flow_Copy_Key (Initial, Pair.Body_Name, Pair.Spec_Name);
       end loop;
+      Entry_State := Initial;
       if not Libadalang.Analysis.Is_Null (Pre) then
          declare
             True_State, False_State : Flow_State;
@@ -8705,6 +8773,22 @@ package body Adalang_Analyzer.Flow_Interp is
       Finalize_Node (Subprogram);
       Finalize_Output_Parameters;
       Finalize_Output_Globals;
+      Finalize_Contract
+        (Pre, Entry_State, VC.Empty_Symbolic_State, On_Entry);
+      declare
+         --  A spec postcondition names the spec's parameters: give them
+         --  the body parameters' exit facts (FP-085).
+         Exit_State   : Flow_State := States (CFG.Normal_Exit (Graph));
+         Exit_Symbols : VC.Symbolic_State :=
+           Symbolic_States (CFG.Normal_Exit (Graph));
+      begin
+         for Pair of Pairs loop
+            Flow_Copy_Key (Exit_State, Pair.Body_Name, Pair.Spec_Name);
+            Exit_Symbols :=
+              VC.Alias_Object (Exit_Symbols, Pair.Body_Name, Pair.Spec_Name);
+         end loop;
+         Finalize_Contract (Post, Exit_State, Exit_Symbols, At_Exit);
+      end;
 
       if not Libadalang.Analysis.Is_Null (Post) then
          if not Boundary_Supported then
@@ -8797,6 +8881,11 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
          Fixpoint_In_Progress := False;
          Finalize_Node (Subprogram);
+         if not Boundary_Supported then
+            --  No state is consulted: every obligation is unsupported.
+            Finalize_Node (Contract_Expression (Subprogram, "Pre"));
+            Finalize_Node (Contract_Expression (Subprogram, "Post"));
+         end if;
    end Verify_Subprogram;
 
    procedure Verify_Unit
@@ -8806,8 +8895,10 @@ package body Adalang_Analyzer.Flow_Interp is
       begin
          if Libadalang.Analysis.Is_Null (Node) then
             return;
-         elsif Node.Kind = Libadalang.Common.Ada_Subp_Body then
-            Verify_Subprogram (Unit, Node.As_Subp_Body);
+         elsif Node.Kind in Libadalang.Common.Ada_Subp_Body
+                 | Libadalang.Common.Ada_Expr_Function
+         then
+            Verify_Subprogram (Unit, Node.As_Base_Subp_Body);
          end if;
 
          for Index in 1 .. Node.Children_Count loop

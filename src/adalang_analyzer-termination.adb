@@ -696,6 +696,8 @@ package body Adalang_Analyzer.Termination is
          return False;
    end Must_Terminate;
 
+   --  Raises the termination obligation of Subprogram when SPARK requires
+   --  it to terminate.
    procedure Verify_Subprogram
      (Unit       : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Base_Subp_Body'Class)
@@ -755,22 +757,30 @@ package body Adalang_Analyzer.Termination is
    end Verify_Subprogram;
 
    procedure Verify_Unit (Unit : Libadalang.Analysis.Analysis_Unit) is
+      --  Every body in the unit, at any depth: a nested function has the
+      --  obligation as well.
       procedure Visit (Node : Libadalang.Analysis.Ada_Node'Class) is
       begin
-         if Libadalang.Analysis.Is_Null (Node) then
-            return;
-         elsif Node.Kind in Libadalang.Common.Ada_Subp_Body
-                 | Libadalang.Common.Ada_Expr_Function
-         then
-            Verify_Subprogram (Unit, Node.As_Base_Subp_Body);
-         end if;
-
          for Index in 1 .. Node.Children_Count loop
-            Visit (Node.Child (Index));
+            declare
+               Child : constant Libadalang.Analysis.Ada_Node :=
+                 Node.Child (Index);
+            begin
+               if not Libadalang.Analysis.Is_Null (Child) then
+                  if Child.Kind in Libadalang.Common.Ada_Subp_Body
+                       | Libadalang.Common.Ada_Expr_Function
+                  then
+                     Verify_Subprogram (Unit, Child.As_Base_Subp_Body);
+                  end if;
+                  Visit (Child);
+               end if;
+            end;
          end loop;
       end Visit;
    begin
-      Visit (Unit.Root);
+      if not Libadalang.Analysis.Is_Null (Unit.Root) then
+         Visit (Unit.Root);
+      end if;
    end Verify_Unit;
 
 end Adalang_Analyzer.Termination;

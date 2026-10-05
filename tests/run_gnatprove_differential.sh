@@ -53,7 +53,8 @@ status=0
   tests/verification_declared_constraint.adb \
   tests/verification_actual_range.adb \
   tests/verification_termination.adb \
-  tests/verification_flow_contracts.adb || status=$?
+  tests/verification_flow_contracts.adb \
+  tests/verification_expression_functions.adb || status=$?
 if [ "$status" -gt 1 ]; then
    echo "AdaLang Analyzer differential run failed with status $status" >&2
    exit "$status"
@@ -80,7 +81,7 @@ cat "$gnatprove_log"
 grep -F 'Success: all checks proved' "$gnatprove_log" >/dev/null
 
 summary=obj/verification_differential/gnatprove/gnatprove.out
-grep -F 'Analyzed 30 units' "$summary" >/dev/null
+grep -F 'Analyzed 31 units' "$summary" >/dev/null
 if grep -F ' skipped;' "$summary" >/dev/null; then
    echo "GNATprove skipped part of the differential corpus" >&2
    exit 1
@@ -114,7 +115,8 @@ status=0
   tests/verification_mutation_deferred_evaluation.adb \
   tests/verification_mutation_actual_range.adb \
   tests/verification_mutation_termination.adb \
-  tests/verification_mutation_flow_contracts.adb || status=$?
+  tests/verification_mutation_flow_contracts.adb \
+  tests/verification_mutation_expression_functions.adb || status=$?
 if [ "$status" -gt 1 ]; then
    echo "AdaLang Analyzer broken-corpus run failed with status $status" >&2
    exit "$status"
@@ -130,7 +132,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 21 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 22 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -148,7 +150,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_mutation_deferred_evaluation \
   verification_mutation_actual_range \
   verification_mutation_termination \
-  verification_mutation_flow_contracts; do
+  verification_mutation_flow_contracts \
+  verification_mutation_expression_functions; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
