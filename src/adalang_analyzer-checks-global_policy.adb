@@ -394,6 +394,10 @@ package body Adalang_Analyzer.Checks.Global_Policy is
    --  Every package instantiation of the analyzed sources.
    Instantiations : Node_Vectors.Vector;
 
+   --  The file names of the analyzed units: findings are reported there
+   --  only.
+   Analyzed_Units : String_Sets.Set;
+
    procedure Note_Use (Item : Libadalang.Analysis.Ada_Node'Class) is
    begin
       if not Is_Null (Item) then
@@ -448,12 +452,15 @@ package body Adalang_Analyzer.Checks.Global_Policy is
          end;
       end if;
 
-      if Kind = Libadalang.Common.Ada_Generic_Package_Instantiation then
-         Instantiations.Append (Item);
-      end if;
    exception
       when Exc : others =>
-         Note_Skipped_Check (Item, Exc);
+         --  A use that cannot be worked out may leave a type looking
+         --  unused. That is a skipped check where findings are reported,
+         --  counted once for the construct; in a source that only serves
+         --  name resolution it is not.
+         if Analyzed_Units.Contains (Item.Unit.Get_Filename) then
+            Note_Skipped_Check (Enclosing_Construct (Item), Exc);
+         end if;
    end Collect;
 
    --  Records what the names under an instantiation denote.
@@ -570,10 +577,6 @@ package body Adalang_Analyzer.Checks.Global_Policy is
         & To_Decimal (Natural (Start.Column));
    end Location;
 
-   --  The file names of the analyzed units: findings are reported there
-   --  only.
-   Analyzed_Units : String_Sets.Set;
-
    procedure Report_Same_Instantiations is
       Library_Only : constant Boolean :=
         Is_Set (Same_Instantiation, "library_level_only");
@@ -627,8 +630,12 @@ package body Adalang_Analyzer.Checks.Global_Policy is
 
       procedure Visit (Item : Node) is
       begin
-         Collect (Item);
+         if Item.Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
+         then
+            Instantiations.Append (Item);
+         end if;
          if Integer_Types then
+            Collect (Item);
             Collect_Instantiation_Names (Item);
          end if;
       end Visit;
