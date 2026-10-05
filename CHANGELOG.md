@@ -5,6 +5,26 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `benchmarks/gnatprove_gap_ledger.py` accounts for every check GNATprove
+  proves on a corpus and what `--verify` does at that place; the first
+  ledger is `benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`. On the five
+  fully proved corpora GNATprove proves 15,043 checks: AdaLang proves 467
+  of them, has an undecided obligation for 6,436 and none for 8,140.
+
+### Fixed
+
+- A proof obligation or finding is reported in the file its node is written
+  in (`FP-104`). An obligation of a contract, which is written in the
+  specification and evaluated while the body is verified, used to carry the
+  body's file name with the specification's line. The stable identifiers of
+  those obligations change. With the fix 949 more obligations pair with a
+  GNATprove check on the benchmark corpora, and the matched pairs go from
+  2,392 to 2,871, still with no possible unsoundness and no false positive.
+
 ## [1.8.0] - 2026-10-05
 
 A coding-standard release: 175 opt-in checks take the catalogue from 127

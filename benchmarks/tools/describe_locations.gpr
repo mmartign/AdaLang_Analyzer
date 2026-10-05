@@ -1,0 +1,38 @@
+--  Copyright (C) 2026, Spazio IT
+--
+--  SPDX-License-Identifier: GPL-3.0-or-later
+
+with "../../adalang_analyzer.gpr";
+
+--  A helper for the benchmark ledgers, not part of the analyzer: it says
+--  what construct each of a list of source locations is in.
+project Describe_Locations is
+
+   type OS_Kind is ("linux", "macos", "windows");
+   Host_OS : OS_Kind := external ("ADALANG_ANALYZER_OS", "linux");
+
+   for Source_Dirs use (".");
+   for Object_Dir use "../../obj/describe-locations";
+   for Create_Missing_Dirs use "True";
+   for Exec_Dir use "../../bin";
+   for Main use ("describe_locations.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-g", "-O0", "-gnat2022", "-gnatwa", "-gnatwe", "-gnatyM120");
+   end Compiler;
+
+   package Linker is
+      case Host_OS is
+         when "macos" =>
+            for Switches ("Ada") use (
+               "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
+               "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+               "-lgnarl"
+            );
+         when others =>
+            for Switches ("Ada") use ("-lgnarl");
+      end case;
+   end Linker;
+
+end Describe_Locations;

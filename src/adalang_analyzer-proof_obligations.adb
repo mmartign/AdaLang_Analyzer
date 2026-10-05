@@ -183,6 +183,15 @@ package body Adalang_Analyzer.Proof_Obligations is
       return Result;
    end Hash_64;
 
+   --  The file Node is written in. That is not always the unit being
+   --  verified: the contract of a subprogram is in its specification, and
+   --  is evaluated while its body is.
+   function Source_Of
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Node : Libadalang.Analysis.Ada_Node'Class) return String
+   is (if Libadalang.Analysis.Is_Null (Node) then Unit.Get_Filename
+       else Node.Unit.Get_Filename);
+
    function Stable_Id_For
      (Unit      : Libadalang.Analysis.Analysis_Unit;
       Node      : Libadalang.Analysis.Ada_Node'Class;
@@ -191,7 +200,7 @@ package body Adalang_Analyzer.Proof_Obligations is
    is
       Separator : constant Character := Character'Val (0);
       Key       : constant String :=
-        Normalized_Path (Unit.Get_Filename) & Separator &
+        Normalized_Path (Source_Of (Unit, Node)) & Separator &
         Kind_Name (Kind) & Separator &
         Natural'Image (Natural (Node.Sloc_Range.Start_Line)) & ":" &
         Natural'Image (Natural (Node.Sloc_Range.Start_Column)) & ":" &
@@ -298,7 +307,7 @@ package body Adalang_Analyzer.Proof_Obligations is
             Kind               => Kind,
             Status             => Status,
             Method             => Method,
-            Filename           => Unit.Get_Filename,
+            Filename           => Source_Of (Unit, Node),
             Line               => Natural (Node.Sloc_Range.Start_Line),
             Column             => Natural (Node.Sloc_Range.Start_Column),
             Operation          => Operation_Text,

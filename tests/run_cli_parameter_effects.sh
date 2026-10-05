@@ -229,4 +229,26 @@ if grep -F "[Unavailable_Body_Call]" "$work/out" >/dev/null; then
    exit 1
 fi
 
+#  An obligation is reported in the file it is written in (FP-104). The
+#  postcondition below is in the specification and is evaluated while the
+#  body is verified; it used to be reported with the body's file name and
+#  the specification's line.
+"$analyzer" --verify --format=json -q \
+  tests/verification_spec_contract.ads tests/verification_spec_contract.adb \
+  >"$work/out" 2>"$work/err" || true
+python3 - "$work/out" <<'PY' || { echo "a contract obligation was reported in the wrong file" >&2; cat "$work/out" >&2; exit 1; }
+import json, sys
+found = False
+for item in json.load(open(sys.argv[1]))["proofObligations"]:
+    if item["kind"] == "postcondition":
+        found = True
+        assert item["file"].endswith("verification_spec_contract.ads"), item["file"]
+        assert item["line"] == 5, item["line"]
+    #  nothing may claim line 5 of the body, which is "return A + B;" at
+    #  columns the contract does not have
+    assert not (item["file"].endswith(".adb") and item["line"] == 5
+                and item["column"] > 20), item
+assert found
+PY
+
 echo "cli parameter effects tests passed"

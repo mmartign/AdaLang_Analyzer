@@ -148,7 +148,7 @@ Its regression and quality gates include a growing boundary-case corpus,
 adversarial verification mutations, proof-path evidence, self-analysis, and
 comparisons on independently authored Ada/SPARK projects.
 
-Across **2,392 proof obligations** that AdaLang Analyzer and GNATprove could
+Across **2,871 proof obligations** that AdaLang Analyzer and GNATprove could
 both evaluate at the same location in five independently authored,
 fully-proved corpora, the recorded comparisons contain:
 

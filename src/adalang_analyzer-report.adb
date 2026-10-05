@@ -1368,8 +1368,13 @@ package body Adalang_Analyzer.Report is
       Explanation : String := "";
       Evidence    : String := "") is
    begin
+      --  The file is the one Node is written in, which is not always the
+      --  unit being analyzed: a contract is in the specification and is
+      --  evaluated while the body is.
       Report_Violation_At
-        (Filename    => Unit.Get_Filename,
+        (Filename    =>
+           (if Libadalang.Analysis.Is_Null (Node) then Unit.Get_Filename
+            else Node.Unit.Get_Filename),
          Line_Number => Natural (Node.Sloc_Range.Start_Line),
          Column      => Natural (Node.Sloc_Range.Start_Column),
          Caret_Width => Highlight_Width (Node),
