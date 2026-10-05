@@ -29,6 +29,8 @@ with GPR2.Project.Registry.Attribute;
 with GPR2.Project.Tree;
 with GPR2.Project.View;
 
+with Libadalang.Preprocessing;
+
 with Adalang_Analyzer.Config;
 with Adalang_Analyzer.Text_Utils;
 
@@ -42,6 +44,37 @@ package body Adalang_Analyzer.Project_Files is
    --  on.
    SPARK_Sources : File_Name_Vectors.Vector;
    Import_Sources : File_Name_Vectors.Vector;
+
+   --  The preprocessing the loaded projects ask for, if any.
+   Preprocessor : Langkit_Support.File_Readers.File_Reader_Reference;
+
+   function Source_Reader
+     return Langkit_Support.File_Readers.File_Reader_Reference
+   is (Preprocessor);
+
+   --  Records the preprocessing Tree's compiler switches ask for. A
+   --  project that asks for none leaves an earlier project's in place.
+   procedure Note_Preprocessing (Tree : GPR2.Project.Tree.Object) is
+      Default_Config : Libadalang.Preprocessing.File_Config;
+      File_Configs   : Libadalang.Preprocessing.File_Config_Maps.Map;
+   begin
+      Libadalang.Preprocessing.Extract_Preprocessor_Data_From_Project
+        (Tree           => Tree,
+         Default_Config => Default_Config,
+         File_Configs   => File_Configs);
+      if Default_Config.Enabled or else not File_Configs.Is_Empty then
+         Preprocessor := Libadalang.Preprocessing.Create_Preprocessor
+           (Default_Config, File_Configs);
+      end if;
+   exception
+      when Error : others =>
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: warning: could not read the project's "
+            & "preprocessing switches ("
+            & Ada.Exceptions.Exception_Message (Error)
+            & "); sources that use the preprocessor will not parse");
+   end Note_Preprocessing;
 
    --  True when the configuration pragma file at Path holds "pragma
    --  SPARK_Mode;" or "pragma SPARK_Mode (On);". Comments are ignored, as
@@ -204,8 +237,12 @@ package body Adalang_Analyzer.Project_Files is
          Options.Add_Switch (GPR2.Options.X, Var);
       end loop;
 
+      --  The run-time is asked for because Libadalang wants it to read the
+      --  preprocessing switches; its sources are not analyzed.
       if not Tree.Load
-               (Options, Artifacts_Info_Level => GPR2.Sources_Only)
+               (Options,
+                With_Runtime         => True,
+                Artifacts_Info_Level => GPR2.Sources_Only)
       then
          Ada.Text_IO.Put_Line
            (Ada.Text_IO.Standard_Error,
@@ -253,6 +290,8 @@ package body Adalang_Analyzer.Project_Files is
             end loop;
          end if;
       end loop;
+
+      Note_Preprocessing (Tree);
 
       Tree.Unload;
    exception

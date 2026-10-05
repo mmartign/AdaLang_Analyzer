@@ -199,4 +199,27 @@ if grep -F "dep_pkg.adb" "$work/out" >/dev/null; then
    exit 1
 fi
 
+#  A project's preprocessing switches (-gnateD, -gnatep) are applied before
+#  parsing (FP-103): a source with preprocessor directives is analyzed, the
+#  finding keeps its line in the file, and code the directives leave out is
+#  not there.
+status=0
+"$analyzer" -P tests/preprocessed_project/prep.gpr \
+  -checks='-*,No_Goto' >"$work/out" 2>"$work/err" || status=$?
+if grep -F "preprocessor" "$work/err" >/dev/null; then
+   echo "a project's preprocessing switches were not applied" >&2
+   cat "$work/err" >&2
+   exit 1
+fi
+grep -F "prep_unit.adb:4:" "$work/out" | grep -F "[No_Goto]" >/dev/null || {
+   echo "a source with preprocessor directives was not analyzed (status $status)" >&2
+   cat "$work/out" "$work/err" >&2
+   exit 1
+}
+if grep -F "prep_unit.adb:6:" "$work/out" >/dev/null; then
+   echo "code that preprocessing leaves out was analyzed" >&2
+   cat "$work/out" >&2
+   exit 1
+fi
+
 echo "cli parameter effects tests passed"

@@ -1,0 +1,6 @@
+project Prep is
+   for Source_Dirs use (".");
+   package Compiler is
+      for Switches ("Ada") use ("-gnateDMODE=demo");
+   end Compiler;
+end Prep;

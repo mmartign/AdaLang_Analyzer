@@ -14,6 +14,8 @@
 
 with Ada.Containers.Indefinite_Vectors;
 
+with Langkit_Support.File_Readers;
+
 --  GNAT project (.gpr) file support backed by GPR2. Project expressions,
 --  scenario variables, naming rules, exclusions, recursive source
 --  directories, and project extension are evaluated by the GPR2 library.
@@ -44,6 +46,13 @@ package Adalang_Analyzer.Project_Files is
    --  added sources are not analyzed: they are there so that names in the
    --  analyzed sources that denote entities of an imported project can be
    --  resolved. A source whose file name Files already holds is not added.
+
+   function Source_Reader
+     return Langkit_Support.File_Readers.File_Reader_Reference;
+   --  A file reader that applies the preprocessing the loaded projects ask
+   --  for with -gnatep and -gnateD compiler switches, or a null reference
+   --  when they ask for none. Lines that preprocessing removes are left
+   --  blank, so positions in the preprocessed text are those of the file.
 
    function Under_Project_SPARK_Mode (Filename : String) return Boolean;
    --  True when Filename is a source of a loaded project whose

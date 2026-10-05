@@ -24,6 +24,15 @@ and versioning follows [Semantic Versioning](https://semver.org/).
     compiled for semantic checks only, in a temporary directory; they need
     GNAT on the path, and gprbuild when a project file is given.
 
+### Fixed
+
+- With a project file, sources that use the GNAT preprocessor are now
+  analyzed (`FP-103`). The preprocessing the project asks for with
+  `-gnateD` and `-gnatep` switches is applied when the sources are read;
+  before, such a file failed to parse and no check ran on it. Lines that
+  preprocessing leaves out are blanked, so findings keep their positions.
+  On Tokeneer this adds 294 findings that GNATcheck reports too.
+
 ## [1.8.0] - 2026-10-04
 
 A coding-standard release: 167 opt-in checks take the catalogue from 127

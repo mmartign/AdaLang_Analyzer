@@ -1601,7 +1601,9 @@ package body Adalang_Analyzer.CLI is
                         Libadalang.Auto_Provider
                           .Create_Auto_Provider_Reference (Input_Files),
                       Fallback =>
-                        Libadalang.Unit_Files.Default_Provider));
+                        Libadalang.Unit_Files.Default_Provider),
+                 File_Reader   =>
+                   Adalang_Analyzer.Project_Files.Source_Reader);
          begin
             Adalang_Analyzer.Subprogram_Summaries.Reset;
             for F of Files_To_Process loop
@@ -1617,7 +1619,8 @@ package body Adalang_Analyzer.CLI is
                 (Primary =>
                    Libadalang.Auto_Provider.Create_Auto_Provider_Reference
                      (Input_Files),
-                 Fallback => Libadalang.Unit_Files.Default_Provider));
+                 Fallback => Libadalang.Unit_Files.Default_Provider),
+            File_Reader   => Adalang_Analyzer.Project_Files.Source_Reader);
       end;
 
       Log_Verbose
