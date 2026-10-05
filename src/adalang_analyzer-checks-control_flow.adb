@@ -2567,8 +2567,13 @@ package body Adalang_Analyzer.Checks.Control_Flow is
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Handler : Libadalang.Analysis.Exception_Handler) is
    begin
+      --  An empty "when others" handler is the business of
+      --  Exception_Swallowed, which says more about it; when that check is
+      --  on too, the handler is reported once, by it.
       if Rule_States (Empty_Exception_Handler) = Enabled
         and then not Has_Substantive_Statement (Handler.F_Stmts)
+        and then not (Rule_States (Exception_Swallowed) = Enabled
+                      and then Handles_Others (Handler))
       then
          Report_Rule_Violation
            (Unit, Handler, Empty_Exception_Handler,

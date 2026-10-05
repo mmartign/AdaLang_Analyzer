@@ -46,7 +46,7 @@ code, with one deliberate exception (`Declaration_In_Block`, below).
 The 158 of them that run without configuration were then run over the ten
 external benchmark corpora (`benchmarks/README.md`, "GNATcheck oracle
 comparison"). Over the files both tools analysed, GNATcheck reports 93447 of
-AdaLang's 93773 findings at the same file and line (99.7%), and AdaLang
+AdaLang's 93771 findings at the same file and line (99.7%), and AdaLang
 reports 99.8% of GNATcheck's 93631. Those runs exposed and led to the fix of
 `FP-102` (names were resolved only within the root project) and `FP-103`
 (sources that use the preprocessor did not parse). What AdaLang still
@@ -414,6 +414,18 @@ were added last and work differently from the per-unit checks:
 The 123 `kp_*` rules flag source constructs affected by known problems in
 particular GNAT Pro releases. They are specific to that compiler's defect
 history and are not attempted.
+
+## Using GNATcheck's names
+
+Every rule name in the tables of this document is accepted where a check
+name is: `-checks=positional_parameters`, `+RPositional_Parameters` and
+`-rule-param=maximum_parameters.n=6` do what the AdaLang names would. All
+212 general-purpose GNATcheck rule names are known. Where one rule is
+several AdaLang checks, the rule name selects them all; where a pairing
+goes through a `-gnatw` or `-gnaty` letter of GNATcheck's `warnings` or
+`style_checks` rule, the check has no rule name of its own and is selected
+by its AdaLang name. `quality/check_catalogue_audit.md` lists how each
+AdaLang name relates to GNATcheck's and which checks overlap.
 
 ## Reading this comparison
 

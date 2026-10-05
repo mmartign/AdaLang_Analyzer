@@ -34,6 +34,7 @@ with Libadalang.Unit_Files;
 with Adalang_Analyzer.Checks;
 with Adalang_Analyzer.Circular_Dependencies;
 with Adalang_Analyzer.Compiler_Checks;
+with Adalang_Analyzer.GNATcheck_Names;
 with Adalang_Analyzer.Clone_Detection;
 with Adalang_Analyzer.Compliance_Mapping;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
@@ -196,8 +197,37 @@ package body Adalang_Analyzer.CLI is
                                To_String (Rule_Infos (Rule).Description));
          Ada.Text_IO.Put_Line ("    " &
                                To_String (Rule_Infos (Rule).Guidance));
+         declare
+            Names : constant String := GNATcheck_Names.Names_Of (Rule);
+         begin
+            if Names /= "" then
+               Ada.Text_IO.Put_Line ("    GNATcheck: " & Names);
+            end if;
+         end;
       end loop;
    end Print_Check_List;
+
+   --  Sets the checks Name stands for to Mode: the check of that name, or
+   --  the checks paired with the GNATcheck rule of that name. False when
+   --  Name is neither.
+   function Set_Named_Checks (Name : String; Mode : Rule_State) return Boolean
+   is
+      Found : Boolean := False;
+      Kind  : constant Rule_Kind := Lookup_Rule_Kind (Name, Found);
+   begin
+      if Found then
+         Rule_States (Kind) := Mode;
+         return True;
+      end if;
+      declare
+         Paired : constant Rule_List := GNATcheck_Names.Checks_For (Name);
+      begin
+         for Rule of Paired loop
+            Rule_States (Rule) := Mode;
+         end loop;
+         return Paired'Length > 0;
+      end;
+   end Set_Named_Checks;
 
    procedure Set_Report_Format (Name : String) is
       Value : constant String :=
@@ -263,13 +293,8 @@ package body Adalang_Analyzer.CLI is
    --  disabling exactly the named check.
    procedure Process_Command_Switch (Switch : String) is
       procedure Apply (Name : String; Mode : Rule_State) is
-         Found : Boolean := False;
-         Kind  : Rule_Kind;
       begin
-         Kind := Lookup_Rule_Kind (Name, Found);
-         if Found then
-            Rule_States (Kind) := Mode;
-         else
+         if not Set_Named_Checks (Name, Mode) then
             Ada.Text_IO.Put_Line ("adalang-analyzer: unknown check '" & Name & "'");
             Invalid_Options := True;
          end if;
@@ -297,8 +322,6 @@ package body Adalang_Analyzer.CLI is
       procedure Apply_Check_Item (Item_Untrimmed : String) is
          Item   : constant String :=
            Ada.Strings.Fixed.Trim (Item_Untrimmed, Ada.Strings.Both);
-         Kind   : Rule_Kind;
-         Found  : Boolean := False;
          Action : Rule_State := Enabled;
          First  : Positive := Item'First;
       begin
@@ -329,10 +352,7 @@ package body Adalang_Analyzer.CLI is
                declare
                   Name : constant String := Item (First .. Item'Last);
                begin
-                  Kind := Lookup_Rule_Kind (Name, Found);
-                  if Found then
-                     Rule_States (Kind) := Action;
-                  else
+                  if not Set_Named_Checks (Name, Action) then
                      Ada.Text_IO.Put_Line
                        ("adalang-analyzer: unknown check '" & Name & "'");
                      Invalid_Options := True;
@@ -547,6 +567,19 @@ package body Adalang_Analyzer.CLI is
    begin
       if Dot > Text'First and then Equals > Dot + 1 then
          Kind := Lookup_Rule_Kind (Text (Text'First .. Dot - 1), Found);
+         if not Found then
+            --  A GNATcheck rule name stands for the check when it is
+            --  paired with exactly one.
+            declare
+               Paired : constant Rule_List :=
+                 GNATcheck_Names.Checks_For (Text (Text'First .. Dot - 1));
+            begin
+               if Paired'Length = 1 then
+                  Kind := Paired (Paired'First);
+                  Found := True;
+               end if;
+            end;
+         end if;
       end if;
 
       if Found then

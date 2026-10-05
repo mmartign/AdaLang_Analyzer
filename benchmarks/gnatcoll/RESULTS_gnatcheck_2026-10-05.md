@@ -5,7 +5,7 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 ## Environment
 
 - Corpus: pinned at `9f6ffb394793b0ac098fb1e9b206a659680788b3` (`GNATCOLL_REVISION`), unchanged.
-- AdaLang Analyzer: 1.8.0.
+- AdaLang Analyzer: 1.8.0 plus the unreleased changes listed in `CHANGELOG.md`.
 - GNATcheck: the same from-source build as prior runs; one pass with the plain `-r` rules, then one pass per column-4 option line of `benchmarks/gnatcheck_rule_map.tsv` (`benchmarks/gnatcheck_rule_args.awk`).
 - Reproduce: `GNATCOLL_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/gnatcoll/run_gnatcheck.sh` (see this directory's README for
@@ -16,8 +16,8 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 
 | | 2026-10-05, all pairs | 2026-10-05, pairs of 2026-09-24 | 2026-09-24 |
 | --- | ---: | ---: | ---: |
-| AdaLang findings | 23542 | 3185 | 2108 |
-| &nbsp;&nbsp;matched by GNATcheck | 21622 (91.8%) | 1288 (40.4%) | 1269 (60.2%) |
+| AdaLang findings | 23540 | 3183 | 2108 |
+| &nbsp;&nbsp;matched by GNATcheck | 21620 (91.8%) | 1286 (40.4%) | 1269 (60.2%) |
 | GNATcheck findings | 25014 | 2943 | 2943 |
 | &nbsp;&nbsp;matched by AdaLang | 21620 (86.4%) | 1286 (43.7%) | 1267 (43.1%) |
 
@@ -29,6 +29,7 @@ Pairs of 2026-09-24 whose numbers changed (findings, tool-only), all others are 
 - `Missing_Overriding_Indicator`: 0 findings, 0 AdaLang-only then; 11, 11 now.
 - `Library_Level_Initialization`: 0 findings, 0 AdaLang-only then; 29, 29 now.
 - `Dead_Store`: 9 findings, 9 AdaLang-only then; 38, 38 now.
+- `Empty_Exception_Handler`: 4 findings, 0 AdaLang-only then; 2, 0 now.
 - `Unused_With_Clause`: 2 findings, 2 AdaLang-only then; 13, 13 now.
 - `Redundant_Type_Conversion`: 0 findings, 0 AdaLang-only then; 1, 1 now.
 - `Uninitialized_Output`: 49 findings, 46 AdaLang-only then; 22, 19 now.
@@ -99,7 +100,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Duplicate_With_Clause | direct | 0 | 0 | n/a |
 | Empty_Else_Body | close | 1 | 1 | 0.0% |
 | Empty_Elsif_Body | close | 4 | 4 | 0.0% |
-| Empty_Exception_Handler | direct | 4 | 0 | 100.0% |
+| Empty_Exception_Handler | direct | 2 | 0 | 100.0% |
 | Empty_If_Body | close | 1 | 1 | 0.0% |
 | Empty_Then_Body | close | 10 | 10 | 0.0% |
 | End_Of_Line_Comment | direct | 109 | 0 | 100.0% |

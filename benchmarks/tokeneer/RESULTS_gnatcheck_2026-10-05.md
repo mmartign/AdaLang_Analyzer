@@ -5,7 +5,7 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 ## Environment
 
 - Corpus: pinned at `a97467e91a16409c866434fcc7a5f553bbd98b8a` (`TOKENEER_REVISION`), unchanged.
-- AdaLang Analyzer: 1.8.0.
+- AdaLang Analyzer: 1.8.0 plus the unreleased changes listed in `CHANGELOG.md`.
 - GNATcheck: the same from-source build as prior runs; one pass with the plain `-r` rules, then one pass per column-4 option line of `benchmarks/gnatcheck_rule_map.tsv` (`benchmarks/gnatcheck_rule_args.awk`).
 - Reproduce: `TOKENEER_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/tokeneer/run_gnatcheck.sh` (see this directory's README for
@@ -16,13 +16,14 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 
 | | 2026-10-05, all pairs | 2026-10-05, pairs of 2026-09-24 | 2026-09-24 |
 | --- | ---: | ---: | ---: |
-| AdaLang findings | 6823 | 816 | 772 |
-| &nbsp;&nbsp;matched by GNATcheck | 6639 (97.3%) | 634 (77.7%) | 611 (79.1%) |
+| AdaLang findings | 6804 | 797 | 772 |
+| &nbsp;&nbsp;matched by GNATcheck | 6620 (97.3%) | 615 (77.2%) | 611 (79.1%) |
 | GNATcheck findings | 7856 | 1851 | 1851 |
 | &nbsp;&nbsp;matched by AdaLang | 6620 (84.3%) | 615 (33.2%) | 592 (32.0%) |
 
 Pairs of 2026-09-24 whose numbers changed (findings, tool-only), all others are identical:
 
+- `Empty_Exception_Handler`: 19 findings, 0 AdaLang-only then; 0, 0 now.
 - `Magic_Number`: 296 findings, 60 AdaLang-only then; 326, 79 now.
 - `Unused_With_Clause`: 51 findings, 2 AdaLang-only then; 53, 2 now.
 - `Naming_Convention`: 88 findings, 9 AdaLang-only then; 89, 9 now.
@@ -92,7 +93,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Duplicate_With_Clause | direct | 0 | 0 | n/a |
 | Empty_Else_Body | close | 2 | 2 | 0.0% |
 | Empty_Elsif_Body | close | 1 | 1 | 0.0% |
-| Empty_Exception_Handler | direct | 19 | 0 | 100.0% |
+| Empty_Exception_Handler | direct | 0 | 0 | n/a |
 | Empty_If_Body | close | 0 | 0 | n/a |
 | Empty_Then_Body | close | 0 | 0 | n/a |
 | End_Of_Line_Comment | direct | 121 | 0 | 100.0% |

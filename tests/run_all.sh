@@ -26,6 +26,7 @@ for test_script in \
   tests/run_cli_parameter_effects.sh \
   tests/run_config_file.sh \
   tests/run_compiler_checks.sh \
+  tests/run_gnatcheck_names.sh \
   tests/run_gap_ledger.sh \
   tests/run_reporting.sh \
   tests/run_recommended.sh \

@@ -3140,6 +3140,10 @@ package body Adalang_Analyzer.Flow_Interp is
                         Bool_Value : constant Abstract_Bool :=
                           Boolean_Value (Default, State);
                      begin
+                        --  A call in the initial value can write its out
+                        --  and in out actuals and its global outputs
+                        --  (FP-105).
+                        Havoc_Effects_In (Default, State);
                         for Id of Decl.F_Ids loop
                            Flow_Set_Initialized
                              (State, Libadalang.Analysis.Ada_Node (Id),
@@ -4208,6 +4212,9 @@ package body Adalang_Analyzer.Flow_Interp is
                Bounds : constant Abstract_Range :=
                  Range_Value (Default, State);
             begin
+               --  A call in the initial value can write its out and in out
+               --  actuals and its global outputs (FP-105).
+               Havoc_Effects_In (Default, State);
                for Id of Decl.F_Ids loop
                   declare
                      Key : constant Libadalang.Analysis.Ada_Node :=

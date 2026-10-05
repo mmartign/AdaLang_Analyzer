@@ -5,7 +5,7 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 ## Environment
 
 - Corpus: pinned at `02cbd01c2f96c288440415a46bf865616c0ee0f8` (`AWS_REVISION`), unchanged.
-- AdaLang Analyzer: 1.8.0.
+- AdaLang Analyzer: 1.8.0 plus the unreleased changes listed in `CHANGELOG.md`.
 - GNATcheck: the same from-source build as prior runs; one pass with the plain `-r` rules, then one pass per column-4 option line of `benchmarks/gnatcheck_rule_map.tsv` (`benchmarks/gnatcheck_rule_args.awk`).
 - Reproduce: `AWS_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/aws/run_gnatcheck.sh` (see this directory's README for
@@ -16,16 +16,18 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 
 | | 2026-10-05, all pairs | 2026-10-05, pairs of 2026-09-24 | 2026-09-24 |
 | --- | ---: | ---: | ---: |
-| AdaLang findings | 46732 | 7252 | 6701 |
-| &nbsp;&nbsp;matched by GNATcheck | 42950 (91.9%) | 3636 (50.1%) | 3635 (54.2%) |
+| AdaLang findings | 46716 | 7238 | 6701 |
+| &nbsp;&nbsp;matched by GNATcheck | 42939 (91.9%) | 3625 (50.1%) | 3635 (54.2%) |
 | GNATcheck findings | 125491 | 12991 | 12991 |
 | &nbsp;&nbsp;matched by AdaLang | 42940 (34.2%) | 3626 (27.9%) | 3625 (27.9%) |
 
 Pairs of 2026-09-24 whose numbers changed (findings, tool-only), all others are identical:
 
 - `Exception_Propagation`: 948 findings, 948 AdaLang-only then; 1365, 1365 now.
+- `Constant_Condition`: 3 findings, 3 AdaLang-only then; 0, 0 now.
 - `Floating_Equality`: 10 findings, 5 AdaLang-only then; 12, 6 now.
 - `Dead_Store`: 42 findings, 42 AdaLang-only then; 47, 47 now.
+- `Empty_Exception_Handler`: 21 findings, 0 AdaLang-only then; 10, 0 now.
 - `Unused_With_Clause`: 5 findings, 5 AdaLang-only then; 6, 6 now.
 - `Uninitialized_Output`: 70 findings, 66 AdaLang-only then; 59, 55 now.
 - `Wrong_Parameter_Mode`: 24 findings, 24 AdaLang-only then; 25, 25 now.
@@ -34,9 +36,9 @@ Pairs of 2026-09-24 whose numbers changed (findings, tool-only), all others are 
 
 ## Coding-standard checks
 
-The 158 new pairs, counted over all files: 39480 AdaLang findings, 39314 matched by GNATcheck (99.6%); 112500 GNATcheck findings, 39314 matched by AdaLang (34.9%). 127 of the 158 checks have a finding from one tool or the other on this corpus.
+The 158 new pairs, counted over all files: 39478 AdaLang findings, 39314 matched by GNATcheck (99.6%); 112500 GNATcheck findings, 39314 matched by AdaLang (34.9%). 127 of the 158 checks have a finding from one tool or the other on this corpus.
 
-The two tools do not analyse the same set of files (see the notes below), so the same pairs are also counted over the files both analysed: 39480 AdaLang findings and 39520 GNATcheck findings, 39358 at the same file and line; 122 AdaLang-only, 162 GNATcheck-only.
+The two tools do not analyse the same set of files (see the notes below), so the same pairs are also counted over the files both analysed: 39478 AdaLang findings and 39520 GNATcheck findings, 39358 at the same file and line; 120 AdaLang-only, 162 GNATcheck-only.
 
 - The largest corpus: 348 files analysed by AdaLang, 888 by GNATcheck (which also analyses the imported `templates_parser`, XML/Ada and related projects).
 - In the shared files 39,358 of GNATcheck's 39,520 findings match (37,772 before `FP-102` was fixed).
@@ -66,10 +68,10 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Binary_Case_Statement | direct | 34 | 0 | 100.0% |
 | Bit_Record_Without_Layout | direct | 0 | 0 | n/a |
 | Boolean_Relational_Operator | direct | 13 | 0 | 100.0% |
-| Complex_Inlined_Subprogram | direct | 92 | 4 | 95.7% |
+| Complex_Inlined_Subprogram | direct | 90 | 2 | 97.8% |
 | Concurrent_Interface | direct | 0 | 0 | n/a |
 | Conditional_Expression | direct | 125 | 0 | 100.0% |
-| Constant_Condition | close | 3 | 3 | 0.0% |
+| Constant_Condition | close | 0 | 0 | n/a |
 | Constant_Overlay | direct | 6 | 0 | 100.0% |
 | Constructor | direct | 70 | 0 | 100.0% |
 | Cyclomatic_Complexity | direct | 88 | 0 | 100.0% |
@@ -93,7 +95,7 @@ The two tools do not analyse the same set of files (see the notes below), so the
 | Duplicate_With_Clause | direct | 0 | 0 | n/a |
 | Empty_Else_Body | close | 2 | 2 | 0.0% |
 | Empty_Elsif_Body | close | 2 | 2 | 0.0% |
-| Empty_Exception_Handler | direct | 21 | 0 | 100.0% |
+| Empty_Exception_Handler | direct | 10 | 0 | 100.0% |
 | Empty_If_Body | close | 0 | 0 | n/a |
 | Empty_Then_Body | close | 7 | 7 | 0.0% |
 | End_Of_Line_Comment | direct | 228 | 0 | 100.0% |

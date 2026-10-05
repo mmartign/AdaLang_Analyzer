@@ -9,14 +9,31 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A check can be named by the GNATcheck rule it is paired with, wherever a
+  check name is accepted and without regard to case:
+  `-checks=positional_parameters`, `+RPositional_Parameters`,
+  `-rule-param=maximum_parameters.n=6`. All 212 general-purpose GNATcheck
+  rule names are known; a rule that is several checks here
+  (`null_paths`) selects them all. `-list-checks` shows the rule names each
+  check answers to. Findings keep the check's own name.
 - `benchmarks/gnatprove_gap_ledger.py` accounts for every check GNATprove
   proves on a corpus and what `--verify` does at that place; the first
   ledger is `benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`. On the five
   fully proved corpora GNATprove proves 15,043 checks: AdaLang proves 467
   of them, has an undecided obligation for 6,436 and none for 8,140.
 
+### Changed
+
+- An empty `when others` handler is reported once when both
+  `Empty_Exception_Handler` and `Exception_Swallowed` are enabled, by
+  `Exception_Swallowed`. Both used to report it, with `--recommended` among
+  others. `Empty_Exception_Handler` alone still reports every empty handler.
+
 ### Fixed
 
+- `Constant_Condition` no longer reports a condition on an object that a
+  call in the initial value of a later declaration writes through an `out`
+  or `in out` parameter (`FP-105`).
 - A proof obligation or finding is reported in the file its node is written
   in (`FP-104`). An obligation of a contract, which is written in the
   specification and evaluated while the body is verified, used to carry the

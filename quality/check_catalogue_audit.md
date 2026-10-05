@@ -1,6 +1,6 @@
 # Check catalogue audit — 2026-10-05
 
-A stock-take of the 302 checks before any of them is renamed or merged: what each is paired with in GNATcheck, how its name relates to GNATcheck's, and which checks report the same thing. Nothing in the analyzer is changed by this document.
+A stock-take of the 302 checks: what each is paired with in GNATcheck, how its name relates to GNATcheck's, and which checks report the same thing. Two things were done as a result and are reflected in the figures: GNATcheck rule names became aliases, and an empty `when others` handler is reported once (by `Exception_Swallowed`) where `Empty_Exception_Handler` used to report it too.
 
 Sources: `-list-checks`, `benchmarks/gnatcheck_rule_map.tsv`, the configuration-paired table of `docs/src/gnatcheck-rule-comparison.md`, and the findings of every check that ran on the ten benchmark corpora (`benchmark-results/`).
 
@@ -15,7 +15,7 @@ Sources: `-list-checks`, `benchmarks/gnatcheck_rule_map.tsv`, the configuration-
 | AdaLang says `No_X`, GNATcheck names the construct | 7 |
 | **Total** | **302** |
 
-No AdaLang check can be selected by its GNATcheck name today, and `-list-checks` does not show it. A GNATcheck user has to look each rule up in the comparison document.
+When this audit was taken no check could be selected by its GNATcheck name. That has since been added: every GNATcheck rule name below is accepted wherever a check name is, and `-list-checks` shows it (see `docs/src/configuration.md`). The check names themselves are unchanged.
 
 The checks whose wording differs from GNATcheck's:
 
@@ -123,7 +123,6 @@ Measured on the ten corpora: pairs where at least 90% of the findings of the rar
 | `Declaration_In_Block` (789) | `No_Block_Statement` (886) | 789 | 89% | both tools: GNATcheck has two rules here too |
 | `Incomplete_Representation_Specification` (25) | `No_Scalar_Storage_Order` (22) | 21 | 84% | both tools: GNATcheck has two rules here too |
 | `No_Block_Statement` (886) | `Unnamed_Block_Or_Loop` (1120) | 845 | 75% | both tools: GNATcheck has two rules here too |
-| `Empty_Exception_Handler` (44) | `Exception_Swallowed` (32) | 32 | 73% | AdaLang only: both map to the same GNATcheck rule |
 | `Declaration_In_Block` (789) | `Unnamed_Block_Or_Loop` (1120) | 751 | 67% | both tools: GNATcheck has two rules here too |
 | `Explicit_Full_Discrete_Range` (28) | `Use_Range` (43) | 28 | 65% | both tools: GNATcheck has two rules here too |
 | `Non_Constant_Overlay` (19) | `Not_Imported_Overlay` (13) | 12 | 63% | both tools: GNATcheck has two rules here too |
@@ -168,7 +167,7 @@ Measured on the ten corpora: pairs where at least 90% of the findings of the rar
 | `Non_SPARK_Attribute` (4898) | `Nonoverlay_Address_Specification` (8) | 8 | 0% | both tools: GNATcheck has two rules here too |
 | `Constant_Overlay` (8) | `Non_SPARK_Attribute` (4898) | 8 | 0% | both tools: GNATcheck has two rules here too |
 
-48 pairs; 10 of them are AdaLang's own, the rest mirror overlaps between GNATcheck's rules. 1 pairs coincide in both directions on 90% or more of their findings.
+47 pairs; 9 of them are AdaLang's own, the rest mirror overlaps between GNATcheck's rules. 1 pairs coincide in both directions on 90% or more of their findings.
 
 ## 5. Naming patterns inside the catalogue
 
@@ -255,7 +254,7 @@ Quality and severity:
 | `Duplicate_Exception_Choice` | Maintainability / Low | - | — | 0 |
 | `Null_Statement` | Maintainability / Low | - | `redundant_null_statements` | 5 |
 | `Redundant_Final_Return` | Maintainability / Low | - | — | 0 |
-| `Empty_Exception_Handler` | Reliability / High | recommended | `silent_exception_handlers` | 44 |
+| `Empty_Exception_Handler` | Reliability / High | recommended | `silent_exception_handlers` | 25 |
 | `Unreachable_Branch` | Reliability / Medium | automotive,recommended | — | 0 |
 | `Contradictory_Condition` | Reliability / High | automotive,recommended,spark,verify | — | 0 |
 | `Contradictory_Range_Condition` | Reliability / High | - | — | 0 |
@@ -495,7 +494,7 @@ Quality and severity:
 | `Improperly_Located_Instantiation` | Maintainability / Low | - | `improperly_located_instantiations` | 439 |
 | `Function_Style_Procedure` | Maintainability / Low | - | `function_style_procedures` | 358 |
 | `Exception_As_Control_Flow` | Reliability / Medium | - | `exceptions_as_control_flow` | 9 |
-| `Complex_Inlined_Subprogram` | Maintainability / Medium | - | `complex_inlined_subprograms` | 204 |
+| `Complex_Inlined_Subprogram` | Maintainability / Medium | - | `complex_inlined_subprograms` | 202 |
 | `Call_In_Exception_Handler` | Reliability / Medium | - | `calls_in_exception_handlers` | 0 |
 | `Ada_2022_In_Ghost_Code` | Maintainability / Medium | - | `ada_2022_in_ghost_code` | 444 |
 | `Actual_Parameter` | Reliability / Medium | - | `actual_parameters` | 0 |

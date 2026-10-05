@@ -5,7 +5,7 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 ## Environment
 
 - Corpus: pinned at `bb83565322eba9a0bd59ccda607edcdc0a1bd381` (`PROJECT_BIAS_REVISION`), unchanged.
-- AdaLang Analyzer: 1.8.0.
+- AdaLang Analyzer: 1.8.0 plus the unreleased changes listed in `CHANGELOG.md`.
 - GNATcheck: the same from-source build as prior runs; one pass with the plain `-r` rules, then one pass per column-4 option line of `benchmarks/gnatcheck_rule_map.tsv` (`benchmarks/gnatcheck_rule_args.awk`).
 - Reproduce: `PROJECT_BIAS_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/project_bias/run_gnatcheck.sh` (see this directory's README for

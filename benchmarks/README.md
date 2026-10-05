@@ -147,15 +147,15 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
 | [sparknacl](sparknacl/RESULTS_gnatcheck_2026-10-05.md) | 5637 | 5403 (95.8%) | 5847 | 5403 (92.4%) |
-| [aws](aws/RESULTS_gnatcheck_2026-10-05.md) | 46732 | 42950 (91.9%) | 125491 | 42940 (34.2%) |
-| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-10-05.md) | 23542 | 21622 (91.8%) | 25014 | 21620 (86.4%) |
+| [aws](aws/RESULTS_gnatcheck_2026-10-05.md) | 46716 | 42939 (91.9%) | 125491 | 42940 (34.2%) |
+| [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-10-05.md) | 23540 | 21620 (91.8%) | 25014 | 21620 (86.4%) |
 | [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-10-05.md) | 7204 | 6581 (91.4%) | 7300 | 6581 (90.2%) |
 | [cubedos](cubedos/RESULTS_gnatcheck_2026-10-05.md) | 2034 | 1891 (93.0%) | 4283 | 1891 (44.2%) |
 | [coap_spark](coap_spark/RESULTS_gnatcheck_2026-10-05.md) | 13404 | 12422 (92.7%) | 43529 | 12422 (28.5%) |
 | [libkeccak](libkeccak/RESULTS_gnatcheck_2026-10-05.md) | 5511 | 5288 (96.0%) | 5600 | 5288 (94.4%) |
 | [saatana](saatana/RESULTS_gnatcheck_2026-10-05.md) | 1089 | 995 (91.4%) | 1028 | 995 (96.8%) |
 | [project_bias](project_bias/RESULTS_gnatcheck_2026-10-05.md) | 1846 | 1752 (94.9%) | 1897 | 1752 (92.4%) |
-| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-10-05.md) | 6823 | 6639 (97.3%) | 7856 | 6620 (84.3%) |
+| [tokeneer](tokeneer/RESULTS_gnatcheck_2026-10-05.md) | 6804 | 6620 (97.3%) | 7856 | 6620 (84.3%) |
 
 These totals include the 158 rule pairs of the opt-in coding-standard
 checks: 153 added to the lane on 2026-10-04 and five on 2026-10-05 (the
@@ -170,7 +170,7 @@ analysed:
 | Corpus | AdaLang findings | Matched by GNATcheck | GNATcheck findings | Matched by AdaLang |
 | --- | ---: | ---: | ---: | ---: |
 | [sparknacl](sparknacl/RESULTS_gnatcheck_2026-10-05.md) | 3651 | 3651 (100.0%) | 3651 | 3651 (100.0%) |
-| [aws](aws/RESULTS_gnatcheck_2026-10-05.md) | 39480 | 39358 (99.7%) | 39520 | 39358 (99.6%) |
+| [aws](aws/RESULTS_gnatcheck_2026-10-05.md) | 39478 | 39358 (99.7%) | 39520 | 39358 (99.6%) |
 | [gnatcoll-core](gnatcoll/RESULTS_gnatcheck_2026-10-05.md) | 20357 | 20342 (99.9%) | 20355 | 20342 (99.9%) |
 | [ada_drivers_library](ada_drivers_library/RESULTS_gnatcheck_2026-10-05.md) | 6344 | 6157 (97.1%) | 6165 | 6157 (99.9%) |
 | [cubedos](cubedos/RESULTS_gnatcheck_2026-10-05.md) | 1623 | 1623 (100.0%) | 1624 | 1623 (99.9%) |
@@ -180,7 +180,7 @@ analysed:
 | [project_bias](project_bias/RESULTS_gnatcheck_2026-10-05.md) | 1459 | 1459 (100.0%) | 1459 | 1459 (100.0%) |
 | [tokeneer](tokeneer/RESULTS_gnatcheck_2026-10-05.md) | 6007 | 6007 (100.0%) | 6007 | 6007 (100.0%) |
 
-Across the ten corpora that is 93773 AdaLang findings, of which GNATcheck
+Across the ten corpora that is 93771 AdaLang findings, of which GNATcheck
 reports 93447 (99.7%) at the same file and line, against 93631 GNATcheck
 findings (99.8% matched). What remains has these causes, set out in the
 results files:

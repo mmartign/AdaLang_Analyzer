@@ -5,7 +5,7 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 ## Environment
 
 - Corpus: pinned at `7ba07e735498de39216a30479c3d2cc0817f03ac` (`SAATANA_REVISION`), unchanged.
-- AdaLang Analyzer: 1.8.0.
+- AdaLang Analyzer: 1.8.0 plus the unreleased changes listed in `CHANGELOG.md`.
 - GNATcheck: the same from-source build as prior runs; one pass with the plain `-r` rules, then one pass per column-4 option line of `benchmarks/gnatcheck_rule_map.tsv` (`benchmarks/gnatcheck_rule_args.awk`).
 - Reproduce: `SAATANA_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/saatana/run_gnatcheck.sh` (see this directory's README for

@@ -100,7 +100,8 @@ restricted constructs, object-oriented design, representation items,
 complexity limits, and the compiler's own warnings, style checks and
 restrictions — configured with `-rule-param=<check>.<name>=<value>`.
 Together with the rest of the catalogue they cover every one of
-GNATcheck's 212 general-purpose rules; the
+GNATcheck's 212 general-purpose rules, and answer to GNATcheck's rule names
+(`-checks=positional_parameters`) as well as their own; the
 [GNATcheck rule comparison](https://mmartign.github.io/AdaLang_Analyzer/gnatcheck-rule-comparison.html)
 lists every pairing and how it was checked.
 

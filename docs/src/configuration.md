@@ -68,6 +68,24 @@ for the same check and name replaces the earlier one:
   src/*.adb
 ```
 
+A check can also be named by the GNATcheck rule it is paired with, in any
+place a check name is accepted and without regard to case, so a GNATcheck
+rule list carries over:
+
+```sh
+./bin/adalang_analyzer -checks='-*,goto_statements,positional_parameters' src/*.adb
+./bin/adalang_analyzer +RGoto_Statements +RPositional_Parameters src/*.adb
+./bin/adalang_analyzer -checks='-*,maximum_parameters' \
+  -rule-param=maximum_parameters.n=6 src/*.adb
+```
+
+A GNATcheck rule that is several checks here selects all of them:
+`null_paths` stands for `Empty_If_Body`, `Empty_Elsif_Body`,
+`Empty_Then_Body`, `Empty_Else_Body` and `Null_Case_Alternative`. Findings
+are always reported under the check's own name. A parameter keeps the name
+it has here, which is not always GNATcheck's; `-list-checks` shows, for each
+check, the GNATcheck rule names it answers to.
+
 `-list-checks` names the parameters of each check and their defaults. A
 check whose parameters state a project convention (for example
 `Identifier_Casing` or `Forbidden_Attribute`) reports nothing until they
