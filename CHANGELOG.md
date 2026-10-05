@@ -85,8 +85,8 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - The gap ledger (`benchmarks/gnatprove_gap_ledger.py`) pairs GNATprove's
   one "initialization of X" check per object with AdaLang's obligations
   about that object. Of the 15,043 checks GNATprove proves on the five fully
-  proved corpora AdaLang now proves 1,216 (467 before) and has an obligation
-  for 8,725 (6,903 before), still with no disagreement in either direction.
+  proved corpora AdaLang now proves 3,018 (467 before) and has an obligation
+  for 11,922 (6,903 before), still with no disagreement in either direction.
 
 ### Fixed
 

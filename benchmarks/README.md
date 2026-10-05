@@ -106,12 +106,12 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 1,216 | 8.1% |
-| Has the obligation, leaves it unproved | 5,482 | 36.4% |
-| Has the obligation, calls it unsupported | 2,027 | 13.5% |
-| Has no obligation of that kind at that place | 2,538 | 16.9% |
-| Has no obligation of that kind at all | 3,410 | 22.7% |
-| Raises nothing in that file | 370 | 2.5% |
+| Proves it | 3,018 | 20.1% |
+| Has the obligation, leaves it unproved | 6,580 | 43.7% |
+| Has the obligation, calls it unsupported | 2,324 | 15.4% |
+| Has no obligation of that kind at that place | 1,496 | 9.9% |
+| Has no obligation of that kind at all | 1,416 | 9.4% |
+| Raises nothing in that file | 209 | 1.4% |
 
 The ledger has already paid for itself several times. Its first run led to
 `FP-104`: obligations written in a specification were reported under the
@@ -126,9 +126,25 @@ and after it the actual parameters, checked against the subtype of their
 formal. Preparing that last one turned up three faults in the checks that
 were already there (`FP-106` to `FP-108`), two of them false-safes that a
 comparison on proved code cannot show: a check AdaLang wrongly proves
-agrees with GNATprove there. Before these steps AdaLang proved 433 of the
-15,043 checks and had an obligation for 5,954; it now proves 1,216 and has
-one for 8,725.
+agrees with GNATprove there.
+
+The ledger then showed that two fifths of what was still missing was not a
+run-time check at all: termination, and the `Global` and `Depends` aspects.
+`--verify` now has an obligation for each. Termination is proved from the
+body (bounded loops, no recursion, callees that terminate): 990 of
+GNATprove's 1,169. A `Global` aspect is proved from an over-approximation
+of what the body touches: 595 of 696. A `Depends` aspect has its obligation
+and no route to prove it yet. Last, expression functions are verified as
+subprograms, and the checks inside preconditions and postconditions are
+obligations of their own, which brought in most of what was missing in
+specifications.
+
+Before all of this AdaLang proved 433 of the 15,043 checks and had an
+obligation for 5,954; it now proves 3,018 and has one for 11,922. What is
+left without one, 3,121 checks, is mostly kinds AdaLang does not have
+(predicate, length, pointer-dereference and discriminant checks, memory
+leaks) and range, index and precondition checks at places it does not yet
+look.
 
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a
