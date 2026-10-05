@@ -1,7 +1,7 @@
 # What separates `--verify` from GNATprove: a ledger
 
-Recorded 2026-10-05 with AdaLang Analyzer 1.8.0 plus what was added after
-it: the initialization of an `out` parameter and of an `Output` global at
+Recorded 2026-10-05 with AdaLang Analyzer 1.8.1, which adds to 1.8.0:
+the initialization of an `out` parameter and of an `Output` global at
 its subprogram's exit, the bounds of a slice, the range check on an actual
 parameter, the termination, data-dependencies and flow-dependencies
 obligations, the verification of expression functions and of the checks

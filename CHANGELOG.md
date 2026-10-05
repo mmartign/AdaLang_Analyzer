@@ -5,7 +5,39 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.1] - 2026-10-05
+
+A `--verify` release that narrows the distance to GNATprove, measured check
+by check. Three obligation kinds are new: termination, and the data and
+flow dependencies of `Global` and `Depends` aspects. Expression functions
+are verified as subprograms, and the checks inside preconditions and
+postconditions, the range check on an actual parameter, the bounds of a
+slice and the initialization of `out` parameters and `Output` globals are
+obligations where GNATprove has a check. Three faults are fixed in the
+checks that were already there; two of them, `FP-107` and `FP-108`, are
+false-safes.
+
+Of the 15,043 checks GNATprove proves on the five fully proved corpora,
+`--verify` proves 3,018 (467 in 1.8.0) and has an obligation for 11,922
+(6,903 in 1.8.0), with no check it proves that GNATprove does not and no
+definite error on a check GNATprove proves
+(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). No finding changed in
+any of the ten corpora re-run.
+
+What to expect when upgrading:
+
+- `--verify` reports more obligations in every code base, most of them
+  `Unproved` or `Unsupported` where 1.8.0 raised nothing: its totals are not
+  comparable with those of 1.8.0. The `kind` of an obligation in the JSON
+  and SARIF reports has three new values, `termination`,
+  `data-dependencies` and `flow-dependencies`.
+- The termination obligation is raised for every function that is not
+  under `SPARK_Mode => Off`, in SPARK code or not.
+- A `flow-dependencies` obligation is always `Unproved`: no route proves a
+  `Depends` aspect yet.
+- Some range checks that 1.8.0 proved are `Unproved` (`FP-107`), and
+  `Known_Range_Check_Failure` reports a value stored out of the range its
+  target is declared with.
 
 ### Added
 
