@@ -6606,6 +6606,125 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end Finalize_Index_Check;
 
+      --  The bounds of a slice are to be within the index bounds of the
+      --  sliced array, unless the slice is null. One obligation for the
+      --  slice, at the name that is sliced, which is where GNATprove
+      --  reports it. It is proved when both bounds are shown to be within
+      --  the array's bounds, or the slice is shown to be null. It is never
+      --  a definite error: a bound outside the array is legal when the
+      --  slice turns out null, and that is not decided here.
+      procedure Finalize_Slice_Check
+        (Slice     : Libadalang.Analysis.Call_Expr;
+         Container : CFG.Node_Id)
+      is
+         Anchor   : constant Libadalang.Analysis.Name := Slice.F_Name;
+         Interval : constant Libadalang.Analysis.Ada_Node :=
+           Slice.F_Suffix.As_Ada_Node;
+      begin
+         if not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Anchor, Proof.Range_Check,
+               "slice bounds have not been established");
+            return;
+         elsif Container /= CFG.No_Node and then not Reachable (Container)
+         then
+            Record_Unreachable
+              (Unit, Anchor, Proof.Range_Check,
+               "the containing CFG node is unreachable");
+            return;
+         elsif Interval.Kind /= Libadalang.Common.Ada_Bin_Op
+           or else Interval.As_Bin_Op.F_Op.Kind /=
+                     Libadalang.Common.Ada_Op_Double_Dot
+         then
+            Record_Unproved
+              (Unit, Anchor, Proof.Range_Check,
+               Proof.Abstract_Interpretation,
+               "slice bounds are not established as within the array " &
+                 "bounds",
+               Imprecision =>
+                 "the slice range is not written as two bounds",
+               Final => True);
+            return;
+         end if;
+
+         declare
+            State   : constant Flow_State :=
+              (if Container = CFG.No_Node then Empty_Flow_State
+               else States (Container));
+            Symbols : constant VC.Symbolic_State :=
+              (if Container = CFG.No_Node then VC.Empty_Symbolic_State
+               else Symbolic_States (Container));
+            Low     : constant Libadalang.Analysis.Expr :=
+              Interval.As_Bin_Op.F_Left;
+            High    : constant Libadalang.Analysis.Expr :=
+              Interval.As_Bin_Op.F_Right;
+            Limits  : constant Abstract_Range :=
+              Array_Object_Index_Range (Anchor, 1, State);
+            Low_Range  : constant Abstract_Range := Range_Value (Low, State);
+            High_Range : constant Abstract_Range := Range_Value (High, State);
+            type Containment is (Not_Shown, By_Interval, By_Prover);
+
+            --  How Bound is shown to be within the array's bounds, if it
+            --  is.
+            function Inside (Bound : Libadalang.Analysis.Expr)
+               return Containment
+            is
+            begin
+               if Definitely_Inside_Range (Bound, Limits, State) then
+                  return By_Interval;
+               elsif VC.Decide_Bounds (Bound, Limits, State, Symbols).Result =
+                       VC.VC_Proved
+                 or else
+                   ((not Limits.Has_Low or else not Limits.Has_High)
+                    and then VC.Decide_Index_In_Object
+                               (Bound, Anchor, State, Symbols).Result =
+                             VC.VC_Proved)
+               then
+                  return By_Prover;
+               end if;
+               return Not_Shown;
+            end Inside;
+
+            Low_Inside  : constant Containment := Inside (Low);
+            High_Inside : constant Containment :=
+              (if Low_Inside = Not_Shown then Not_Shown else Inside (High));
+            Used_Prover : constant Boolean :=
+              Low_Inside = By_Prover or else High_Inside = By_Prover;
+         begin
+            if Low_Range.Has_Low
+              and then High_Range.Has_High
+              and then Low_Range.Low > High_Range.High
+            then
+               --  proof-path: slice-null
+               Record_Proved_Safe
+                 (Unit, Anchor, Proof.Range_Check,
+                  Proof.Abstract_Interpretation,
+                  "the slice is null, so its bounds are not checked",
+                  "slice low bound is above its high bound", Final => True);
+            elsif Low_Inside /= Not_Shown and then High_Inside /= Not_Shown
+            then
+               --  proof-path: slice-bounds
+               Record_Proved_Safe
+                 (Unit, Anchor, Proof.Range_Check,
+                  (if Used_Prover then Proof.External_Prover
+                   else Proof.Abstract_Interpretation),
+                  "both slice bounds are within the array index bounds",
+                  (if Used_Prover then VC.Evidence
+                   else "slice bounds are within array bounds"),
+                  Final => True);
+            else
+               Record_Unproved
+                 (Unit, Anchor, Proof.Range_Check,
+                  Proof.Abstract_Interpretation,
+                  "slice bounds are not established as within the array " &
+                    "bounds",
+                  Imprecision =>
+                    "slice bound and array bound ranges remain inconclusive",
+                  Final => True);
+            end if;
+         end;
+      end Finalize_Slice_Check;
+
       --  As Finalize_Range_Check, for Division_By_Zero_Check via
       --  Check_Division_By_Zero (see FP-036).
       procedure Finalize_Division_Check
@@ -7075,6 +7194,9 @@ package body Adalang_Analyzer.Flow_Interp is
                               Finalize_Precondition_Check (Call, Here);
                            end if;
                         end;
+
+                     when Libadalang.Common.Array_Slice =>
+                        Finalize_Slice_Check (Call, Here);
 
                      when others =>
                         null;

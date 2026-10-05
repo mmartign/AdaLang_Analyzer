@@ -17,11 +17,17 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   two fixtures added to the differential test for it.
 - An initialization obligation carries a `subject` in JSON: the declaration
   of the object it is about.
+- `--verify` raises a range-check obligation for the bounds of a slice
+  `A (L .. H)`, located at `A` as GNATprove's is: proved when both bounds
+  are within the bounds of `A`, by the same routes as an index check, or
+  when the slice is known to be null; `Unproved` otherwise, and when the
+  slice is given by a subtype name or a `'Range`. GNATprove agrees on every
+  slice of the two fixtures added to the differential test for it.
 - The gap ledger (`benchmarks/gnatprove_gap_ledger.py`) pairs GNATprove's
   one "initialization of X" check per object with AdaLang's obligations
   about that object. Of the 15,043 checks GNATprove proves on the five fully
-  proved corpora AdaLang now proves 1,076 (467 before), still with no
-  disagreement in either direction.
+  proved corpora AdaLang now proves 1,193 (467 before) and has an obligation
+  for 8,606 (6,903 before), still with no disagreement in either direction.
 
 ## [1.8.0] - 2026-10-05
 

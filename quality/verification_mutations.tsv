@@ -20,3 +20,6 @@ output-init-never	tests/verification_mutation_output_initialization.adb	initiali
 output-init-early-return	tests/verification_mutation_output_initialization.adb	initialization-check	Skipped	unproved	an early return skips the assignment of the out parameter
 output-init-element-only	tests/verification_mutation_output_initialization.adb	initialization-check	Element_Only	unproved	only one element of an array out parameter is assigned
 output-init-zero-trip-loop	tests/verification_mutation_output_initialization.adb	initialization-check	Looped	unproved	the only assignment of the out parameter is in a loop that may not run
+slice-open-high	tests/verification_mutation_slice_bounds.adb	range-check	Data	unproved	a slice bound of a subtype wider than the array's index range
+slice-symbolic-short	tests/verification_mutation_slice_bounds.adb	range-check	Short	unproved	a two-element slice of an object not known to have two elements
+slice-almost-null	tests/verification_mutation_slice_bounds.adb	range-check	Reserve	unproved	a slice that is null for every value of its low bound but zero
