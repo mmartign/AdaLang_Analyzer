@@ -317,7 +317,12 @@ package Adalang_Analyzer.Rules is
       Out_Parameter_Read_In_Exception_Handler,
       Predicate_Testing,
       Profile_Discrepancy,
-      Side_Effect_Parameter
+      Side_Effect_Parameter,
+      Use_Clause,
+      Unavailable_Body_Call,
+      Deeply_Nested_Inlining,
+      Integer_Type_As_Enumeration,
+      Same_Instantiation
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -3371,7 +3376,62 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Call the function once per statement and pass the results."),
          Quality     => Quality_Reliability,
-         Severity    => Severity_Medium)
+         Severity    => Severity_Medium),
+      Use_Clause =>
+        (Name        => To_Unbounded_String ("Use_Clause"),
+         Description => To_Unbounded_String
+           ("Find each package name in a use clause. The allowed " &
+            "parameter lists packages to exempt by fully qualified name, " &
+            "and exempt_operator_packages exempts packages that declare " &
+            "only operators."),
+         Guidance    => To_Unbounded_String
+           ("Qualify the names, or use a use type clause."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Unavailable_Body_Call =>
+        (Name        => To_Unbounded_String ("Unavailable_Body_Call"),
+         Description => To_Unbounded_String
+           ("Find calls to a subprogram whose body is not among the " &
+            "sources the analyzer can see, such as an imported one. With " &
+            "the indirect_calls parameter, calls through an access value " &
+            "are reported too."),
+         Guidance    => To_Unbounded_String
+           ("Add the body's source to the analysis, or review the call " &
+            "by hand: checks that follow calls stop here."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Low),
+      Deeply_Nested_Inlining =>
+        (Name        => To_Unbounded_String ("Deeply_Nested_Inlining"),
+         Description => To_Unbounded_String
+           ("Find inlined subprograms that call inlined subprograms to a " &
+            "depth above the n parameter (3 by default)."),
+         Guidance    => To_Unbounded_String
+           ("Remove Inline from the outer subprogram or flatten the " &
+            "chain of calls."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Integer_Type_As_Enumeration =>
+        (Name        => To_Unbounded_String ("Integer_Type_As_Enumeration"),
+         Description => To_Unbounded_String
+           ("Find integer types that no analyzed source uses in " &
+            "arithmetic, converts, derives from, declares a subtype of " &
+            "or passes to a generic instantiation."),
+         Guidance    => To_Unbounded_String
+           ("Consider an enumeration type."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Same_Instantiation =>
+        (Name        => To_Unbounded_String ("Same_Instantiation"),
+         Description => To_Unbounded_String
+           ("Find generic package instantiations that repeat another " &
+            "instantiation of the same generic with the same actual " &
+            "parameters among the analyzed sources. With the " &
+            "library_level_only parameter, local instantiations are " &
+            "ignored."),
+         Guidance    => To_Unbounded_String
+           ("Share one instantiation if the two need not be distinct."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low)
    );
 
    function Lookup_Rule_Kind

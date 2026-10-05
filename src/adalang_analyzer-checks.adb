@@ -27,6 +27,7 @@ with Adalang_Analyzer.Checks.Declarations;
 with Adalang_Analyzer.Checks.Design_Policy;
 with Adalang_Analyzer.Checks.Expressions;
 with Adalang_Analyzer.Checks.Flow_Policy;
+with Adalang_Analyzer.Checks.Global_Policy;
 with Adalang_Analyzer.Checks.Naming;
 with Adalang_Analyzer.Checks.Object_Policy;
 with Adalang_Analyzer.Checks.Readability;
@@ -2309,6 +2310,7 @@ package body Adalang_Analyzer.Checks is
          Design_Policy.Analyze_Node (Unit, Node);
          Flow_Policy.Analyze_Node (Unit, Node);
          Reference_Policy.Analyze_Node (Unit, Node);
+         Global_Policy.Analyze_Node (Unit, Node);
 
          --  Apply node-specific checks before recursively visiting descendants.
          Analyze_Bug_Finding_Node (Unit, Node);
@@ -2324,5 +2326,13 @@ package body Adalang_Analyzer.Checks is
       end loop;
       Declarations.Leave_Node (Node);
    end Evaluate_Node;
+
+   procedure Evaluate_Sources
+     (Ctx   : Libadalang.Analysis.Analysis_Context;
+      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector)
+   is
+   begin
+      Global_Policy.Analyze_Sources (Ctx, Files);
+   end Evaluate_Sources;
 
 end Adalang_Analyzer.Checks;

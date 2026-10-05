@@ -597,3 +597,13 @@ Predicate_Testing	gnatcheck-pair-clean	tests/precision_naming_clean.ads	clean	GN
 Profile_Discrepancy	gnatcheck-pair-finding	tests/precision_references.adb	finding	GNATcheck-paired boundary (profile_discrepancies): the construct the check reports must be flagged
 Profile_Discrepancy	gnatcheck-pair-clean	tests/precision_naming_clean.ads	clean	GNATcheck-paired negative control (profile_discrepancies): the nearest construct the check does not cover must stay clean
 Outside_Reference_From_Subprogram	negative-generic-body	tests/precision_outside_reference_generic_clean.adb	clean	corpus finding (libkeccak, 2026-10-04): a nested subprogram in the body of a generic unit is a template, which GNATcheck excludes; 826 findings there before the fix
+Use_Clause	gnatcheck-pair-finding	tests/precision_use_clause.adb	finding	GNATcheck-paired boundary (use_clauses): the construct the check reports must be flagged
+Use_Clause	gnatcheck-pair-clean	tests/precision_use_clause_clean.adb	clean	GNATcheck-paired negative control (use_clauses): the nearest construct the check does not cover must stay clean
+Unavailable_Body_Call	gnatcheck-pair-finding	tests/precision_unavailable_body_call.adb	finding	GNATcheck-paired boundary (unavailable_body_calls): the construct the check reports must be flagged
+Unavailable_Body_Call	gnatcheck-pair-clean	tests/precision_unavailable_body_call_clean.adb	clean	GNATcheck-paired negative control (unavailable_body_calls): the nearest construct the check does not cover must stay clean
+Deeply_Nested_Inlining	gnatcheck-pair-finding	tests/precision_deeply_nested_inlining.adb	finding	GNATcheck-paired boundary (deeply_nested_inlining): the construct the check reports must be flagged
+Deeply_Nested_Inlining	gnatcheck-pair-clean	tests/precision_inlining_clean.adb	clean	GNATcheck-paired negative control (deeply_nested_inlining): the nearest construct the check does not cover must stay clean
+Integer_Type_As_Enumeration	gnatcheck-pair-finding	tests/precision_integer_type_as_enumeration.adb	finding	GNATcheck-paired boundary (integer_types_as_enum): the construct the check reports must be flagged
+Integer_Type_As_Enumeration	gnatcheck-pair-clean	tests/precision_integer_type_as_enumeration_clean.adb	clean	GNATcheck-paired negative control (integer_types_as_enum): the nearest construct the check does not cover must stay clean
+Same_Instantiation	gnatcheck-pair-finding	tests/precision_same_instantiation.adb	finding	GNATcheck-paired boundary (same_instantiations): the construct the check reports must be flagged
+Same_Instantiation	gnatcheck-pair-clean	tests/precision_same_instantiation_clean.adb	clean	GNATcheck-paired negative control (same_instantiations): the nearest construct the check does not cover must stay clean

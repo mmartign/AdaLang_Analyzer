@@ -328,6 +328,11 @@ guidance shipped by the current binary.
 | Coding standard | `Predicate_Testing` | Reliability | Low | Reports membership tests naming a subtype with a predicate, and Valid attributes of an object of such a subtype. |
 | Coding standard | `Profile_Discrepancy` | Maintainability | Low | Reports subprogram and entry bodies whose parameter profile is written differently from their declaration: grouping of names, explicit modes or the spelling of type names. |
 | Coding standard | `Side_Effect_Parameter` | Reliability | Medium | Reports calls and instantiations whose actuals call the same function, listed by fully qualified name in the functions parameter, more than once; nothing is reported when none is configured. |
+| Coding standard | `Use_Clause` | Maintainability | Low | Reports each package name in a use clause; the allowed parameter exempts packages by fully qualified name and exempt_operator_packages those that declare only operators. |
+| Coding standard | `Unavailable_Body_Call` | Reliability | Low | Reports calls to a subprogram whose body is not among the sources the analyzer can see, and with indirect_calls also calls through an access value. |
+| Coding standard | `Deeply_Nested_Inlining` | Maintainability | Low | Reports inlined subprograms that call inlined subprograms to a depth above the n parameter (3 by default). |
+| Coding standard | `Integer_Type_As_Enumeration` | Maintainability | Low | Reports integer types that no analyzed source uses in arithmetic, converts, derives from, declares a subtype of or passes to a generic instantiation. |
+| Coding standard | `Same_Instantiation` | Maintainability | Low | Reports generic package instantiations that repeat another instantiation of the same generic with the same actual parameters among the analyzed sources. |
 
 </details>
 

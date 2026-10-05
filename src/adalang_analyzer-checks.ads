@@ -16,6 +16,8 @@ with Ada.Exceptions;
 
 with Libadalang.Analysis;
 
+with Adalang_Analyzer.Project_Files;
+
 --  The rule engine: the single recursive AST walk that drives the whole
 --  analysis. For each node it runs the checks keyed on that node's own
 --  kind and recurses into every child, so every check runs in one pass
@@ -39,6 +41,12 @@ package Adalang_Analyzer.Checks is
    --  confined to that check at that node: it is counted in
    --  Adalang_Analyzer.Report.Skipped_Nodes rather than skipping the
    --  node's other checks or aborting analysis of the rest of the file.
+
+   procedure Evaluate_Sources
+     (Ctx   : Libadalang.Analysis.Analysis_Context;
+      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector);
+   --  Runs the enabled checks that compare every file of Files with every
+   --  other. To be called once, after Evaluate_Node has walked them all.
 
 private
 

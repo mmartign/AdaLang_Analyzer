@@ -1633,6 +1633,8 @@ package body Adalang_Analyzer.CLI is
            (Ctx, Files_To_Process);
       end if;
 
+      Checks.Evaluate_Sources (Ctx, Files_To_Process);
+
       if Rule_States (Duplicate_Subprogram) = Enabled then
          Adalang_Analyzer.Clone_Detection.Analyze (Ctx, Files_To_Process);
       end if;

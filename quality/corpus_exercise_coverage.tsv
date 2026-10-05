@@ -294,3 +294,8 @@ Out_Parameter_Read_In_Exception_Handler	no	-	0	0	0
 Predicate_Testing	no	-	0	0	0
 Profile_Discrepancy	no	-	0	0	0
 Side_Effect_Parameter	no	-	0	0	0
+Use_Clause	no	-	0	0	0
+Unavailable_Body_Call	no	-	0	0	0
+Deeply_Nested_Inlining	no	-	0	0	0
+Integer_Type_As_Enumeration	no	-	0	0	0
+Same_Instantiation	no	-	0	0	0

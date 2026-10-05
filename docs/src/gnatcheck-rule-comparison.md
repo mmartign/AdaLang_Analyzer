@@ -260,6 +260,11 @@ follow.
 | Out_Parameter_Read_In_Exception_Handler | `out_parameter_read_in_exception_handler` | Direct |
 | Predicate_Testing | `predicate_testing` | Direct |
 | Profile_Discrepancy | `profile_discrepancies` | Direct |
+| Use_Clause | `use_clauses` | Direct |
+| Unavailable_Body_Call | `unavailable_body_calls` | Direct |
+| Deeply_Nested_Inlining | `deeply_nested_inlining` | Direct |
+| Integer_Type_As_Enumeration | `integer_types_as_enum` | Direct |
+| Same_Instantiation | `same_instantiations` | Direct |
 
 ## AdaLang rules that only partially overlap GNATcheck
 
