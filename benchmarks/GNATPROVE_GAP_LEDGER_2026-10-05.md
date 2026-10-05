@@ -1,7 +1,6 @@
 # What separates `--verify` from GNATprove: a ledger
 
-Recorded 2026-10-05 with AdaLang Analyzer 1.8.0 plus the `FP-104` fix
-(obligations reported in the file they are written in), against the GNATprove
+Recorded 2026-10-05 with AdaLang Analyzer 1.8.0, against the GNATprove
 output saved by the 2026-10-02 runs of the five fully proved corpora
 (`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`).
 

@@ -5,52 +5,18 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Added
-
-- A check can be named by the GNATcheck rule it is paired with, wherever a
-  check name is accepted and without regard to case:
-  `-checks=positional_parameters`, `+RPositional_Parameters`,
-  `-rule-param=maximum_parameters.n=6`. All 212 general-purpose GNATcheck
-  rule names are known; a rule that is several checks here
-  (`null_paths`) selects them all. `-list-checks` shows the rule names each
-  check answers to. Findings keep the check's own name.
-- `benchmarks/gnatprove_gap_ledger.py` accounts for every check GNATprove
-  proves on a corpus and what `--verify` does at that place; the first
-  ledger is `benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`. On the five
-  fully proved corpora GNATprove proves 15,043 checks: AdaLang proves 467
-  of them, has an undecided obligation for 6,436 and none for 8,140.
-
-### Changed
-
-- An empty `when others` handler is reported once when both
-  `Empty_Exception_Handler` and `Exception_Swallowed` are enabled, by
-  `Exception_Swallowed`. Both used to report it, with `--recommended` among
-  others. `Empty_Exception_Handler` alone still reports every empty handler.
-
-### Fixed
-
-- `Constant_Condition` no longer reports a condition on an object that a
-  call in the initial value of a later declaration writes through an `out`
-  or `in out` parameter (`FP-105`).
-- A proof obligation or finding is reported in the file its node is written
-  in (`FP-104`). An obligation of a contract, which is written in the
-  specification and evaluated while the body is verified, used to carry the
-  body's file name with the specification's line. The stable identifiers of
-  those obligations change. With the fix 949 more obligations pair with a
-  GNATprove check on the benchmark corpora, and the matched pairs go from
-  2,392 to 2,871, still with no possible unsoundness and no false positive.
-
 ## [1.8.0] - 2026-10-05
 
 A coding-standard release: 175 opt-in checks take the catalogue from 127
 to 302 and give every one of GNATcheck's 212 general-purpose rules a
 counterpart, checks can take parameters, names of imported projects
-resolve, and a project's preprocessing switches are applied. No preset
-changes; on code split across projects the existing checks and `--verify`
-see more than before (`FP-102`). All GNATcheck corpus comparisons were
-re-run, and the analyzer side of the GNATprove comparisons: zero possible
+resolve, and a project's preprocessing switches are applied. The checks
+answer to GNATcheck's rule names as well as their own. The presets enable
+the checks they did; on code split across projects the existing checks and
+`--verify` see more than before (`FP-102`), and an empty `when others`
+handler is reported once where two checks used to report it. All GNATcheck
+corpus comparisons were re-run, and the analyzer side of the GNATprove
+comparisons: zero possible
 unsoundness and zero false positives wherever GNATprove is an oracle.
 
 ### Added
@@ -91,12 +57,28 @@ unsoundness and zero false positives wherever GNATprove is an oracle.
   The sources are compiled for semantic checks only, in a temporary
   directory; these checks need GNAT on the path, and gprbuild when a
   project file is given.
+- A check can be named by the GNATcheck rule it is paired with, wherever a
+  check name is accepted and without regard to case:
+  `-checks=positional_parameters`, `+RPositional_Parameters`,
+  `-rule-param=maximum_parameters.n=6`. All 212 general-purpose GNATcheck
+  rule names are known; a rule that is several checks here
+  (`null_paths`) selects them all. `-list-checks` shows the rule names each
+  check answers to. Findings keep the check's own name.
+- `benchmarks/gnatprove_gap_ledger.py` accounts for every check GNATprove
+  proves on a corpus and what `--verify` does at that place; the first
+  ledger is `benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`. On the five
+  fully proved corpora GNATprove proves 15,043 checks: AdaLang proves 467
+  of them, has an undecided obligation for 6,436 and none for 8,140.
 
 ### Changed
 
-- The precision corpus grows from 345 to 608 cases: a finding and a clean
+- The precision corpus grows from 345 to 609 cases: a finding and a clean
   fixture for every new check that runs without parameters, and one
   regression case from the corpus runs.
+- An empty `when others` handler is reported once when both
+  `Empty_Exception_Handler` and `Exception_Swallowed` are enabled, by
+  `Exception_Swallowed`. Both used to report it, with `--recommended` among
+  others. `Empty_Exception_Handler` alone still reports every empty handler.
 
 ### Fixed
 
@@ -128,11 +110,21 @@ unsoundness and zero false positives wherever GNATprove is an oracle.
   of such files are also found from other units: Libadalang's provider
   over a list of files leaves out the files that do not parse as they
   stand.
+- `Constant_Condition` no longer reports a condition on an object that a
+  call in the initial value of a later declaration writes through an `out`
+  or `in out` parameter (`FP-105`).
+- A proof obligation or finding is reported in the file its node is written
+  in (`FP-104`). An obligation of a contract, which is written in the
+  specification and evaluated while the body is verified, used to carry the
+  body's file name with the specification's line. The stable identifiers of
+  those obligations change. With the fix 949 more obligations pair with a
+  GNATprove check on the benchmark corpora, and the matched pairs go from
+  2,392 to 2,871, still with no possible unsoundness and no false positive.
 
 ### Known limitations
 
 - On the ten external benchmark corpora, GNATcheck confirms 99.7% of the
-  new checks' 93,773 findings in the files both tools analysed, and the new
+  new checks' 93,771 findings in the files both tools analysed, and the new
   checks report 99.8% of GNATcheck's 93,631 (`benchmarks/README.md`).
 - A source with preprocessor directives that is given without a project
   file does not parse and is not analyzed.
