@@ -96,7 +96,7 @@ position, not equivalence of check names or raw check counts.
 
 | Tool | Primary purpose | Relationship to AdaLang Analyzer |
 | --- | --- | --- |
-| GNATcheck | Enforce syntactic and semantic Ada coding rules, including custom LKQL rules | Closest direct overlap. AdaLang covers all but eight of GNATcheck's 212 general rules and adds flow-sensitive checks GNATcheck does not attempt, but does not match GNATcheck's maturity or rule extensibility. |
+| GNATcheck | Enforce syntactic and semantic Ada coding rules, including custom LKQL rules | Closest direct overlap. AdaLang covers all of GNATcheck's 212 general rules and adds flow-sensitive checks GNATcheck does not attempt, but does not match GNATcheck's maturity or rule extensibility. |
 | GNATtest | Generate AUnit test skeletons, harnesses, and drivers | Complementary. AdaLang neither generates nor executes tests. |
 | GNATprove | Check SPARK legality, analyze information flow, and prove selected run-time and contract properties | Downstream verification tool. AdaLang can discharge some bounded scalar obligations and identify readiness issues, but is not a substitute for GNATprove. |
 | CodePeer / GNAT SAS | Whole-program Ada defect and vulnerability analysis via abstract interpretation and symbolic execution, with qualification credit for specific checks under DO-178B and EN 50128 SIL 4 | The closest commercial analog to AdaLang's core "find defects in ordinary Ada via flow analysis" purpose. Commercial and license-gated, and its whole-program model needs a fully closed, compilable project the same way GNATprove does; AdaLang is free, its checks are directly inspectable, and it tolerates partial or scoped file sets a whole-program tool cannot analyze at all. |
@@ -118,17 +118,18 @@ GNATcheck is the strongest direct comparator for rule enforcement. It has an
 established predefined-rule catalog and an LKQL mechanism for adding rules
 without rebuilding the tool.
 
-AdaLang Analyzer now covers nearly all of that catalog.
-`gnatcheck-rule-comparison.md` maps AdaLang's 294 checks against GNATcheck's
-predefined rules: 174 are a direct match, 28 close, 14 are paired through
+AdaLang Analyzer now covers that catalog.
+`gnatcheck-rule-comparison.md` maps AdaLang's 302 checks against GNATcheck's
+predefined rules: 179 are a direct match, 28 close, 17 are paired through
 check parameters, 17 overlap only through a GNATcheck generic mechanism
 (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), and 61 have no
-predefined-rule counterpart at all. In the reverse direction, of
+predefined-rule counterpart at all. In the reverse direction, every one of
 GNATcheck's 212 rules (its 123 `kp_*` compiler known-problem detectors
-aside) all but eight have an AdaLang counterpart; four of the eight need
-whole-program analysis and are left out on purpose.
+aside) has an AdaLang counterpart, the three that wrap the compiler
+(`Warnings`, `Style_Checks`, `Restrictions`) included: for those AdaLang
+runs GNAT, as GNATcheck does.
 
-Most of that coverage comes from 167 opt-in coding-standard checks
+Most of that coverage comes from 175 opt-in coding-standard checks
 (naming, layout, restricted constructs, object-oriented design,
 representation items, complexity limits). They belong to no preset, so they
 do not change what `--recommended`, `--spark`, `--automotive` or

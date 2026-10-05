@@ -1,6 +1,6 @@
 # AdaLang Analyzer vs. GNATcheck: rule catalog comparison
 
-This document maps AdaLang Analyzer's 294 checks
+This document maps AdaLang Analyzer's 302 checks
 (`src/adalang_analyzer-rules.ads`) against GNATcheck's predefined-rule
 catalog as described in the [GNATcheck Reference
 Manual](https://docs.adacore.com/live/wave/lkql/html/gnatcheck_rm/gnatcheck_rm/predefined_rules.html)
@@ -19,22 +19,21 @@ edge-case semantics may differ from what's summarized here.
 
 ## Summary
 
-Of AdaLang Analyzer's 294 checks:
+Of AdaLang Analyzer's 302 checks:
 
 | Match strength | Count | Meaning |
 | --- | --- | --- |
-| Direct | 174 | Same check, essentially the same semantics |
+| Direct | 179 | Same check, essentially the same semantics |
 | Close | 28 | Same intent, minor scope difference |
-| Paired through configuration | 14 | Same check, but it reports nothing until its parameters say what to look for, so the benchmark corpora cannot run it |
+| Paired through configuration | 17 | Same check, but it reports nothing until its parameters say what to look for, so the benchmark corpora cannot run it |
 | Partial | 17 | Overlaps only through a GNATcheck configurable/generic mechanism (`Restrictions`, `Forbidden_Pragmas`, `Style_Checks`), or covers a narrower/wider case |
 | No GNATcheck counterpart | 61 | Nothing in the predefined catalog does this |
 
 Seen from GNATcheck's side: its catalog holds 335 rules, of which 123 are
 `kp_*` detectors for known problems in specific GNAT compiler releases and
-are out of scope here. Of the other 212, all but eight have an AdaLang
-counterpart; the eight are listed in the last section.
+are out of scope here. Each of the other 212 has an AdaLang counterpart.
 
-167 of the Direct, Close and configuration-paired checks were added
+175 of the Direct, Close and configuration-paired checks were added
 together as opt-in coding-standard checks. None of them belongs to a preset:
 each is selected by name, and those with a limit or a list take it from
 `-rule-param=<check>.<name>=<value>` (see `configuration.md`). Their scope
@@ -327,7 +326,7 @@ comma-separated list, where GNATcheck reads it from a file.
 
 ## AdaLang rules with no GNATcheck predefined-rule counterpart
 
-61 of AdaLang's 294 rules do something GNATcheck's predefined catalog does
+61 of AdaLang's 302 rules do something GNATcheck's predefined catalog does
 not attempt at all. They cluster into a few groups:
 
 **Flow-sensitive "provably fails" defect detection** (this is GNATprove/
@@ -384,26 +383,28 @@ formerly listed here too, but is a `Direct` match on
 
 ## GNATcheck rules with no AdaLang Analyzer counterpart
 
-Eight of GNATcheck's 212 rules (the `kp_*` detectors aside) are not
-covered:
+None of GNATcheck's 212 rules (the `kp_*` detectors aside). Three groups
+were added last and work differently from the per-unit checks:
 
-- **Rules that need whole-program analysis**, which GNATcheck itself marks
-  "global analysis required": `deeply_nested_inlining`,
-  `integer_types_as_enum`, `same_instantiations` and
-  `unavailable_body_calls`. AdaLang Analyzer's opt-in policy checks look at
-  one compilation unit at a time. A per-unit approximation would miss
-  cases without saying so, which is worse in a qualification context than a
-  gap that is stated; they are left out on purpose.
-- **Generic wrappers** around compiler mechanisms: `restrictions` (wraps
-  `pragma Restrictions`), `warnings` (wraps compiler warnings) and
-  `style_checks` (wraps the `-gnaty` switches). AdaLang's checks are named
-  individually instead of being configured through one umbrella rule. The
-  benchmark comparison uses `warnings` and `style_checks` as oracles for
-  individual AdaLang checks (see the first table), each one pinned to the
-  single `-gnatw`/`-gnaty` letter and message the check corresponds to.
-- **`use_clauses`**, which differs from `use_package_clauses` (paired with
-  `No_Use_Package_Clause`) only in reporting each package name of a clause
-  and in its `allowed` and `exempt_operator_packages` parameters.
+- **Rules that compare all sources**, which GNATcheck marks "global
+  analysis required". `Unavailable_Body_Call` and `Deeply_Nested_Inlining`
+  follow calls into other units as they are met; `Integer_Type_As_Enumeration`
+  and `Same_Instantiation` run as a pass over every analyzed source after
+  the per-file walk. As with GNATcheck, their answer depends on which
+  sources are given: a type used arithmetically only in a file that is not
+  analyzed is reported.
+- **Compiler wrappers.** `Compiler_Warning`, `Compiler_Style_Check` and
+  `Compiler_Restriction` correspond to `warnings`, `style_checks` and
+  `restrictions`. Like GNATcheck, AdaLang runs GNAT on the sources for
+  semantic checks only and reports the messages the parameters select, so
+  they need GNAT (and, with a project file, gprbuild) on the path. Warnings
+  that no `-gnatw` switch selects are left out, as GNATcheck leaves them
+  out. On Saatana both tools report the same 753 warning and style
+  messages; AdaLang reports 7 more, in a specification GNATcheck does not
+  compile. The local GNATcheck build reports nothing for `restrictions`,
+  so `Compiler_Restriction` was checked against GNAT's own output only.
+- **`Use_Clause`**, paired with `use_clauses`; `No_Use_Package_Clause`
+  stays paired with `use_package_clauses`.
 
 The 123 `kp_*` rules flag source constructs affected by known problems in
 particular GNAT Pro releases. They are specific to that compiler's defect

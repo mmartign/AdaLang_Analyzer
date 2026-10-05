@@ -1,6 +1,6 @@
 # Checks
 
-AdaLang Analyzer's 294 checks fall into six broad groups:
+AdaLang Analyzer's 302 checks fall into six broad groups:
 
 - **Defect detection** — control-flow, data-flow, expression, case/
   conditional, exception-handling, arithmetic, assignment, and complexity
@@ -16,7 +16,7 @@ AdaLang Analyzer's 294 checks fall into six broad groups:
   `--automotive` and `--do178c=<level>`.
 - **Style & maintainability** — restricted-construct policies, style, and
   naming checks.
-- **Coding-standard policies** — 167 opt-in checks for the rules project
+- **Coding-standard policies** — 175 opt-in checks for the rules project
   coding standards impose: naming conventions, layout, restricted
   constructs, object-oriented design, representation items and complexity
   limits. No preset enables them; select each by name. Those that need a
@@ -28,7 +28,7 @@ Run `./bin/adalang_analyzer -list-checks` for the authoritative catalog and
 guidance shipped by the current binary.
 
 <details>
-<summary><strong>Browse all 294 checks</strong></summary>
+<summary><strong>Browse all 302 checks</strong></summary>
 
 <br>
 

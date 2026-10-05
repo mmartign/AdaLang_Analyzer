@@ -5,6 +5,25 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Eight checks that complete the coverage of GNATcheck's 212
+  general-purpose rules (catalogue 294 to 302), all opt-in:
+  - `Use_Clause` reports each package name in a use clause, with `allowed`
+    and `exempt_operator_packages` parameters.
+  - `Unavailable_Body_Call` reports calls to a subprogram whose body is not
+    among the sources, and `Deeply_Nested_Inlining` chains of inlined
+    calls deeper than `n`.
+  - `Integer_Type_As_Enumeration` and `Same_Instantiation` compare every
+    analyzed source with every other, in a pass after the per-file walk.
+  - `Compiler_Warning`, `Compiler_Style_Check` and `Compiler_Restriction`
+    report what GNAT detects, selected by the `options` (`-gnatw` or
+    `-gnaty` letters) and `restrictions` parameters. The sources are
+    compiled for semantic checks only, in a temporary directory; they need
+    GNAT on the path, and gprbuild when a project file is given.
+
 ## [1.8.0] - 2026-10-04
 
 A coding-standard release: 167 opt-in checks take the catalogue from 127

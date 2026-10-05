@@ -69,6 +69,24 @@ check whose parameters state a project convention (for example
 `Identifier_Casing` or `Forbidden_Attribute`) reports nothing until they
 are set.
 
+Three checks report what the GNAT compiler itself detects, selected the way
+the compiler's switches select it:
+
+```sh
+./bin/adalang_analyzer -P my_project.gpr \
+  -checks='-*,Compiler_Warning,Compiler_Style_Check,Compiler_Restriction' \
+  -rule-param=Compiler_Warning.options=a \
+  -rule-param=Compiler_Style_Check.options=y \
+  '-rule-param=Compiler_Restriction.restrictions=No_Allocators, No_Dependence => Ada.Text_IO'
+```
+
+`options` takes the letters that follow `-gnatw` or `-gnaty`. The sources
+are compiled for semantic checks only, in a temporary directory, and the
+project's own warning and style switches are cancelled first, so the
+result depends on the parameters alone. These checks need GNAT on the
+path, and gprbuild when a project file is given; without them a warning is
+printed and they report nothing.
+
 Useful options include:
 
 ```text
