@@ -207,6 +207,40 @@ package Adalang_Analyzer.Flow_Eval is
    --  type. Unknown_Range when Prefix isn't an array or its bounds aren't
    --  fixed by a declaration.
 
+   type Subtype_Constraint is record
+      Present : Boolean := False;
+      Bounds  : Abstract_Range := Unknown_Range;
+   end record;
+   --  What a declaration says about the values stored in what it declares
+   --  beyond naming their type: the "range 1 .. 5" of "X : Integer range
+   --  1 .. 5". Present when there is such a constraint, and also whenever
+   --  that can't be ruled out; Bounds is then the range it denotes, a side
+   --  absent unless it is known (see Discrete_Definition_Range), and it
+   --  stands in for the range of the type.
+
+   type Target_Subtype is record
+      Typ        : Libadalang.Analysis.Base_Type_Decl :=
+        Libadalang.Analysis.No_Base_Type_Decl;
+      Constraint : Subtype_Constraint;
+   end record;
+   --  The subtype a value must belong to where it is stored.
+
+   function Declared_Constraint
+     (Indication : Libadalang.Analysis.Ada_Node'Class;
+      State      : Flow_State) return Subtype_Constraint;
+   --  The scalar constraint of the subtype indication of an object,
+   --  component or array-component declaration (FP-107).
+
+   function Stored_Subtype
+     (Dest  : Libadalang.Analysis.Expr'Class;
+      State : Flow_State) return Target_Subtype;
+   --  The subtype of the variable Dest names, the target of an assignment:
+   --  its type together with, for a scalar, the constraint of the
+   --  declaration it comes from -- that of the object, of the record
+   --  component, of the array type's components, of the access type's
+   --  designated subtype, or of the object it renames. A Property_Error
+   --  from resolving the type of Dest propagates.
+
    function Safe_Add
      (Left : Long_Long_Integer; Right : Long_Long_Integer) return Abstract_Int;
 

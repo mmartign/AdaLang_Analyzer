@@ -29,6 +29,50 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   proved corpora AdaLang now proves 1,193 (467 before) and has an obligation
   for 8,606 (6,903 before), still with no disagreement in either direction.
 
+### Fixed
+
+- A check on an operation that is never evaluated is no longer made as if
+  it were (`FP-106`). With `Count` known to be zero, `Count > 0 and then
+  Total / Count > 1` was reported as a division by zero, by
+  `Division_By_Zero` and as a definite error under `--verify`; so were an
+  indexing or a conversion behind such a guard (`Known_Index_Check_Failure`,
+  `Known_Range_Check_Failure`). The right operand of `and then` and of
+  `or else` and the dependent expressions of an `if` expression are now
+  checked in the state their condition leaves, and not at all where that
+  state says they are never evaluated; the same goes for a dependent
+  expression of a `case` expression and a `case` statement alternative that
+  the selector does not select, and for the predicate of a quantified
+  expression and the body of a `for` loop over a range known to be empty.
+  `=` and `/=` are decided between two objects known to have one and the
+  same value. Under `--verify` such operations are `Unreachable`, and a
+  check that a guard protects is now proved: the division in `Divisor > 0
+  and then Total / Divisor > 1`, the indexing in `(if Position in 1 .. 4
+  then Table (Position) else 0)`. Found by probing the existing checks
+  before adding a new one; GNATprove proves every check of the fixture that
+  the analyzer called a certain failure.
+- A range check is made against the constraint the declaration of the
+  target adds to its type (`FP-107`, a false-safe). After `Held : Integer
+  range 1 .. 5`, the assignment `Held := Wide` of any `Integer` was proved
+  under `--verify` and `Held := 9` was not reported by
+  `Known_Range_Check_Failure`: the check looked at `Integer` alone. The same
+  held for a record component and for the components of an array declared
+  with a range, for `Kept : Small range 2 .. 3` (where `Kept := Small
+  (Cast)` was proved), and for an assignment through a renaming, checked
+  against the subtype mark of the renaming instead of the subtype of the
+  renamed object. The check now uses the range the declaration gives and is
+  `Unproved` when its two bounds are not both known. Expect checks that
+  were proved to become `Unproved`, and new `Known_Range_Check_Failure`
+  findings where a value known to be out of that range is stored.
+- Under `--verify`, a nested expression function, the default expression of
+  a record component or of a nested subprogram's parameter and a task or
+  entry body are no longer checked in the state at their declaration
+  (`FP-108`, a false-safe and a false positive). A division by an enclosing
+  object was proved when the object was non-zero where the function is
+  declared and zero where it is called, and reported as a certain failure
+  the other way round. Such code is evaluated later, in a state the pass
+  over the enclosing subprogram does not know; its checks are now decided
+  with no state, as GNATprove decides them.
+
 ## [1.8.0] - 2026-10-05
 
 A coding-standard release: 175 opt-in checks take the catalogue from 127

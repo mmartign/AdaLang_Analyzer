@@ -736,6 +736,14 @@ package body Adalang_Analyzer.Flow_Eval is
                        and then Right.High < Left.Low)
             then
                return Bool_False;
+            elsif Left.Has_Low and then Left.Has_High
+              and then Right.Has_Low and then Right.Has_High
+              and then Left.Low = Left.High
+              and then Right.Low = Right.High
+              and then Left.Low = Right.Low
+            then
+               --  Each side has one value, the same one.
+               return Bool_True;
             else
                return Bool_Unknown;
             end if;
@@ -2329,5 +2337,261 @@ package body Adalang_Analyzer.Flow_Eval is
       when others =>
          return Unknown_Range;
    end Array_Object_Index_Range;
+
+   No_Constraint      : constant Subtype_Constraint :=
+     (Present => False, Bounds => Unknown_Range);
+   Unknown_Constraint : constant Subtype_Constraint :=
+     (Present => True, Bounds => Unknown_Range);
+
+   function Declared_Constraint
+     (Indication : Libadalang.Analysis.Ada_Node'Class;
+      State      : Flow_State) return Subtype_Constraint
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Indication) then
+         return Unknown_Constraint;
+      elsif Indication.Kind not in
+        Libadalang.Common.Ada_Subtype_Indication_Range
+      then
+         --  An anonymous array or access type: no scalar is stored in an
+         --  object of it as a whole.
+         return No_Constraint;
+      end if;
+
+      declare
+         Constraint : constant Libadalang.Analysis.Constraint :=
+           Indication.As_Subtype_Indication.F_Constraint;
+         Designated : constant Libadalang.Analysis.Base_Type_Decl :=
+           Indication.As_Subtype_Indication.P_Designated_Type_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Constraint)
+           or else Constraint.Kind =
+             Libadalang.Common.Ada_Composite_Constraint
+         then
+            --  An index or discriminant constraint is not about a scalar.
+            return No_Constraint;
+         elsif Constraint.Kind = Libadalang.Common.Ada_Range_Constraint
+           and then not Libadalang.Analysis.Is_Null (Designated)
+           and then Designated.P_Is_Int_Type
+         then
+            return
+              (Present => True,
+               Bounds  => Discrete_Definition_Range (Indication, State));
+         end if;
+
+         --  A digits or delta constraint, or a range of a type whose
+         --  values this evaluator does not order.
+         return Unknown_Constraint;
+      end;
+   exception
+      when others =>
+         return Unknown_Constraint;
+   end Declared_Constraint;
+
+   --  The definition Typ takes its structure from: its own, or that of the
+   --  type it is a subtype of or derived from, behind any private view.
+   --  No_Type_Def when that can't be found.
+   function Structural_Definition
+     (Typ : Libadalang.Analysis.Base_Type_Decl)
+      return Libadalang.Analysis.Type_Def
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+   begin
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Libadalang.Analysis.No_Type_Def;
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            Current :=
+              Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         elsif Current.Kind not in Libadalang.Common.Ada_Type_Decl then
+            return Libadalang.Analysis.No_Type_Def;
+         else
+            declare
+               Definition : constant Libadalang.Analysis.Type_Def :=
+                 Current.As_Type_Decl.F_Type_Def;
+            begin
+               if Libadalang.Analysis.Is_Null (Definition) then
+                  return Libadalang.Analysis.No_Type_Def;
+               elsif Definition.Kind =
+                 Libadalang.Common.Ada_Derived_Type_Def
+               then
+                  Current :=
+                    Definition.As_Derived_Type_Def.F_Subtype_Indication
+                      .P_Designated_Type_Decl;
+               elsif Definition.Kind =
+                 Libadalang.Common.Ada_Private_Type_Def
+               then
+                  declare
+                     Full : constant Libadalang.Analysis.Base_Type_Decl :=
+                       Current.P_Full_View;
+                  begin
+                     if Libadalang.Analysis.Is_Null (Full)
+                       or else Libadalang.Analysis."=" (Full, Current)
+                     then
+                        return Libadalang.Analysis.No_Type_Def;
+                     end if;
+                     Current := Full;
+                  end;
+               else
+                  return Definition;
+               end if;
+            end;
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Type_Def;
+   end Structural_Definition;
+
+   --  The constraint an array type puts on each of its components, where
+   --  Prefix_Type is the type of the prefix of an indexed component: the
+   --  array type, or an access type to it.
+   function Component_Constraint
+     (Prefix_Type : Libadalang.Analysis.Base_Type_Decl;
+      State       : Flow_State) return Subtype_Constraint
+   is
+      Definition : Libadalang.Analysis.Type_Def :=
+        Structural_Definition (Prefix_Type);
+   begin
+      if not Libadalang.Analysis.Is_Null (Definition)
+        and then Definition.Kind = Libadalang.Common.Ada_Type_Access_Def
+      then
+         Definition :=
+           Structural_Definition
+             (Definition.As_Type_Access_Def.F_Subtype_Indication
+                .P_Designated_Type_Decl);
+      end if;
+
+      if Libadalang.Analysis.Is_Null (Definition)
+        or else Definition.Kind /= Libadalang.Common.Ada_Array_Type_Def
+      then
+         return Unknown_Constraint;
+      end if;
+      return Declared_Constraint
+        (Definition.As_Array_Type_Def.F_Component_Type.F_Type_Expr, State);
+   end Component_Constraint;
+
+   --  The constraint an access type puts on what its values designate.
+   function Designated_Constraint
+     (Access_Type : Libadalang.Analysis.Base_Type_Decl;
+      State       : Flow_State) return Subtype_Constraint
+   is
+      Definition : constant Libadalang.Analysis.Type_Def :=
+        Structural_Definition (Access_Type);
+   begin
+      if Libadalang.Analysis.Is_Null (Definition)
+        or else Definition.Kind /= Libadalang.Common.Ada_Type_Access_Def
+      then
+         return Unknown_Constraint;
+      end if;
+      return Declared_Constraint
+        (Definition.As_Type_Access_Def.F_Subtype_Indication, State);
+   end Designated_Constraint;
+
+   function Stored_Subtype
+     (Dest  : Libadalang.Analysis.Expr'Class;
+      State : Flow_State) return Target_Subtype
+   is
+      Max_Depth : constant := 16;
+      Result    : Target_Subtype :=
+        (Typ => Dest.P_Expression_Type, Constraint => Unknown_Constraint);
+      Current   : Libadalang.Analysis.Expr := Dest.As_Expr;
+   begin
+      --  Only a scalar is stored under a range: an array or a record is
+      --  checked against its type as before.
+      if Libadalang.Analysis.Is_Null (Result.Typ)
+        or else not Result.Typ.P_Is_Scalar_Type
+      then
+         Result.Constraint := No_Constraint;
+         return Result;
+      end if;
+
+      --  Only a renaming goes round again, with the name it renames: what
+      --  is stored through "R : Integer renames X" must belong to the
+      --  subtype of X, whatever the renaming calls it.
+      for Depth in 1 .. Max_Depth loop
+         case Current.Kind is
+            when Libadalang.Common.Ada_Identifier
+               | Libadalang.Common.Ada_Dotted_Name =>
+               declare
+                  Decl : constant Libadalang.Analysis.Basic_Decl :=
+                    Current.As_Name.P_Referenced_Decl;
+               begin
+                  if Libadalang.Analysis.Is_Null (Decl) then
+                     return Result;
+                  end if;
+
+                  case Decl.Kind is
+                     when Libadalang.Common.Ada_Object_Decl
+                        | Libadalang.Common
+                            .Ada_Extended_Return_Stmt_Object_Decl =>
+                        if Decl.Parent.Kind =
+                          Libadalang.Common.Ada_Generic_Formal_Obj_Decl
+                        then
+                           --  The subtype is that of the actual.
+                           return Result;
+                        elsif Libadalang.Analysis.Is_Null
+                          (Decl.As_Object_Decl.F_Renaming_Clause)
+                        then
+                           Result.Constraint :=
+                             Declared_Constraint
+                               (Decl.As_Object_Decl.F_Type_Expr, State);
+                           return Result;
+                        end if;
+
+                        Current :=
+                          Decl.As_Object_Decl.F_Renaming_Clause
+                            .F_Renamed_Object.As_Expr;
+                        Result :=
+                          (Typ        => Current.P_Expression_Type,
+                           Constraint => Unknown_Constraint);
+
+                     when Libadalang.Common.Ada_Param_Spec =>
+                        --  A formal parameter is declared with a subtype
+                        --  mark alone.
+                        Result.Constraint := No_Constraint;
+                        return Result;
+
+                     when Libadalang.Common.Ada_Component_Decl =>
+                        Result.Constraint :=
+                          Declared_Constraint
+                            (Decl.As_Component_Decl.F_Component_Def
+                               .F_Type_Expr,
+                             State);
+                        return Result;
+
+                     when others =>
+                        return Result;
+                  end case;
+               end;
+
+            when Libadalang.Common.Ada_Call_Expr =>
+               if Current.As_Call_Expr.P_Kind in
+                 Libadalang.Common.Array_Index
+               then
+                  Result.Constraint :=
+                    Component_Constraint
+                      (Current.As_Call_Expr.F_Name.P_Expression_Type, State);
+               end if;
+               return Result;
+
+            when Libadalang.Common.Ada_Explicit_Deref =>
+               Result.Constraint :=
+                 Designated_Constraint
+                   (Current.As_Explicit_Deref.F_Prefix.P_Expression_Type,
+                    State);
+               return Result;
+
+            when others =>
+               return Result;
+         end case;
+      end loop;
+
+      Result.Constraint := Unknown_Constraint;
+      return Result;
+   exception
+      when others =>
+         Result.Constraint := Unknown_Constraint;
+         return Result;
+   end Stored_Subtype;
 
 end Adalang_Analyzer.Flow_Eval;

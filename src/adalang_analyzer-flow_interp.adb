@@ -1867,7 +1867,26 @@ package body Adalang_Analyzer.Flow_Interp is
       Rule    : Rules.Rule_Kind;
       Message : String;
       Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
-      Final   : Boolean := False) is
+      Final   : Boolean := False;
+      Constraint : Subtype_Constraint := (others => <>))
+   is
+      --  The range the value must be in: that of Typ, or that of the
+      --  constraint the target's own declaration adds to it (FP-107).
+      function Target_Range return Abstract_Range
+      is (if Constraint.Present then Constraint.Bounds
+          else Type_Range (Typ, State));
+
+      function Outside_Target return Boolean
+      is (Definitely_Outside_Type (Value, Typ, State)
+          or else
+            (Constraint.Present
+             and then Definitely_Outside_Range
+                        (Value, Constraint.Bounds, State)));
+
+      function Inside_Target return Boolean
+      is (if Constraint.Present
+          then Definitely_Inside_Range (Value, Constraint.Bounds, State)
+          else Definitely_Inside_Type (Value, Typ, State));
    begin
       if Config.Rule_States (Rule) /= Config.Enabled then
          return;
@@ -1893,7 +1912,7 @@ package body Adalang_Analyzer.Flow_Interp is
                "target subtype could not be resolved",
                Imprecision => "semantic type resolution failed");
          end if;
-      elsif Definitely_Outside_Type (Value, Typ, State) then
+      elsif Outside_Target then
          Record_Definite_Error
            (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
             Message, "value range is outside the target subtype range",
@@ -1905,7 +1924,7 @@ package body Adalang_Analyzer.Flow_Interp is
               "is outside the target subtype range.",
             Evidence => "value range is outside the target subtype range");
       elsif Config.Verification_Mode then
-         if Definitely_Inside_Type (Value, Typ, State) then
+         if Inside_Target then
             --  proof-path: range-abstract
             Record_Proved_Safe
               (Unit, Value, Proof.Range_Check, Proof.Abstract_Interpretation,
@@ -1914,8 +1933,7 @@ package body Adalang_Analyzer.Flow_Interp is
          else
             declare
                Outcome : constant VC.VC_Outcome :=
-                 VC.Decide_Bounds
-                   (Value, Type_Range (Typ, State), State, Symbols);
+                 VC.Decide_Bounds (Value, Target_Range, State, Symbols);
             begin
                case Outcome.Result is
                   when VC.VC_Proved =>
@@ -2649,6 +2667,286 @@ package body Adalang_Analyzer.Flow_Interp is
       end;
    end Check_Integer_Overflow;
 
+   --  An expression does not evaluate all of its operands. The right
+   --  operand of a short-circuit form, a dependent expression of an if or
+   --  case expression and the predicate of a quantified expression are
+   --  evaluated only where what is evaluated before them lets evaluation get
+   --  there. A check on such an operand is made in the state that leaves,
+   --  and not at all when that state says the operand is never evaluated
+   --  (FP-106): "Count > 0 and then Total / Count > 1" does not divide by
+   --  zero where Count is known to be zero.
+
+   function Guards_Operands
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is (Node.Kind in Libadalang.Common.Ada_If_Expr
+         | Libadalang.Common.Ada_Elsif_Expr_Part
+         | Libadalang.Common.Ada_Elsif_Expr_Part_List
+         | Libadalang.Common.Ada_Case_Expr_Alternative
+         | Libadalang.Common.Ada_Quantified_Expr
+       or else
+         (Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
+          and then Node.As_Bin_Op.F_Op.Kind in
+            Libadalang.Common.Ada_Op_And_Then
+              | Libadalang.Common.Ada_Op_Or_Else));
+
+   --  What is left of State and Symbols once Cond has evaluated to Truth.
+   --  Dead when State says it never does. The effects of a function call
+   --  in Cond are not applied here: the state of the node that contains the
+   --  expression already has them (see Apply_Function_Call_Effects).
+   procedure Apply_Guard
+     (Cond    : Libadalang.Analysis.Expr'Class;
+      Truth   : Boolean;
+      State   : in out Flow_State;
+      Symbols : in out VC.Symbolic_State;
+      Dead    : in out Boolean)
+   is
+   begin
+      if Dead or else Libadalang.Analysis.Is_Null (Cond) then
+         return;
+      end if;
+
+      declare
+         Value   : constant Abstract_Bool := Boolean_Value (Cond, State);
+         Before  : constant Flow_State := State;
+         True_State, False_State : Flow_State;
+         Updated : VC.Symbolic_State;
+      begin
+         if Value = (if Truth then Bool_False else Bool_True) then
+            Dead := True;
+            return;
+         end if;
+
+         Narrow_By_Condition (Cond, Before, True_State, False_State);
+         State := (if Truth then True_State else False_State);
+         Updated :=
+           VC.Assume (Symbols, Cond.As_Expr, Truth => Truth, Flow => Before);
+         if not VC.Equal (Updated, VC.Havoc) then
+            Symbols := Updated;
+         end if;
+      end;
+   end Apply_Guard;
+
+   --  True when a loop over Spec never runs its body in State: "in L .. H"
+   --  where the least value L can have is above the greatest H can have.
+   function Loop_Range_Is_Empty
+     (Spec  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Spec)
+        or else Spec.Kind /= Libadalang.Common.Ada_For_Loop_Spec
+      then
+         return False;
+      end if;
+
+      declare
+         Loop_Spec : constant Libadalang.Analysis.For_Loop_Spec :=
+           Spec.As_For_Loop_Spec;
+         Domain    : constant Libadalang.Analysis.Ada_Node :=
+           Loop_Spec.F_Iter_Expr;
+      begin
+         if Loop_Spec.F_Loop_Type.Kind /= Libadalang.Common.Ada_Iter_Type_In
+           or else Domain.Kind /= Libadalang.Common.Ada_Bin_Op
+           or else Domain.As_Bin_Op.F_Op.Kind /=
+                     Libadalang.Common.Ada_Op_Double_Dot
+         then
+            return False;
+         end if;
+
+         declare
+            Low  : constant Abstract_Range :=
+              Range_Value (Domain.As_Bin_Op.F_Left, State);
+            High : constant Abstract_Range :=
+              Range_Value (Domain.As_Bin_Op.F_Right, State);
+         begin
+            return Low.Has_Low
+              and then High.Has_High
+              and then Low.Low > High.High;
+         end;
+      end;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("loop range not evaluated: " &
+            Ada.Exceptions.Exception_Message (Exc));
+         return False;
+   end Loop_Range_Is_Empty;
+
+   --  True when State bounds the selector of a case statement or expression
+   --  and none of the values it may have selects the alternative with
+   --  Choices: each choice is a known interval apart from them or, for
+   --  "others", one choice of another alternative covers them all.
+   --  Alternatives is the list the alternative is in.
+   function Case_Alternative_Excluded
+     (Selector     : Libadalang.Analysis.Expr'Class;
+      Choices      : Libadalang.Analysis.Alternatives_List'Class;
+      Alternatives : Libadalang.Analysis.Ada_Node'Class;
+      State        : Flow_State) return Boolean
+   is
+      Bounds : constant Abstract_Range := Range_Value (Selector, State);
+
+      function Choices_Of
+        (Alternative : Libadalang.Analysis.Ada_Node)
+         return Libadalang.Analysis.Alternatives_List
+      is (if Alternative.Kind = Libadalang.Common.Ada_Case_Expr_Alternative
+          then Alternative.As_Case_Expr_Alternative.F_Choices
+          else Alternative.As_Case_Stmt_Alternative.F_Choices);
+
+      function Covered_By_Another_Alternative return Boolean is
+      begin
+         for Index in 1 .. Alternatives.Children_Count loop
+            for Choice of Choices_Of (Alternatives.Child (Index)) loop
+               if Choice.Kind /= Libadalang.Common.Ada_Others_Designator then
+                  declare
+                     Interval : constant Static_Interval :=
+                       Choice_Interval (Choice, State);
+                  begin
+                     if Interval.Known
+                       and then Interval.Low <= Bounds.Low
+                       and then Bounds.High <= Interval.High
+                     then
+                        return True;
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end loop;
+         return False;
+      end Covered_By_Another_Alternative;
+   begin
+      if not Bounds.Has_Low
+        or else not Bounds.Has_High
+        or else Bounds.Low > Bounds.High
+      then
+         return False;
+      end if;
+
+      for Choice of Choices loop
+         if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
+            return Covered_By_Another_Alternative;
+         end if;
+
+         declare
+            Interval : constant Static_Interval :=
+              Choice_Interval (Choice, State);
+         begin
+            if not Interval.Known
+              or else (Interval.Low <= Bounds.High
+                       and then Bounds.Low <= Interval.High)
+            then
+               return False;
+            end if;
+         end;
+      end loop;
+      return True;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("case alternative not evaluated: " &
+            Ada.Exceptions.Exception_Message (Exc));
+         return False;
+   end Case_Alternative_Excluded;
+
+   --  Narrows State and Symbols to those in which Child, a child of Parent,
+   --  is evaluated when Parent is evaluated in them. Dead when it is not.
+   procedure Narrow_For_Operand
+     (Parent  : Libadalang.Analysis.Ada_Node'Class;
+      Child   : Libadalang.Analysis.Ada_Node'Class;
+      State   : in out Flow_State;
+      Symbols : in out VC.Symbolic_State;
+      Dead    : in out Boolean)
+   is
+      Operand : constant Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Child);
+
+      function Is_Operand
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is (not Libadalang.Analysis.Is_Null (Node)
+          and then Libadalang.Analysis.Ada_Node (Node) = Operand);
+   begin
+      if Libadalang.Analysis.Is_Null (Child) then
+         return;
+      end if;
+
+      case Parent.Kind is
+         when Libadalang.Common.Ada_Bin_Op_Range =>
+            declare
+               Expr : constant Libadalang.Analysis.Bin_Op := Parent.As_Bin_Op;
+            begin
+               if Is_Operand (Expr.F_Right) then
+                  if Expr.F_Op.Kind = Libadalang.Common.Ada_Op_And_Then then
+                     Apply_Guard (Expr.F_Left, True, State, Symbols, Dead);
+                  elsif Expr.F_Op.Kind = Libadalang.Common.Ada_Op_Or_Else
+                  then
+                     Apply_Guard (Expr.F_Left, False, State, Symbols, Dead);
+                  end if;
+               end if;
+            end;
+
+         when Libadalang.Common.Ada_If_Expr =>
+            declare
+               Expr : constant Libadalang.Analysis.If_Expr :=
+                 Parent.As_If_Expr;
+            begin
+               if Is_Operand (Expr.F_Then_Expr) then
+                  Apply_Guard (Expr.F_Cond_Expr, True, State, Symbols, Dead);
+               elsif Is_Operand (Expr.F_Alternatives) then
+                  Apply_Guard (Expr.F_Cond_Expr, False, State, Symbols, Dead);
+               elsif Is_Operand (Expr.F_Else_Expr) then
+                  Apply_Guard (Expr.F_Cond_Expr, False, State, Symbols, Dead);
+                  for Part of Expr.F_Alternatives loop
+                     Apply_Guard
+                       (Part.As_Elsif_Expr_Part.F_Cond_Expr, False, State,
+                        Symbols, Dead);
+                  end loop;
+               end if;
+            end;
+
+         when Libadalang.Common.Ada_Elsif_Expr_Part_List =>
+            --  An elsif part is reached when every part before it has
+            --  declined.
+            for Index in 1 .. Parent.Children_Count loop
+               exit when Is_Operand (Parent.Child (Index));
+               Apply_Guard
+                 (Parent.Child (Index).As_Elsif_Expr_Part.F_Cond_Expr, False,
+                  State, Symbols, Dead);
+            end loop;
+
+         when Libadalang.Common.Ada_Elsif_Expr_Part =>
+            if Is_Operand (Parent.As_Elsif_Expr_Part.F_Then_Expr) then
+               Apply_Guard
+                 (Parent.As_Elsif_Expr_Part.F_Cond_Expr, True, State,
+                  Symbols, Dead);
+            end if;
+
+         when Libadalang.Common.Ada_Case_Expr_Alternative =>
+            if Is_Operand (Parent.As_Case_Expr_Alternative.F_Expr)
+              and then Case_Alternative_Excluded
+                         (Parent.Parent.Parent.As_Case_Expr.F_Expr,
+                          Parent.As_Case_Expr_Alternative.F_Choices,
+                          Parent.Parent, State)
+            then
+               Dead := True;
+            end if;
+
+         when Libadalang.Common.Ada_Quantified_Expr =>
+            if Is_Operand (Parent.As_Quantified_Expr.F_Expr)
+              and then Loop_Range_Is_Empty
+                         (Parent.As_Quantified_Expr.F_Loop_Spec, State)
+            then
+               Dead := True;
+            end if;
+
+         when others =>
+            null;  --  adalang-analyzer: ignore Null_Statement
+      end case;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("operand guard not applied: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Narrow_For_Operand;
+
    --  Reports Division_By_Zero for every "/", "mod", or "rem" under Node
    --  whose right operand is only known to be zero once State's earlier
    --  assignments are taken into account (a plain literal zero is already
@@ -2778,10 +3076,27 @@ package body Adalang_Analyzer.Flow_Interp is
          end;
       end if;
 
-      for I in 1 .. Node.Children_Count loop
-         Scan_Expression_For_Flow_Bugs
-           (Unit, Node.Child (I), State, Symbols);
-      end loop;
+      if Guards_Operands (Node) then
+         for I in 1 .. Node.Children_Count loop
+            declare
+               Operand_State   : Flow_State := State;
+               Operand_Symbols : VC.Symbolic_State := Symbols;
+               Dead            : Boolean := False;
+            begin
+               Narrow_For_Operand
+                 (Node, Node.Child (I), Operand_State, Operand_Symbols, Dead);
+               if not Dead then
+                  Scan_Expression_For_Flow_Bugs
+                    (Unit, Node.Child (I), Operand_State, Operand_Symbols);
+               end if;
+            end;
+         end loop;
+      else
+         for I in 1 .. Node.Children_Count loop
+            Scan_Expression_For_Flow_Bugs
+              (Unit, Node.Child (I), State, Symbols);
+         end loop;
+      end if;
    end Scan_Expression_For_Flow_Bugs;
 
    --  Reports Constant_Condition for Cond when State's earlier assignments
@@ -3134,7 +3449,9 @@ package body Adalang_Analyzer.Flow_Interp is
                        (Unit, Default,
                         Decl.F_Type_Expr.P_Designated_Type_Decl,
                         State, Rules.Known_Range_Check_Failure,
-                        "initial value is outside the object's subtype range");
+                        "initial value is outside the object's subtype range",
+                        Constraint =>
+                          Declared_Constraint (Decl.F_Type_Expr, State));
 
                      declare
                         Value      : constant Abstract_Int :=
@@ -3396,6 +3713,13 @@ package body Adalang_Analyzer.Flow_Interp is
         Stmt.As_Base_Loop_Stmt.F_Stmts;
       Havoced    : Flow_State := State;
    begin
+      --  A for loop over a range known to be empty runs nothing (FP-106).
+      if Stmt.Kind = Libadalang.Common.Ada_For_Loop_Stmt
+        and then Loop_Range_Is_Empty (Stmt.As_For_Loop_Stmt.F_Spec, State)
+      then
+         return (State => State, Terminated => False);
+      end if;
+
       if Stmt.Kind = Libadalang.Common.Ada_While_Loop_Stmt then
          declare
             Spec : constant Libadalang.Analysis.Loop_Spec :=
@@ -3597,11 +3921,16 @@ package body Adalang_Analyzer.Flow_Interp is
                Next   : Flow_State := State;
             begin
                Scan_Expression_For_Flow_Bugs (Unit, Assign.F_Expr, State);
-               Check_Value_Range
-                 (Unit, Assign.F_Expr,
-                  Assign.F_Dest.P_Expression_Type,
-                  State, Rules.Known_Range_Check_Failure,
-                  "assigned value is outside the target subtype range");
+               declare
+                  Target : constant Target_Subtype :=
+                    Stored_Subtype (Assign.F_Dest, State);
+               begin
+                  Check_Value_Range
+                    (Unit, Assign.F_Expr, Target.Typ,
+                     State, Rules.Known_Range_Check_Failure,
+                     "assigned value is outside the target subtype range",
+                     Constraint => Target.Constraint);
+               end;
                Havoc_Effects_In (Assign.F_Dest, Next);
                Havoc_Effects_In (Assign.F_Expr, Next);
 
@@ -4280,7 +4609,8 @@ package body Adalang_Analyzer.Flow_Interp is
             Check_Value_Range
               (Unit, Default, Decl.F_Type_Expr.P_Designated_Type_Decl,
                State, Rules.Known_Range_Check_Failure,
-               "initial value is outside the object's subtype range");
+               "initial value is outside the object's subtype range",
+               Constraint => Declared_Constraint (Decl.F_Type_Expr, State));
 
             declare
                Value : constant Abstract_Int :=
@@ -5724,6 +6054,11 @@ package body Adalang_Analyzer.Flow_Interp is
                  and then Source.Kind = Libadalang.Common.Ada_For_Loop_Stmt
                  and then Edge.Kind = CFG.True_Edge
                then
+                  --  The body of a loop over a range known to be empty is
+                  --  not entered (FP-106).
+                  Propagate :=
+                    not Loop_Range_Is_Empty
+                          (Source.As_For_Loop_Stmt.F_Spec, Output);
                   Seed_For_Loop_Variable (Source, Edge_State);
                   Edge_Symbols := VC.Array_Bound_Facts (Output_Symbols);
                   declare
@@ -5741,6 +6076,19 @@ package body Adalang_Analyzer.Flow_Interp is
                              Spec.F_Iter_Expr, Edge_State);
                      end if;
                   end;
+               elsif Edge.Kind = CFG.Case_Edge
+                 and then not Libadalang.Analysis.Is_Null (Edge.Source)
+                 and then Edge.Source.Kind =
+                   Libadalang.Common.Ada_Case_Stmt_Alternative
+                 and then Source.Kind in Libadalang.Common.Ada_Expr
+               then
+                  --  Nor is an alternative that no value the selector may
+                  --  have selects (FP-106).
+                  Propagate :=
+                    not Case_Alternative_Excluded
+                          (Source.As_Expr,
+                           Edge.Source.As_Case_Stmt_Alternative.F_Choices,
+                           Edge.Source.Parent, Output);
                end if;
 
                if Propagate then
@@ -6517,6 +6865,37 @@ package body Adalang_Analyzer.Flow_Interp is
          return CFG.No_Node;
       end Matching_CFG_Node;
 
+      --  A guarded operand is evaluated in what its guard leaves of the
+      --  containing node's state, or not at all (FP-106; see
+      --  Narrow_For_Operand). Finalize_Node sets these while it is inside
+      --  one, for the node that contains it.
+      Operand_Guarded   : Boolean := False;
+      Operand_Dead      : Boolean := False;
+      Operand_Container : CFG.Node_Id := CFG.No_Node;
+      Operand_State     : Flow_State;
+      Operand_Symbols   : VC.Symbolic_State;
+
+      function State_At (Container : CFG.Node_Id) return Flow_State
+      is (if Operand_Guarded and then Container = Operand_Container
+          then Operand_State
+          elsif Container = CFG.No_Node then Empty_Flow_State
+          else States (Container));
+
+      function Symbols_At (Container : CFG.Node_Id) return VC.Symbolic_State
+      is (if Operand_Guarded and then Container = Operand_Container
+          then Operand_Symbols
+          elsif Container = CFG.No_Node then VC.Empty_Symbolic_State
+          else Symbolic_States (Container));
+
+      --  True when nothing evaluated in Container, or in the guarded
+      --  operand being finalized there, is ever evaluated.
+      function Unreached (Container : CFG.Node_Id) return Boolean
+      is ((Operand_Guarded
+           and then Container = Operand_Container
+           and then Operand_Dead)
+          or else
+            (Container /= CFG.No_Node and then not Reachable (Container)));
+
       procedure Final_Outcome
         (Node       : Libadalang.Analysis.Ada_Node'Class;
          Kind       : Proof.Obligation_Kind;
@@ -6526,7 +6905,7 @@ package body Adalang_Analyzer.Flow_Interp is
       begin
          if not Boundary_Supported then
             Record_Unsupported (Unit, Node, Kind, Explanation);
-         elsif Container /= CFG.No_Node and then not Reachable (Container) then
+         elsif Unreached (Container) then
             Record_Unreachable
               (Unit, Node, Kind,
                "the containing CFG node is unreachable");
@@ -6548,17 +6927,17 @@ package body Adalang_Analyzer.Flow_Interp is
       --  mid-convergence for Container) left behind for the same
       --  obligation (see FP-034, following FP-031's Ada_Identifier fix).
       procedure Finalize_Range_Check
-        (Value     : Libadalang.Analysis.Expr'Class;
-         Typ       : Libadalang.Analysis.Base_Type_Decl;
-         Container : CFG.Node_Id;
-         Rule      : Rules.Rule_Kind;
-         Message   : String)
+        (Value      : Libadalang.Analysis.Expr'Class;
+         Typ        : Libadalang.Analysis.Base_Type_Decl;
+         Container  : CFG.Node_Id;
+         Rule       : Rules.Rule_Kind;
+         Message    : String;
+         Constraint : Subtype_Constraint := (others => <>))
       is
       begin
          if not Boundary_Supported then
             Record_Unsupported (Unit, Value, Proof.Range_Check, Message);
-         elsif Container /= CFG.No_Node
-           and then not Reachable (Container)
+         elsif Unreached (Container)
          then
             Record_Unreachable
               (Unit, Value, Proof.Range_Check,
@@ -6566,12 +6945,10 @@ package body Adalang_Analyzer.Flow_Interp is
          else
             Check_Value_Range
               (Unit, Value, Typ,
-               (if Container = CFG.No_Node then Empty_Flow_State
-                else States (Container)),
+               State_At (Container),
                Rule, Message,
-               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
-                else Symbolic_States (Container)),
-               Final => True);
+               Symbols_At (Container),
+               Final => True, Constraint => Constraint);
          end if;
       end Finalize_Range_Check;
 
@@ -6589,8 +6966,7 @@ package body Adalang_Analyzer.Flow_Interp is
             Record_Unsupported
               (Unit, Index_Value, Proof.Index_Check,
                "array index safety has not been established");
-         elsif Container /= CFG.No_Node
-           and then not Reachable (Container)
+         elsif Unreached (Container)
          then
             Record_Unreachable
               (Unit, Index_Value, Proof.Index_Check,
@@ -6598,10 +6974,8 @@ package body Adalang_Analyzer.Flow_Interp is
          else
             Check_Index_Range
               (Unit, Index_Value, Bounds,
-               (if Container = CFG.No_Node then Empty_Flow_State
-                else States (Container)),
-               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
-                else Symbolic_States (Container)),
+               State_At (Container),
+               Symbols_At (Container),
                Final => True, Indexed => Indexed, Dimension => Dimension);
          end if;
       end Finalize_Index_Check;
@@ -6626,7 +7000,7 @@ package body Adalang_Analyzer.Flow_Interp is
               (Unit, Anchor, Proof.Range_Check,
                "slice bounds have not been established");
             return;
-         elsif Container /= CFG.No_Node and then not Reachable (Container)
+         elsif Unreached (Container)
          then
             Record_Unreachable
               (Unit, Anchor, Proof.Range_Check,
@@ -6649,11 +7023,9 @@ package body Adalang_Analyzer.Flow_Interp is
 
          declare
             State   : constant Flow_State :=
-              (if Container = CFG.No_Node then Empty_Flow_State
-               else States (Container));
+              State_At (Container);
             Symbols : constant VC.Symbolic_State :=
-              (if Container = CFG.No_Node then VC.Empty_Symbolic_State
-               else Symbolic_States (Container));
+              Symbols_At (Container);
             Low     : constant Libadalang.Analysis.Expr :=
               Interval.As_Bin_Op.F_Left;
             High    : constant Libadalang.Analysis.Expr :=
@@ -6743,8 +7115,7 @@ package body Adalang_Analyzer.Flow_Interp is
             Record_Unsupported
               (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
                "zero has not been excluded from the divisor");
-         elsif Container /= CFG.No_Node
-           and then not Reachable (Container)
+         elsif Unreached (Container)
          then
             Record_Unreachable
               (Unit, Expr.F_Right, Proof.Division_By_Zero_Check,
@@ -6752,10 +7123,8 @@ package body Adalang_Analyzer.Flow_Interp is
          else
             Check_Division_By_Zero
               (Unit, Expr,
-               (if Container = CFG.No_Node then Empty_Flow_State
-                else States (Container)),
-               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
-                else Symbolic_States (Container)),
+               State_At (Container),
+               Symbols_At (Container),
                Final => True);
          end if;
       end Finalize_Division_Check;
@@ -6781,8 +7150,7 @@ package body Adalang_Analyzer.Flow_Interp is
             Record_Unsupported
               (Unit, Expr, Proof.Integer_Overflow_Check,
                "overflow safety has not been established");
-         elsif Container /= CFG.No_Node
-           and then not Reachable (Container)
+         elsif Unreached (Container)
          then
             Record_Unreachable
               (Unit, Expr, Proof.Integer_Overflow_Check,
@@ -6790,10 +7158,8 @@ package body Adalang_Analyzer.Flow_Interp is
          else
             Check_Integer_Overflow
               (Unit, Expr,
-               (if Container = CFG.No_Node then Empty_Flow_State
-                else States (Container)),
-               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
-                else Symbolic_States (Container)),
+               State_At (Container),
+               Symbols_At (Container),
                Final => True);
          end if;
       end Finalize_Overflow_Check;
@@ -6812,8 +7178,7 @@ package body Adalang_Analyzer.Flow_Interp is
             Record_Unsupported
               (Unit, Cond, Proof.Assertion_Check,
                "assertion has not been established");
-         elsif Container /= CFG.No_Node
-           and then not Reachable (Container)
+         elsif Unreached (Container)
          then
             Record_Unreachable
               (Unit, Cond, Proof.Assertion_Check,
@@ -6821,10 +7186,8 @@ package body Adalang_Analyzer.Flow_Interp is
          else
             Check_Proof_Pragma_Assertion
               (Unit, Cond,
-               (if Container = CFG.No_Node then Empty_Flow_State
-                else States (Container)),
-               (if Container = CFG.No_Node then VC.Empty_Symbolic_State
-                else Symbolic_States (Container)),
+               State_At (Container),
+               Symbols_At (Container),
                Final => True);
          end if;
       end Finalize_Assertion_Check;
@@ -6850,8 +7213,7 @@ package body Adalang_Analyzer.Flow_Interp is
             Record_Unsupported
               (Unit, Call.F_Name, Proof.Precondition_Check,
                "call precondition has not been established");
-         elsif Container /= CFG.No_Node
-           and then not Reachable (Container)
+         elsif Unreached (Container)
          then
             Record_Unreachable
               (Unit, Call, Proof.Precondition_Check,
@@ -6862,11 +7224,9 @@ package body Adalang_Analyzer.Flow_Interp is
          else
             declare
                State   : constant Flow_State :=
-                 (if Container = CFG.No_Node then Empty_Flow_State
-                  else States (Container));
+                 State_At (Container);
                Symbols : constant VC.Symbolic_State :=
-                 (if Container = CFG.No_Node then VC.Empty_Symbolic_State
-                  else Symbolic_States (Container));
+                 Symbols_At (Container);
             begin
                Check_Call_Precondition
                  (Unit, Call, State, Symbols, Final => True);
@@ -7052,11 +7412,95 @@ package body Adalang_Analyzer.Flow_Interp is
 
       procedure Finalize_Node
         (Node      : Libadalang.Analysis.Ada_Node'Class;
+         Container : CFG.Node_Id := CFG.No_Node);
+
+      --  True for a construct nested in the subprogram being verified whose
+      --  expressions or statements are not evaluated where it is declared.
+      function Evaluated_Later
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is (Node.Kind in Libadalang.Common.Ada_Expr_Function
+            | Libadalang.Common.Ada_Task_Body
+            | Libadalang.Common.Ada_Entry_Body
+            | Libadalang.Common.Ada_Subp_Decl
+            | Libadalang.Common.Ada_Abstract_Subp_Decl
+            | Libadalang.Common.Ada_Null_Subp_Decl
+            | Libadalang.Common.Ada_Subp_Renaming_Decl
+            | Libadalang.Common.Ada_Generic_Subp_Decl
+            | Libadalang.Common.Ada_Generic_Package_Decl
+            | Libadalang.Common.Ada_Entry_Decl
+            | Libadalang.Common.Ada_Component_Decl
+            | Libadalang.Common.Ada_Discriminant_Spec);
+
+      --  Finalizes Child, a child of the guarding expression Parent, in the
+      --  state in which the evaluation of Parent reaches it.
+      procedure Finalize_Operand
+        (Parent    : Libadalang.Analysis.Ada_Node'Class;
+         Child     : Libadalang.Analysis.Ada_Node'Class;
+         Container : CFG.Node_Id)
+      is
+         Saved_Guarded   : constant Boolean := Operand_Guarded;
+         Saved_Dead      : constant Boolean := Operand_Dead;
+         Saved_Container : constant CFG.Node_Id := Operand_Container;
+         Saved_State     : constant Flow_State := Operand_State;
+         Saved_Symbols   : constant VC.Symbolic_State := Operand_Symbols;
+
+         procedure Restore is
+         begin
+            Operand_Guarded := Saved_Guarded;
+            Operand_Dead := Saved_Dead;
+            Operand_Container := Saved_Container;
+            Operand_State := Saved_State;
+            Operand_Symbols := Saved_Symbols;
+         end Restore;
+      begin
+         if not Boundary_Supported then
+            --  No state is consulted: every obligation is unsupported.
+            Finalize_Node (Child, Container);
+            return;
+         end if;
+
+         declare
+            State   : Flow_State := State_At (Container);
+            Symbols : VC.Symbolic_State := Symbols_At (Container);
+            Dead    : Boolean := Unreached (Container);
+         begin
+            Narrow_For_Operand (Parent, Child, State, Symbols, Dead);
+            Operand_Guarded := True;
+            Operand_Dead := Dead;
+            Operand_Container := Container;
+            Operand_State := State;
+            Operand_Symbols := Symbols;
+         end;
+         Finalize_Node (Child, Container);
+         Restore;
+      exception
+         when others =>
+            Restore;
+            raise;
+      end Finalize_Operand;
+
+      procedure Finalize_Node
+        (Node      : Libadalang.Analysis.Ada_Node'Class;
          Container : CFG.Node_Id := CFG.No_Node)
       is
          Here : CFG.Node_Id := Container;
       begin
          if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         end if;
+
+         --  Code that is declared in this subprogram and evaluated later --
+         --  a nested expression function, the default of a component or of
+         --  a nested subprogram's parameter, a task or entry body -- runs
+         --  in a state this pass knows nothing about, not in the state at
+         --  its declaration (FP-108): what an enclosing object held where
+         --  the function was declared says nothing about what it holds
+         --  where the function is called. Its obligations are decided with
+         --  no state at all.
+         if Evaluated_Later (Node) then
+            for Index in 1 .. Node.Children_Count loop
+               Finalize_Node (Node.Child (Index), CFG.No_Node);
+            end loop;
             return;
          end if;
 
@@ -7092,11 +7536,17 @@ package body Adalang_Analyzer.Flow_Interp is
                   Finalize_Overflow_Check (Expr, Here);
                end;
             elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
-               Finalize_Range_Check
-                 (Node.As_Assign_Stmt.F_Expr,
-                  Node.As_Assign_Stmt.F_Dest.P_Expression_Type, Here,
-                  Rules.Known_Range_Check_Failure,
-                  "assigned value is outside the target subtype range");
+               declare
+                  Target : constant Target_Subtype :=
+                    Stored_Subtype
+                      (Node.As_Assign_Stmt.F_Dest, State_At (Here));
+               begin
+                  Finalize_Range_Check
+                    (Node.As_Assign_Stmt.F_Expr, Target.Typ, Here,
+                     Rules.Known_Range_Check_Failure,
+                     "assigned value is outside the target subtype range",
+                     Target.Constraint);
+               end;
             elsif Node.Kind = Libadalang.Common.Ada_Object_Decl
               and then not Libadalang.Analysis.Is_Null
                 (Node.As_Object_Decl.F_Default_Expr)
@@ -7105,7 +7555,9 @@ package body Adalang_Analyzer.Flow_Interp is
                  (Node.As_Object_Decl.F_Default_Expr,
                   Node.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl, Here,
                   Rules.Known_Range_Check_Failure,
-                  "initial value is outside the object's subtype range");
+                  "initial value is outside the object's subtype range",
+                  Declared_Constraint
+                    (Node.As_Object_Decl.F_Type_Expr, State_At (Here)));
             elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
                declare
                   Call : constant Libadalang.Analysis.Call_Expr :=
@@ -7139,8 +7591,7 @@ package body Adalang_Analyzer.Flow_Interp is
                              (if Call.F_Suffix.Kind in Libadalang.Common.Ada_Expr
                               then 1 else Call.F_Suffix.Children_Count);
                            Here_State : constant Flow_State :=
-                             (if Here = CFG.No_Node then Empty_Flow_State
-                              else States (Here));
+                             State_At (Here);
                         begin
                            if not Libadalang.Analysis.Is_Null (Array_Type)
                              and then Array_Type.P_Is_Array_Type
@@ -7257,8 +7708,7 @@ package body Adalang_Analyzer.Flow_Interp is
                         Record_Unsupported
                           (Unit, Node, Proof.Initialization_Check,
                            "object initialization has not been established");
-                     elsif Here /= CFG.No_Node
-                       and then not Reachable (Here)
+                     elsif Unreached (Here)
                      then
                         Record_Unreachable
                           (Unit, Node, Proof.Initialization_Check,
@@ -7274,8 +7724,7 @@ package body Adalang_Analyzer.Flow_Interp is
                         --  premature live recording left behind for the same
                         --  obligation (see FP-031).
                         case Flow_Initialization
-                               ((if Here = CFG.No_Node then Empty_Flow_State
-                                 else States (Here)),
+                               (State_At (Here),
                                 Key)
                         is
                            when Bool_True =>
@@ -7393,7 +7842,11 @@ package body Adalang_Analyzer.Flow_Interp is
               or else Libadalang.Analysis.Ada_Node (Node) =
                 Libadalang.Analysis.Ada_Node (Subprogram)
             then
-               Finalize_Node (Node.Child (Index), Here);
+               if Guards_Operands (Node) then
+                  Finalize_Operand (Node, Node.Child (Index), Here);
+               else
+                  Finalize_Node (Node.Child (Index), Here);
+               end if;
             end if;
          end loop;
       end Finalize_Node;

@@ -23,3 +23,17 @@ output-init-zero-trip-loop	tests/verification_mutation_output_initialization.adb
 slice-open-high	tests/verification_mutation_slice_bounds.adb	range-check	Data	unproved	a slice bound of a subtype wider than the array's index range
 slice-symbolic-short	tests/verification_mutation_slice_bounds.adb	range-check	Short	unproved	a two-element slice of an object not known to have two elements
 slice-almost-null	tests/verification_mutation_slice_bounds.adb	range-check	Reserve	unproved	a slice that is null for every value of its low bound but zero
+guard-admits-zero	tests/verification_mutation_guarded_operand.adb	division-by-zero	Admitted	unproved	the guard before the division admits a zero divisor
+guard-wrong-connective	tests/verification_mutation_guarded_operand.adb	division-by-zero	Refused	unproved	the right operand of or-else is evaluated where the divisor is not positive
+guard-other-object	tests/verification_mutation_guarded_operand.adb	index-check	Unbound	unproved	the membership test before the indexing is on another object
+guard-open-elsif	tests/verification_mutation_guarded_operand.adb	index-check	Open	unproved	the elsif condition does not bound the index above
+loop-range-never-empty	tests/verification_mutation_guarded_operand.adb	division-by-zero	Runs	unproved	the loop range is never empty while the divisor may be zero
+case-alternative-selects-zero	tests/verification_mutation_guarded_operand.adb	index-check	Picked	unproved	the alternative is selected for zero, which is not an index
+constraint-object	tests/verification_mutation_declared_constraint.adb	range-check	Wide	unproved	a value of the type assigned to an object declared with a narrower range
+constraint-initial-value	tests/verification_mutation_declared_constraint.adb	range-check	Initial	unproved	an initial value of a wider subtype than the range the declaration gives
+constraint-after-conversion	tests/verification_mutation_declared_constraint.adb	range-check	Small (Cast)	unproved	a conversion to the subtype mark does not establish the narrower range of the object
+constraint-record-component	tests/verification_mutation_declared_constraint.adb	range-check	Excess	unproved	a value of a wider subtype assigned to a component declared with a range
+constraint-array-component	tests/verification_mutation_declared_constraint.adb	range-check	Loose	unproved	a value one above the range the array type gives its components
+constraint-through-renaming	tests/verification_mutation_declared_constraint.adb	range-check	Above	unproved	a renaming under the type name does not widen the renamed object
+deferred-expression-function	tests/verification_mutation_deferred_evaluation.adb	division-by-zero	Divisor	unproved	the divisor is one where the nested expression function is declared and zero where it is called
+deferred-guard	tests/verification_mutation_deferred_evaluation.adb	division-by-zero	(Divisor - 1)	unproved	the guard is true where the nested expression function is declared and unknown where it is called

@@ -53,7 +53,7 @@ h02.adb	234	OK	division-by-zero	proved-safe
 h02.adb	235	BAD	division-by-zero	definite-error
 h02.adb	243	BAD	division-by-zero	unproved
 h02.adb	246	BAD	division-by-zero	unproved
-h02.adb	255	OK	division-by-zero	unproved
+h02.adb	255	OK	division-by-zero	proved-safe
 h02.adb	259	BAD	division-by-zero	unproved
 h02.adb	272	OK	division-by-zero	proved-safe
 h02.adb	274	BAD	division-by-zero	unproved
@@ -195,7 +195,7 @@ h06.adb	278	BAD	division-by-zero	unproved
 h07.adb	38	BAD	division-by-zero	unproved
 h07.adb	45	BAD	division-by-zero	unproved
 h07.adb	48	BAD	division-by-zero	unproved
-h07.adb	51	OK	division-by-zero	unproved
+h07.adb	51	OK	division-by-zero	proved-safe
 h07.adb	65	BAD	division-by-zero	unproved
 h07.adb	75	BAD	division-by-zero	unproved
 h07.adb	86	BAD	division-by-zero	unproved

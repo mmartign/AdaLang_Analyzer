@@ -222,6 +222,40 @@ that boundary. If the fixed-point run itself fails (for example on a
 Libadalang property error), every obligation of that subprogram is
 `Unsupported`: a node the run did not reach is not thereby `Unreachable`.
 
+Within an expression, an operand that is evaluated only under a condition
+is checked in the state that condition leaves: the right operand of
+`and then` where the left one is true and of `or else` where it is false,
+each dependent expression of an `if` expression where the conditions before
+it came out as they must to reach it. In `Divisor > 0 and then Total /
+Divisor > 1` the division is checked with a positive divisor. Where the
+state says the operand is never evaluated its obligations are `Unreachable`;
+so are those of a dependent expression of a `case` expression that no value
+the selector may have selects, and of the predicate of a quantified
+expression over a range known to be empty. The same holds for statements:
+the body of a `for` loop over a range known to be empty and a `case`
+alternative that the selector does not select are not reached.
+
+`Definite_Error` is a statement about the operation when it executes. Under
+a condition the analysis cannot evaluate, such as a call, the state does not
+say whether the operation ever executes; a definite error reported there
+holds if it does.
+
+Code that is declared inside the subprogram and evaluated later is not
+checked in the state at its declaration: a nested expression function, the
+default expression of a record component or of a nested subprogram's
+parameter, a task or entry body. What an enclosing object holds where such
+code is declared says nothing about what it holds where the code runs, so
+its obligations are decided with no state at all. A nested subprogram with
+a body of its own is verified separately.
+
+The range a stored value is checked against is the one the declaration of
+the target gives: the constraint of `Held : Integer range 1 .. 5`, of a
+record component or of an array type's components declared that way, of an
+access type's designated subtype, and, through a renaming, that of the
+renamed object. The check is `Unproved` when the two bounds of that range
+are not both known as of its elaboration, and for a target of any other
+form.
+
 Explicit access dereference, general alias/points-to reasoning, tasking,
 protected operations, dispatching/class-wide calls, floating-point proof,
 unchecked conversion, target-dependent representation, and unmodeled
