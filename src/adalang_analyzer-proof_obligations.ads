@@ -34,7 +34,10 @@ package Adalang_Analyzer.Proof_Obligations is
       Postcondition_Check,
       Loop_Invariant_Initialization,
       Loop_Invariant_Preservation,
-      Loop_Variant_Check);
+      Loop_Variant_Check,
+      Termination_Check);
+   --  The last one is about a subprogram as a whole: that it returns (a
+   --  function, or a procedure that says so with Always_Terminates).
 
    type Obligation_Status is
      (Proved_Safe,

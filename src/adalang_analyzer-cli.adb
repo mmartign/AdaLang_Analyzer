@@ -45,6 +45,7 @@ with Adalang_Analyzer.Project_Files; use Adalang_Analyzer.Project_Files;
 with Adalang_Analyzer.Report;        use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;         use Adalang_Analyzer.Rules;
 with Adalang_Analyzer.Subprogram_Summaries;
+with Adalang_Analyzer.Termination;
 with Adalang_Analyzer.Text_Utils;    use Adalang_Analyzer.Text_Utils;
 with Adalang_Analyzer.VC_Prover;
 with Adalang_Analyzer.Unit_Provider;
@@ -793,6 +794,7 @@ package body Adalang_Analyzer.CLI is
          Checks.Evaluate_Node (Unit, Unit.Root);
          if Verification_Mode then
             Adalang_Analyzer.Flow_Interp.Verify_Unit (Unit);
+            Adalang_Analyzer.Termination.Verify_Unit (Unit);
          end if;
       end if;
 
@@ -1660,6 +1662,7 @@ package body Adalang_Analyzer.CLI is
                    Adalang_Analyzer.Project_Files.Source_Reader);
          begin
             Adalang_Analyzer.Subprogram_Summaries.Reset;
+            Adalang_Analyzer.Termination.Reset;
             for F of Files_To_Process loop
                Adalang_Analyzer.Subprogram_Summaries.Scan_Unit
                  (Summary_Ctx.Get_From_File (F));

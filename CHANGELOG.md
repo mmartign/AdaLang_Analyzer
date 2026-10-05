@@ -34,6 +34,19 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   is `Unproved`. GNATprove agrees on every actual of the two fixtures added
   to the differential test for it; six mutations, and the three seeded
   parameter-passing defects that raised no obligation now raise one.
+- `--verify` has a `termination` obligation: that a subprogram returns. It
+  is raised where SPARK requires it, for each function and for each
+  procedure that has the aspect `Always_Terminates` or is declared in a
+  package that has it, at the name in its first declaration, which is where
+  GNATprove reports its check. It is proved when the body is seen to return:
+  no loop but a `for` loop over a range or an array, no recursion, direct or
+  through what it calls, and nothing called but subprograms seen to return
+  in the same way from their own bodies. Everything else is `Unproved`; the
+  analysis never says a subprogram does not terminate. It is stricter than
+  GNATprove in one respect: a caller of a subprogram that is not shown to
+  return is not proved, where GNATprove assumes the callee returns.
+  GNATprove agrees on every subprogram of the two fixtures added to the
+  differential test for it; six mutations.
 - The gap ledger (`benchmarks/gnatprove_gap_ledger.py`) pairs GNATprove's
   one "initialization of X" check per object with AdaLang's obligations
   about that object. Of the 15,043 checks GNATprove proves on the five fully

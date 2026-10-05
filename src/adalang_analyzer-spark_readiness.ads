@@ -17,6 +17,17 @@ package Adalang_Analyzer.SPARK_Readiness is
      (Unit       : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body);
 
+   function Effective_SPARK_Enabled
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
+   --  False when Decl, or the nearest enclosing unit that says, has
+   --  SPARK_Mode Off.
+
+   function Contract_Expression
+     (Decl : Libadalang.Analysis.Basic_Decl'Class;
+      Name : String) return Libadalang.Analysis.Expr;
+   --  The expression of the aspect Name of Decl, looked for on the
+   --  declaration of a subprogram body too. Null when there is none.
+
    procedure Check_Discriminant_Access
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Dotted_Name'Class);

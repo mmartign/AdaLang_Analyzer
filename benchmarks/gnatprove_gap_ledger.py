@@ -62,7 +62,7 @@ CHECKS = [
     ("resource or memory leak", "ownership", None),
     ("non-aliasing", "ownership", None),
     ("aliasing", "ownership", None),
-    ("Always_Terminates", "termination", None),
+    ("Always_Terminates", "termination", "termination"),
     ("data dependencies", "flow contract", None),
     ("flow dependencies", "flow contract", None),
     ("unchecked conversion", "representation", None),

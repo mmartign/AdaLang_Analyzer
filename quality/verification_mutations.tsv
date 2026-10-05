@@ -43,3 +43,9 @@ actual-computed	tests/verification_mutation_actual_range.adb	range-check	Last + 
 actual-in-expression	tests/verification_mutation_actual_range.adb	range-check	Loose	unproved	the unbounded actual of a function call inside an expression
 actual-guard-other-object	tests/verification_mutation_actual_range.adb	range-check	Passed	unproved	the membership test before the call is on another object
 actual-copy-back-narrower	tests/verification_mutation_actual_range.adb	range-check	Narrow	unproved	what an out formal gives back may not fit an actual of a narrower subtype
+termination-unbounded-loop	tests/verification_mutation_termination.adb	termination	Halving	unproved	a while loop with no bound the analysis can see
+termination-recursion	tests/verification_mutation_termination.adb	termination	Descending	unproved	direct recursion
+termination-mutual-recursion-first	tests/verification_mutation_termination.adb	termination	Ping	unproved	mutual recursion, entered from this function
+termination-mutual-recursion-second	tests/verification_mutation_termination.adb	termination	Pong	unproved	mutual recursion, the other function of the pair
+termination-calls-unproved	tests/verification_mutation_termination.adb	termination	Relying	unproved	a caller of a function that is not shown to return
+termination-aspect-plain-loop	tests/verification_mutation_termination.adb	termination	Spinning	unproved	a procedure with Always_Terminates and a plain loop

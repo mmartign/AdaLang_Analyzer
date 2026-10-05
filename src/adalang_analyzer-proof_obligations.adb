@@ -90,6 +90,8 @@ package body Adalang_Analyzer.Proof_Obligations is
             return "loop-invariant-preservation";
          when Loop_Variant_Check =>
             return "loop-variant";
+         when Termination_Check =>
+            return "termination";
       end case;
    end Kind_Name;
 
