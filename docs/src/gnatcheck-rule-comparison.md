@@ -421,11 +421,13 @@ Rule coverage is now close to GNATcheck's, but AdaLang Analyzer is not a
 drop-in replacement for it and does not claim to be (see `positioning.md`):
 
 - The pairing is by behaviour on the code both tools were run on. On the
-  external corpora the two agree on about 99% of findings in either
-  direction, but AdaLang reports nothing for a file with preprocessor
-  directives, and GNATcheck also reports inside the instances of generic
-  units, which AdaLang does not follow. Several object-oriented checks
-  still rest on few findings.
+  external corpora the two agree on more than 99% of findings in either
+  direction, but GNATcheck also reports inside the instances of generic
+  units, which AdaLang does not follow, and AdaLang applies the
+  preprocessor only when a project file gives the switches: a source with
+  preprocessor directives that is named directly on the command line does
+  not parse and is not analyzed. Several object-oriented checks still rest
+  on few findings.
 - GNATcheck's rules are written in LKQL and can be extended without
   rebuilding the tool; AdaLang's are compiled in.
 - Where the two tools cannot resolve a unit the same way (a missing

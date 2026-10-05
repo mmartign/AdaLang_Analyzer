@@ -139,9 +139,9 @@ GNATcheck by file and line on fixtures and on this project's own sources.
 
 AdaLang Analyzer should still not claim to be a general GNATcheck
 replacement. On the ten external benchmark corpora the two tools agree on
-about 99% of these checks' findings in either direction, but AdaLang
-reports nothing for a file with preprocessor directives, does not follow
-generic instantiations, and its rules are compiled in where GNATcheck's are
+more than 99% of these checks' findings in either direction, but AdaLang
+does not follow generic instantiations, applies the preprocessor only when
+a project file says how, and its rules are compiled in where GNATcheck's are
 user-extensible.
 
 AdaLang's defensible distinction is unchanged: flow-sensitive defect
