@@ -37,12 +37,12 @@ only — see `git log` for prior snapshots).
 | [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 101 | 0 | 0 |
 | [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 212 | 0 | 0 |
 | [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 951 | 0 | 0 |
-| [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 221 | 0 | 0 |
+| [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 238 | 0 | 0 |
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 8 | 0 | 0 |
 | [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 427 | 0 | 0 |
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark, Tokeneer) — 2,375 proof obligations both
+Saatana, libkeccak, coap_spark, Tokeneer) — 2,392 proof obligations both
 tools could independently evaluate at the same location, spanning five
 different authors/origins and five structurally different domains —
 AdaLang has never once called something safe that GNATprove could not
@@ -70,7 +70,7 @@ What this table doesn't show: AdaLang answers "I don't know"
 consistent with `POSITIONING.md`'s framing of `--verify` as "a much
 narrower scalar subset," not a competitor to full SMT-backed proof. The
 "both safe" share of each corpus's matched pairs varies a lot by code
-style: sparknacl 74/890 (~8%), tokeneer 27/221 (~12%), libkeccak 57/212
+style: sparknacl 74/890 (~8%), tokeneer 30/238 (~13%), libkeccak 57/212
 (~27%), coap_spark 6/951 (~0.6%) — coap_spark's RecordFlux-generated
 protocol contracts and session-state logic remain the hardest code shape
 for AdaLang's bounded verifier to independently prove, even though it
@@ -93,6 +93,30 @@ three defects that release introduced: a `--verify` run time of 39 minutes
 on AWS (159 s before, 69 s now) and two false `Definite_Error` results,
 `FP-099` and `FP-100`. Each corpus's `RESULTS_2026-10-02.md` has the
 details.
+
+### How much of what GNATprove proves does `--verify` prove?
+
+The table above only counts places where both tools have exactly one
+obligation of a kind, which is the right sample for asking whether they
+ever disagree and the wrong one for asking how far apart they are.
+[`GNATPROVE_GAP_LEDGER_2026-10-05.md`](GNATPROVE_GAP_LEDGER_2026-10-05.md)
+takes every check GNATprove proves on the five fully proved corpora, 15,043
+of them once the repeats for generic instances are merged, and records
+what AdaLang does with each:
+
+| AdaLang | Checks | Share |
+| --- | ---: | ---: |
+| Proves it | 433 | 2.9% |
+| Has the obligation, leaves it unproved | 3,796 | 25.2% |
+| Has the obligation, calls it unsupported | 1,725 | 11.5% |
+| Has no obligation of that kind at that place | 4,834 | 32.1% |
+| Has no obligation of that kind at all | 2,823 | 18.8% |
+| Raises nothing in that file | 1,432 | 9.5% |
+
+In the other direction the record holds: AdaLang proves none of the 22
+checks GNATprove leaves unproved there, and reports no definite error on a
+check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
+the ledger from the lanes' results.
 
 ## Real-code validation (no GNATprove oracle)
 
@@ -372,7 +396,7 @@ it's actually positioned as (`POSITIONING.md`): a fast, no-setup-required
 first pass.
 
 **Where the evidence is strong.** Zero false positives and zero possible
-unsoundness across 2,375 matched proof obligations spanning five
+unsoundness across 2,392 matched proof obligations spanning five
 independently-authored, fully-proved SPARK corpora — a hash family, two
 crypto primitives, a protocol parser, a security-critical access-control
 system — is the property that matters most for trusting a tool's output,

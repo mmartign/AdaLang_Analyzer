@@ -51,7 +51,7 @@ Constant_Result_Operation	yes	recommended	4	1	1
 Empty_Loop	yes	recommended	4	46	8
 No_Recursion	yes	automotive,spark,verify	10	618	29
 No_Multiple_Return	yes	automotive	2	494	121
-Non_Short_Circuit_Condition	yes	automotive,spark,verify	10	230	64
+Non_Short_Circuit_Condition	yes	automotive,spark,verify	10	236	67
 Address_Clause	yes	automotive,spark,verify	10	95	14
 Too_Many_Parameters	no	-	0	0	0
 Swappable_Parameters	yes	recommended	4	870	141
@@ -68,12 +68,12 @@ Function_Side_Effect	yes	automotive,recommended,spark,verify	10	162	17
 Redundant_Boolean_Comparison	yes	recommended	4	18	5
 Long_Line	no	-	0	0	0
 Trailing_Whitespace	no	-	0	0	0
-SPARK_Mode	yes	automotive,spark,verify	10	57	45
-Missing_Global_Contract	yes	automotive,spark,verify	10	3883	238
-Global_Contract_Mismatch	yes	automotive,spark,verify	10	610	62
+SPARK_Mode	yes	automotive,spark,verify	10	58	46
+Missing_Global_Contract	yes	automotive,spark,verify	10	3884	239
+Global_Contract_Mismatch	yes	automotive,spark,verify	10	655	65
 Missing_Depends_Contract	yes	automotive,spark,verify	10	4376	264
 Incomplete_Depends_Contract	yes	automotive,spark,verify	10	0	0
-Depends_Contract_Mismatch	yes	automotive,spark,verify	10	211	30
+Depends_Contract_Mismatch	yes	automotive,spark,verify	10	241	32
 Uninitialized_Output	yes	automotive,recommended,spark,verify	10	418	68
 Uninitialized_Read	yes	automotive,recommended	4	22	7
 Missing_Overriding_Indicator	yes	automotive	2	0	0
@@ -93,7 +93,7 @@ Redundant_Type_Conversion	yes	automotive,recommended	4	5	3
 Handler_Order	yes	recommended	4	0	0
 Reraise_Discards_Occurrence	no	-	0	0	0
 Aliasing_Between_Parameters	yes	automotive,recommended,spark,verify	10	1	1
-Missing_Loop_Variant	yes	automotive,spark,verify	10	116	46
+Missing_Loop_Variant	yes	automotive,spark,verify	10	119	48
 Known_Discriminant_Check_Failure	yes	automotive,recommended,spark,verify	10	0	0
 Known_Enum_Val_Failure	no	-	0	0	0
 Known_Value_Conversion_Failure	no	-	0	0	0

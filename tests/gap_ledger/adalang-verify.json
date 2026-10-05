@@ -1,0 +1,9 @@
+{"proofObligations": [
+ {"kind": "range-check", "status": "proved-safe", "file": "/src/a.adb", "line": 10, "column": 7, "imprecisionSource": ""},
+ {"kind": "range-check", "status": "unproved", "file": "/src/a.adb", "line": 10, "column": 20, "imprecisionSource": "bounds unknown"},
+ {"kind": "integer-overflow", "status": "unsupported", "file": "/src/a.adb", "line": 12, "column": 5, "imprecisionSource": "outside subset"},
+ {"kind": "index-check", "status": "unproved", "file": "/src/a.adb", "line": 22, "column": 5, "imprecisionSource": "bounds unknown"},
+ {"kind": "assertion", "status": "proved-safe", "file": "/src/a.adb", "line": 30, "column": 5, "imprecisionSource": ""},
+ {"kind": "division-by-zero", "status": "proved-safe", "file": "/src/a.adb", "line": 40, "column": 5, "imprecisionSource": ""},
+ {"kind": "precondition", "status": "unproved", "file": "/src/g.adb", "line": 5, "column": 3, "imprecisionSource": "contract transfer"}
+]}

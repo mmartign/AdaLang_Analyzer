@@ -1,0 +1,13 @@
+a.adb:10:20: info: range check proved
+a.adb:10:7: info: range check proved
+a.adb:12:5: info: overflow check proved
+a.adb:14:5: info: overflow check proved
+a.adb:20:5: info: index check proved
+a.adb:25:5: info: length check proved
+a.adb:30:5: medium: assertion might fail
+a.adb:40:9: info: division check proved
+g.adb:5:3: info: precondition proved, in instantiation at a.adb:50
+g.adb:5:3: info: precondition proved, in instantiation at a.adb:51
+g.adb:5:3: info: in value of subprogram parameter after the call at a.adb:50
+lib.ads:3:4: info: postcondition proved
+a.adb:1:1: warning: unused variable

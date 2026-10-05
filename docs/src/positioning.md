@@ -239,7 +239,7 @@ defect in that project, not an environment gap, and not pursued further.
 
 `benchmarks/tokeneer/` repeats the comparison on the SPARK 2014 port of the
 NSA-released Tokeneer ID Station (an access-control system, from
-AdaCore/spark2014's test suite): across 221 proof obligations both tools
+AdaCore/spark2014's test suite): across 238 proof obligations both tools
 could evaluate at the same location, again zero possible unsoundness and
 zero false positives -- see `benchmarks/tokeneer/RESULTS_2026-10-02.md`.
 Tokeneer is this project's oldest external corpus, predating this benchmark
@@ -247,7 +247,7 @@ directory's own run/compare convention; its earlier findings (the first
 four confirmed analyzer false positives, `FP-004`-`FP-007`) are recorded in
 `quality/external_corpus_findings.md` instead. Together with SPARKNaCl,
 Saatana, libkeccak, and coap_spark, it completes the five independently
-authored, fully-proved corpora behind the 2,375-obligation figure
+authored, fully-proved corpora behind the 2,392-obligation figure
 summarized in `benchmarks/README.md`.
 
 The intended workflow is:
