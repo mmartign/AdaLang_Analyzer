@@ -5,53 +5,12 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.0] - 2026-10-05
 
-### Added
-
-- Eight checks that complete the coverage of GNATcheck's 212
-  general-purpose rules (catalogue 294 to 302), all opt-in:
-  - `Use_Clause` reports each package name in a use clause, with `allowed`
-    and `exempt_operator_packages` parameters.
-  - `Unavailable_Body_Call` reports calls to a subprogram whose body is not
-    among the sources, and `Deeply_Nested_Inlining` chains of inlined
-    calls deeper than `n`.
-  - `Integer_Type_As_Enumeration` and `Same_Instantiation` compare every
-    analyzed source with every other, in a pass after the per-file walk.
-  - `Compiler_Warning`, `Compiler_Style_Check` and `Compiler_Restriction`
-    report what GNAT detects, selected by the `options` (`-gnatw` or
-    `-gnaty` letters) and `restrictions` parameters. The sources are
-    compiled for semantic checks only, in a temporary directory; they need
-    GNAT on the path, and gprbuild when a project file is given.
-
-### Changed
-
-- The ten GNATcheck corpus comparisons were refreshed with the five new
-  rule pairs and the fixes below
-  (`benchmarks/<corpus>/RESULTS_gnatcheck_2026-10-05.md`). For the
-  coding-standard checks, on the files both tools analyze, GNATcheck
-  confirms 99.7% of AdaLang's 93,773 findings and AdaLang reports 99.8% of
-  GNATcheck's 93,631.
-- `Integer_Type_As_Enumeration` and `Same_Instantiation` also take uses in
-  the sources of imported projects into account.
-
-### Fixed
-
-- With a project file, sources that use the GNAT preprocessor are now
-  analyzed (`FP-103`). The preprocessing the project asks for with
-  `-gnateD` and `-gnatep` switches is applied when the sources are read;
-  before, such a file failed to parse and no check ran on it. Lines that
-  preprocessing leaves out are blanked, so findings keep their positions.
-  On Tokeneer this adds 294 findings that GNATcheck reports too.
-  The units of such files are also found from other units now: Libadalang's
-  provider over a list of files leaves out the files that do not parse as
-  they stand.
-
-## [1.8.0] - 2026-10-04
-
-A coding-standard release: 167 opt-in checks take the catalogue from 127
-to 294 and cover all but eight of GNATcheck's general-purpose rules, checks
-can take parameters, and names of imported projects now resolve. No preset
+A coding-standard release: 175 opt-in checks take the catalogue from 127
+to 302 and give every one of GNATcheck's 212 general-purpose rules a
+counterpart, checks can take parameters, names of imported projects
+resolve, and a project's preprocessing switches are applied. No preset
 changes; on code split across projects the existing checks and `--verify`
 see more than before (`FP-102`). All GNATcheck corpus comparisons were
 re-run, and the analyzer side of the GNATprove comparisons: zero possible
@@ -59,7 +18,7 @@ unsoundness and zero false positives wherever GNATprove is an oracle.
 
 ### Added
 
-- 167 opt-in coding-standard checks, taking the catalogue from 127 to 294:
+- 175 opt-in coding-standard checks, taking the catalogue from 127 to 302:
   naming conventions (`Identifier_Casing`, `Identifier_Prefixes`,
   `Identifier_Suffixes`), layout and comments, restricted constructs,
   positional associations, object-oriented design, representation items
@@ -74,19 +33,31 @@ unsoundness and zero false positives wherever GNATprove is an oracle.
   (`Forbidden_Attribute.forbidden`). Checks that state a project convention
   report nothing until their parameters are set.
 - Each new check is paired with a GNATcheck rule and follows its behaviour.
-  With them, all but eight of GNATcheck's 212 general-purpose rules have an
+  With them, every one of GNATcheck's 212 general-purpose rules has an
   AdaLang counterpart (its 123 `kp_*` compiler known-problem detectors are
-  out of scope); four of the eight need whole-program analysis and are left
-  out on purpose. Every pairing was compared with GNATcheck by file and
+  out of scope). Every pairing was compared with GNATcheck by file and
   line on the check's fixtures, on this repository's other test fixtures
   and on the analyzer's own sources. `docs/src/gnatcheck-rule-comparison.md`
   lists them, including the one deliberate difference
   (`Declaration_In_Block` follows GNATcheck's manual where GNATcheck's
   implementation does not).
+- Four of the new checks look beyond the unit being walked.
+  `Unavailable_Body_Call` reports calls to a subprogram whose body is not
+  among the sources, and `Deeply_Nested_Inlining` chains of inlined calls
+  deeper than `n`. `Integer_Type_As_Enumeration` and `Same_Instantiation`
+  compare every analyzed source with every other, in a pass after the
+  per-file walk, and take uses in the sources of imported projects into
+  account.
+- Three of the new checks report what GNAT detects: `Compiler_Warning`,
+  `Compiler_Style_Check` and `Compiler_Restriction`, selected by the
+  `options` (`-gnatw` or `-gnaty` letters) and `restrictions` parameters.
+  The sources are compiled for semantic checks only, in a temporary
+  directory; these checks need GNAT on the path, and gprbuild when a
+  project file is given.
 
 ### Changed
 
-- The precision corpus grows from 345 to 598 cases: a finding and a clean
+- The precision corpus grows from 345 to 608 cases: a finding and a clean
   fixture for every new check that runs without parameters, and one
   regression case from the corpus runs.
 
@@ -111,15 +82,28 @@ unsoundness and zero false positives wherever GNATprove is an oracle.
   with nine more matched pairs on coap_spark and one more on CubedOS,
   where the `Unsupported` obligations drop from 667 to 32.
 
+- With a project file, sources that use the GNAT preprocessor are now
+  analyzed (`FP-103`). The preprocessing the project asks for with
+  `-gnateD` and `-gnatep` switches is applied when the sources are read;
+  before, such a file failed to parse and no check ran on it. Lines that
+  preprocessing leaves out are blanked, so findings keep their positions.
+  On Tokeneer this adds 294 findings that GNATcheck reports too. The units
+  of such files are also found from other units: Libadalang's provider
+  over a list of files leaves out the files that do not parse as they
+  stand.
+
 ### Known limitations
 
-- On the ten external benchmark corpora, GNATcheck confirms 99.7% of the new
-  checks' findings in the files both tools analysed, and the new checks
-  report 99.5% of GNATcheck's (`benchmarks/README.md`).
-- The analyzer reports nothing for a source file that contains preprocessor
-  directives; this accounts for most of what the new checks still miss.
+- On the ten external benchmark corpora, GNATcheck confirms 99.7% of the
+  new checks' 93,773 findings in the files both tools analysed, and the new
+  checks report 99.8% of GNATcheck's 93,631 (`benchmarks/README.md`).
+- A source with preprocessor directives that is given without a project
+  file does not parse and is not analyzed.
 - GNATcheck also reports inside the instances of generic units; the new
   checks do not follow instantiations.
+- `Integer_Type_As_Enumeration` and GNATcheck's rule both depend on which
+  sources are loaded, and GNATcheck loads more: 15 findings on three
+  corpora have no GNATcheck counterpart for that reason.
 - `Missing_Header` and `Actual_Parameter` were not compared with GNATcheck:
   the local GNATcheck build did not accept their parameters on the command
   line.

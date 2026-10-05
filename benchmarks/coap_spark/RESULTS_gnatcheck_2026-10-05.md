@@ -5,7 +5,7 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 ## Environment
 
 - Corpus: pinned at `2fa345b8c70d621287b932aee7ea39b3520a5adf` (`COAP_SPARK_REVISION`), unchanged.
-- AdaLang Analyzer: 1.8.0 plus the unreleased changes listed in `CHANGELOG.md`.
+- AdaLang Analyzer: 1.8.0.
 - GNATcheck: the same from-source build as prior runs; one pass with the plain `-r` rules, then one pass per column-4 option line of `benchmarks/gnatcheck_rule_map.tsv` (`benchmarks/gnatcheck_rule_args.awk`).
 - Reproduce: `COAP_SPARK_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/coap_spark/run_gnatcheck.sh` (see this directory's README for

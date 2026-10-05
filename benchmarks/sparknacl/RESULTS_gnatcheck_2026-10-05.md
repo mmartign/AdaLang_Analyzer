@@ -5,7 +5,7 @@ Current results, refreshed 2026-10-05. This file replaces the earlier dated runs
 ## Environment
 
 - Corpus: pinned at `49e3bddf092561ce2b74c134a35acff91a2da9a4` (`SPARKNACL_REVISION`), unchanged.
-- AdaLang Analyzer: 1.8.0 plus the unreleased changes listed in `CHANGELOG.md`.
+- AdaLang Analyzer: 1.8.0.
 - GNATcheck: the same from-source build as prior runs; one pass with the plain `-r` rules, then one pass per column-4 option line of `benchmarks/gnatcheck_rule_map.tsv` (`benchmarks/gnatcheck_rule_args.awk`).
 - Reproduce: `SPARKNACL_ROOT=<checkout> GNATCHECK_ENV=<env.sh>
   benchmarks/sparknacl/run_gnatcheck.sh` (see this directory's README for
