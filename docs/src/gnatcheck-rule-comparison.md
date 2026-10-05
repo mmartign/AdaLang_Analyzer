@@ -318,6 +318,9 @@ the command line.
 | Call_In_Exception_Handler | `calls_in_exception_handlers` | `subprograms` |
 | Actual_Parameter | `actual_parameters` | `forbidden` |
 | Side_Effect_Parameter | `side_effect_parameters` | `functions` |
+| Compiler_Warning | `warnings` | `options` |
+| Compiler_Style_Check | `style_checks` | `options` |
+| Compiler_Restriction | `restrictions` | `restrictions` |
 
 `Identifier_Casing`'s `exclude` parameter takes the dictionary inline, as a
 comma-separated list, where GNATcheck reads it from a file.

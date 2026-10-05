@@ -25,6 +25,7 @@ for test_script in \
   tests/run_alire_gnatls_fallback.sh \
   tests/run_cli_parameter_effects.sh \
   tests/run_config_file.sh \
+  tests/run_compiler_checks.sh \
   tests/run_reporting.sh \
   tests/run_recommended.sh \
   tests/run_recommended_gate.sh \

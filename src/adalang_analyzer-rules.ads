@@ -322,7 +322,10 @@ package Adalang_Analyzer.Rules is
       Unavailable_Body_Call,
       Deeply_Nested_Inlining,
       Integer_Type_As_Enumeration,
-      Same_Instantiation
+      Same_Instantiation,
+      Compiler_Warning,
+      Compiler_Style_Check,
+      Compiler_Restriction
    );
 
    type Rule_List is array (Positive range <>) of Rule_Kind;
@@ -3431,7 +3434,38 @@ package Adalang_Analyzer.Rules is
          Guidance    => To_Unbounded_String
            ("Share one instantiation if the two need not be distinct."),
          Quality     => Quality_Maintainability,
-         Severity    => Severity_Low)
+         Severity    => Severity_Low),
+      Compiler_Warning =>
+        (Name        => To_Unbounded_String ("Compiler_Warning"),
+         Description => To_Unbounded_String
+           ("Report the GNAT warnings selected by the options parameter, " &
+            "which takes the letters of a -gnatw switch; nothing is " &
+            "reported when none is configured. Needs GNAT on the path."),
+         Guidance    => To_Unbounded_String
+           ("Fix the construct the compiler warns about."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium),
+      Compiler_Style_Check =>
+        (Name        => To_Unbounded_String ("Compiler_Style_Check"),
+         Description => To_Unbounded_String
+           ("Report the GNAT style messages selected by the options " &
+            "parameter, which takes the letters of a -gnaty switch; " &
+            "nothing is reported when none is configured. Needs GNAT on " &
+            "the path."),
+         Guidance    => To_Unbounded_String
+           ("Lay the source out as the selected style rule requires."),
+         Quality     => Quality_Maintainability,
+         Severity    => Severity_Low),
+      Compiler_Restriction =>
+        (Name        => To_Unbounded_String ("Compiler_Restriction"),
+         Description => To_Unbounded_String
+           ("Report violations of the language restrictions listed in " &
+            "the restrictions parameter, as GNAT detects them; nothing " &
+            "is reported when none is configured. Needs GNAT on the path."),
+         Guidance    => To_Unbounded_String
+           ("Remove the construct the restriction forbids."),
+         Quality     => Quality_Reliability,
+         Severity    => Severity_Medium)
    );
 
    function Lookup_Rule_Kind

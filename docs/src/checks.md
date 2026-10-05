@@ -333,6 +333,9 @@ guidance shipped by the current binary.
 | Coding standard | `Deeply_Nested_Inlining` | Maintainability | Low | Reports inlined subprograms that call inlined subprograms to a depth above the n parameter (3 by default). |
 | Coding standard | `Integer_Type_As_Enumeration` | Maintainability | Low | Reports integer types that no analyzed source uses in arithmetic, converts, derives from, declares a subtype of or passes to a generic instantiation. |
 | Coding standard | `Same_Instantiation` | Maintainability | Low | Reports generic package instantiations that repeat another instantiation of the same generic with the same actual parameters among the analyzed sources. |
+| Coding standard | `Compiler_Warning` | Reliability | Medium | Reports the GNAT warnings selected by the options parameter (the letters of a -gnatw switch), found by compiling the sources for semantic checks only; nothing is reported when none is configured. |
+| Coding standard | `Compiler_Style_Check` | Maintainability | Low | Reports the GNAT style messages selected by the options parameter (the letters of a -gnaty switch), found by compiling the sources for semantic checks only; nothing is reported when none is configured. |
+| Coding standard | `Compiler_Restriction` | Reliability | Medium | Reports violations of the language restrictions listed in the restrictions parameter, as GNAT detects them when compiling the sources for semantic checks only; nothing is reported when none is configured. |
 
 </details>
 

@@ -299,3 +299,6 @@ Unavailable_Body_Call	no	-	0	0	0
 Deeply_Nested_Inlining	no	-	0	0	0
 Integer_Type_As_Enumeration	no	-	0	0	0
 Same_Instantiation	no	-	0	0	0
+Compiler_Warning	no	-	0	0	0
+Compiler_Style_Check	no	-	0	0	0
+Compiler_Restriction	no	-	0	0	0
