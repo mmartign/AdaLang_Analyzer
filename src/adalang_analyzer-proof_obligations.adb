@@ -92,6 +92,10 @@ package body Adalang_Analyzer.Proof_Obligations is
             return "loop-variant";
          when Termination_Check =>
             return "termination";
+         when Data_Dependencies_Check =>
+            return "data-dependencies";
+         when Flow_Dependencies_Check =>
+            return "flow-dependencies";
       end case;
    end Kind_Name;
 

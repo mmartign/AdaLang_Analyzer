@@ -32,6 +32,11 @@ package Adalang_Analyzer.Termination is
    procedure Reset;
    --  Forgets what earlier runs established.
 
+   function Is_Library_Unit_Entity
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
+   --  True when Decl is declared in a unit of the language-defined library
+   --  or of the GNAT one, whose bodies are not followed.
+
    procedure Verify_Unit (Unit : Libadalang.Analysis.Analysis_Unit);
    --  Raises the termination obligation of each subprogram body and
    --  expression function in Unit that SPARK requires to terminate.

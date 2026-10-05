@@ -562,7 +562,7 @@ package body Adalang_Analyzer.Termination is
 
          when Libadalang.Common.Ada_Bin_Op
             | Libadalang.Common.Ada_Relation_Op
-            | Libadalang.Common.Ada_Concat_Op
+            | Libadalang.Common.Ada_Concat_Operand
             | Libadalang.Common.Ada_Un_Op =>
             --  A user-defined operator is a call as any other.
             declare
@@ -570,8 +570,8 @@ package body Adalang_Analyzer.Termination is
                  (case Node.Kind is
                      when Libadalang.Common.Ada_Un_Op =>
                        Node.As_Un_Op.F_Op.As_Name,
-                     when Libadalang.Common.Ada_Concat_Op =>
-                       Libadalang.Analysis.No_Name,
+                     when Libadalang.Common.Ada_Concat_Operand =>
+                       Node.As_Concat_Operand.F_Operator.As_Name,
                      when others => Node.As_Bin_Op.F_Op.As_Name);
                Result   : constant Verdict :=
                  (if Libadalang.Analysis.Is_Null (Operator) then Shown

@@ -52,7 +52,8 @@ status=0
   tests/verification_guarded_operand.adb \
   tests/verification_declared_constraint.adb \
   tests/verification_actual_range.adb \
-  tests/verification_termination.adb || status=$?
+  tests/verification_termination.adb \
+  tests/verification_flow_contracts.adb || status=$?
 if [ "$status" -gt 1 ]; then
    echo "AdaLang Analyzer differential run failed with status $status" >&2
    exit "$status"
@@ -79,7 +80,7 @@ cat "$gnatprove_log"
 grep -F 'Success: all checks proved' "$gnatprove_log" >/dev/null
 
 summary=obj/verification_differential/gnatprove/gnatprove.out
-grep -F 'Analyzed 29 units' "$summary" >/dev/null
+grep -F 'Analyzed 30 units' "$summary" >/dev/null
 if grep -F ' skipped;' "$summary" >/dev/null; then
    echo "GNATprove skipped part of the differential corpus" >&2
    exit 1
@@ -112,7 +113,8 @@ status=0
   tests/verification_mutation_declared_constraint.adb \
   tests/verification_mutation_deferred_evaluation.adb \
   tests/verification_mutation_actual_range.adb \
-  tests/verification_mutation_termination.adb || status=$?
+  tests/verification_mutation_termination.adb \
+  tests/verification_mutation_flow_contracts.adb || status=$?
 if [ "$status" -gt 1 ]; then
    echo "AdaLang Analyzer broken-corpus run failed with status $status" >&2
    exit "$status"
@@ -128,7 +130,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 20 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 21 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -145,7 +147,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_mutation_declared_constraint \
   verification_mutation_deferred_evaluation \
   verification_mutation_actual_range \
-  verification_mutation_termination; do
+  verification_mutation_termination \
+  verification_mutation_flow_contracts; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -161,5 +164,51 @@ if ! grep -F 'not proved' "$broken_summary" >/dev/null; then
    echo "GNATprove reported no failures in the broken differential corpus" >&2
    exit 1
 fi
+
+# Global and Depends aspects are checked by GNATprove's flow analysis, which
+# --mode=prove does not run. The two flow-contract fixtures get a run of
+# their own: the clean one must have every data and flow dependency proved
+# and no check left, the broken one must fail where its comments say.
+flow_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-flow.XXXXXX")
+flow_broken_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-flow-broken.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log"' \
+  EXIT HUP INT TERM
+
+"$gnatprove" -P tests/verification_differential.gpr --mode=flow \
+  --report=all --output=oneline -u verification_flow_contracts.adb \
+  >"$flow_log" 2>&1 || true
+if grep -E 'verification_flow_contracts\.adb:[0-9]+:[0-9]+: (error|high|medium|low):' \
+  "$flow_log" >/dev/null
+then
+   cat "$flow_log"
+   echo "GNATprove's flow analysis did not accept the clean flow-contract fixture" >&2
+   exit 1
+fi
+if [ "$(grep -c 'info: data dependencies proved' "$flow_log")" -ne 7 ] ||
+  [ "$(grep -c 'info: flow dependencies proved' "$flow_log")" -ne 1 ]
+then
+   cat "$flow_log"
+   echo "GNATprove's flow analysis did not prove every aspect of the clean flow-contract fixture" >&2
+   exit 1
+fi
+
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=flow \
+  --report=all --output=oneline -u verification_mutation_flow_contracts.adb \
+  >"$flow_broken_log" 2>&1 || true
+for expected in \
+  'must be listed in the Global aspect of "Unlisted_Read"' \
+  'must be a global output of "Input_Written"' \
+  'Proof_In global "Source" can only be used in assertions' \
+  'must be listed in the Global aspect of "Unlisted_By_Call"' \
+  '"Maybe" might not be initialized' \
+  '"Both.Second" is not initialized' \
+  'missing dependency "Value => Factor"'
+do
+   if ! grep -F "$expected" "$flow_broken_log" >/dev/null; then
+      cat "$flow_broken_log"
+      echo "GNATprove's flow analysis no longer rejects the broken flow-contract fixture: $expected" >&2
+      exit 1
+   fi
+done
 
 echo "GNATprove differential tests passed"

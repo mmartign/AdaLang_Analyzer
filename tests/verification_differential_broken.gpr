@@ -20,6 +20,7 @@ project Verification_Differential_Broken is
       "verification_mutation_declared_constraint.adb",
       "verification_mutation_deferred_evaluation.adb",
       "verification_mutation_actual_range.adb",
-      "verification_mutation_termination.adb");
+      "verification_mutation_termination.adb",
+      "verification_mutation_flow_contracts.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;

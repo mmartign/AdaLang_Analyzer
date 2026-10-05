@@ -39,6 +39,7 @@ with Adalang_Analyzer.Clone_Detection;
 with Adalang_Analyzer.Compliance_Mapping;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
 with Adalang_Analyzer.Config_File;   use Adalang_Analyzer.Config_File;
+with Adalang_Analyzer.Flow_Contracts;
 with Adalang_Analyzer.Flow_Interp;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Project_Files; use Adalang_Analyzer.Project_Files;
@@ -795,6 +796,7 @@ package body Adalang_Analyzer.CLI is
          if Verification_Mode then
             Adalang_Analyzer.Flow_Interp.Verify_Unit (Unit);
             Adalang_Analyzer.Termination.Verify_Unit (Unit);
+            Adalang_Analyzer.Flow_Contracts.Verify_Unit (Unit);
          end if;
       end if;
 
@@ -1663,6 +1665,7 @@ package body Adalang_Analyzer.CLI is
          begin
             Adalang_Analyzer.Subprogram_Summaries.Reset;
             Adalang_Analyzer.Termination.Reset;
+            Adalang_Analyzer.Flow_Contracts.Reset;
             for F of Files_To_Process loop
                Adalang_Analyzer.Subprogram_Summaries.Scan_Unit
                  (Summary_Ctx.Get_From_File (F));

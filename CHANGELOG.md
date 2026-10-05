@@ -47,6 +47,26 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   return is not proved, where GNATprove assumes the callee returns.
   GNATprove agrees on every subprogram of the two fixtures added to the
   differential test for it; six mutations.
+- `--verify` has a `data-dependencies` obligation for a `Global` aspect:
+  that the subprogram reads and writes no object declared outside it that
+  the aspect does not allow. It is raised at the aspect, where GNATprove
+  reports its check, and it is the same check: what is read must be listed,
+  with a mode other than `Proof_In` unless it is read in assertions only;
+  what may be written must be listed as `Output` or `In_Out`; an entry the
+  body does not use does not fail it. It is proved from an
+  over-approximation of what the body touches, including the effects of
+  what it calls, by their own aspect or, when they have none, by their
+  body, and is `Unproved` as soon as the effects of a callee are not known.
+  A constituent is accepted under the state abstraction it belongs to.
+- A global of mode `Output` has an initialization obligation at its name in
+  the `Global` or `Refined_Global` aspect, decided as that of an `out`
+  parameter is.
+- `--verify` has a `flow-dependencies` obligation for a `Depends` aspect,
+  at the aspect. No route proves it yet: it is `Unproved` wherever it is
+  raised, and `Depends_Contract_Mismatch` reports a wrong one as before.
+- GNATprove agrees on every aspect of the two flow-contract fixtures added
+  to the differential test, which now also runs GNATprove's flow analysis
+  on them; seven mutations.
 - The gap ledger (`benchmarks/gnatprove_gap_ledger.py`) pairs GNATprove's
   one "initialization of X" check per object with AdaLang's obligations
   about that object. Of the 15,043 checks GNATprove proves on the five fully

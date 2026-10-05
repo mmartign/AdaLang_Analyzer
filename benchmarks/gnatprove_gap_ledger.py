@@ -63,8 +63,8 @@ CHECKS = [
     ("non-aliasing", "ownership", None),
     ("aliasing", "ownership", None),
     ("Always_Terminates", "termination", "termination"),
-    ("data dependencies", "flow contract", None),
-    ("flow dependencies", "flow contract", None),
+    ("data dependencies", "flow contract", "data-dependencies"),
+    ("flow dependencies", "flow contract", "flow-dependencies"),
     ("unchecked conversion", "representation", None),
     ("Container_Aggregates annotation", "annotation", None),
 ]

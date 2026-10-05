@@ -49,3 +49,10 @@ termination-mutual-recursion-first	tests/verification_mutation_termination.adb	t
 termination-mutual-recursion-second	tests/verification_mutation_termination.adb	termination	Pong	unproved	mutual recursion, the other function of the pair
 termination-calls-unproved	tests/verification_mutation_termination.adb	termination	Relying	unproved	a caller of a function that is not shown to return
 termination-aspect-plain-loop	tests/verification_mutation_termination.adb	termination	Spinning	unproved	a procedure with Always_Terminates and a plain loop
+global-unlisted-read	tests/verification_mutation_flow_contracts.adb	data-dependencies	Global of Unlisted_Read	unproved	a global that is read and not listed
+global-input-written	tests/verification_mutation_flow_contracts.adb	data-dependencies	Global of Input_Written	unproved	a global listed as Input that is written
+global-proof-in-read	tests/verification_mutation_flow_contracts.adb	data-dependencies	Global of Proof_In_Read	unproved	a Proof_In global read outside assertions
+global-unlisted-by-call	tests/verification_mutation_flow_contracts.adb	data-dependencies	Global of Unlisted_By_Call	unproved	a global read by a callee that has no Global aspect
+global-output-some-paths	tests/verification_mutation_flow_contracts.adb	initialization-check	Maybe	unproved	an Output global assigned on one path only
+global-output-one-component	tests/verification_mutation_flow_contracts.adb	initialization-check	Both	unproved	an Output global of which one component is assigned
+depends-missing-input	tests/verification_mutation_flow_contracts.adb	flow-dependencies	Depends of Scaled	unproved	an output that depends on an input its Depends aspect puts under null

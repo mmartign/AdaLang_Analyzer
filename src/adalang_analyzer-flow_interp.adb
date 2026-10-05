@@ -5073,6 +5073,109 @@ package body Adalang_Analyzer.Flow_Interp is
                Occurrence => E);
       end Finalize_Output_Parameters;
 
+      --  A global of mode Output is to be initialized when the subprogram
+      --  returns, as an out parameter is. One obligation for each, at its
+      --  name in the Global or Refined_Global aspect, which is where
+      --  GNATprove reports it, and decided the same way: proved when the
+      --  state at the normal exit has the whole object initialized,
+      --  unproved otherwise, and for a state abstraction, which is not an
+      --  object this model follows.
+      procedure Finalize_Output_Globals is
+         procedure Check_Item (Item : Libadalang.Analysis.Ada_Node'Class) is
+            Key : constant Libadalang.Analysis.Ada_Node :=
+              Flow_Referenced_Name (Item);
+         begin
+            if not Boundary_Supported then
+               Record_Unsupported
+                 (Unit, Item, Proof.Initialization_Check,
+                  "output global initialization at exit has not been " &
+                    "established");
+            elsif not Reachable (CFG.Normal_Exit (Graph)) then
+               Record_Unreachable
+                 (Unit, Item, Proof.Initialization_Check,
+                  "the subprogram has no reachable normal exit");
+            elsif not Libadalang.Analysis.Is_Null (Key)
+              and then Flow_Initialization
+                         (States (CFG.Normal_Exit (Graph)), Key) =
+                       Bool_True
+            then
+               --  proof-path: output-global-initialization-final
+               Record_Proved_Safe
+                 (Unit, Item, Proof.Initialization_Check,
+                  Proof.Flow_Analysis,
+                  "output global is initialized at every represented " &
+                    "normal exit",
+                  "initialization => true", Final => True);
+            else
+               Record_Unproved
+                 (Unit, Item, Proof.Initialization_Check,
+                  Proof.Flow_Analysis,
+                  "output global is not established as initialized at " &
+                    "the normal exit",
+                  Imprecision =>
+                    "some path to the exit does not assign the whole " &
+                      "object, or it is a state abstraction",
+                  Final => True);
+            end if;
+            if not Libadalang.Analysis.Is_Null (Key) then
+               Proof.Set_Subject
+                 (Unit, Item, Proof.Initialization_Check, Key);
+            end if;
+         end Check_Item;
+
+         procedure Check_Items (Node : Libadalang.Analysis.Ada_Node'Class) is
+         begin
+            if Libadalang.Analysis.Is_Null (Node)
+              or else Node.Kind = Libadalang.Common.Ada_Null_Literal
+            then
+               return;
+            elsif Node.Kind = Libadalang.Common.Ada_Paren_Expr then
+               Check_Items (Node.As_Paren_Expr.F_Expr);
+            elsif Node.Kind in Libadalang.Common.Ada_Base_Aggregate then
+               for Item of Node.As_Base_Aggregate.F_Assocs loop
+                  if Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
+                     Check_Items (Item.As_Aggregate_Assoc.F_R_Expr);
+                  end if;
+               end loop;
+            elsif Node.Kind in Libadalang.Common.Ada_Identifier
+                    | Libadalang.Common.Ada_Dotted_Name
+            then
+               Check_Item (Node);
+            end if;
+         end Check_Items;
+
+         procedure Check_Aspect (Global : Libadalang.Analysis.Expr) is
+         begin
+            if Libadalang.Analysis.Is_Null (Global)
+              or else Global.Kind not in Libadalang.Common.Ada_Base_Aggregate
+            then
+               return;
+            end if;
+
+            for Item of Global.As_Base_Aggregate.F_Assocs loop
+               if Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc
+                 and then Item.As_Aggregate_Assoc.F_Designators
+                            .Children_Count = 1
+                 and then Normalized_Text
+                            (Item.As_Aggregate_Assoc.F_Designators
+                               .Child (1)) = "output"
+               then
+                  Check_Items (Item.As_Aggregate_Assoc.F_R_Expr);
+               end if;
+            end loop;
+         end Check_Aspect;
+      begin
+         Check_Aspect (Contract_Expression (Subprogram, "Global"));
+         Check_Aspect (Contract_Expression (Subprogram, "Refined_Global"));
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Initialization_Check",
+               Operation  => "finalize output global initialization",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Output_Globals;
+
       procedure Transfer_Declaration
         (Node  : Libadalang.Analysis.Ada_Node;
          State : in out Flow_State)
@@ -8601,6 +8704,7 @@ package body Adalang_Analyzer.Flow_Interp is
       end loop;
       Finalize_Node (Subprogram);
       Finalize_Output_Parameters;
+      Finalize_Output_Globals;
 
       if not Libadalang.Analysis.Is_Null (Post) then
          if not Boundary_Supported then
