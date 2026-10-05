@@ -2328,11 +2328,11 @@ package body Adalang_Analyzer.Checks is
    end Evaluate_Node;
 
    procedure Evaluate_Sources
-     (Ctx   : Libadalang.Analysis.Analysis_Context;
-      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector)
+     (Ctx     : Libadalang.Analysis.Analysis_Context;
+      Sources : Source_Lists)
    is
    begin
-      Global_Policy.Analyze_Sources (Ctx, Files);
+      Global_Policy.Analyze_Sources (Ctx, Sources);
    end Evaluate_Sources;
 
 end Adalang_Analyzer.Checks;

@@ -205,7 +205,7 @@ fi
 #  not there.
 status=0
 "$analyzer" -P tests/preprocessed_project/prep.gpr \
-  -checks='-*,No_Goto' >"$work/out" 2>"$work/err" || status=$?
+  -checks='-*,No_Goto,Unavailable_Body_Call' >"$work/out" 2>"$work/err" || status=$?
 if grep -F "preprocessor" "$work/err" >/dev/null; then
    echo "a project's preprocessing switches were not applied" >&2
    cat "$work/err" >&2
@@ -218,6 +218,13 @@ grep -F "prep_unit.adb:4:" "$work/out" | grep -F "[No_Goto]" >/dev/null || {
 }
 if grep -F "prep_unit.adb:6:" "$work/out" >/dev/null; then
    echo "code that preprocessing leaves out was analyzed" >&2
+   cat "$work/out" >&2
+   exit 1
+fi
+
+#  The body of a unit in a preprocessed file is found from another unit.
+if grep -F "[Unavailable_Body_Call]" "$work/out" >/dev/null; then
+   echo "a body in a preprocessed file was not found from its caller" >&2
    cat "$work/out" >&2
    exit 1
 fi

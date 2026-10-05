@@ -42,11 +42,21 @@ package Adalang_Analyzer.Checks is
    --  Adalang_Analyzer.Report.Skipped_Nodes rather than skipping the
    --  node's other checks or aborting analysis of the rest of the file.
 
+   type Source_Lists is record
+      Analyzed : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector;
+      --  The files findings are reported in.
+      Known    : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector;
+      --  Analyzed, followed by the sources that only serve name
+      --  resolution: those of imported projects.
+   end record;
+
    procedure Evaluate_Sources
-     (Ctx   : Libadalang.Analysis.Analysis_Context;
-      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector);
-   --  Runs the enabled checks that compare every file of Files with every
-   --  other. To be called once, after Evaluate_Node has walked them all.
+     (Ctx     : Libadalang.Analysis.Analysis_Context;
+      Sources : Source_Lists);
+   --  Runs the enabled checks that compare every source with every other:
+   --  a use in any known source counts, findings are reported in the
+   --  analyzed ones. To be called once, after Evaluate_Node has walked
+   --  them all.
 
 private
 

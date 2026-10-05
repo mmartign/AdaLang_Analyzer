@@ -8,8 +8,10 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Containers.Hashed_Sets;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Vectors;
 with Ada.Directories;
+with Ada.Strings.Hash;
 
 with GNATCOLL.GMP.Integers;
 
@@ -41,6 +43,11 @@ package body Adalang_Analyzer.Checks.Global_Policy is
       Hash                => Libadalang.Analysis.Hash,
       Equivalent_Elements => Libadalang.Analysis."=",
       "="                 => Libadalang.Analysis."=");
+
+   package String_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
 
    package Node_Vectors is new Ada.Containers.Vectors
      (Index_Type   => Positive,
@@ -529,6 +536,10 @@ package body Adalang_Analyzer.Checks.Global_Policy is
         & To_Decimal (Natural (Start.Column));
    end Location;
 
+   --  The file names of the analyzed units: findings are reported there
+   --  only.
+   Analyzed_Units : String_Sets.Set;
+
    procedure Report_Same_Instantiations is
       Library_Only : constant Boolean :=
         Is_Set (Same_Instantiation, "library_level_only");
@@ -537,7 +548,9 @@ package body Adalang_Analyzer.Checks.Global_Policy is
       is (not Library_Only or else not Has_Local_Scope (Item));
    begin
       for Candidate of Instantiations loop
-         if Considered (Candidate) then
+         if Considered (Candidate)
+           and then Analyzed_Units.Contains (Candidate.Unit.Get_Filename)
+         then
             begin
                declare
                   Generic_Decl : constant Node :=
@@ -572,8 +585,8 @@ package body Adalang_Analyzer.Checks.Global_Policy is
    end Report_Same_Instantiations;
 
    procedure Analyze_Sources
-     (Ctx   : Libadalang.Analysis.Analysis_Context;
-      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector)
+     (Ctx     : Libadalang.Analysis.Analysis_Context;
+      Sources : Source_Lists)
    is
       Integer_Types : constant Boolean := On (Integer_Type_As_Enumeration);
       Instances     : constant Boolean := On (Same_Instantiation);
@@ -592,8 +605,12 @@ package body Adalang_Analyzer.Checks.Global_Policy is
 
       Numeric_Uses.Clear;
       Instantiations.Clear;
+      Analyzed_Units.Clear;
+      for File of Sources.Analyzed loop
+         Analyzed_Units.Include (Ctx.Get_From_File (File).Get_Filename);
+      end loop;
 
-      for File of Files loop
+      for File of Sources.Known loop
          declare
             Unit : constant Libadalang.Analysis.Analysis_Unit :=
               Ctx.Get_From_File (File);
@@ -605,7 +622,7 @@ package body Adalang_Analyzer.Checks.Global_Policy is
       end loop;
 
       if Integer_Types then
-         for File of Files loop
+         for File of Sources.Analyzed loop
             declare
                Unit : constant Libadalang.Analysis.Analysis_Unit :=
                  Ctx.Get_From_File (File);

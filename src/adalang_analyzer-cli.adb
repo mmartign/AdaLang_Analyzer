@@ -1573,6 +1573,7 @@ package body Adalang_Analyzer.CLI is
          Input_Files  : GNATCOLL.VFS.File_Array
            (File_Name_Vectors.First_Index (Lookup_Files) ..
               File_Name_Vectors.Last_Index (Lookup_Files));
+         Source_Units : Libadalang.Analysis.Unit_Provider_Reference;
       begin
          Log_Verbose
            ("Unit lookup covers " &
@@ -1587,6 +1588,28 @@ package body Adalang_Analyzer.CLI is
                Normalize => True);
          end loop;
 
+         --  Units are looked up among the listed sources; those of files
+         --  that only parse once preprocessed come first, because the
+         --  provider over the list does not know them.
+         Source_Units :=
+           Libadalang.Auto_Provider.Create_Auto_Provider_Reference
+             (Input_Files);
+         declare
+            use type Libadalang.Analysis.Unit_Provider_Reference;
+
+            Preprocessed : constant
+              Libadalang.Analysis.Unit_Provider_Reference :=
+                Adalang_Analyzer.Unit_Provider.Create_Preprocessed_Index
+                  (Lookup_Files,
+                   Adalang_Analyzer.Project_Files.Source_Reader);
+         begin
+            if Preprocessed /= Libadalang.Analysis.No_Unit_Provider_Reference
+            then
+               Source_Units := Adalang_Analyzer.Unit_Provider.Create
+                 (Primary => Preprocessed, Fallback => Source_Units);
+            end if;
+         end;
+
          --  Summary discovery deliberately uses a separate context. Semantic
          --  property failures are memoized by Libadalang; isolating this
          --  speculative whole-input pass prevents one failed summary query
@@ -1597,9 +1620,7 @@ package body Adalang_Analyzer.CLI is
               Libadalang.Analysis.Create_Context
                 (Unit_Provider =>
                    Adalang_Analyzer.Unit_Provider.Create
-                     (Primary =>
-                        Libadalang.Auto_Provider
-                          .Create_Auto_Provider_Reference (Input_Files),
+                     (Primary  => Source_Units,
                       Fallback =>
                         Libadalang.Unit_Files.Default_Provider),
                  File_Reader   =>
@@ -1616,9 +1637,7 @@ package body Adalang_Analyzer.CLI is
          Ctx := Libadalang.Analysis.Create_Context
            (Unit_Provider =>
               Adalang_Analyzer.Unit_Provider.Create
-                (Primary =>
-                   Libadalang.Auto_Provider.Create_Auto_Provider_Reference
-                     (Input_Files),
+                (Primary  => Source_Units,
                  Fallback => Libadalang.Unit_Files.Default_Provider),
             File_Reader   => Adalang_Analyzer.Project_Files.Source_Reader);
       end;
@@ -1637,7 +1656,12 @@ package body Adalang_Analyzer.CLI is
            (Ctx, Files_To_Process);
       end if;
 
-      Checks.Evaluate_Sources (Ctx, Files_To_Process);
+      Checks.Evaluate_Sources
+        (Ctx,
+         (Analyzed => Files_To_Process,
+          Known    =>
+            Adalang_Analyzer.Project_Files.Lookup_Sources
+              (Files_To_Process)));
       Adalang_Analyzer.Compiler_Checks.Analyze
         ((Files         => Files_To_Process,
           Lookup_Files  =>

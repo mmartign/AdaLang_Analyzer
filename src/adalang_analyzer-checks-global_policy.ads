@@ -9,8 +9,6 @@
 
 with Libadalang.Analysis;
 
-with Adalang_Analyzer.Project_Files;
-
 --  Opt-in checks whose answer depends on sources other than the one being
 --  walked: calls whose body is not available, chains of inlined calls, and
 --  the two that compare every analyzed source with every other (integer
@@ -25,9 +23,9 @@ private package Adalang_Analyzer.Checks.Global_Policy is
    --  Runs every enabled check of this package keyed on Node's own kind.
 
    procedure Analyze_Sources
-     (Ctx   : Libadalang.Analysis.Analysis_Context;
-      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector);
-   --  Runs the enabled checks that need all of Files at once. To be called
-   --  after every file has been walked.
+     (Ctx     : Libadalang.Analysis.Analysis_Context;
+      Sources : Source_Lists);
+   --  Runs the enabled checks that need all the sources at once. To be
+   --  called after every file has been walked.
 
 end Adalang_Analyzer.Checks.Global_Policy;
