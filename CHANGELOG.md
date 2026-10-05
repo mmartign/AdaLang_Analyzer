@@ -5,6 +5,24 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--verify` raises an initialization obligation for each `out` parameter
+  at its subprogram's normal exit: proved when every path that returns has
+  assigned the whole parameter or passed it to a callee that always writes
+  it, `Unproved` otherwise. It is located at the parameter in the
+  declaration the caller sees. GNATprove agrees on every parameter of the
+  two fixtures added to the differential test for it.
+- An initialization obligation carries a `subject` in JSON: the declaration
+  of the object it is about.
+- The gap ledger (`benchmarks/gnatprove_gap_ledger.py`) pairs GNATprove's
+  one "initialization of X" check per object with AdaLang's obligations
+  about that object. Of the 15,043 checks GNATprove proves on the five fully
+  proved corpora AdaLang now proves 1,076 (467 before), still with no
+  disagreement in either direction.
+
 ## [1.8.0] - 2026-10-05
 
 A coding-standard release: 175 opt-in checks take the catalogue from 127

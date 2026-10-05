@@ -106,18 +106,22 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 467 | 3.1% |
-| Has the obligation, leaves it unproved | 4,657 | 31.0% |
-| Has the obligation, calls it unsupported | 1,779 | 11.8% |
-| Has no obligation of that kind at that place | 4,233 | 28.1% |
-| Has no obligation of that kind at all | 3,219 | 21.4% |
-| Raises nothing in that file | 688 | 4.6% |
+| Proves it | 1,076 | 7.2% |
+| Has the obligation, leaves it unproved | 5,234 | 34.8% |
+| Has the obligation, calls it unsupported | 1,948 | 12.9% |
+| Has no obligation of that kind at that place | 3,005 | 20.0% |
+| Has no obligation of that kind at all | 3,410 | 22.7% |
+| Raises nothing in that file | 370 | 2.5% |
 
-The ledger's first run led to `FP-104`: obligations written in a
-specification were reported under the body's file name, so 949 of them
-could not be paired with GNATprove's checks. The figures above are after
-the fix; before it AdaLang had an obligation for 5,954 of the checks, now
-for 6,903.
+The ledger has already paid for itself twice. Its first run led to
+`FP-104`: obligations written in a specification were reported under the
+body's file name, so 949 of them could not be paired with GNATprove's
+checks. It then showed that the largest group without an AdaLang obligation
+was initialization, which GNATprove reports once per object: `--verify` now
+checks each `out` parameter at its subprogram's exit, and the ledger sets
+GNATprove's one check against all of AdaLang's obligations about the same
+object. Before these two steps AdaLang proved 433 of the 15,043 checks and
+had an obligation for 5,954; it now proves 1,076 and has one for 8,258.
 
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a

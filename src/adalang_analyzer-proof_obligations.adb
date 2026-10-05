@@ -59,7 +59,8 @@ package body Adalang_Analyzer.Proof_Obligations is
          Reason_Code        => To_Unbounded_String (Reason_Code),
          Blocking_Expression => To_Unbounded_String (Blocking_Expression),
          Inline_Path        => To_Unbounded_String (Inline_Path),
-         Configuration_Id   => To_Unbounded_String (Configuration_Id));
+         Configuration_Id   => To_Unbounded_String (Configuration_Id),
+         Subject            => No_Source_Position);
    end Create;
 
    function Kind_Name (Kind : Obligation_Kind) return String is
@@ -402,5 +403,31 @@ package body Adalang_Analyzer.Proof_Obligations is
       Item.Inline_Path := To_Unbounded_String (Inline_Path);
       Obligations.Replace_Element (Index, Item);
    end Update_Result;
+
+   procedure Set_Subject
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Kind    : Obligation_Kind;
+      Subject : Libadalang.Analysis.Ada_Node'Class)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Subject) then
+         return;
+      end if;
+
+      declare
+         Index : constant Natural := Find (Stable_Id_For (Unit, Node, Kind));
+         Item  : Obligation;
+      begin
+         if Index /= 0 then
+            Item := Obligations.Element (Index);
+            Item.Subject :=
+              (Filename => To_Unbounded_String (Subject.Unit.Get_Filename),
+               Line     => Natural (Subject.Sloc_Range.Start_Line),
+               Column   => Natural (Subject.Sloc_Range.Start_Column));
+            Obligations.Replace_Element (Index, Item);
+         end if;
+      end;
+   end Set_Subject;
 
 end Adalang_Analyzer.Proof_Obligations;

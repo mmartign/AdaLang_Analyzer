@@ -58,6 +58,7 @@ CHECKS = [
     ("initialization check", "initialization", "initialization-check"),
     ("initialization of", "initialization", "initialization-check"),
     ("might not be initialized", "initialization", "initialization-check"),
+    ("is not initialized", "initialization", "initialization-check"),
     ("resource or memory leak", "ownership", None),
     ("non-aliasing", "ownership", None),
     ("aliasing", "ownership", None),
@@ -147,6 +148,15 @@ def merge_instances(checks):
     return list(merged.values())
 
 
+def subject_of(item):
+    """The declaration an obligation is about, as (file, line, column)."""
+    subject = item.get("subject")
+    if not subject:
+        return None
+    return (os.path.basename(subject["file"]), subject["line"],
+            subject["column"])
+
+
 def read_adalang(path):
     with open(path) as report:
         data = json.load(report)
@@ -160,6 +170,7 @@ def read_adalang(path):
                 "kind": item["kind"],
                 "status": item["status"],
                 "reason": item.get("imprecisionSource", "") or "",
+                "subject": subject_of(item),
                 "used": False,
             }
         )
@@ -195,6 +206,25 @@ def pair(checks, obligations):
         )
         chosen["used"] = True
         return chosen
+
+    # GNATprove reports the initialization of an object once, at its
+    # declaration; AdaLang checks every read, and an out parameter at the
+    # subprogram's exit. The obligations about one declaration are taken
+    # together, and the object is as good as the worst of them.
+    by_subject = collections.defaultdict(list)
+    for item in obligations:
+        if item["kind"] == "initialization-check" and item["subject"]:
+            by_subject[item["subject"]].append(item)
+    for check in checks:
+        if check["check"] == "initialization of":
+            group = by_subject.get(
+                (check["file"], check["line"], check["column"]))
+            if group:
+                for item in group:
+                    item["used"] = True
+                check["match"] = min(
+                    group, key=lambda item: WORST_FIRST.index(item["status"]))
+                check["grouped"] = len(group)
 
     for exact in (True, False):
         for check in checks:
@@ -237,6 +267,10 @@ def pair(checks, obligations):
             else:
                 check["reason"] = "nothing on this line"
 
+
+# The verdict on an object when its obligations disagree.
+WORST_FIRST = ["definite-error", "unproved", "unsupported", "unreachable",
+               "proved-safe"]
 
 OUTCOMES = [
     "proved-safe",

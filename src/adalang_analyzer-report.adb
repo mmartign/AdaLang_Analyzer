@@ -995,7 +995,17 @@ package body Adalang_Analyzer.Report is
                """, ""inlinePath"": """ &
                JSON_Escape (To_String (Item.Inline_Path)) &
                """, ""configurationId"": """ &
-               JSON_Escape (To_String (Item.Configuration_Id)) & """}");
+               JSON_Escape (To_String (Item.Configuration_Id)) & """" &
+               --  The declaration an obligation is about, when it has one.
+               (if Item.Subject.Line = 0 then ""
+                else ", ""subject"": {""file"": """ &
+                  JSON_Escape
+                    (Normalized_Path (To_String (Item.Subject.Filename))) &
+                  """, ""line"": " &
+                  Text_Utils.To_Decimal (Item.Subject.Line) &
+                  ", ""column"": " &
+                  Text_Utils.To_Decimal (Item.Subject.Column) & "}") &
+               "}");
          end;
       end loop;
       Ada.Text_IO.New_Line (File);

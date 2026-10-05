@@ -2711,6 +2711,8 @@ package body Adalang_Analyzer.Flow_Interp is
                         Imprecision =>
                           "incoming paths disagree or object is external");
                end case;
+               Proof.Set_Subject
+                 (Unit, Node, Proof.Initialization_Check, Key);
             end if;
          exception
             when E : others =>
@@ -4169,6 +4171,82 @@ package body Adalang_Analyzer.Flow_Interp is
          when others =>
             return Parameter_Pair_Vectors.Empty_Vector;
       end Parameter_Pairs;
+
+      --  An out parameter is to be initialized when the subprogram
+      --  returns. One obligation for each, at the parameter's own name in
+      --  the declaration the caller sees: the state at the normal exit is
+      --  the join of every path that returns, so "initialized" there means
+      --  on all of them. A parameter that is not is left unproved, never
+      --  called an error: Uninitialized_Output reports that, and a
+      --  component-wise initialization is not something this model follows.
+      procedure Finalize_Output_Parameters is
+         function Declared_Name
+           (Body_Name : Libadalang.Analysis.Ada_Node)
+            return Libadalang.Analysis.Ada_Node
+         is
+         begin
+            for Pair of Parameter_Pairs loop
+               if Pair.Body_Name = Body_Name then
+                  return Pair.Spec_Name;
+               end if;
+            end loop;
+            return Body_Name;
+         end Declared_Name;
+      begin
+         for Param of Subprogram.F_Subp_Spec.P_Params loop
+            if Param.F_Mode.Kind in Libadalang.Common.Ada_Mode_Out then
+               for Id of Param.F_Ids loop
+                  declare
+                     Key    : constant Libadalang.Analysis.Ada_Node :=
+                       Libadalang.Analysis.Ada_Node (Id);
+                     Anchor : constant Libadalang.Analysis.Ada_Node :=
+                       Declared_Name (Key);
+                  begin
+                     if not Boundary_Supported then
+                        Record_Unsupported
+                          (Unit, Anchor, Proof.Initialization_Check,
+                           "out parameter initialization at exit has not " &
+                             "been established");
+                     elsif not Reachable (CFG.Normal_Exit (Graph)) then
+                        Record_Unreachable
+                          (Unit, Anchor, Proof.Initialization_Check,
+                           "the subprogram has no reachable normal exit");
+                     elsif Flow_Initialization
+                             (States (CFG.Normal_Exit (Graph)), Key) =
+                           Bool_True
+                     then
+                        --  proof-path: output-initialization-final
+                        Record_Proved_Safe
+                          (Unit, Anchor, Proof.Initialization_Check,
+                           Proof.Flow_Analysis,
+                           "out parameter is initialized at every " &
+                             "represented normal exit",
+                           "initialization => true", Final => True);
+                     else
+                        Record_Unproved
+                          (Unit, Anchor, Proof.Initialization_Check,
+                           Proof.Flow_Analysis,
+                           "out parameter is not established as " &
+                             "initialized at the normal exit",
+                           Imprecision =>
+                             "some path to the exit does not assign the " &
+                               "whole parameter",
+                           Final => True);
+                     end if;
+                     Proof.Set_Subject
+                       (Unit, Anchor, Proof.Initialization_Check, Anchor);
+                  end;
+               end loop;
+            end if;
+         end loop;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Initialization_Check",
+               Operation  => "finalize out parameter initialization",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Output_Parameters;
 
       procedure Transfer_Declaration
         (Node  : Libadalang.Analysis.Ada_Node;
@@ -7104,6 +7182,8 @@ package body Adalang_Analyzer.Flow_Interp is
                                  Final => True);
                         end case;
                      end if;
+                     Proof.Set_Subject
+                       (Unit, Node, Proof.Initialization_Check, Key);
                   end if;
                exception
                   when E : others =>
@@ -7301,6 +7381,7 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end loop;
       Finalize_Node (Subprogram);
+      Finalize_Output_Parameters;
 
       if not Libadalang.Analysis.Is_Null (Post) then
          if not Boundary_Supported then

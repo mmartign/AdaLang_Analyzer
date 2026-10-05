@@ -45,15 +45,20 @@ expect a.adb 40 9 'proved|proved-safe|'
 #  and a warning are not checks.
 expect g.adb 5 3 'proved|unproved|contract transfer'
 expect lib.ads 3 4 'proved|file without any obligation|'
-#  Ten checks, the one obligation GNATprove has no check for, a header.
-if [ "$(grep -c '' "$work/rows.tsv")" -ne 12 ]
+#  GNATprove's one check on an object goes with every AdaLang obligation
+#  about that object, and the object is as good as the worst of them.
+expect a.adb 60 4 'proved|unproved|paths disagree'
+expect a.adb 70 4 'proved|proved-safe|'
+expect a.adb 80 4 'proved|no obligation here|nothing on this line'
+#  Thirteen checks, the one obligation GNATprove has no check for, a header.
+if [ "$(grep -c '' "$work/rows.tsv")" -ne 15 ]
 then
-   echo "gap ledger: expected 10 checks, 1 obligation without a check and a header" >&2
+   echo "gap ledger: expected 13 checks, 1 obligation without a check and a header" >&2
    cat "$work/rows.tsv" >&2
    exit 1
 fi
 
-grep -F 'GNATprove reports 10 checks (11 messages' "$work/report.md" >/dev/null || {
+grep -F 'GNATprove reports 13 checks (14 messages' "$work/report.md" >/dev/null || {
    echo "gap ledger: generic instances were not merged" >&2
    cat "$work/report.md" >&2
    exit 1

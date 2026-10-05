@@ -11,3 +11,6 @@ g.adb:5:3: info: precondition proved, in instantiation at a.adb:51
 g.adb:5:3: info: in value of subprogram parameter after the call at a.adb:50
 lib.ads:3:4: info: postcondition proved
 a.adb:1:1: warning: unused variable
+a.adb:60:4: info: initialization of "Mixed" proved
+a.adb:70:4: info: initialization of "Good" proved
+a.adb:80:4: info: initialization of "Unread" proved

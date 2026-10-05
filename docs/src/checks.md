@@ -388,6 +388,14 @@ preconditions, postconditions, leading loop-invariant initialization and
 preservation, and scalar range, index, integer-overflow, and division-by-zero
 obligations whenever VC translation is attempted.
 
+An initialization obligation is about one object. It is located where the
+check is made: at a read of the object, or, for an `out` parameter that has
+to be initialized when its subprogram returns, at the parameter itself. JSON
+gives it a `subject` (`file`, `line`, `column`), the declaration of that
+object, so that the obligations about one object can be gathered; that is
+how GNATprove reports them ("initialization of X proved", once, at the
+declaration).
+
 The data-flow checks are intraprocedural and deliberately conservative.
 `Dead_Store` follows resolved simple-object and array-component assignments in
 source order, while `Overwritten_Assignment` stays within one statement list.

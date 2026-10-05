@@ -82,6 +82,13 @@ package Adalang_Analyzer.Proof_Obligations is
       Blocking_Expression : Unbounded_String;
       Inline_Path        : Unbounded_String;
       Configuration_Id   : Unbounded_String;
+
+      --  Where the object the obligation is about is declared, when the
+      --  obligation is about one object and is not located there itself:
+      --  an initialization check is located at a read, and its subject is
+      --  the declaration of the object read. It lets the reads of one
+      --  object be gathered, which is how GNATprove reports them.
+      Subject : Source_Position := No_Source_Position;
    end record;
 
    function Create
@@ -149,6 +156,15 @@ package Adalang_Analyzer.Proof_Obligations is
    --  non-final recordings may already have registered a provisional
    --  result for the same obligation from an intermediate, not-yet-settled
    --  value seen earlier in the same computation.
+
+   procedure Set_Subject
+     (Unit    : Libadalang.Analysis.Analysis_Unit;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Kind    : Obligation_Kind;
+      Subject : Libadalang.Analysis.Ada_Node'Class);
+   --  Records Subject's position as the subject of the obligation of Kind
+   --  that Register_At anchored at Node. Does nothing when there is no such
+   --  obligation or Subject is null.
 
    procedure Reset;
    --  Removes all obligations from the per-run registry.
