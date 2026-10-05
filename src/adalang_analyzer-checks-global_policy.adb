@@ -150,7 +150,41 @@ package body Adalang_Analyzer.Checks.Global_Policy is
    --  Unavailable_Body_Call  --
    -----------------------------
 
+   --  The statement or declaration Item is part of: names are resolved a
+   --  whole construct at a time, so when one name of it does not resolve,
+   --  none does.
+   function Enclosing_Construct
+     (Item : Libadalang.Analysis.Ada_Node'Class) return Node
+   is
+      Current : Node := Item.As_Ada_Node;
+   begin
+      while not Is_Null (Current.Parent)
+        and then Current.Kind not in Libadalang.Common.Ada_Stmt
+                                   | Libadalang.Common.Ada_Basic_Decl
+      loop
+         Current := Current.Parent;
+      end loop;
+      return Current;
+   end Enclosing_Construct;
+
+   procedure Check_Unavailable_Body
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Item : Libadalang.Analysis.Ada_Node'Class);
+
+   --  This check looks at every name, so a construct that does not
+   --  resolve would count as one skipped check for each name in it. It is
+   --  counted once, against the construct.
    procedure Analyze_Unavailable_Body
+     (Unit : Libadalang.Analysis.Analysis_Unit;
+      Item : Libadalang.Analysis.Ada_Node'Class) is
+   begin
+      Check_Unavailable_Body (Unit, Item);
+   exception
+      when Exc : others =>
+         Note_Skipped_Check (Enclosing_Construct (Item), Exc);
+   end Analyze_Unavailable_Body;
+
+   procedure Check_Unavailable_Body
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Item : Libadalang.Analysis.Ada_Node'Class)
    is
@@ -182,7 +216,7 @@ package body Adalang_Analyzer.Checks.Global_Policy is
               (Unit, Item, Unavailable_Body_Call, "call to unavailable body");
          end if;
       end;
-   end Analyze_Unavailable_Body;
+   end Check_Unavailable_Body;
 
    ------------------------------
    --  Deeply_Nested_Inlining  --

@@ -401,8 +401,13 @@ were added last and work differently from the per-unit checks:
   that no `-gnatw` switch selects are left out, as GNATcheck leaves them
   out. On Saatana both tools report the same 753 warning and style
   messages; AdaLang reports 7 more, in a specification GNATcheck does not
-  compile. The local GNATcheck build reports nothing for `restrictions`,
-  so `Compiler_Restriction` was checked against GNAT's own output only.
+  compile. For twelve restrictions the two agree on all 688 violations on
+  SPARKNaCl and on GNATcheck's 105 on Saatana, where AdaLang reports 2
+  more in that same specification. GNATcheck declines some restrictions
+  with a warning (`No_Recursion`, `No_Implicit_Loops`); AdaLang passes
+  whatever is listed to the compiler. One thing to know when comparing:
+  the GNATcheck build used here reports no restriction violation at all
+  when the path of the working directory contains upper-case letters.
 - **`Use_Clause`**, paired with `use_clauses`; `No_Use_Package_Clause`
   stays paired with `use_package_clauses`.
 
