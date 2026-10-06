@@ -5,6 +5,97 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+`--verify` proves more of what GNATprove proves, and three false-safes in
+the checks that were already there are fixed (`FP-109`, `FP-110`,
+`FP-111`).
+
+Of the 15,043 checks GNATprove proves on the five fully proved corpora,
+`--verify` proves 3,536 (3,018 in 1.8.1), with no check it proves that
+GNATprove does not and no definite error on a check GNATprove proves. No
+finding changed in any of the ten corpora re-run. The ledger document is
+still the one recorded with 1.8.1.
+
+What to expect when upgrading:
+
+- More preconditions are `Proved_Safe`, most of them in code whose
+  contracts call functions on a record or a private object (`Has_Buffer
+  (Ctx)`).
+- Some results that 1.8.1 reported `Proved_Safe` are `Unproved`: the
+  division, index and range checks that depended on a test which a function
+  call in the same condition can undo (`FP-109`), and the preservation of a
+  loop invariant about an object that a call in the loop body may write
+  (`FP-111`).
+
+### Added
+
+- A call the scalar VC language cannot look into is a term when the callee
+  is a function of its arguments: under an explicit `SPARK_Mode`, without
+  `Side_Effects` or `Volatile_Function`, with no `out` or `in out`
+  parameter, and known to touch no object declared outside it. What is
+  known of `Has_Buffer (Ctx)` then holds wherever it is asked of the same,
+  unchanged `Ctx`: the precondition of the subprogram under analysis proves
+  the precondition of what it calls, and inside a precondition the operand
+  before a call proves the call's own. An argument that is not a scalar is
+  the value of a whole object, of a component of one, or the result of
+  another such call; a function of a generic unit is a different function
+  in each instance. See "Calls as terms" in
+  `docs/src/supported-verification-subset.md` for when an object's value
+  is taken to have changed.
+- A procedure call whose effects are known, from the summary of the
+  callee's body or from its `Global` aspect, no longer drops every symbolic
+  fact. What is known of a scalar declared in the subprogram under analysis
+  that the call does not write still holds after it: `Offset + Remaining =
+  Length` survives a call that names neither, in straight-line code and as
+  a loop invariant.
+- A condition that holds is assumed operand by operand. One operand the
+  scalar VC language cannot express no longer costs the others.
+- The postcondition of a callee is assumed after a procedure call, of the
+  object the call wrote and of the scalars it was given that it cannot have
+  changed: `Reset (Ctx)` with `Post => Has_Buffer (Ctx)` gives the next call
+  its precondition, and a loop invariant is preserved by the call that
+  re-establishes it. See "The postcondition of a callee" in
+  `docs/src/supported-verification-subset.md` for the formals it is assumed
+  of and for the calls after which nothing is assumed.
+
+### Fixed
+
+- What a condition establishes about an object no longer survives a
+  function call in the same condition that may change the object
+  (`FP-109`, a false-safe). In `Divisor > 0 and then Reset and then 10 /
+  Divisor > 1`, where `Reset` sets `Divisor` to zero, the division was
+  `Proved_Safe`; so was a division in the branch that such a condition
+  guards, after an assertion of it, and in the body of a loop it controls.
+- The symbols given to the solvers are named after the file of the object
+  they stand for as well as its line and column (`FP-110`, a false-safe).
+  An object of a body declared at the position where the specification
+  declares another was the same symbol, and what a precondition says of
+  one parameter was taken for the other.
+- The proof that a loop invariant is preserved, and that a loop variant
+  progresses, takes into account what the calls in the loop body change
+  (`FP-111`, a false-safe). After `pragma Loop_Invariant (Kept > 0)`, a call
+  `Lower (Kept)` in the body left the invariant `Proved_Safe`.
+
+### Changed
+
+- `tests/run_verification_mutations.sh` analyzes a package-body fixture
+  together with its sibling specification, as
+  `tests/run_proof_path_evidence.sh` does. The mutation manifest has 102
+  seeded defects (61 in 1.8.1).
+
+### Known limitations
+
+- One loop invariant of the Tokeneer corpus that GNATprove proves and 1.8.1
+  reported preserved is `Unproved`: the loop calls a procedure nested in the
+  same subprogram, after which nothing is kept.
+- Nothing is known of the result of a function term, not even its subtype,
+  nor of how it is defined: a call is not related to the expression function
+  body it stands for, and the predicate of an object's type is not assumed.
+  Most of the preconditions still `Unproved` in the RecordFlux code of the
+  CoAP-SPARK corpus need both.
+- An operand of a postcondition with `'Old` is not assumed after a call.
+
 ## [1.8.1] - 2026-10-05
 
 A `--verify` release that narrows the distance to GNATprove, measured check

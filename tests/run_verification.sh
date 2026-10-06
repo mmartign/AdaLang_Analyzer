@@ -90,6 +90,10 @@ deferred=$(mktemp "${TMPDIR:-/tmp}/adalang-deferred.XXXXXX")
 termination=$(mktemp "${TMPDIR:-/tmp}/adalang-termination.XXXXXX")
 flow_contracts=$(mktemp "${TMPDIR:-/tmp}/adalang-flow-contracts.XXXXXX")
 expression_functions=$(mktemp "${TMPDIR:-/tmp}/adalang-expression-functions.XXXXXX")
+function_terms=$(mktemp "${TMPDIR:-/tmp}/adalang-function-terms.XXXXXX")
+call_frame=$(mktemp "${TMPDIR:-/tmp}/adalang-call-frame.XXXXXX")
+fp110=$(mktemp "${TMPDIR:-/tmp}/adalang-fp110.XXXXXX")
+call_postcondition=$(mktemp "${TMPDIR:-/tmp}/adalang-call-postcondition.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -120,7 +124,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -1668,5 +1672,77 @@ must_prove "$expression_functions" precondition 'Needs (Value)' \
   contract-transfer "guarded call in a precondition"
 must_prove "$expression_functions" precondition 'Ratio (Value, 2)' \
   contract-transfer "call in a postcondition"
+
+# A call to a function of its arguments is a term. What the caller's
+# precondition says of an object is what the callee's asks of it, the
+# arguments given by name or by position; inside a precondition, the
+# operand before a call is the call's own precondition. The cases where the
+# object has changed, or the function is not one of its arguments, are in
+# the mutation manifest.
+run_json_pair()
+{
+   output=$1
+   unit=$2
+   status=0
+   "$analyzer" --verify -q --format=json --output="$output" \
+     "$unit.ads" "$unit.adb" || status=$?
+   if [ "$status" -gt 1 ]; then
+      echo "verification run failed for $unit with status $status" >&2
+      exit "$status"
+   fi
+}
+
+run_json_pair "$function_terms" tests/verification_function_terms
+for operation in 'Step (Whole)' 'Fill (Both, Need)' \
+  'Fill (Need => Need, Ctx => Named)' 'Step (Kept)' 'Left (Kept)' \
+  'Step (Again)'
+do
+   must_prove "$function_terms" precondition "$operation" external-prover \
+     "a function of its arguments as a term"
+done
+for operation in 'Step (Ctx => Again)' 'Step (Other)' 'Fill (Sized, More)' \
+  'Step (Written)' 'Step (Changed)' 'Step (Replaced)' 'Step (Repeated)' \
+  'Step (Joined)' 'Left (Loose)' 'Fire (Aimed)'
+do
+   must_not_prove "$function_terms" precondition "$operation" \
+     "a function term about another value"
+done
+
+# A procedure call with known effects leaves what is known of the caller's
+# own scalars that it does not name, in straight-line code and in a loop
+# whose invariant relates them.
+run_json_pair "$call_frame" tests/verification_call_frame
+must_prove "$call_frame" assertion 'Offset + Remaining = Length' \
+  external-prover "a relation between locals after a call"
+must_prove "$call_frame" assertion 'Remaining = Length - Offset' \
+  external-prover "a relation between locals after two calls"
+must_prove "$call_frame" loop-invariant-preservation \
+  'Offset + Remaining = Length' external-prover \
+  "a loop invariant over locals with calls in the body"
+
+# FP-110: the symbols of two objects declared at the same line and column
+# of two files had one name, and what the precondition says of one
+# parameter was taken for the other.
+run_json_pair "$fp110" tests/verification_fp110_same_position
+must_not_prove "$fp110" assertion 'Other > 5' FP-110
+must_prove "$fp110" assertion 'Checked > 5' abstract-interpretation FP-110
+
+# The postcondition of a callee is assumed after the call, of the object
+# the call wrote and of the scalars it cannot have changed: a chain of
+# calls is proved link by link, after a callee of which nothing else is
+# known too, and a loop invariant is preserved by the call that
+# re-establishes it. The cases where the fact is about something else are
+# in the mutation manifest.
+run_json_pair "$call_postcondition" tests/verification_call_postcondition
+for operation in 'Step (First)' 'Step (Ctx => First)' \
+  'Reserve (Sized, Count)' 'Fill (Sized, Count)' 'Step (Loaded)' \
+  'Step (Turning)'
+do
+   must_prove "$call_postcondition" precondition "$operation" \
+     external-prover "a callee's postcondition after the call"
+done
+must_prove "$call_postcondition" loop-invariant-preservation \
+  'Ready (Turning)' external-prover \
+  "a loop invariant re-established by a callee's postcondition"
 
 echo "bounded verification tests passed"

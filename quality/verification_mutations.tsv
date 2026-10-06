@@ -60,3 +60,44 @@ expression-function-division	tests/verification_mutation_expression_functions.ad
 expression-function-index	tests/verification_mutation_expression_functions.adb	index-check	Loose	unproved	an expression function whose precondition does not bound the index
 expression-function-actual	tests/verification_mutation_expression_functions.adb	range-check	Wide	unproved	an expression function that passes an unbounded actual to a narrower formal
 precondition-call-unguarded	tests/verification_mutation_expression_functions.adb	precondition	Needs (Unknown)	unproved	a call in a precondition whose own precondition nothing establishes
+condition-call-operand	tests/verification_mutation_call_effects.adb	division-by-zero	Operand	unproved	FP-109: a function called in the condition zeroes the divisor after the same condition tested it
+condition-call-branch	tests/verification_mutation_call_effects.adb	division-by-zero	Branched	unproved	FP-109: the branch is entered after the condition's own call changed what it tested
+condition-call-assertion	tests/verification_mutation_call_effects.adb	division-by-zero	Asserted	unproved	FP-109: an assertion that calls a state-changing function leaves no fact about what the call writes
+condition-call-grouped	tests/verification_mutation_call_effects.adb	division-by-zero	Grouped	unproved	FP-109: the guard stands before a parenthesized operand that calls the state-changing function first
+condition-call-loop	tests/verification_mutation_call_effects.adb	division-by-zero	Guarded	unproved	FP-109: a loop condition whose call changes what the condition tested
+invariant-procedure-call	tests/verification_mutation_call_effects.adb	loop-invariant-preservation	Kept > 0	unproved	FP-111: a procedure call in the loop body writes the object the invariant speaks of
+invariant-function-call	tests/verification_mutation_call_effects.adb	loop-invariant-preservation	Level > 0	unproved	FP-111: a function called in the loop body writes the object the invariant speaks of
+invariant-condition-call	tests/verification_mutation_call_effects.adb	loop-invariant-preservation	Level >= 1	unproved	FP-111: a function called in a condition of the loop body writes the object the invariant speaks of
+same-position-symbol	tests/verification_fp110_same_position.adb	assertion	Other > 5	unproved	FP-110: an object of the body at the line and column of another in the specification is not that object
+function-term-element	tests/verification_mutation_function_terms.adb	precondition	Step (Written)	unproved	an array element of the object is assigned between the fact and the call
+function-term-slice	tests/verification_mutation_function_terms.adb	precondition	Step (Sliced)	unproved	a slice of the object is assigned between the fact and the call
+function-term-component	tests/verification_mutation_function_terms.adb	precondition	Step (Changed)	unproved	a component of the object is assigned between the fact and the call
+function-term-renaming	tests/verification_mutation_function_terms.adb	precondition	Step (Renamed)	unproved	the object is written through a renaming of a part of it
+function-term-other-formal	tests/verification_mutation_function_terms.adb	precondition	Step (First)	unproved	another formal of the same type, which may be the same object, is written
+function-term-heap	tests/verification_mutation_function_terms.adb	precondition	Sum (Pointing)	unproved	what the object designates is written through another access value
+function-term-loop	tests/verification_mutation_function_terms.adb	precondition	Step (Looped)	unproved	the object is written in a loop after the fact was assumed there
+function-term-loop-local	tests/verification_mutation_function_terms.adb	precondition	Step (Fresh)	unproved	an object declared in a loop is another object in each iteration
+function-term-after-call	tests/verification_mutation_function_terms.adb	precondition	Step (Ctx => Again)	unproved	the object was passed to a procedure that writes it
+function-term-default	tests/verification_mutation_function_terms.adb	precondition	Low (Defaulted)	unproved	the fact is about the call with the default argument, the call asked about has another
+function-term-variable	tests/verification_mutation_function_terms.adb	precondition	Capped (Capped_Ctx)	unproved	the function reads a variable the caller has changed: it is not a function of its arguments
+function-term-poked-before	tests/verification_mutation_function_terms.adb	precondition	Sum (Poked)	unproved	a function that is not in SPARK wrote through an access component of the object
+function-term-poked-condition	tests/verification_mutation_function_terms.adb	precondition	Sum (Tested)	unproved	a function that is not in SPARK, called in the condition, wrote through an access component
+function-term-poked-guard	tests/verification_mutation_function_terms.adb	precondition	Sum (Guarded)	unproved	the guard established the fact before a function that is not in SPARK wrote through an access component
+function-term-instance	tests/verification_mutation_function_terms.adb	precondition	Small.Use_It (Mixed)	unproved	the fact is about the function of another instance of the generic
+call-frame-actual	tests/verification_mutation_call_frame.adb	assertion	Got + Rest = Size	unproved	the call writes the scalar the relation is about
+call-frame-global	tests/verification_mutation_call_frame.adb	assertion	Mirror = Total	unproved	the callee writes an object declared outside the caller
+call-frame-nested	tests/verification_mutation_call_frame.adb	assertion	Copy = Count	unproved	a callee declared inside the caller writes one of its locals
+call-frame-unknown	tests/verification_mutation_call_frame.adb	assertion	Seen = Total	unproved	nothing is known of what an imported procedure without a Global aspect does
+call-frame-component	tests/verification_mutation_call_frame.adb	assertion	Held = Held_Box.Value	unproved	the call writes the record whose component the relation is about
+call-frame-postcondition	tests/verification_mutation_call_frame.adb	postcondition	Level > 5	unproved	the body passes the parameter its precondition is about to a procedure that writes it
+postcondition-other-object	tests/verification_mutation_call_postcondition.adb	precondition	Step (Unknown)	unproved	the postcondition is about another object
+postcondition-written-after	tests/verification_mutation_call_postcondition.adb	precondition	Step (Changed)	unproved	an element of the object is assigned after the call
+postcondition-other-value	tests/verification_mutation_call_postcondition.adb	precondition	Fill (Sized, 5)	unproved	the postcondition is about another value of the scalar argument
+postcondition-global-argument	tests/verification_mutation_call_postcondition.adb	precondition	Fill (Asked, Demand)	unproved	the scalar argument is declared outside the caller and is changed after the call
+postcondition-argument-written	tests/verification_mutation_call_postcondition.adb	precondition	Fill (Raised, Before)	unproved	the call writes the scalar argument: the postcondition is about its new value
+postcondition-default-argument	tests/verification_mutation_call_postcondition.adb	precondition	Fill (Defaulted, 7)	unproved	the postcondition speaks of a formal the call left to its default
+postcondition-only-once	tests/verification_mutation_call_postcondition.adb	precondition	Step (Repeated)	unproved	the postcondition holds before the loop, not after a first iteration
+postcondition-global-actual	tests/verification_mutation_call_postcondition.adb	precondition	Step (Shared)	unproved	the object the call writes is declared outside the caller, where the callee can name it
+postcondition-same-object	tests/verification_mutation_call_postcondition.adb	precondition	Step (Twice)	unproved	one object is passed twice, once to be written
+postcondition-untrusted	tests/verification_mutation_call_postcondition.adb	precondition	Step (Pointed)	unproved	the postcondition calls a function that is not in SPARK after what it says
+postcondition-nested-callee	tests/verification_mutation_call_postcondition.adb	precondition	Step (Local)	unproved	a callee declared inside the caller writes the caller's object by name

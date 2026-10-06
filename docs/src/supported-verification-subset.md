@@ -143,8 +143,127 @@ the direct name, for reads and writes alike.
   it, and none at all when that type is declared inside it. This is what
   covers `Initialize`, `Adjust` and `Finalize` of controlled types.
 
+- A condition that evaluates a function call which may change state --
+  the same test as above -- establishes nothing about what the call may
+  write, even about what it tested first: the call may come after the
+  test. In `Count > 0 and then Reset and then Total / Count > 1`, where
+  `Reset` may write `Count`, the division is not checked with a positive
+  divisor. What such a call may write is every object when the callee is
+  declared inside the subprogram under analysis or writes an actual, and
+  otherwise every object declared outside that subprogram. The symbolic
+  state is dropped as well. A call that evaluates a default expression
+  which changes state is such a call.
+- A procedure call drops every fact when what the callee does is not
+  known: no effect summary of its body, no `Global` aspect, a callee
+  declared inside the subprogram under analysis, a dispatching call.
+  When it is known, the *call frame* stands: what the symbolic state says
+  of a scalar object declared in the subprogram under analysis that the
+  call does not have as an `out` or `in out` actual still holds after the
+  call. Everything else gets a value of which nothing is known: each
+  object declared outside the subprogram, each actual the call may write
+  (every name in it), every record component of whatever object, and the
+  value of every object that is not a scalar.
+
 Tasking is outside this model: an object shared between tasks is expected
 to be volatile, atomic or protected.
+
+## Calls as terms
+
+A call that the scalar VC language cannot look into -- the callee is not an
+expression function, or an argument is not a scalar -- is still a term when
+the callee is a *function of its arguments*: two calls with the same
+arguments have the same result. That is all the term says. `Has_Buffer
+(Ctx)` in the precondition of the subprogram under analysis proves the
+`Has_Buffer (Ctx)` that a callee's precondition asks, as long as `Ctx` has
+not changed in between; inside a precondition, `Valid (Ctx) and then Size
+(Ctx) > 0` proves the precondition `Valid (Ctx)` of `Size`. Nothing is known
+of the result beyond that, not even its subtype.
+
+A function of its arguments is one that
+
+- is under an explicit `SPARK_Mode`, on the declaration, an enclosing unit
+  or the project, and has neither the `Side_Effects` nor the
+  `Volatile_Function` aspect;
+- has no `out` or `in out` parameter; and
+- is known to read and write no object declared outside it: its `Global`
+  aspect is `null`, or it has none and its body, with everything it calls,
+  was followed to the end and touches none. A constant whose value depends
+  on no variable is not such an object. A library subprogram without a
+  `Global` aspect, an imported one that is not intrinsic, a generic formal
+  subprogram, a dispatching call and a call through an access value are
+  never such functions.
+
+A function of a generic unit is a different function in each instance.
+A call that leaves a formal to its default is a different term from one
+that gives it.
+
+An argument that is not a scalar is the value of a whole object (a
+variable, a constant or a parameter that is not volatile, not a task and not
+a protected object), of a record component of one reached without a
+dereference, or the result of another such call whose type is not an access
+type. An object keeps its value until something may have changed it, and
+then no fact about the old value says anything of the new one:
+
+- an assignment to the object, to a component of it, or through a
+  dereference drops the symbolic state;
+- an assignment to an element or a slice of *any* array, and a call in an
+  expression to a function that is not a literal, a predefined operation or
+  under an explicit `SPARK_Mode`, give every object that is not a scalar a
+  new value. Which objects an element belongs to, or is reached from
+  through an access value, is not worked out, and two parameters passed by
+  reference may be one object;
+- a procedure call does the same where it does not drop everything (see the
+  call frame above);
+- a loop, a join of paths that disagree and an exception handler keep what
+  they keep of any other symbolic fact.
+
+A function that is not a function of its arguments is no term: the check
+that depends on it is `Unproved`, with the reason the callee could not be
+inlined.
+
+When the callee of a call under proof has a formal that is not a scalar,
+the formal stands for the actual's value. On a recursive call, where the
+caller's state already speaks of that very formal, the symbolic state is
+dropped instead.
+
+The symbols handed to the solvers are named after the file, the line and
+the column of the object they stand for.
+
+## The postcondition of a callee
+
+After a procedure call returns, what the callee's postcondition says is
+assumed, as an assertion is: whether it holds is the obligation of the
+callee's own verification. It is assumed operand by operand, of the caller's
+own objects, each formal standing for what the caller sees after the call:
+
+- a formal the call writes stands for the object that is its actual, when
+  that is a whole object declared in the subprogram under analysis;
+- any other formal stands for its actual as it is after the call, when the
+  call cannot have changed what the actual reads: a literal, a constant, a
+  loop parameter, an object of the subprogram under analysis that the call
+  does not write, and predefined operations on those.
+
+An operand that names a formal with neither is not assumed -- one left to
+its default, one whose actual is a call or a component, one whose actual
+is declared outside the subprogram under analysis -- and so is an operand
+with `'Old`, which the scalar VC language does not express. The first of
+two calls on an object thus gives the second its precondition where the
+postcondition states it outright, not where it states that something is
+unchanged.
+
+Nothing is assumed where a fact could be about another value than the one
+the caller sees: the callee is declared inside the subprogram under
+analysis, which lets it name the caller's objects; an actual the call
+writes is declared outside it, where the callee can name it too; two
+actuals name one object and one of them is written; an actual takes an
+access or an address; the call dispatches; the callee is under `SPARK_Mode
+=> Off`; or the postcondition calls a function that may change state or is
+not taken to leave everything as it is. The postcondition is the one on
+the declaration the call resolves to or, for a body, on the declaration it
+completes when that is resolved exactly.
+
+What a callee of unknown effects leaves is nothing but this: its
+postcondition is assumed in a state that knows nothing else.
 
 ## Assertions as assumptions
 
@@ -187,6 +306,18 @@ straight-line scalar substitutions, sound relational postcondition transfer,
 and identical symbolic facts preserved at every incoming join. Conflicting
 join values, exceptional flow, and calls without sound relational summaries
 drop facts rather than assuming them.
+
+A condition that holds is taken operand by operand: each operand of `and`
+and `and then` where it is true, of `or` and `or else` where it is false,
+through `not` and parentheses. An operand the scalar VC language cannot
+express contributes nothing and does not cost the others: of `Ready (Ctx)
+and then Count > 0` with `Ready` outside the language, `Count > 0` is still
+known.
+
+The walk that proves a leading loop invariant preserved goes through the
+loop body with the same effects as the analysis of the subprogram: a
+procedure call, and a function call that may change state, change what they
+may change (see above) before the invariant is checked again.
 
 For a supported loop variant, the expression is translated in both the state
 before the generic iteration and the state after its back edge. `Decreases`

@@ -1281,6 +1281,18 @@ package body Adalang_Analyzer.Flow_Contracts is
          end;
    end Body_Effects;
 
+   function Touches_Nothing_Outside
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Touched : constant Effects := Callee_Effects (Callee, Caller);
+   begin
+      return Touched.Complete and then Touched.Objects.Is_Empty;
+   exception
+      when others =>
+         return False;
+   end Touches_Nothing_Outside;
+
    ------------------------------------------------------------------
    --  Obligations
    ------------------------------------------------------------------

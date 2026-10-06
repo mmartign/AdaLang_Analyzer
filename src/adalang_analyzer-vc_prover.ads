@@ -117,6 +117,102 @@ package Adalang_Analyzer.VC_Prover is
 
    function Equal (Left, Right : Symbolic_State) return Boolean;
 
+   --  The contract of a callee speaks of the callee's formals. A frame says
+   --  what each formal stands for at one call, so that a condition of the
+   --  contract can be assumed about the caller's own objects: no fact
+   --  about a formal as such is ever left in a state. A formal the frame
+   --  blocks stands for nothing, and an operand that names it is not
+   --  assumed.
+   type Contract_Frame is private;
+   Empty_Contract_Frame : constant Contract_Frame;
+
+   procedure Block_Formal
+     (Frame  : in out Contract_Frame;
+      Formal : Libadalang.Analysis.Ada_Node);
+
+   procedure Bind_Formal
+     (Frame  : in out Contract_Frame;
+      State  : in out Symbolic_State;
+      Formal : Libadalang.Analysis.Ada_Node;
+      Actual : Libadalang.Analysis.Expr'Class;
+      Flow   : Adalang_Analyzer.Flow_Domain.Flow_State);
+   --  Formal stands for the value Actual has in State: its term when the
+   --  formal is a scalar, the object it names otherwise. Blocked when
+   --  Actual has neither. It is for the caller to bind a formal only where
+   --  the value of Actual in State is the value the formal has where the
+   --  condition is evaluated.
+
+   function Assume_In_Frame
+     (State     : Symbolic_State;
+      Frame     : Contract_Frame;
+      Condition : Libadalang.Analysis.Expr;
+      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  As Assume, Truth being True, for a condition written in terms of the
+   --  formals Frame speaks of. Havoc when nothing of it could be assumed.
+
+   --  A call the translation cannot look into is still a term when it is
+   --  to a function of its arguments: one with no side effect whose result
+   --  depends on nothing but the values it is given. Two such calls with
+   --  the same arguments have the same result, which is all the term says:
+   --  "Has_Buffer (Ctx)" known on entry proves the "Has_Buffer (Ctx)" a
+   --  callee requires, as long as Ctx has not changed in between. An
+   --  argument that is not a scalar is the value of a whole object, a
+   --  component of one, or the result of another such call.
+   --
+   --  Which functions those are is for the caller of this package to say.
+   --  Without an oracle no call is taken that way.
+   type Function_Oracle is access function
+     (Call : Libadalang.Analysis.Name'Class) return Boolean;
+
+   procedure Set_Function_Oracle (Oracle : Function_Oracle);
+
+   function Forget_Composite_Values
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class) return Symbolic_State;
+   --  State after Writer has changed some object that is not a scalar, no
+   --  matter which: an array element assigned, a call that may write
+   --  through an access value. Every such object now holds a value of its
+   --  own, about which nothing is known; what State says of scalars and of
+   --  array bounds stands.
+
+   function Forget_Unowned_Values
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class;
+      Scope  : Libadalang.Analysis.Ada_Node;
+      After  : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State after Writer, a call whose effects on objects by name are
+   --  known to stay outside Scope, the subprogram being verified. What
+   --  State says of a scalar object declared in Scope stands: such an
+   --  object changes only when it is named, and Forget_Object is for the
+   --  ones the call names. Everything else gets a value of its own:
+   --  every object declared outside Scope, every record component, and
+   --  every value that is not a scalar, whatever object it belongs to --
+   --  a call may write through an access value. After is the flow state
+   --  once Writer is done.
+
+   function Forget_Object
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class;
+      Object : Libadalang.Analysis.Ada_Node;
+      After  : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State after Writer has given the scalar Object a value of which
+   --  nothing is known but what After says.
+
+   function Bind_Actual
+     (State  : Symbolic_State;
+      Formal : Libadalang.Analysis.Ada_Node;
+      Actual : Libadalang.Analysis.Expr'Class;
+      Flow   : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  As Assign, for giving a callee's formal the value of its actual
+   --  where the callee's contract is evaluated. An actual that is not a
+   --  scalar leaves the rest of State as it is, which Assign does not;
+   --  only when State already speaks of Formal, on a recursive call, is
+   --  everything dropped.
+
    function Havoc return Symbolic_State is (Empty_Symbolic_State);
 
    function Alias_Object
@@ -216,13 +312,17 @@ package Adalang_Analyzer.VC_Prover is
 
 private
 
-   type Scalar_Sort is (Integer_Sort, Boolean_Sort, Enum_Sort);
+   type Scalar_Sort is (Integer_Sort, Boolean_Sort, Enum_Sort, Opaque_Sort);
    --  Enum_Sort values are represented in SMT-LIB by their 0-based
    --  declaration-order position (matching Ada's 'Pos, not GNAT's Enum_Rep,
    --  which a representation clause can remap) -- see Enum_Literal_Position
    --  and Enum_Type_Position_Range in the body. Scoped to equality and
    --  membership-test translation only: no ordering, 'Succ/'Pred, or
    --  'Pos/'Val attribute support yet.
+   --
+   --  Opaque_Sort is the value of an object that is not a scalar: a token
+   --  with no structure, the same for as long as the object is unchanged
+   --  and good only as an argument of a function term.
 
    --  Identifies what a root/binding stands for: an ordinary object
    --  (Component = No_Ada_Node), or one record component of one object
@@ -265,6 +365,28 @@ private
      (Index_Type => Positive,
       Element_Type => Ada.Strings.Unbounded.Unbounded_String,
       "=" => Ada.Strings.Unbounded."=");
+
+   type Frame_Object is record
+      Formal : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Actual : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+   end record;
+
+   package Frame_Object_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Frame_Object);
+
+   --  Scalars: each scalar formal bound, with the term of its actual.
+   --  Objects: each other formal with the object that is its actual, and
+   --  each blocked formal, of whatever type, with no object.
+   type Contract_Frame is record
+      Scalars : Symbolic_Binding_Vectors.Vector;
+      Objects : Frame_Object_Vectors.Vector;
+   end record;
+
+   Empty_Contract_Frame : constant Contract_Frame :=
+     (Scalars => Symbolic_Binding_Vectors.Empty_Vector,
+      Objects => Frame_Object_Vectors.Empty_Vector);
 
    type Symbolic_State is record
       Roots       : Symbol_Root_Vectors.Vector;

@@ -28,8 +28,14 @@ do
 
    output="$work/$id.json"
    status=0
-   "$analyzer" --verify -q --format=json --output="$output" "$fixture" \
-     >/dev/null 2>&1 || status=$?
+   #  A package-body fixture is analyzed together with its sibling spec,
+   #  so the body's names resolve without a project file.
+   spec=${fixture%.adb}.ads
+   if [ "$spec" = "$fixture" ] || [ ! -f "$spec" ]; then
+      spec=
+   fi
+   "$analyzer" --verify -q --format=json --output="$output" \
+     ${spec:+"$spec"} "$fixture" >/dev/null 2>&1 || status=$?
    if [ "$status" -gt 1 ]; then
       echo "verification mutation run failed: $id ($fixture), status $status" >&2
       exit "$status"

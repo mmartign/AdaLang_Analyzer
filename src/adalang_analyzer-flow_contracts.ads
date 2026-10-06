@@ -42,4 +42,13 @@ package Adalang_Analyzer.Flow_Contracts is
    --  expression function in Unit that has a Global aspect, and the
    --  flow-dependencies obligation of each one that has a Depends aspect.
 
+   function Touches_Nothing_Outside
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when a call to Callee made from Caller is known to read and to
+   --  write no object declared outside Callee: its Global aspect is null,
+   --  or it has none and its body, with all it calls, was followed to the
+   --  end and touches none. A constant whose value depends on no variable
+   --  is not such an object. False whenever the effects are not known.
+
 end Adalang_Analyzer.Flow_Contracts;
