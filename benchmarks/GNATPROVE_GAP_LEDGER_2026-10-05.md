@@ -1,8 +1,8 @@
 # What separates `--verify` from GNATprove: a ledger
 
-Recorded 2026-10-06 with what follows AdaLang Analyzer 1.8.1, against
-the GNATprove output saved by the 2026-10-02 runs of the five fully proved
-corpora (`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`).
+Recorded 2026-10-06 with AdaLang Analyzer 1.8.2, against the GNATprove
+output saved by the 2026-10-02 runs of the five fully proved corpora
+(`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`).
 
 The obligations are those of 1.8.1; more of them are proved. A call to a
 function of its arguments is a term the provers can match, a procedure call

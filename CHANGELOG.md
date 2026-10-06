@@ -5,17 +5,19 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.2] - 2026-10-06
 
-`--verify` proves more of what GNATprove proves, and three false-safes in
-the checks that were already there are fixed (`FP-109`, `FP-110`,
-`FP-111`).
+A `--verify` release that proves more of what GNATprove proves, with the
+obligations of 1.8.1: what is known now carries across calls. Three
+false-safes in the checks that were already there are fixed (`FP-109`,
+`FP-110`, `FP-111`).
 
 Of the 15,043 checks GNATprove proves on the five fully proved corpora,
-`--verify` proves 3,536 (3,018 in 1.8.1), with no check it proves that
-GNATprove does not and no definite error on a check GNATprove proves. No
-finding changed in any of the ten corpora re-run. The ledger document is
-still the one recorded with 1.8.1.
+`--verify` proves 3,536 (3,018 in 1.8.1), 479 of the 2,938 preconditions
+among them (24 in 1.8.1), with no check it proves that GNATprove does not
+and no definite error on a check GNATprove proves
+(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). No finding changed in
+any of the ten corpora re-run.
 
 What to expect when upgrading:
 
