@@ -106,8 +106,8 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 3,018 | 20.1% |
-| Has the obligation, leaves it unproved | 6,580 | 43.7% |
+| Proves it | 3,536 | 23.5% |
+| Has the obligation, leaves it unproved | 6,062 | 40.3% |
 | Has the obligation, calls it unsupported | 2,324 | 15.4% |
 | Has no obligation of that kind at that place | 1,496 | 9.9% |
 | Has no obligation of that kind at all | 1,416 | 9.4% |
@@ -140,11 +140,28 @@ obligations of their own, which brought in most of what was missing in
 specifications.
 
 Before all of this AdaLang proved 433 of the 15,043 checks and had an
-obligation for 5,954; it now proves 3,018 and has one for 11,922. What is
-left without one, 3,121 checks, is mostly kinds AdaLang does not have
-(predicate, length, pointer-dereference and discriminant checks, memory
-leaks) and range, index and precondition checks at places it does not yet
-look.
+obligation for 5,954; with those additions it proved 3,018 and had one for
+11,922. What is left without one, 3,121 checks, is mostly kinds AdaLang
+does not have (predicate, length, pointer-dereference and discriminant
+checks, memory leaks) and range, index and precondition checks at places it
+does not yet look.
+
+With an obligation for four checks in five, the question became how many
+of them are proved. The largest group that was not was the precondition of
+a call, 2,938 checks of which AdaLang proved 24: contracts speak through
+functions of records and private objects (`Has_Buffer (Ctx)`), which the
+scalar language of the provers could not express. A call to a function of
+its arguments is now a term; a procedure call with known effects leaves
+what is known of the caller's own scalars; and a callee's postcondition is
+assumed after the call. AdaLang now proves 479 of those preconditions and
+3,536 of the 15,043 checks, 518 more, with the same obligations. Reading
+the checks that were there before building on
+them turned up three more false-safes (`FP-109` to `FP-111`): a guard that
+survived a state-changing call in its own condition, solver symbols named
+without their file, and a loop-invariant proof that stepped over the calls
+in the loop body. What the remaining preconditions of the largest corpus
+need is the definition of the functions their contracts call and the
+predicate of the type they are about; neither is used yet.
 
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a
