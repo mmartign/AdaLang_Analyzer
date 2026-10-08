@@ -5,7 +5,41 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.3] - 2026-10-08
+
+A `--verify` release in two parts. It proves more of what GNATprove proves,
+with the obligations of 1.8.2: more is taken from what an expression says,
+and fewer subprograms are left outside the subset. And it reads the log of
+a GNATprove run on the same sources, so that one report says of every check
+GNATprove proved who proved it. Four faults in the checks that were already
+there are fixed (`FP-112` to `FP-115`), three of them false-safes.
+
+Of the 15,043 checks GNATprove proves on the five fully proved corpora,
+`--verify` proves 4,299 (3,536 in 1.8.2), 687 of the 2,938 preconditions
+among them (479 in 1.8.2), and leaves 1,306 unsupported (2,324 in 1.8.2),
+with no check it proves that GNATprove does not and no definite error on a
+check GNATprove proves (`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`).
+Given GNATprove's logs, it accounts for all 15,043: the 4,299 it proves
+itself, 7,623 that carry GNATprove's verdict on an obligation AdaLang has
+and did not decide, and 3,121 that carry it with no AdaLang obligation.
+Those two figures are GNATprove's proofs, reported as GNATprove's; they are
+not AdaLang's. Every preset reports, on each of the ten corpora, exactly
+the findings of 1.8.2.
+
+What to expect when upgrading:
+
+- More obligations are `Proved_Safe`, and many that were `Unsupported` are
+  now decided one way or the other: in subprograms with a named loop, a
+  `goto` to a label further down or a quantified loop invariant; where a
+  name is written with its package in front of it; where a named number or
+  `T'Size` is used.
+- Some results that 1.8.2 reported `Proved_Safe` are `Unproved`, and some
+  `Definite_Error` results are gone: those that depended on `FP-112` to
+  `FP-115`.
+- Nothing changes in a report unless `--gnatprove-log` is given. With it,
+  the JSON report has a `gnatprove` member on obligations and two new
+  top-level members; a consumer that reads the members it knows is not
+  affected.
 
 ### Added
 
@@ -113,6 +147,10 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - The mutation manifest has 152 seeded defects (102 in 1.8.2).
+- The project file takes the host OS from the configuration project Alire
+  generates (`Alire_Host_OS`). `alire.toml` no longer declares or sets the
+  `ADALANG_ANALYZER_OS` external, which said the same; a build that passed
+  `-XADALANG_ANALYZER_OS=...` no longer needs to.
 - `benchmarks/gnatprove_gap_ledger.py` names a check by what its message
   says before the remarks in brackets and outside the names in quotes. A
   division check that "might fail [possible fix: add precondition ...]" was

@@ -1,7 +1,9 @@
 # What separates `--verify` from GNATprove: a ledger
 
-Recorded 2026-10-08 with the development tree that follows AdaLang Analyzer
-1.8.2 (commit `8d4a867`), against the GNATprove output saved by the
+Recorded 2026-10-08 with AdaLang Analyzer 1.8.3 (its commit `8d4a867`,
+after which the release adds only the reading of GNATprove's log, which
+changes nothing AdaLang reports of its own), against the GNATprove output
+saved by the
 2026-10-02 runs of the five fully proved corpora (`sparknacl`, `saatana`,
 `libkeccak`, `coap_spark`, `tokeneer`).
 
