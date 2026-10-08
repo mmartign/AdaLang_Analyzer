@@ -1207,6 +1207,16 @@ package body Adalang_Analyzer.VC_Prover is
                   return To_Unbounded_String
                     (SMT_Integer (Literal_Position.Value));
                end if;
+
+               --  Nor is a named number an object: it is its value.
+               declare
+                  Number : constant Domain.Abstract_Int :=
+                    Eval.Named_Number_Value (Node);
+               begin
+                  if Number.Known then
+                     return To_Unbounded_String (SMT_Integer (Number.Value));
+                  end if;
+               end;
             end;
 
             declare

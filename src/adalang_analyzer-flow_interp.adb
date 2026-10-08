@@ -4033,6 +4033,17 @@ package body Adalang_Analyzer.Flow_Interp is
    --  (FP-106): "Count > 0 and then Total / Count > 1" does not divide by
    --  zero where Count is known to be zero.
 
+   --  True for X'Old and X'Loop_Entry. The prefix of the first is
+   --  evaluated when the subprogram is entered and that of the second
+   --  when the loop is. Where the attribute is written, an object the
+   --  prefix names may hold another value, so the state there decides
+   --  none of the checks inside the prefix (FP-112).
+   function Evaluated_Earlier
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is (Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+       and then Normalized_Text (Node.As_Attribute_Ref.F_Attribute) in
+         "old" | "loop-entry");
+
    function Guards_Operands
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is (Node.Kind in Libadalang.Common.Ada_If_Expr
@@ -4312,6 +4323,12 @@ package body Adalang_Analyzer.Flow_Interp is
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
+         return;
+      elsif Evaluated_Earlier (Node) then
+         --  Only what holds in any state is looked for in the prefix:
+         --  State is not the one it is evaluated in.
+         Scan_Expression_For_Flow_Bugs
+           (Unit, Node.As_Attribute_Ref.F_Prefix, Empty_Flow_State);
          return;
       end if;
 
@@ -5628,7 +5645,7 @@ package body Adalang_Analyzer.Flow_Interp is
                return True;
             elsif Current.Kind = Libadalang.Common.Ada_Pragma_Node
               and then Normalized_Text (Current.As_Pragma_Node.F_Id) in
-                "assert" | "assert_and_cut" | "loop_invariant"
+                "assert" | "assert-and-cut" | "loop-invariant"
             then
                return True;
             elsif Current.Kind in Libadalang.Common.Ada_Stmt then
@@ -8433,6 +8450,15 @@ package body Adalang_Analyzer.Flow_Interp is
       Operand_State     : Flow_State;
       Operand_Symbols   : VC.Symbolic_State;
 
+      --  The state the 'Old prefixes of the postcondition are evaluated
+      --  in: the one on entry, once the precondition holds. Known while
+      --  the postcondition is finalized. Any other prefix that is
+      --  evaluated earlier than where it is written is decided with no
+      --  state at all.
+      Entry_Known        : Boolean := False;
+      Entry_Flow         : Flow_State;
+      Entry_Flow_Symbols : VC.Symbolic_State;
+
       function State_At (Container : CFG.Node_Id) return Flow_State
       is (if Operand_Guarded and then Container = Operand_Container
           then Operand_State
@@ -9132,6 +9158,33 @@ package body Adalang_Analyzer.Flow_Interp is
             | Libadalang.Common.Ada_Component_Decl
             | Libadalang.Common.Ada_Discriminant_Spec);
 
+      --  The state the operand being finalized is checked in. Finalize_Operand
+      --  and Finalize_Earlier replace it while they finalize one, and put
+      --  it back afterwards.
+      type Operand_View is record
+         Guarded   : Boolean;
+         Dead      : Boolean;
+         Container : CFG.Node_Id;
+         State     : Flow_State;
+         Symbols   : VC.Symbolic_State;
+      end record;
+
+      function Current_Operand_View return Operand_View
+      is ((Guarded   => Operand_Guarded,
+           Dead      => Operand_Dead,
+           Container => Operand_Container,
+           State     => Operand_State,
+           Symbols   => Operand_Symbols));
+
+      procedure Restore (View : Operand_View) is
+      begin
+         Operand_Guarded := View.Guarded;
+         Operand_Dead := View.Dead;
+         Operand_Container := View.Container;
+         Operand_State := View.State;
+         Operand_Symbols := View.Symbols;
+      end Restore;
+
       --  Finalizes Child, a child of the guarding expression Parent, in the
       --  state in which the evaluation of Parent reaches it.
       procedure Finalize_Operand
@@ -9139,20 +9192,7 @@ package body Adalang_Analyzer.Flow_Interp is
          Child     : Libadalang.Analysis.Ada_Node'Class;
          Container : CFG.Node_Id)
       is
-         Saved_Guarded   : constant Boolean := Operand_Guarded;
-         Saved_Dead      : constant Boolean := Operand_Dead;
-         Saved_Container : constant CFG.Node_Id := Operand_Container;
-         Saved_State     : constant Flow_State := Operand_State;
-         Saved_Symbols   : constant VC.Symbolic_State := Operand_Symbols;
-
-         procedure Restore is
-         begin
-            Operand_Guarded := Saved_Guarded;
-            Operand_Dead := Saved_Dead;
-            Operand_Container := Saved_Container;
-            Operand_State := Saved_State;
-            Operand_Symbols := Saved_Symbols;
-         end Restore;
+         Saved : constant Operand_View := Current_Operand_View;
       begin
          if not Boundary_Supported then
             --  No state is consulted: every obligation is unsupported.
@@ -9173,12 +9213,59 @@ package body Adalang_Analyzer.Flow_Interp is
             Operand_Symbols := Symbols;
          end;
          Finalize_Node (Child, Container);
-         Restore;
+         Restore (Saved);
       exception
          when others =>
-            Restore;
+            Restore (Saved);
             raise;
       end Finalize_Operand;
+
+      --  Finalizes the prefix of Attribute, an 'Old or a 'Loop_Entry, in
+      --  the state it is evaluated in and not in the one of the place
+      --  where it is written (FP-112). It is evaluated whether or not
+      --  that place is reached.
+      --
+      --  The prefix of an 'Old of the postcondition is evaluated on entry.
+      --  That of a 'Loop_Entry which names no loop is evaluated when the
+      --  innermost loop is entered: the state of that loop's header holds
+      --  every time the header is reached, the first time included. Any
+      --  other such prefix is decided with no state.
+      procedure Finalize_Earlier
+        (Attribute : Libadalang.Analysis.Attribute_Ref)
+      is
+         Saved  : constant Operand_View := Current_Operand_View;
+         Name   : constant String := Normalized_Text (Attribute.F_Attribute);
+         Header : CFG.Node_Id := CFG.No_Node;
+      begin
+         if Name = "loop-entry"
+           and then Fixpoint_Complete
+           and then Attribute.F_Args.Children_Count = 0
+           and then Attribute.Parent.Kind /= Libadalang.Common.Ada_Call_Expr
+         then
+            Header := Header_For (Enclosing_Loop (Attribute));
+         end if;
+
+         Operand_Guarded := True;
+         Operand_Dead := False;
+         Operand_Container := Header;
+         if Header /= CFG.No_Node then
+            Operand_Dead := not Reachable (Header);
+            Operand_State := States (Header);
+            Operand_Symbols := Symbolic_States (Header);
+         elsif Entry_Known and then Name = "old" then
+            Operand_State := Entry_Flow;
+            Operand_Symbols := Entry_Flow_Symbols;
+         else
+            Operand_State := Empty_Flow_State;
+            Operand_Symbols := VC.Empty_Symbolic_State;
+         end if;
+         Finalize_Node (Attribute.F_Prefix, Header);
+         Restore (Saved);
+      exception
+         when others =>
+            Restore (Saved);
+            raise;
+      end Finalize_Earlier;
 
       procedure Finalize_Node
         (Node      : Libadalang.Analysis.Ada_Node'Class;
@@ -9187,6 +9274,9 @@ package body Adalang_Analyzer.Flow_Interp is
          Here : CFG.Node_Id := Container;
       begin
          if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Evaluated_Earlier (Node) then
+            Finalize_Earlier (Node.As_Attribute_Ref);
             return;
          end if;
 
@@ -9739,7 +9829,11 @@ package body Adalang_Analyzer.Flow_Interp is
             Exit_Symbols :=
               VC.Alias_Object (Exit_Symbols, Pair.Body_Name, Pair.Spec_Name);
          end loop;
+         Entry_Known := True;
+         Entry_Flow := Initial;
+         Entry_Flow_Symbols := Initial_Symbols;
          Finalize_Contract (Post, Exit_State, Exit_Symbols, At_Exit);
+         Entry_Known := False;
       end;
 
       if not Libadalang.Analysis.Is_Null (Post) then

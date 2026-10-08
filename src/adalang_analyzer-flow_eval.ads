@@ -65,12 +65,23 @@ package Adalang_Analyzer.Flow_Eval is
    function Expanded_Name_Target
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Ada_Node;
-   --  For an expanded name of an object -- "Pkg.Obj", "Outer.Inner.Obj",
-   --  "Subp.Local" -- the final identifier, which resolves to the same
-   --  defining name as the object's direct name; No_Ada_Node for anything
-   --  else, a record component selection in particular. Every consumer of
-   --  an identifier treats such a name as that identifier, so a fact held
-   --  for the object is the same fact whichever way it is named.
+   --  For an expanded name of an object, of an enumeration literal or of
+   --  a named number -- "Pkg.Obj", "Outer.Inner.Obj", "Subp.Local",
+   --  "Pkg.Literal", "Pkg.Number" -- the final identifier, which resolves
+   --  to the same defining name as the direct name; No_Ada_Node for
+   --  anything else, a record component selection in particular. Every
+   --  consumer of an identifier treats such a name as that identifier, so
+   --  a fact held for the entity is the same fact whichever way it is
+   --  named.
+
+   function Named_Number_Value
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Int;
+   --  The value of the named number Node names, directly or by an
+   --  expanded name, when its expression is one of integer literals, other
+   --  such numbers, constants, T'First and T'Last, qualified expressions
+   --  and the arithmetic operators, each operator taken in the type its
+   --  operands give it. Unknown_Int for any other node, for a real number
+   --  and for any other expression.
 
    function Is_Static_Zero
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;

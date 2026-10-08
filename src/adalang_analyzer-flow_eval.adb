@@ -92,6 +92,10 @@ package body Adalang_Analyzer.Flow_Eval is
    function Modular_Type_Of
      (Node : Libadalang.Analysis.Ada_Node'Class) return Modular_Info;
 
+   --  The same for a type, of whatever expression or declaration.
+   function Modular_Type
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Modular_Info;
+
    function Expanded_Name_Target
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Ada_Node
@@ -115,6 +119,8 @@ package body Adalang_Analyzer.Flow_Eval is
            and then Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
                                | Libadalang.Common.Ada_Param_Spec
                                | Libadalang.Common.Ada_For_Loop_Var_Decl
+                               | Libadalang.Common.Ada_Enum_Literal_Decl
+                               | Libadalang.Common.Ada_Number_Decl
          then
             return Libadalang.Analysis.Ada_Node
               (Node.As_Dotted_Name.F_Suffix);
@@ -172,6 +178,362 @@ package body Adalang_Analyzer.Flow_Eval is
         then Libadalang.Analysis.Ada_Node (Node)
       else Expanded_Name_Target (Node));
 
+   function Declared_Bound_Value
+     (Bound : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Abstract_Int;
+
+   function Is_Two_To_The_63
+     (Expr  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Boolean;
+
+   --  The static integer expression of a number declaration. Libadalang
+   --  gives every operator in such an expression as universal_integer,
+   --  whatever its operands are: in "Wrapped : constant := Byte'(200) +
+   --  Byte'(100)" the "+" is that of Byte and the number is 44, and
+   --  "Byte'Last + 1" is 0. The types of the operands that are not
+   --  operators themselves are given right, so the type of each operator
+   --  is worked out from them here (FP-113).
+   type Static_Kind is (Not_Static, Universal, Signed, Modular);
+
+   type Static_Integer is record
+      Kind    : Static_Kind := Not_Static;
+      Value   : Long_Long_Integer := 0;
+      Modulus : Long_Long_Integer := 0;
+   end record;
+
+   No_Static_Integer  : constant Static_Integer := (others => <>);
+   Universal_Expected : constant Static_Integer :=
+     (Kind => Universal, others => <>);
+   Max_Static_Depth   : constant := 64;
+
+   --  The kind of the type Decl declares or, for an object, is of. The
+   --  operands that have a type of their own -- a constant, T'First and
+   --  T'Last, a qualified expression -- get their kind from the
+   --  declaration they name and not from the type Libadalang gives their
+   --  node, which is universal_integer for one that is the whole
+   --  expression of a number declaration.
+   function Declared_Kind
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Static_Integer
+   is
+      Typ  : Libadalang.Analysis.Base_Type_Decl;
+      Info : Modular_Info;
+   begin
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return No_Static_Integer;
+      elsif Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl then
+         Typ := Decl.As_Base_Type_Decl;
+      elsif Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range then
+         Typ := Decl.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl;
+      else
+         return No_Static_Integer;
+      end if;
+
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return No_Static_Integer;
+      end if;
+
+      Info := Modular_Type (Typ);
+      if Info.Is_Modular then
+         if Info.Modulus.Known then
+            return (Kind => Modular, Value => 0,
+                    Modulus => Info.Modulus.Value);
+         end if;
+         return No_Static_Integer;
+      elsif Typ.P_Is_Int_Type then
+         return (Kind => Signed, others => <>);
+      end if;
+      return No_Static_Integer;
+   exception
+      when others =>
+         return No_Static_Integer;
+   end Declared_Kind;
+
+   --  Value as a result of kind Kind: reduced by the modulus for a modular
+   --  type, as it is for any other.
+   function Of_Kind
+     (Kind : Static_Integer; Value : Abstract_Int) return Static_Integer
+   is
+   begin
+      if not Value.Known or else Kind.Kind = Not_Static then
+         return No_Static_Integer;
+      elsif Kind.Kind = Modular then
+         return (Kind => Modular, Value => Value.Value mod Kind.Modulus,
+                 Modulus => Kind.Modulus);
+      end if;
+      return (Kind => Kind.Kind, Value => Value.Value, Modulus => 0);
+   end Of_Kind;
+
+   --  The kind of an operator whose operands are Left and Right, either
+   --  way round. Universal when both are: the context then says what the
+   --  operator is.
+   function Common_Kind
+     (Left  : Static_Integer;
+      Right : Static_Integer)  --  adalang-analyzer: ignore Swappable_Parameters
+      return Static_Integer
+   is
+   begin
+      if Left.Kind = Not_Static or else Right.Kind = Not_Static then
+         return No_Static_Integer;
+      elsif Left.Kind = Universal then
+         return Right;
+      elsif Right.Kind = Universal
+        or else (Left.Kind = Right.Kind
+                 and then Left.Modulus = Right.Modulus)
+      then
+         return Left;
+      end if;
+      return No_Static_Integer;
+   end Common_Kind;
+
+   function Static_Number
+     (Expr     : Libadalang.Analysis.Ada_Node'Class;
+      Expected : Static_Integer;
+      Depth    : Natural) return Static_Integer
+   is
+      --  Kind or, for an operator of universal operands, the kind this
+      --  context expects.
+      function Here (Kind : Static_Integer) return Static_Integer
+      is (if Kind.Kind = Universal then Expected else Kind);
+   begin
+      if Libadalang.Analysis.Is_Null (Expr) or else Depth > Max_Static_Depth
+      then
+         return No_Static_Integer;
+      end if;
+
+      case Expr.Kind is
+         when Libadalang.Common.Ada_Paren_Expr =>
+            return Static_Number
+              (Expr.As_Paren_Expr.F_Expr, Expected, Depth + 1);
+
+         when Libadalang.Common.Ada_Int_Literal =>
+            declare
+               Parsed : Long_Long_Integer := 0;
+            begin
+               if Numeric_Literals.Parse_Integer_Text
+                    (Ada_Text.Node_Text (Expr), Parsed)
+               then
+                  return (Kind => Universal, Value => Parsed, Modulus => 0);
+               end if;
+               return No_Static_Integer;
+            end;
+
+         when Libadalang.Common.Ada_Identifier
+            | Libadalang.Common.Ada_Dotted_Name =>
+            declare
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Expr.As_Name.P_Referenced_Decl;
+            begin
+               if Libadalang.Analysis.Is_Null (Decl) then
+                  return No_Static_Integer;
+               elsif Decl.Kind = Libadalang.Common.Ada_Number_Decl then
+                  --  A named number is of no type, whatever the type of
+                  --  the expression it is declared with.
+                  declare
+                     Inner : constant Static_Integer :=
+                       Static_Number
+                         (Decl.As_Number_Decl.F_Expr,
+                          Universal_Expected, Depth + 1);
+                  begin
+                     if Inner.Kind = Not_Static then
+                        return No_Static_Integer;
+                     end if;
+                     return Of_Kind
+                       (Universal_Expected, Known_Int (Inner.Value));
+                  end;
+               elsif Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
+               then
+                  --  A constant, whose initializer is typed as it is
+                  --  written.
+                  return Of_Kind
+                    (Declared_Kind (Decl),
+                     Declared_Bound_Value (Expr, Empty_Flow_State));
+               end if;
+               return No_Static_Integer;
+            end;
+
+         when Libadalang.Common.Ada_Attribute_Ref =>
+            --  T'First and T'Last: Declared_Bound_Value knows no other.
+            return Of_Kind
+              (Declared_Kind
+                 (Expr.As_Attribute_Ref.F_Prefix.P_Referenced_Decl),
+               Declared_Bound_Value (Expr, Empty_Flow_State));
+
+         when Libadalang.Common.Ada_Qual_Expr =>
+            declare
+               Target : constant Static_Integer :=
+                 Declared_Kind
+                   (Expr.As_Qual_Expr.F_Prefix.P_Referenced_Decl);
+               Inner  : constant Static_Integer :=
+                 (if Target.Kind = Not_Static then No_Static_Integer
+                  else Static_Number
+                         (Expr.As_Qual_Expr.F_Suffix, Target, Depth + 1));
+            begin
+               if Inner.Kind = Not_Static
+                 or else
+                   (Inner.Kind /= Universal
+                    and then (Inner.Kind /= Target.Kind
+                              or else Inner.Modulus /= Target.Modulus))
+               then
+                  return No_Static_Integer;
+               end if;
+               return Of_Kind (Target, Known_Int (Inner.Value));
+            end;
+
+         when Libadalang.Common.Ada_Un_Op =>
+            declare
+               Operand : constant Static_Integer :=
+                 Static_Number (Expr.As_Un_Op.F_Expr, Expected, Depth + 1);
+               Kind    : constant Static_Integer := Here (Operand);
+            begin
+               if Kind.Kind = Not_Static then
+                  --  "-(2 ** 63)", the first value of a 64-bit type: its
+                  --  operand alone is one past Long_Long_Integer'Last.
+                  if Expected.Kind /= Modular
+                    and then Expr.As_Un_Op.F_Op =
+                      Libadalang.Common.Ada_Op_Minus
+                    and then Is_Two_To_The_63
+                      (Expr.As_Un_Op.F_Expr, Empty_Flow_State)
+                  then
+                     return Of_Kind
+                       (Expected, Known_Int (Long_Long_Integer'First));
+                  end if;
+                  return No_Static_Integer;
+               end if;
+
+               case Expr.As_Un_Op.F_Op is
+                  when Libadalang.Common.Ada_Op_Plus =>
+                     return Of_Kind (Kind, Known_Int (Operand.Value));
+                  when Libadalang.Common.Ada_Op_Minus =>
+                     return Of_Kind (Kind, Safe_Sub (0, Operand.Value));
+                  when Libadalang.Common.Ada_Op_Abs =>
+                     if Operand.Value >= 0 then
+                        return Of_Kind (Kind, Known_Int (Operand.Value));
+                     end if;
+                     return Of_Kind (Kind, Safe_Sub (0, Operand.Value));
+                  when others =>
+                     return No_Static_Integer;
+               end case;
+            end;
+
+         when Libadalang.Common.Ada_Bin_Op_Range =>
+            declare
+               Op    : constant Libadalang.Common.Ada_Node_Kind_Type :=
+                 Expr.As_Bin_Op.F_Op;
+               Left  : constant Static_Integer :=
+                 Static_Number (Expr.As_Bin_Op.F_Left, Expected, Depth + 1);
+               --  The exponent is an Integer whatever the base is.
+               Right : constant Static_Integer :=
+                 Static_Number
+                   (Expr.As_Bin_Op.F_Right,
+                    (if Op in Libadalang.Common.Ada_Op_Pow
+                     then Universal_Expected else Expected),
+                    Depth + 1);
+               Kind  : constant Static_Integer :=
+                 (if Op in Libadalang.Common.Ada_Op_Pow
+                  then
+                    (if Right.Kind in Universal | Signed
+                     then Here (Left)
+                     else No_Static_Integer)
+                  else Here (Common_Kind (Left, Right)));
+            begin
+               if Kind.Kind = Not_Static then
+                  --  "2 ** 63 - 1", the last value of a 64-bit type.
+                  if Expected.Kind /= Modular
+                    and then Op in Libadalang.Common.Ada_Op_Minus
+                    and then Right.Kind in Universal | Signed
+                    and then Right.Value >= 1
+                    and then Is_Two_To_The_63
+                      (Expr.As_Bin_Op.F_Left, Empty_Flow_State)
+                  then
+                     return Of_Kind
+                       (Expected,
+                        Known_Int
+                          (Long_Long_Integer'Last - (Right.Value - 1)));
+                  end if;
+                  return No_Static_Integer;
+               end if;
+
+               case Op is
+                  when Libadalang.Common.Ada_Op_Plus =>
+                     return Of_Kind
+                       (Kind, Safe_Add (Left.Value, Right.Value));
+                  when Libadalang.Common.Ada_Op_Minus =>
+                     return Of_Kind
+                       (Kind, Safe_Sub (Left.Value, Right.Value));
+                  when Libadalang.Common.Ada_Op_Mult =>
+                     return Of_Kind
+                       (Kind, Safe_Mul (Left.Value, Right.Value));
+                  when Libadalang.Common.Ada_Op_Pow =>
+                     return Of_Kind
+                       (Kind, Safe_Pow (Left.Value, Right.Value));
+                  when Libadalang.Common.Ada_Op_Div =>
+                     if Right.Value = 0 then
+                        return No_Static_Integer;
+                     end if;
+                     return Of_Kind
+                       (Kind, Known_Int (Left.Value / Right.Value));
+                  when Libadalang.Common.Ada_Op_Mod =>
+                     if Right.Value = 0 then
+                        return No_Static_Integer;
+                     end if;
+                     return Of_Kind
+                       (Kind, Known_Int (Left.Value mod Right.Value));
+                  when Libadalang.Common.Ada_Op_Rem =>
+                     if Right.Value = 0 then
+                        return No_Static_Integer;
+                     end if;
+                     return Of_Kind
+                       (Kind, Known_Int (Left.Value rem Right.Value));
+                  when others =>
+                     return No_Static_Integer;
+               end case;
+            end;
+
+         when others =>
+            return No_Static_Integer;
+      end case;
+   exception
+      when others =>
+         return No_Static_Integer;
+   end Static_Number;
+
+   function Named_Number_Value
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Int
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind not in Libadalang.Common.Ada_Identifier
+                               | Libadalang.Common.Ada_Dotted_Name
+      then
+         return Unknown_Int;
+      end if;
+
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Node.As_Name.P_Referenced_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.Kind /= Libadalang.Common.Ada_Number_Decl
+         then
+            return Unknown_Int;
+         end if;
+
+         declare
+            Result : constant Static_Integer :=
+              Static_Number
+                (Decl.As_Number_Decl.F_Expr, Universal_Expected, 0);
+         begin
+            if Result.Kind = Not_Static then
+               return Unknown_Int;
+            end if;
+            return Known_Int (Result.Value);
+         end;
+      end;
+   exception
+      when others =>
+         return Unknown_Int;
+   end Named_Number_Value;
+
    function Integer_Value_Unwrapped  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State := Empty_Flow_State) return Abstract_Int
@@ -196,10 +558,23 @@ package body Adalang_Analyzer.Flow_Eval is
             end;
 
          when Libadalang.Common.Ada_Identifier =>
-            return Flow_Lookup
-              (State,
-               Libadalang.Analysis.Ada_Node
-                 (Node.As_Name.P_Referenced_Defining_Name));
+            declare
+               Held : constant Abstract_Int :=
+                 Flow_Lookup
+                   (State,
+                    Libadalang.Analysis.Ada_Node
+                      (Node.As_Name.P_Referenced_Defining_Name));
+            begin
+               if Held.Known then
+                  return Held;
+               end if;
+               --  State holds no named number.
+               return Named_Number_Value (Node);
+            end;
+
+         when Libadalang.Common.Ada_Dotted_Name =>
+            --  "Pkg.Number"; an object so named was looked up before.
+            return Named_Number_Value (Node);
 
          when Libadalang.Common.Ada_Paren_Expr =>
             return Integer_Value (Node.As_Paren_Expr.F_Expr, State);
@@ -1544,10 +1919,6 @@ package body Adalang_Analyzer.Flow_Eval is
          return False;
    end Is_Elaboration_Stable;
 
-   function Declared_Bound_Value
-     (Bound : Libadalang.Analysis.Ada_Node'Class;
-      State : Flow_State) return Abstract_Int;
-
    --  True when Expr is 2 ** 63, written as that power or as a literal,
    --  parenthesized or not: the magnitude a 64-bit type's first value is
    --  written with, which Long_Long_Integer cannot hold, so the ordinary
@@ -1600,6 +1971,26 @@ package body Adalang_Analyzer.Flow_Eval is
      (Bound : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State) return Abstract_Int
    is
+      --  Value, the mathematical result of the operator Bound, as the
+      --  operator gives it: reduced by the modulus when Bound is of a
+      --  modular type, whose arithmetic wraps (FP-113).
+      function Wrapped (Value : Abstract_Int) return Abstract_Int is
+      begin
+         if not Value.Known then
+            return Value;
+         end if;
+
+         declare
+            Modular : constant Modular_Info := Modular_Type_Of (Bound);
+         begin
+            if not Modular.Is_Modular then
+               return Value;
+            elsif Modular.Modulus.Known then
+               return Known_Int (Value.Value mod Modular.Modulus.Value);
+            end if;
+            return Unknown_Int;
+         end;
+      end Wrapped;
    begin
       if Libadalang.Analysis.Is_Null (Bound) then
          return Unknown_Int;
@@ -1671,8 +2062,7 @@ package body Adalang_Analyzer.Flow_Eval is
                if Libadalang.Analysis.Is_Null (Decl) then
                   return Unknown_Int;
                elsif Decl.Kind = Libadalang.Common.Ada_Number_Decl then
-                  return Declared_Bound_Value
-                    (Decl.As_Number_Decl.F_Expr, State);
+                  return Named_Number_Value (Bound);
                elsif Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range then
                   --  Is_Elaboration_Stable has established it is a
                   --  constant.
@@ -1699,7 +2089,7 @@ package body Adalang_Analyzer.Flow_Eval is
                elsif Bound.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Plus then
                   return Operand;
                elsif Bound.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Minus then
-                  return Safe_Sub (0, Operand.Value);
+                  return Wrapped (Safe_Sub (0, Operand.Value));
                end if;
                return Unknown_Int;
             end;
@@ -1731,13 +2121,13 @@ package body Adalang_Analyzer.Flow_Eval is
                  (Bound.As_Bin_Op.F_Op)
                is
                   when Libadalang.Common.Ada_Op_Plus =>
-                     return Safe_Add (Left.Value, Right.Value);
+                     return Wrapped (Safe_Add (Left.Value, Right.Value));
                   when Libadalang.Common.Ada_Op_Minus =>
-                     return Safe_Sub (Left.Value, Right.Value);
+                     return Wrapped (Safe_Sub (Left.Value, Right.Value));
                   when Libadalang.Common.Ada_Op_Mult =>
-                     return Safe_Mul (Left.Value, Right.Value);
+                     return Wrapped (Safe_Mul (Left.Value, Right.Value));
                   when Libadalang.Common.Ada_Op_Pow =>
-                     return Safe_Pow (Left.Value, Right.Value);
+                     return Wrapped (Safe_Pow (Left.Value, Right.Value));
                   when others =>
                      return Unknown_Int;
                end case;
@@ -1810,16 +2200,26 @@ package body Adalang_Analyzer.Flow_Eval is
    function Modular_Type_Of
      (Node : Libadalang.Analysis.Ada_Node'Class) return Modular_Info
    is
-      Max_Depth : constant := 64;
-      Current   : Libadalang.Analysis.Base_Type_Decl;
    begin
       if Libadalang.Analysis.Is_Null (Node)
         or else Node.Kind not in Libadalang.Common.Ada_Expr
       then
          return (others => <>);
       end if;
+      return Modular_Type (Node.As_Expr.P_Expression_Type);
+   exception
+      when others =>
+         --  An operator whose type cannot be resolved is not assumed to be
+         --  free of wrap-around.
+         return (Is_Modular => True, Modulus => Unknown_Int);
+   end Modular_Type_Of;
 
-      Current := Node.As_Expr.P_Expression_Type;
+   function Modular_Type
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Modular_Info
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+   begin
       for Depth in 1 .. Max_Depth loop
          if Libadalang.Analysis.Is_Null (Current) then
             return (others => <>);
@@ -1862,10 +2262,10 @@ package body Adalang_Analyzer.Flow_Eval is
       return (Is_Modular => True, Modulus => Unknown_Int);
    exception
       when others =>
-         --  An operator whose type cannot be resolved is not assumed to be
-         --  free of wrap-around.
+         --  A type that cannot be followed to its definition is not
+         --  assumed to be free of wrap-around.
          return (Is_Modular => True, Modulus => Unknown_Int);
-   end Modular_Type_Of;
+   end Modular_Type;
 
    function Expression_Modulus
      (Node       : Libadalang.Analysis.Ada_Node'Class;

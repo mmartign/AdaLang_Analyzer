@@ -101,3 +101,31 @@ postcondition-global-actual	tests/verification_mutation_call_postcondition.adb	p
 postcondition-same-object	tests/verification_mutation_call_postcondition.adb	precondition	Step (Twice)	unproved	one object is passed twice, once to be written
 postcondition-untrusted	tests/verification_mutation_call_postcondition.adb	precondition	Step (Pointed)	unproved	the postcondition calls a function that is not in SPARK after what it says
 postcondition-nested-callee	tests/verification_mutation_call_postcondition.adb	precondition	Step (Local)	unproved	a callee declared inside the caller writes the caller's object by name
+old-prefix-division	tests/verification_fp112_earlier_prefix.adb	division-by-zero	Divisor	unproved	FP-112: the divisor inside an 'Old prefix is the entry value, of which the exit state says nothing
+old-prefix-overflow	tests/verification_fp112_earlier_prefix.adb	integer-overflow	Addend + 1	unproved	FP-112: an addition inside an 'Old prefix is made on entry
+old-prefix-range	tests/verification_fp112_earlier_prefix.adb	range-check	Converted	unproved	FP-112: a conversion inside an 'Old prefix converts the entry value
+old-prefix-precondition	tests/verification_fp112_earlier_prefix.adb	precondition	Positive_Only (Passed)	unproved	FP-112: a call inside an 'Old prefix is made on entry
+loop-entry-prefix-initialization	tests/verification_fp112_earlier_prefix.adb	initialization-check	Late	unproved	FP-112: an object that gets its value inside the loop has none when the loop is entered
+loop-entry-prefix-division	tests/verification_fp112_earlier_prefix.adb	division-by-zero	Zeroed	unproved	FP-112: the divisor inside a 'Loop_Entry prefix is the value at the entry of the loop
+loop-entry-prefix-inner-loop	tests/verification_fp112_earlier_prefix.adb	division-by-zero	Inner	unproved	FP-112: a 'Loop_Entry prefix belongs to the innermost loop, entered after the outer one changed the object
+modular-bound-sum	tests/verification_fp113_modular_bound.adb	range-check	Summed	unproved	FP-113: the bound 200 + 100 of a mod 256 type is 44, and 100 is above it
+modular-bound-negation	tests/verification_fp113_modular_bound.adb	range-check	Negated	unproved	FP-113: the bound - 100 of a mod 256 type is 156, neither below zero nor above 200
+modular-bound-product	tests/verification_fp113_modular_bound.adb	range-check	Doubled	unproved	FP-113: the bound 200 * 2 of a mod 256 type is 144
+modular-bound-constant	tests/verification_fp113_modular_bound.adb	range-check	Chained	unproved	FP-113: a constant initialized with a modular sum holds the wrapped value
+modular-bound-index	tests/verification_fp113_modular_bound.adb	index-check	Position	unproved	FP-113: an array indexed by a subtype with a wrapped bound has the wrapped bound
+quantified-invariant-broken	tests/verification_quantified_invariant.adb	loop-invariant-preservation	for all J in 1 .. 10 => J < Falling	unproved	the loop body lowers what a quantified loop invariant compares with
+quantified-invariant-widened	tests/verification_quantified_invariant.adb	loop-invariant-preservation	for all K in 1 .. Growing => K <= 10	unproved	the loop body widens the range a quantified loop invariant goes through
+quantified-invariant-never-true	tests/verification_quantified_invariant.adb	loop-invariant-initialization	for all L in 1 .. 10 => Low > L	unproved	a quantified loop invariant that does not hold when the loop is entered
+quantified-invariant-gives-nothing	tests/verification_quantified_invariant.adb	division-by-zero	Low	definite-error	a quantified loop invariant that does not hold says nothing after the loop
+quantified-invariant-inside	tests/verification_quantified_invariant.adb	division-by-zero	(M - 5)	unproved	a division inside the predicate of a quantified loop invariant, by zero for one value
+quantified-cut-false	tests/verification_quantified_invariant.adb	assertion	for all N in 1 .. 10 => Short > N	definite-error	a quantified Assert_And_Cut that does not hold
+quantified-cut-gives-nothing	tests/verification_quantified_invariant.adb	division-by-zero	Short	definite-error	a quantified Assert_And_Cut that does not hold says nothing after it
+modular-bound-number	tests/verification_fp113_modular_bound.adb	range-check	Numbered	unproved	FP-113: a named number declared with a modular sum is 44, whatever type the library gives its operator
+modular-bound-number-wrap	tests/verification_fp113_modular_bound.adb	range-check	Passed	unproved	FP-113: a named number declared as the last value of a mod 256 type plus one is 0
+expanded-literal-other	tests/verification_named_values.adb	precondition	Size (Ctx, Verification_Named_Values.F_C)	unproved	what is known of one literal, named with its package, is not known of another
+expanded-literal-differs	tests/verification_named_values.adb	assertion	Copy = Verification_Named_Values.F_A	definite-error	an object equal to one literal is not equal to another, named with its package
+named-number-above	tests/verification_named_values.adb	assertion	Above < Limit - 1	unproved	below a named number of 10 is not below 9
+named-number-quotient	tests/verification_named_values.adb	assertion	Middle < 2	unproved	a named number declared as 7 / 2 is 3
+named-number-modular	tests/verification_named_values.adb	assertion	Octet <= Wrapped	unproved	a named number declared with a sum of a mod 256 type is 44 and not 300
+named-number-real	tests/verification_named_values.adb	assertion	Integer (Ratio) = 2	unproved	a real named number is not cut down to an integer
+named-number-divisor	tests/verification_named_values.adb	division-by-zero	(Exact - Limit + 1)	unproved	a divisor written with a named number is zero for one of the values

@@ -55,6 +55,15 @@ inlined within the depth limit. Integer `/`, `mod`, and `rem` are translated
 only when the divisor is provably nonzero and their Ada sign semantics are
 encoded.
 
+A name written with its package in front of it -- an expanded name -- is
+the entity it names: an object, an enumeration literal or a named number.
+A named number is its value, where its declaration is written with integer
+literals, other named numbers, constants, `T'First` and `T'Last`, qualified
+expressions and the arithmetic operators; each operator is taken in the
+type its operands give it, so that one of a modular type wraps. A real
+named number, and one declared with any other attribute, a conversion, a
+call or a conditional expression, has no value the analysis knows.
+
 Symbolic assignments resolve their scalar sort from Ada semantic type
 identity: signed integers use mathematical-integer terms, `Standard.Boolean`
 uses SMT Boolean terms, and enumeration values use their declaration-order
@@ -388,6 +397,24 @@ parameters, and what the precondition itself establishes operand by
 operand. The postcondition is evaluated in the state at the normal exit.
 Where the subprogram is outside the verified subset these obligations are
 `Unsupported`.
+
+The prefix of `'Old` and that of `'Loop_Entry` are evaluated earlier than
+where the attribute is written, and their checks are decided in the state
+of that earlier place. For an `'Old` of the postcondition it is the state
+on entry, once the precondition holds. For a `'Loop_Entry` that names no
+loop it is the state of the header of the innermost loop, which holds each
+time the header is reached, the first time included. The checks of any
+other such prefix -- a `'Loop_Entry` that names a loop, an `'Old` in a
+`Contract_Cases` -- are decided with no state at all. The
+prefix is evaluated whether or not the place where the attribute is
+written is reached, so none of its obligations is `Unreachable` because
+that place is.
+
+A quantified expression is decided where it is evaluated as a condition:
+in a `Pre` or a `Post`, and in an `Assert`, an `Assert_And_Cut` or a
+`Loop_Invariant`. One that is used as a value anywhere else in a body --
+the condition of an `if`, the right side of an assignment -- puts the
+subprogram outside the verified subset.
 
 Other code that is declared inside the subprogram and evaluated later is
 not checked in the state at its declaration: the default expression of a

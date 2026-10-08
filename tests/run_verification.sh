@@ -94,6 +94,10 @@ function_terms=$(mktemp "${TMPDIR:-/tmp}/adalang-function-terms.XXXXXX")
 call_frame=$(mktemp "${TMPDIR:-/tmp}/adalang-call-frame.XXXXXX")
 fp110=$(mktemp "${TMPDIR:-/tmp}/adalang-fp110.XXXXXX")
 call_postcondition=$(mktemp "${TMPDIR:-/tmp}/adalang-call-postcondition.XXXXXX")
+fp112=$(mktemp "${TMPDIR:-/tmp}/adalang-fp112.XXXXXX")
+fp113=$(mktemp "${TMPDIR:-/tmp}/adalang-fp113.XXXXXX")
+quantified_invariant=$(mktemp "${TMPDIR:-/tmp}/adalang-quantified-invariant.XXXXXX")
+named_values=$(mktemp "${TMPDIR:-/tmp}/adalang-named-values.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -124,7 +128,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -1744,5 +1748,116 @@ done
 must_prove "$call_postcondition" loop-invariant-preservation \
   'Ready (Turning)' external-prover \
   "a loop invariant re-established by a callee's postcondition"
+
+# FP-112: the checks inside the prefix of 'Old and of 'Loop_Entry were
+# decided in the state of the place where the attribute is written. The
+# prefix of 'Old is evaluated on entry, where the precondition is all that
+# holds, and that of 'Loop_Entry when the loop is entered.
+run_json_pair "$fp112" tests/verification_fp112_earlier_prefix
+must_not_prove "$fp112" division-by-zero Divisor FP-112
+must_not_prove "$fp112" integer-overflow 'Addend + 1' FP-112
+must_not_prove "$fp112" range-check Converted FP-112
+must_not_prove "$fp112" precondition 'Positive_Only (Passed)' FP-112
+must_not_prove "$fp112" initialization-check Late FP-112
+must_not_prove "$fp112" division-by-zero Zeroed FP-112
+must_not_prove "$fp112" division-by-zero Inner FP-112
+must_prove "$fp112" precondition 'Positive_Only (Required)' \
+  contract-transfer FP-112
+must_prove "$fp112" division-by-zero Nonzero abstract-interpretation FP-112
+must_prove "$fp112" division-by-zero Steady abstract-interpretation FP-112
+must_prove "$fp112" initialization-check Kept flow-analysis FP-112
+if grep -F '"status": "definite-error"' "$fp112" >/dev/null; then
+   echo "FP-112: a check inside an 'Old prefix is a definite error in the" \
+     "state of the exit" >&2
+   exit 1
+fi
+
+# FP-113: a subtype bound written with the arithmetic of a modular type
+# was computed without wrapping: 200 + 100 of a "mod 256" type is 44, and
+# was taken for 300.
+run_json_pair "$fp113" tests/verification_fp113_modular_bound
+for operation in Summed Negated Doubled Chained; do
+   must_not_prove "$fp113" range-check "$operation" FP-113
+done
+must_not_prove "$fp113" index-check Position FP-113
+must_prove "$fp113" range-check Fitting abstract-interpretation FP-113
+must_prove "$fp113" range-check Small abstract-interpretation FP-113
+must_prove "$fp113" index-check Inside abstract-interpretation FP-113
+#  A named number written with that arithmetic: Libadalang gives every
+#  operator of a number declaration as universal_integer.
+must_not_prove "$fp113" range-check Numbered FP-113
+must_not_prove "$fp113" range-check Passed FP-113
+must_prove "$fp113" range-check Tiny abstract-interpretation FP-113
+if grep -F '"status": "definite-error"' "$fp113" >/dev/null; then
+   echo "FP-113: a value within a wrapped bound is a definite error" >&2
+   exit 1
+fi
+
+# A quantified expression in a Loop_Invariant or in an Assert_And_Cut put
+# the whole subprogram outside the verification subset: the pragma names
+# were compared in a spelling they are never given in.
+run_json_pair "$quantified_invariant" tests/verification_quantified_invariant
+if grep -F '"status": "unsupported"' "$quantified_invariant" >/dev/null; then
+   echo "a quantified loop invariant puts its subprogram outside the" \
+     "verification subset" >&2
+   exit 1
+fi
+for kind in loop-invariant-initialization loop-invariant-preservation; do
+   must_prove "$quantified_invariant" "$kind" \
+     'for all I in 1 .. 10 => I < Steady' external-prover \
+     "a quantified loop invariant"
+done
+must_prove "$quantified_invariant" division-by-zero Steady \
+  abstract-interpretation "a quantified loop invariant"
+must_not_prove "$quantified_invariant" loop-invariant-preservation \
+  'for all J in 1 .. 10 => J < Falling' "a quantified loop invariant"
+must_not_prove "$quantified_invariant" loop-invariant-preservation \
+  'for all K in 1 .. Growing => K <= 10' "a quantified loop invariant"
+must_not_prove "$quantified_invariant" loop-invariant-initialization \
+  'for all L in 1 .. 10 => Low > L' "a quantified loop invariant"
+must_not_prove "$quantified_invariant" division-by-zero Low \
+  "a quantified loop invariant"
+must_not_prove "$quantified_invariant" division-by-zero '(M - 5)' \
+  "a quantified loop invariant"
+must_not_prove "$quantified_invariant" assertion \
+  'for all N in 1 .. 10 => Short > N' "a quantified Assert_And_Cut"
+must_not_prove "$quantified_invariant" division-by-zero Short \
+  "a quantified Assert_And_Cut"
+
+# A name written with its package in front of it is the entity it names,
+# an enumeration literal or a named number as much as an object, and a
+# named number is its value: what is said of "Pkg.Literal" is said of the
+# literal, and "Value < Limit" bounds Value.
+run_json_pair "$named_values" tests/verification_named_values
+must_prove "$named_values" precondition \
+  'Size (Ctx, Verification_Named_Values.F_B)' external-prover \
+  "an expanded name of a literal"
+must_prove "$named_values" assertion \
+  'Copy = Verification_Named_Values.F_B' external-prover \
+  "an expanded name of a literal"
+must_prove "$named_values" assertion \
+  'Copy /= Verification_Named_Values.F_C' external-prover \
+  "an expanded name of a literal"
+must_prove "$named_values" assertion 'Value < Limit' external-prover \
+  "the value of a named number"
+must_prove "$named_values" assertion 'Small < 3' external-prover \
+  "the value of a named number"
+must_prove "$named_values" division-by-zero \
+  '(Verification_Named_Values.Limit - Value)' abstract-interpretation \
+  "the value of a named number"
+must_not_prove "$named_values" precondition \
+  'Size (Ctx, Verification_Named_Values.F_C)' \
+  "an expanded name of another literal"
+must_not_prove "$named_values" assertion \
+  'Copy = Verification_Named_Values.F_A' \
+  "an expanded name of another literal"
+for operation in 'Above < Limit - 1' 'Middle < 2' 'Octet <= Wrapped' \
+  'Integer (Ratio) = 2'
+do
+   must_not_prove "$named_values" assertion "$operation" \
+     "the value of a named number"
+done
+must_not_prove "$named_values" division-by-zero '(Exact - Limit + 1)' \
+  "the value of a named number"
 
 echo "bounded verification tests passed"

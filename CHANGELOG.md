@@ -5,6 +5,62 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- A name written with its package in front of it is the entity it names,
+  an enumeration literal or a named number as much as an object:
+  `Pkg.Literal`, `Pkg.Number`. What a precondition says of
+  `RFLX.CoAP.CoAP_Message.F_Ver` is said of the literal, however the next
+  operand or the callee names it. Such names were outside the scalar VC
+  language, which left unproved most preconditions of code that qualifies
+  every name, as generated code does.
+- A named number is its value, in the scalar VC language and in the
+  abstract interpretation alike: `Value < Limit` bounds `Value` where
+  `Limit : constant := 10`. The value is computed for an expression of
+  integer literals, other named numbers, constants, `T'First` and
+  `T'Last`, qualified expressions and the arithmetic operators; a real
+  number, and a number declared with anything else, stays unknown.
+
+### Fixed
+
+- The checks inside the prefix of `'Old` and of `'Loop_Entry` are decided
+  in the state the prefix is evaluated in (`FP-112`, a false-safe and a
+  false positive). They were decided where the attribute is written: with
+  `Post => Integer'(10 / Divisor)'Old <= 10 or else Divisor = 1` on a
+  procedure that ends with `Divisor := 1`, the division was `Proved_Safe`
+  although nothing says what `Divisor` holds on entry; with `Pre =>
+  Required > 0` and a body that ends with `Required := 0`, a call
+  `Positive_Only (Required)'Old` was a `Definite_Error`. The prefix of an
+  `'Old` of the postcondition is now checked in the state on entry, once
+  the precondition holds; that of a `'Loop_Entry` which names no loop, in
+  the state of the header of the innermost loop; any other, with no state
+  at all. See "Supported control flow" in
+  `docs/src/supported-verification-subset.md`.
+- A subtype or array bound written with the arithmetic of a modular type
+  wraps as that arithmetic does (`FP-113`, a false-safe and a false
+  positive). With `type Byte is mod 256` and constants of 200 and 100,
+  the high bound of `Byte range 0 .. Two_Hundred + One_Hundred` was taken
+  for 300 where it is 44, and any `Byte` up to 100 was `Proved_Safe` in
+  range; `range 0 .. -One_Hundred` was taken for empty, and every
+  assignment to it was a `Definite_Error` and a
+  `Known_Range_Check_Failure` finding. Bounds written with literals alone,
+  and bounds of signed types, were right. A named number declared with
+  such arithmetic had the same fault -- `Sum : constant := Two_Hundred +
+  One_Hundred` is 44, and `Byte'Last + 1` is 0 -- because Libadalang gives
+  every operator of a number declaration as `universal_integer`; each
+  operator is now taken in the type its operands give it.
+- A quantified expression in a `Loop_Invariant` or an `Assert_And_Cut` no
+  longer puts the whole subprogram outside the verification subset. It was
+  meant to be decided there as it is in an `Assert`, a `Pre` or a `Post`;
+  the two pragma names were compared in a spelling they never have, and
+  every obligation of such a subprogram was `Unsupported`.
+
+### Changed
+
+- The mutation manifest has 130 seeded defects (102 in 1.8.2).
+
 ## [1.8.2] - 2026-10-06
 
 A `--verify` release that proves more of what GNATprove proves, with the
