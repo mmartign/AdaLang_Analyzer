@@ -229,10 +229,14 @@ package body Adalang_Analyzer.Checks.Expressions is
       Left_Int   : constant Abstract_Int := Integer_Value (Expr.F_Left);
       Right_Int  : constant Abstract_Int := Integer_Value (Expr.F_Right);
    begin
+      --  A function a declaration defines for the operator has no check
+      --  of a divisor: what it asks of its operands is its precondition
+      --  (FP-116).
       if Rule_States (Division_By_Zero) = Enabled
         and then Op in Libadalang.Common.Ada_Op_Div
           | Libadalang.Common.Ada_Op_Mod
           | Libadalang.Common.Ada_Op_Rem
+        and then Origin_Of_Operator (Expr) /= Declared
       then
          if Is_Static_Zero (Expr.F_Right) then
             Adalang_Analyzer.Proof_Obligations.Register_At
@@ -302,6 +306,7 @@ package body Adalang_Analyzer.Checks.Expressions is
         and then Right_Int.Known
         and then Right_Int.Value < 0
         and then Is_Integer_Expression (Expr.F_Left)
+        and then Origin_Of_Operator (Expr) /= Declared
       then
          Report_Rule_Violation
            (Unit, Expr, Known_Negative_Exponent_Failure,

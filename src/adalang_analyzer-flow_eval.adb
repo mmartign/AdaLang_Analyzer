@@ -738,6 +738,53 @@ package body Adalang_Analyzer.Flow_Eval is
          return Unknown_Int;
    end Integer_Value_Unwrapped;
 
+   function Origin_Of_Operator
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Operator_Origin
+   is
+      Operator : Libadalang.Analysis.Op;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return Predefined;
+      elsif Node.Kind = Libadalang.Common.Ada_Un_Op then
+         Operator := Node.As_Un_Op.F_Op;
+      elsif Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+         Operator := Node.As_Bin_Op.F_Op;
+      else
+         return Predefined;
+      end if;
+
+      if Operator.Kind in Libadalang.Common.Ada_Op_And_Then
+           | Libadalang.Common.Ada_Op_Or_Else
+           | Libadalang.Common.Ada_Op_Double_Dot
+           | Libadalang.Common.Ada_Op_In
+           | Libadalang.Common.Ada_Op_Not_In
+      then
+         return Predefined;
+      end if;
+
+      --  A predefined operator of a declared type resolves to no
+      --  declaration, one of a universal type to a synthetic one. An
+      --  abstract function is not what is called: the declaration that
+      --  hides a predefined operator in this way was taken for the
+      --  function that is.
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Operator.P_Referenced_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.P_Is_Predefined_Operator
+         then
+            return Predefined;
+         elsif Decl.Kind = Libadalang.Common.Ada_Abstract_Subp_Decl then
+            return Unresolved;
+         end if;
+         return Declared;
+      end;
+   exception
+      when others =>
+         return Unresolved;
+   end Origin_Of_Operator;
+
    function Integer_Value
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State := Empty_Flow_State) return Abstract_Int
@@ -745,7 +792,8 @@ package body Adalang_Analyzer.Flow_Eval is
       Target : constant Libadalang.Analysis.Ada_Node :=
         Tracked_Expanded_Name (Node, State);
       Result : constant Abstract_Int :=
-        (if Libadalang.Analysis.Is_Null (Target)
+        (if Is_User_Operator (Node) then Unknown_Int
+         elsif Libadalang.Analysis.Is_Null (Target)
          then Integer_Value_Unwrapped (Node, State)
          else Integer_Value_Unwrapped (Target, State));
    begin
@@ -1069,6 +1117,15 @@ package body Adalang_Analyzer.Flow_Eval is
                   return Range_From_Int (Integer_Value (Node, State));
             end case;
          end;
+      elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref then
+         declare
+            Folded : constant Abstract_Int := Integer_Value (Node, State);
+         begin
+            --  Of a length that has no known value, what its type tells.
+            return
+              (if Folded.Known then Range_From_Int (Folded)
+               else Length_Limits (Node.As_Attribute_Ref));
+         end;
       else
          return Range_From_Int (Integer_Value (Node, State));
       end if;
@@ -1081,13 +1138,15 @@ package body Adalang_Analyzer.Flow_Eval is
       Target : constant Libadalang.Analysis.Ada_Node :=
         Tracked_Expanded_Name (Node, State);
       Result : constant Abstract_Range :=
-        (if Libadalang.Analysis.Is_Null (Target)
+        (if Is_User_Operator (Node) then Unknown_Range
+         elsif Libadalang.Analysis.Is_Null (Target)
          then Range_Value_Unwrapped (Node, State)
          else Range_Value_Unwrapped (Target, State));
    begin
       if Libadalang.Analysis.Is_Null (Node)
         or else Node.Kind not in Libadalang.Common.Ada_Un_Op
                                | Libadalang.Common.Ada_Bin_Op_Range
+        or else Is_User_Operator (Node)
       then
          return Result;
       end if;
@@ -1185,7 +1244,8 @@ package body Adalang_Analyzer.Flow_Eval is
       State : Flow_State := Empty_Flow_State) return Abstract_Bool
    is
    begin
-      if Libadalang.Analysis.Is_Null (Node) then
+      if Libadalang.Analysis.Is_Null (Node) or else Is_User_Operator (Node)
+      then
          return Bool_Unknown;
       elsif not Libadalang.Analysis.Is_Null
                   (Tracked_Expanded_Name (Node, State))
@@ -1805,7 +1865,10 @@ package body Adalang_Analyzer.Flow_Eval is
       True_State := State;
       False_State := State;
 
-      if Libadalang.Analysis.Is_Null (Cond) then
+      --  What a function a declaration defines returns says nothing of
+      --  its operands, whatever its symbol.
+      if Libadalang.Analysis.Is_Null (Cond) or else Is_User_Operator (Cond)
+      then
          return;
       end if;
 
@@ -2087,7 +2150,8 @@ package body Adalang_Analyzer.Flow_Eval is
          end;
       end Wrapped;
    begin
-      if Libadalang.Analysis.Is_Null (Bound) then
+      if Libadalang.Analysis.Is_Null (Bound) or else Is_User_Operator (Bound)
+      then
          return Unknown_Int;
       end if;
 
@@ -3019,6 +3083,81 @@ package body Adalang_Analyzer.Flow_Eval is
       when others =>
          return Unknown_Range;
    end Array_Object_Index_Range;
+
+   function Length_Limits
+     (Attribute : Libadalang.Analysis.Attribute_Ref) return Abstract_Range
+   is
+      Dimension  : Abstract_Int := Known_Int (1);
+      Prefix     : Libadalang.Analysis.Basic_Decl :=
+        Libadalang.Analysis.No_Basic_Decl;
+      Array_Type : Libadalang.Analysis.Base_Type_Decl;
+      Index      : Abstract_Range;
+      Span       : Abstract_Int;
+   begin
+      if Libadalang.Analysis.Is_Null (Attribute)
+        or else Text_Utils.Normalize_Rule_Name
+                  (Ada_Text.Node_Text (Attribute.F_Attribute)) /= "length"
+      then
+         return Unknown_Range;
+      end if;
+
+      if not Libadalang.Analysis.Is_Null (Attribute.F_Args)
+        and then Attribute.F_Args.Children_Count > 0
+      then
+         if Attribute.F_Args.Children_Count /= 1
+           or else Attribute.F_Args.Child (1).Kind /=
+             Libadalang.Common.Ada_Param_Assoc
+         then
+            return Unknown_Range;
+         end if;
+         Dimension :=
+           Integer_Value
+             (Attribute.F_Args.Child (1).As_Param_Assoc.F_R_Expr,
+              Empty_Flow_State);
+      end if;
+      if not Dimension.Known or else Dimension.Value not in 1 .. 64 then
+         return Unknown_Range;
+      end if;
+
+      --  The prefix is an array type or subtype, or an array.
+      if Attribute.F_Prefix.Kind in Libadalang.Common.Ada_Identifier
+                                  | Libadalang.Common.Ada_Dotted_Name
+      then
+         Prefix := Attribute.F_Prefix.P_Referenced_Decl;
+      end if;
+      Array_Type :=
+        (if not Libadalang.Analysis.Is_Null (Prefix)
+           and then Prefix.Kind in Libadalang.Common.Ada_Base_Type_Decl
+         then Prefix.As_Base_Type_Decl
+         else Attribute.F_Prefix.P_Expression_Type);
+      if Libadalang.Analysis.Is_Null (Array_Type)
+        or else not Array_Type.P_Is_Array_Type
+      then
+         return Unknown_Range;
+      end if;
+
+      Index :=
+        Type_Range
+          (Array_Type.P_Index_Type (Natural (Dimension.Value) - 1),
+           Empty_Flow_State);
+      if not Index.Has_Low or else not Index.Has_High then
+         return Unknown_Range;
+      elsif Index.Low > Index.High then
+         return (Has_Low => True, Low => 0, Has_High => True, High => 0);
+      end if;
+
+      Span := Safe_Sub (Index.High, Index.Low);
+      if Span.Known then
+         Span := Safe_Add (Span.Value, 1);
+      end if;
+      if not Span.Known then
+         return Unknown_Range;
+      end if;
+      return (Has_Low => True, Low => 0, Has_High => True, High => Span.Value);
+   exception
+      when others =>
+         return Unknown_Range;
+   end Length_Limits;
 
    No_Constraint      : constant Subtype_Constraint :=
      (Present => False, Bounds => Unknown_Range);

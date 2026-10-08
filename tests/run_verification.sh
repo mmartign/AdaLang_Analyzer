@@ -103,6 +103,9 @@ named_loops=$(mktemp "${TMPDIR:-/tmp}/adalang-named-loops.XXXXXX")
 type_size=$(mktemp "${TMPDIR:-/tmp}/adalang-type-size.XXXXXX")
 provisional_error=$(mktemp "${TMPDIR:-/tmp}/adalang-provisional-error.XXXXXX")
 fp115=$(mktemp "${TMPDIR:-/tmp}/adalang-fp115.XXXXXX")
+fp116=$(mktemp "${TMPDIR:-/tmp}/adalang-fp116.XXXXXX")
+length_conversion=$(mktemp "${TMPDIR:-/tmp}/adalang-length-conversion.XXXXXX")
+length_limits=$(mktemp "${TMPDIR:-/tmp}/adalang-length-limits.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -133,7 +136,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -1979,5 +1982,107 @@ fi
 must_prove "$fp115" assertion 'Standard.True' abstract-interpretation FP-115
 must_prove "$fp115" assertion 'not Standard.False' abstract-interpretation \
   FP-115
+
+# FP-116: an operator symbol was read as the operation it stands for where
+# a declaration defines a function for it. None of the functions of the
+# fixture computes what its symbol says, and no claim that reads true by
+# the symbols holds.
+run_json_pair "$fp116" tests/verification_fp116_declared_operator
+for claim in 'Integer (Two + Three) = 5' 'Integer (Two * Three) = 6' \
+  'Integer (Two mod Three) = 2' 'Integer (Two ** Exponent) = 4' \
+  'Integer (-Two) /= 2' 'Integer (abs Two) = 2' 'Two < Three' \
+  'Integer (Left) >= Integer (Right)' 'Two = Two' 'not (Two /= Two)' \
+  'Integer (Left) /= Integer (Right)' 'Two + Three > Two' \
+  'Two + Three in Fifth' "Buffer'Last = 5" 'Integer (Low + High) = 5' \
+  'Integer (Two + Offset) = 5' 'Small + Large = 5' 'Yes and Yes' \
+  'not (No or No)' 'not Off' 'On xor Idle'
+do
+   must_not_prove "$fp116" assertion "$claim" FP-116
+done
+must_not_prove "$fp116" index-check 4 FP-116
+must_not_prove "$fp116" range-check 4 FP-116
+# The claims that hold are not refuted either, and a right operand of zero
+# is no error of a function called "/".
+if grep -F '"status": "definite-error"' "$fp116" >/dev/null; then
+   echo "FP-116: a definite error where a declared operator is called" >&2
+   exit 1
+fi
+# Such a call has no division check and no overflow check of its own: what
+# the function asks of its operands is its precondition, an obligation at
+# the operator.
+if grep -F '"kind": "division-by-zero"' "$fp116" >/dev/null ||
+  grep -F '"kind": "integer-overflow"' "$fp116" |
+    grep -F 'verification_fp116_declared_operator.adb"' >/dev/null
+then
+   echo "FP-116: a division or overflow check on a declared operator" >&2
+   exit 1
+fi
+if [ "$(grep -F '"kind": "precondition"' "$fp116" |
+          grep -Fc '"operation": "/"')" -ne 2 ]
+then
+   echo "FP-116: no precondition obligation at a declared operator" >&2
+   exit 1
+fi
+
+# The length of an array is converted to the integer type its context
+# expects, and the conversion is checked. One range check at each length
+# of the first procedure of the fixture, none at those of the second but
+# the check that was there before: the assignment's, the actual's, the
+# conversion's.
+run_json "$length_conversion" tests/verification_length_conversion.adb
+for prefix in Compared Added Bound Tested Counted Scaled Qualified \
+  Shortened Capped
+do
+   must_not_prove "$length_conversion" range-check "$prefix'Length" \
+     "length conversion"
+done
+for prefix in Compared Added Bound Tested Counted Scaled Qualified \
+  Shortened Capped Brief Few Assigned Passed Cast
+do
+   if [ "$(grep -F '"kind": "range-check"' "$length_conversion" |
+             grep -Fc "\"operation\": \"$prefix'Length\"")" -ne 1 ]
+   then
+      echo "length conversion: not one range check at $prefix'Length" >&2
+      exit 1
+   fi
+done
+for prefix in Universal Summed Other Fixed
+do
+   if grep -F '"kind": "range-check"' "$length_conversion" |
+     grep -F "\"operation\": \"$prefix'Length\"" >/dev/null
+   then
+      echo "length conversion: a range check at $prefix'Length" >&2
+      exit 1
+   fi
+done
+# An array has no more components than its index subtype has values: that
+# proves the check where the type has room for them all, in the base range
+# of Integer and in the range Short is declared with.
+must_prove "$length_conversion" range-check "Brief'Length" \
+  abstract-interpretation "length conversion"
+must_prove "$length_conversion" range-check "Few'Length" \
+  abstract-interpretation "length conversion"
+
+# The limits themselves: the length of each dimension is no more than the
+# number of values of its own index subtype, and nothing more is known --
+# not of the other dimension, not one component less, not where the bounds
+# of the index subtype are not static, and not that an array is not empty.
+run_json "$length_limits" tests/verification_length_limits.adb
+for claim in "Grid'Length (1) <= 10" "Grid'Length (2) <= 1000" \
+  "Bytes'Length <= 256" "Text'Length <= 1000" \
+  "Whole (Whole'First .. Whole'Last)'Length <= 1000"
+do
+   must_prove "$length_limits" assertion "$claim" abstract-interpretation \
+     "length limits"
+done
+for claim in "Grid'Length (2) <= 10" "Grid'Length <= 9" \
+  "Octets'Length <= 255" "Items'Length <= 10" "Cells'Length >= 1"
+do
+   must_not_prove "$length_limits" assertion "$claim" "length limits"
+done
+if grep -F '"status": "definite-error"' "$length_limits" >/dev/null; then
+   echo "length limits: a definite error on a claim that may hold" >&2
+   exit 1
+fi
 
 echo "bounded verification tests passed"

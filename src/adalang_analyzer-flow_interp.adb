@@ -1487,6 +1487,10 @@ package body Adalang_Analyzer.Flow_Interp is
          return Unknown_Range;
       elsif Value.Kind = Libadalang.Common.Ada_Paren_Expr then
          return Static_Subtype_Range (Value.As_Paren_Expr.F_Expr);
+      elsif Is_User_Operator (Value) then
+         --  A call: what it returns is in the subtype of its result.
+         return
+           Subtype_Chain_Facts (Value.As_Expr.P_Expression_Type).Bounds;
       end if;
 
       declare
@@ -2765,6 +2769,7 @@ package body Adalang_Analyzer.Flow_Interp is
       begin
          if Libadalang.Analysis.Is_Null (Expr)
            or else Expr.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+           or else Is_User_Operator (Expr)
          then
             return;
          end if;
@@ -3392,6 +3397,102 @@ package body Adalang_Analyzer.Flow_Interp is
          return Libadalang.Analysis.No_Expr;
    end Assoc_Expression;
 
+   --  The declaration whose range is the base range of the integer type
+   --  Typ: the nearest type or subtype Typ is declared from that has every
+   --  value of its type (see Covers_Its_Type). None when no declaration
+   --  says what the base range is, as for "type T is range 1 .. 10", for
+   --  which the implementation chooses it.
+   function Base_Range_Type
+     (Typ : Libadalang.Analysis.Base_Type_Decl)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+   begin
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            exit;
+         elsif Covers_Its_Type (Current) then
+            return Current;
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            Current :=
+              Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         elsif Current.Kind in Libadalang.Common.Ada_Type_Decl
+           and then not Libadalang.Analysis.Is_Null
+                          (Current.As_Type_Decl.F_Type_Def)
+           and then Current.As_Type_Decl.F_Type_Def.Kind =
+             Libadalang.Common.Ada_Derived_Type_Def
+         then
+            Current :=
+              Current.As_Type_Decl.F_Type_Def.As_Derived_Type_Def
+                .F_Subtype_Indication.P_Designated_Type_Decl;
+         else
+            exit;
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Base_Type_Decl;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Type_Decl;
+   end Base_Range_Type;
+
+   --  The values the base range of the integer type Typ has whatever the
+   --  implementation chooses for it: those of the range the type is
+   --  declared with, a base range having them all and being symmetric
+   --  about zero, but for one more negative value at most (RM 3.5.4 (9)).
+   --  Unknown_Range unless Typ is declared from a signed integer type
+   --  definition with static bounds.
+   function Least_Base_Range
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Abstract_Range
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+      Declared  : Abstract_Range;
+      Last      : Long_Long_Integer;
+   begin
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            exit;
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            Current :=
+              Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         elsif Current.Kind not in Libadalang.Common.Ada_Type_Decl
+           or else Libadalang.Analysis.Is_Null
+                     (Current.As_Type_Decl.F_Type_Def)
+         then
+            exit;
+         elsif Current.As_Type_Decl.F_Type_Def.Kind =
+           Libadalang.Common.Ada_Derived_Type_Def
+         then
+            Current :=
+              Current.As_Type_Decl.F_Type_Def.As_Derived_Type_Def
+                .F_Subtype_Indication.P_Designated_Type_Decl;
+         elsif Current.As_Type_Decl.F_Type_Def.Kind =
+           Libadalang.Common.Ada_Signed_Int_Type_Def
+         then
+            Declared := Type_Range (Current, Empty_Flow_State);
+            if not Declared.Has_Low or else not Declared.Has_High
+              or else Declared.Low > Declared.High
+            then
+               exit;
+            end if;
+            Last :=
+              Long_Long_Integer'Max (Declared.High, -(Declared.Low + 1));
+            return
+              (Has_Low  => True,
+               Low      => Long_Long_Integer'Min (Declared.Low, -Last),
+               Has_High => True,
+               High     => Last);
+         else
+            exit;
+         end if;
+      end loop;
+      return Unknown_Range;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Least_Base_Range;
+
    --  True when an Array_Index Call_Expr is indexing into an array *slice*
    --  (X (Lo .. Hi) (I)), not an array object. A slice's index bounds are
    --  its own Lo .. Hi -- which may be empty or a proper sub-range -- not
@@ -3828,9 +3929,12 @@ package body Adalang_Analyzer.Flow_Interp is
       Right_Range : constant Abstract_Range :=
         Range_Value (Expr.F_Right, State);
    begin
+      --  The division of a function a declaration defines is that
+      --  function's business (FP-116).
       if Expr.F_Op not in Libadalang.Common.Ada_Op_Div
           | Libadalang.Common.Ada_Op_Mod
           | Libadalang.Common.Ada_Op_Rem
+        or else Origin_Of_Operator (Expr) = Declared
       then
          return;
       end if;
@@ -3917,12 +4021,15 @@ package body Adalang_Analyzer.Flow_Interp is
       Final : Boolean := False)
    is
    begin
+      --  A call of a function a declaration defines has no overflow check
+      --  of its own (FP-116).
       if Node.F_Op not in
         Libadalang.Common.Ada_Op_Plus
           | Libadalang.Common.Ada_Op_Minus
           | Libadalang.Common.Ada_Op_Mult
           | Libadalang.Common.Ada_Op_Div
           | Libadalang.Common.Ada_Op_Pow
+        or else Origin_Of_Operator (Node) = Declared
       then
          return;
       end if;
@@ -8845,6 +8952,213 @@ package body Adalang_Analyzer.Flow_Interp is
                Ada.Exceptions.Exception_Message (Exc));
       end Finalize_Actual_Checks;
 
+      --  X'Length is a universal integer. Where the context expects a
+      --  value of an integer type it is converted to that type, and the
+      --  conversion is checked: against the base range of the type where
+      --  the attribute is an operand of one of the type's own operators,
+      --  against the subtype anywhere else, the subtype of the formal when
+      --  the operator is a function a declaration defines. One obligation,
+      --  at the attribute, which is where GNATprove reports the range
+      --  check. There is none where the check is that of something else
+      --  -- an actual parameter of a call, the operand of a conversion, an
+      --  index, a value assigned or given to a declared object -- nor
+      --  where there is no conversion to check: a universal context, or a
+      --  length that is a static value within the range. That the type has
+      --  room for the longest array the index subtype allows does not
+      --  remove the check.
+      procedure Finalize_Length_Check
+        (Attribute : Libadalang.Analysis.Attribute_Ref;
+         Container : CFG.Node_Id)
+      is
+         Message  : constant String :=
+           "length is outside the range of the type it is converted to";
+         Context  : Libadalang.Analysis.Ada_Node := Attribute.Parent;
+         Expected : Libadalang.Analysis.Base_Type_Decl;
+         Target   : Libadalang.Analysis.Base_Type_Decl;
+         Origin   : Operator_Origin := Predefined;
+         Operand  : Boolean;
+
+         --  True for the types of a context that takes the universal
+         --  integer as it is.
+         function Is_Universal
+           (Typ : Libadalang.Analysis.Base_Type_Decl) return Boolean
+         is
+            Name : constant String :=
+              Langkit_Support.Text.To_UTF8
+                (Typ.P_Canonical_Fully_Qualified_Name);
+
+            function Starts_With (Start : String) return Boolean
+            is (Name'Length >= Start'Length
+                and then Name (Name'First .. Name'First + Start'Length - 1) =
+                  Start);
+         begin
+            return Starts_With ("standard.universal_")
+              or else Starts_With ("standard.root_");
+         end Is_Universal;
+
+         --  The length when a declaration gives the bounds with static
+         --  values: it is then a number to a compiler too.
+         function Declared_Length return Abstract_Int is
+            Dimension : constant Abstract_Int :=
+              (if Libadalang.Analysis.Is_Null (Attribute.F_Args)
+                 or else Attribute.F_Args.Children_Count = 0
+               then Known_Int (1)
+               else Integer_Value
+                      (Assoc_Expression (Attribute.F_Args, 1),
+                       Empty_Flow_State));
+            Prefix    : Libadalang.Analysis.Basic_Decl;
+            Bounds    : Abstract_Range;
+            Span      : Abstract_Int;
+         begin
+            if not Dimension.Known or else Dimension.Value not in 1 .. 64 then
+               return Unknown_Int;
+            end if;
+
+            Prefix := Attribute.F_Prefix.P_Referenced_Decl;
+            Bounds :=
+              (if not Libadalang.Analysis.Is_Null (Prefix)
+                 and then Prefix.Kind in Libadalang.Common.Ada_Base_Type_Decl
+               then Array_Index_Range
+                      (Prefix.As_Base_Type_Decl,
+                       Positive (Dimension.Value), Empty_Flow_State)
+               else Array_Object_Index_Range
+                      (Attribute.F_Prefix,
+                       Positive (Dimension.Value), Empty_Flow_State));
+            if not Bounds.Has_Low or else not Bounds.Has_High then
+               return Unknown_Int;
+            elsif Bounds.Low > Bounds.High then
+               return Known_Int (0);
+            end if;
+
+            Span := Safe_Sub (Bounds.High, Bounds.Low);
+            return
+              (if Span.Known then Safe_Add (Span.Value, 1) else Unknown_Int);
+         exception
+            when others =>
+               return Unknown_Int;
+         end Declared_Length;
+
+         --  True when the static length Value needs no check against
+         --  Target: a value outside the base range of its type is not
+         --  legal, one outside the subtype is an error to report.
+         function Fits (Value : Long_Long_Integer) return Boolean is
+            Bounds : Abstract_Range;
+         begin
+            if Operand and then Origin = Predefined then
+               return True;
+            elsif Libadalang.Analysis.Is_Null (Target) then
+               return False;
+            end if;
+            Bounds := Type_Range (Target, Empty_Flow_State);
+            return Bounds.Has_Low and then Bounds.Has_High
+              and then Value in Bounds.Low .. Bounds.High;
+         end Fits;
+      begin
+         if Normalized_Text (Attribute.F_Attribute) /= "length" then
+            return;
+         end if;
+
+         while not Libadalang.Analysis.Is_Null (Context)
+           and then Context.Kind = Libadalang.Common.Ada_Paren_Expr
+         loop
+            Context := Context.Parent;
+         end loop;
+
+         if Libadalang.Analysis.Is_Null (Context)
+           or else Context.Kind in Libadalang.Common.Ada_Assign_Stmt
+             | Libadalang.Common.Ada_Object_Decl
+             | Libadalang.Common.Ada_Param_Assoc
+             | Libadalang.Common.Ada_Call_Expr
+         then
+            return;
+         end if;
+
+         begin
+            Expected := Attribute.P_Expected_Expression_Type;
+            if Libadalang.Analysis.Is_Null (Expected)
+              or else not Expected.P_Is_Int_Type
+              or else Is_Universal (Expected)
+              or else Attribute.P_Is_Static_Expr
+            then
+               return;
+            end if;
+         exception
+            when others =>
+               return;
+         end;
+
+         Operand :=
+           Context.Kind in Libadalang.Common.Ada_Bin_Op_Range
+             | Libadalang.Common.Ada_Un_Op
+             | Libadalang.Common.Ada_Membership_Expr;
+         if Operand then
+            Origin := Origin_Of_Operator (Context);
+         end if;
+         Target :=
+           (if not Operand or else Origin = Declared then Expected
+            elsif Origin = Predefined then Base_Range_Type (Expected)
+            else Libadalang.Analysis.No_Base_Type_Decl);
+
+         declare
+            Length : constant Abstract_Int := Declared_Length;
+         begin
+            if Length.Known and then Fits (Length.Value) then
+               return;
+            end if;
+         end;
+
+         if Libadalang.Analysis.Is_Null (Target) then
+            --  Nothing says what range the value is to be in.
+            if not Boundary_Supported then
+               Record_Unsupported
+                 (Unit, Attribute, Proof.Range_Check, Message);
+            elsif Unreached (Container) then
+               Record_Unreachable
+                 (Unit, Attribute, Proof.Range_Check,
+                  "the containing CFG node is unreachable");
+            elsif Origin = Predefined
+              and then Definitely_Inside_Range
+                         (Attribute, Least_Base_Range (Expected),
+                          State_At (Container))
+            then
+               --  proof-path: length-base-range
+               Record_Proved_Safe
+                 (Unit, Attribute, Proof.Range_Check,
+                  Proof.Abstract_Interpretation,
+                  "the length is within the range the type is declared " &
+                    "with, which the base range of the type has whatever " &
+                    "the implementation",
+                  "value bounds are within the declared range of the type",
+                  Final => True);
+            else
+               Record_Unproved
+                 (Unit, Attribute, Proof.Range_Check,
+                  Proof.Abstract_Interpretation,
+                  "the length is not established to be within the range " &
+                    "of the type it is converted to",
+                  Imprecision =>
+                    (if Origin = Unresolved
+                     then "the operation the length is an operand of " &
+                       "could not be resolved"
+                     else "the base range of the type is chosen by the " &
+                       "implementation"),
+                  Final => True);
+            end if;
+            return;
+         end if;
+
+         Finalize_Range_Check
+           (Attribute, Target, Container,
+            Rules.Known_Range_Check_Failure, Message);
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize length range check",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Length_Check;
+
       --  As Finalize_Range_Check, for Division_By_Zero_Check via
       --  Check_Division_By_Zero (see FP-036).
       procedure Finalize_Division_Check
@@ -8855,6 +9169,7 @@ package body Adalang_Analyzer.Flow_Interp is
          if Expr.F_Op not in Libadalang.Common.Ada_Op_Div
              | Libadalang.Common.Ada_Op_Mod
              | Libadalang.Common.Ada_Op_Rem
+           or else Origin_Of_Operator (Expr) = Declared
          then
             return;
          end if;
@@ -8890,6 +9205,7 @@ package body Adalang_Analyzer.Flow_Interp is
              | Libadalang.Common.Ada_Op_Mult
              | Libadalang.Common.Ada_Op_Div
              | Libadalang.Common.Ada_Op_Pow
+           or else Origin_Of_Operator (Expr) = Declared
          then
             return;
          end if;
@@ -8949,40 +9265,59 @@ package body Adalang_Analyzer.Flow_Interp is
       --  (Scan_Expression_For_Flow_Bugs's own Ada_Call_Expr case, reached
       --  by its generic recursion over the same call statement, without
       --  symbols) -- so both must be replayed, not just one.
-      procedure Finalize_Precondition_Check
-        (Call      : Libadalang.Analysis.Call_Expr;
+      --  The obligation is recorded at Callee: the call, its name or, for
+      --  an operator a declaration defines, the operator.
+      procedure Finalize_Precondition_At
+        (Callee    : Libadalang.Analysis.Name'Class;
          Container : CFG.Node_Id)
       is
       begin
          if not Boundary_Supported then
             Record_Unsupported
-              (Unit, Call, Proof.Precondition_Check,
-               "call precondition has not been established");
-            Record_Unsupported
-              (Unit, Call.F_Name, Proof.Precondition_Check,
+              (Unit, Callee, Proof.Precondition_Check,
                "call precondition has not been established");
          elsif Unreached (Container)
          then
             Record_Unreachable
-              (Unit, Call, Proof.Precondition_Check,
-               "the containing CFG node is unreachable");
-            Record_Unreachable
-              (Unit, Call.F_Name, Proof.Precondition_Check,
+              (Unit, Callee, Proof.Precondition_Check,
                "the containing CFG node is unreachable");
          else
-            declare
-               State   : constant Flow_State :=
-                 State_At (Container);
-               Symbols : constant VC.Symbolic_State :=
-                 Symbols_At (Container);
-            begin
-               Check_Call_Precondition
-                 (Unit, Call, State, Symbols, Final => True);
-               Check_Call_Precondition
-                 (Unit, Call.F_Name, State, Symbols, Final => True);
-            end;
+            Check_Call_Precondition
+              (Unit, Callee, State_At (Container), Symbols_At (Container),
+               Final => True);
          end if;
+      end Finalize_Precondition_At;
+
+      procedure Finalize_Precondition_Check
+        (Call      : Libadalang.Analysis.Call_Expr;
+         Container : CFG.Node_Id)
+      is
+      begin
+         Finalize_Precondition_At (Call, Container);
+         Finalize_Precondition_At (Call.F_Name, Container);
       end Finalize_Precondition_Check;
+
+      --  An operation whose operator a declaration defines is a call of
+      --  that function, and its precondition an obligation like that of
+      --  any call: at the operator, which is where GNATprove reports it.
+      procedure Finalize_Operator_Call
+        (Operator  : Libadalang.Analysis.Op;
+         Container : CFG.Node_Id)
+      is
+         Decl : Libadalang.Analysis.Basic_Decl;
+      begin
+         if Origin_Of_Operator (Operator.Parent) /= Declared then
+            return;
+         end if;
+
+         Decl := Call_Declaration (Operator);
+         if not Libadalang.Analysis.Is_Null (Decl)
+           and then not Libadalang.Analysis.Is_Null
+                          (Contract_Expression (Decl, "Pre"))
+         then
+            Finalize_Precondition_At (Operator, Container);
+         end if;
+      end Finalize_Operator_Call;
 
       procedure Finalize_Loop_Invariant
         (Condition : Libadalang.Analysis.Expr;
@@ -9349,7 +9684,10 @@ package body Adalang_Analyzer.Flow_Interp is
                begin
                   Finalize_Division_Check (Expr, Here);
                   Finalize_Overflow_Check (Expr, Here);
+                  Finalize_Operator_Call (Expr.F_Op, Here);
                end;
+            elsif Node.Kind = Libadalang.Common.Ada_Un_Op then
+               Finalize_Operator_Call (Node.As_Un_Op.F_Op, Here);
             elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
                declare
                   Target : constant Target_Subtype :=
@@ -9475,6 +9813,8 @@ package body Adalang_Analyzer.Flow_Interp is
                         Source     => Ada_Text.Safe_Filename (Unit),
                         Occurrence => E);
                end;
+            elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref then
+               Finalize_Length_Check (Node.As_Attribute_Ref, Here);
             elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node then
                declare
                   Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=

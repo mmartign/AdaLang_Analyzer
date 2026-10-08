@@ -1595,9 +1595,16 @@ package body Adalang_Analyzer.VC_Prover is
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String
    is
-      Term : constant Unbounded_String :=
-        Integer_Term_Unwrapped (Node, Context);
+      Term : Unbounded_String;
    begin
+      --  An operator a declaration defines is a call of that function, not
+      --  the operation its symbol reads as (FP-116).
+      if Eval.Is_User_Operator (Node) then
+         Mark_Unsupported (Context, Node, Unsupported_Call);
+         return Null_Unbounded_String;
+      end if;
+
+      Term := Integer_Term_Unwrapped (Node, Context);
       if not Context.Supported or else Length (Term) = 0
         or else Libadalang.Analysis.Is_Null (Node)
         or else Node.Kind not in Libadalang.Common.Ada_Un_Op
@@ -1714,6 +1721,10 @@ package body Adalang_Analyzer.VC_Prover is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          Mark_Unsupported (Context, Node, Null_Expression);
+         return Null_Unbounded_String;
+      elsif Eval.Is_User_Operator (Node) then
+         --  A call of the function that defines the operator (FP-116).
+         Mark_Unsupported (Context, Node, Unsupported_Call);
          return Null_Unbounded_String;
       elsif not Libadalang.Analysis.Is_Null (Eval.Expanded_Name_Target (Node))
       then
@@ -2803,24 +2814,28 @@ package body Adalang_Analyzer.VC_Prover is
          elsif Node.Kind = Libadalang.Common.Ada_Paren_Expr then
             Take (Node.As_Paren_Expr.F_Expr, Truth);
             return;
-         elsif Node.Kind = Libadalang.Common.Ada_Un_Op
-           and then Node.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Not
-         then
-            Take (Node.As_Un_Op.F_Expr, not Truth);
-            return;
-         elsif Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
-           and then
-             (if Truth
-              then Node.As_Bin_Op.F_Op in
-                Libadalang.Common.Ada_Op_And
-                  | Libadalang.Common.Ada_Op_And_Then
-              else Node.As_Bin_Op.F_Op in
-                Libadalang.Common.Ada_Op_Or
-                  | Libadalang.Common.Ada_Op_Or_Else)
-         then
-            Take (Node.As_Bin_Op.F_Left, Truth);
-            Take (Node.As_Bin_Op.F_Right, Truth);
-            return;
+         elsif not Eval.Is_User_Operator (Node) then
+            --  Nothing follows for the operands of an operator a
+            --  declaration defines from what that function returns.
+            if Node.Kind = Libadalang.Common.Ada_Un_Op
+              and then Node.As_Un_Op.F_Op = Libadalang.Common.Ada_Op_Not
+            then
+               Take (Node.As_Un_Op.F_Expr, not Truth);
+               return;
+            elsif Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
+              and then
+                (if Truth
+                 then Node.As_Bin_Op.F_Op in
+                   Libadalang.Common.Ada_Op_And
+                     | Libadalang.Common.Ada_Op_And_Then
+                 else Node.As_Bin_Op.F_Op in
+                   Libadalang.Common.Ada_Op_Or
+                     | Libadalang.Common.Ada_Op_Or_Else)
+            then
+               Take (Node.As_Bin_Op.F_Left, Truth);
+               Take (Node.As_Bin_Op.F_Right, Truth);
+               return;
+            end if;
          end if;
 
          declare
@@ -3021,6 +3036,7 @@ package body Adalang_Analyzer.VC_Prover is
            and then Node.As_Bin_Op.F_Op in
              Libadalang.Common.Ada_Op_And
                | Libadalang.Common.Ada_Op_And_Then
+           and then not Eval.Is_User_Operator (Node)
          then
             Take (Node.As_Bin_Op.F_Left);
             Take (Node.As_Bin_Op.F_Right);

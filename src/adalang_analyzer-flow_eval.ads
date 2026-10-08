@@ -33,6 +33,24 @@ package Adalang_Analyzer.Flow_Eval is
    Floating_Zero_Tolerance : constant Long_Long_Float :=
      Long_Long_Float'Model_Epsilon;
 
+   type Operator_Origin is (Predefined, Declared, Unresolved);
+
+   function Origin_Of_Operator
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Operator_Origin;
+   --  What the operator of Node, a unary or binary operation, denotes: the
+   --  predefined operation its symbol stands for, a function a declaration
+   --  defines, or what could not be established. Predefined for any other
+   --  node, and for the short-circuit forms, ranges and membership tests,
+   --  which no declaration can define.
+
+   function Is_User_Operator
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is (Origin_Of_Operator (Node) /= Predefined);
+   --  True when the operation Node is not known to be the arithmetic, the
+   --  comparison or the logical operation its symbol stands for on its
+   --  own: a call of a function a declaration defines says nothing of the
+   --  kind about its operands (FP-116).
+
    function Integer_Value
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State := Empty_Flow_State) return Abstract_Int;
@@ -240,6 +258,14 @@ package Adalang_Analyzer.Flow_Eval is
    --  declaration when it has one, otherwise Array_Index_Range of its
    --  type. Unknown_Range when Prefix isn't an array or its bounds aren't
    --  fixed by a declaration.
+
+   function Length_Limits
+     (Attribute : Libadalang.Analysis.Attribute_Ref) return Abstract_Range;
+   --  What the type of its prefix says of X'Length or X'Length (N),
+   --  whatever the state: from zero to the number of values of the index
+   --  subtype of that dimension, which the bounds of an array that is not
+   --  empty are in. Unknown_Range for any other attribute, and where the
+   --  index subtype is not an integer one with static bounds.
 
    type Subtype_Constraint is record
       Present : Boolean := False;

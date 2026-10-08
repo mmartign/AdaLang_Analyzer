@@ -5,6 +5,77 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- The length of an array has its range check where it is converted
+  (`--verify`). `X'Length` is a universal integer: where the context
+  expects a value of an integer type it is converted to that type, and
+  the conversion is checked. There is now an obligation for it, at the
+  attribute, which is where GNATprove reports the check: against the base
+  range of the type where the length is an operand of one of the type's
+  own operators (`Count < Data'Length`, `Offset + Data'Length`, `1 ..
+  Data'Length`), against the subtype anywhere else (`Natural'(Data'Length)`,
+  and the operand of an operator that a declaration defines, whose formal
+  gives the subtype). There is none where nothing is converted -- both
+  operands universal, as in `Data'Length > 0`, or a length that is a
+  static value -- and none beside the check that was already there: the
+  assignment's, the actual parameter's, the conversion's. See "Enumerated
+  obligations" in `docs/src/supported-verification-subset.md`.
+- An array has no more components than its index subtype has values, and
+  the analysis knows it: `X'Length` is from zero to that number wherever
+  the index subtype is an integer one with static bounds. It proves the
+  check above where the type has room for them all -- 1001 components in
+  the base range of `Integer`, not the 2 ** 31 an array over `Natural` may
+  have -- and the checks of arithmetic written with a length.
+- The base range of an integer type declared with a range of its own is
+  the implementation's to choose, but it has every value of that range and
+  their opposites (RM 3.5.4 (9)): a length known to be within them is
+  `Proved_Safe` as an operand of the type's operators, and any other stays
+  `Unproved`.
+- The precondition of an operator that a declaration defines is an
+  obligation, at the operator, as that of any call is: `Proved_Safe` or a
+  `Definite_Error` where the precondition says so by itself, `Unproved`
+  where it speaks of the operands.
+
+### Fixed
+
+- An operation is what its operator denotes, not what its symbol reads as
+  (`FP-116`, a false-safe and a false positive). Where a declaration
+  defines a function for an operator -- on a type of the program, in the
+  place of a predefined operator of `Integer` or `Boolean`, inherited by a
+  derived type, or as a renaming -- the operation is a call of that
+  function. It was folded as the arithmetic, the comparison or the logic
+  of its symbol, in the abstract interpretation and in the scalar VC
+  translation, and a condition written with it narrowed its operands as
+  the predefined comparison would. With a `"+"` that returns the distance
+  between its operands, `pragma Assert (Integer (Two + Three) = 5)` was
+  `Proved_Safe` where the value is 1; an array declared `Table (1 .. Two +
+  Three)` had 5 for its last index and an index of 4 was in bounds; `Two <
+  Three` was proved for a `"<"` that reverses the order; `Two = Two` for
+  an `"="` that is never true, and `"/="`, its complement, with it. The
+  other way, a right operand of zero was a division by zero -- a
+  `Definite_Error` and a `Division_By_Zero` finding -- for a function
+  `"/"` that divides nothing, and a negative exponent a
+  `Known_Negative_Exponent_Failure` for a function `"**"`. Such a call
+  also carried the overflow and division checks of the predefined
+  operation, which it does not have. It now has no value the analysis
+  knows and says nothing of its operands; what it returns is within the
+  subtype of its result. On the ten corpora no finding changes, and no
+  verdict on an obligation that remains: what goes is the 94 overflow
+  obligations and the one division obligation that stood on such calls,
+  ten of which had been proved.
+
+### Changed
+
+- The mutation manifest has 184 seeded defects (152 in 1.8.3), and the
+  proof-path evidence 76 routes over 25 producers (74 over 24).
+- `tests/verification_pp_length_attr.adb` indexes its array by an
+  enumeration type: the lower bound of the length of an array indexed by
+  an integer subtype no longer needs the scalar VC translation that the
+  fixture is evidence for.
+
 ## [1.8.3] - 2026-10-08
 
 A `--verify` release in two parts. It proves more of what GNATprove proves,
