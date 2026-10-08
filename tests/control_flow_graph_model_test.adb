@@ -83,6 +83,8 @@ begin
              "loop condition or exit-when edge is missing");
       Check (Count (Item, Return_Edge) = 1,
              "explicit return edge is missing");
+      Check (Count (Item, Goto_Edge) = 0,
+             "a goto edge appeared where there is no goto");
       Check (Count (Item, Raise_Edge) >= 2,
              "explicit raise or reraising edge is missing");
       Check (Count (Item, Exceptional_Edge) > 0,
@@ -102,12 +104,54 @@ begin
       Item : constant Graph := Build (Find_Subprogram (Unit.Root));
    begin
       Check (not Is_Complete (Item),
-             "goto was silently accepted into the supported subset");
+             "a goto back up was accepted into the supported subset");
       Check (Is_Well_Formed (Item), "incomplete CFG is structurally invalid");
       Check (Unsupported_Count (Item) = 1,
              "unsupported construct count is unstable");
       Check (Count (Item, Unsupported_Edge) = 1,
              "unsupported conservative continuation is missing");
+   end;
+
+   Unit :=
+     Context.Get_From_File ("tests/control_flow_graph_forward_goto.adb");
+   Check (not Unit.Has_Diagnostics, "forward goto CFG fixture did not parse");
+
+   declare
+      Item : constant Graph := Build (Find_Subprogram (Unit.Root));
+   begin
+      Check (Is_Complete (Item), "a goto to a label further down is refused");
+      Check (Is_Well_Formed (Item), "CFG with a goto is structurally invalid");
+      Check (Count (Item, Goto_Edge) = 1,
+             "the goto has no edge to its label");
+      Check (Count (Item, Unsupported_Edge) = 0,
+             "the goto still has an unsupported continuation");
+   end;
+
+   Unit := Context.Get_From_File ("tests/control_flow_graph_named_loop.adb");
+   Check (not Unit.Has_Diagnostics, "named loop CFG fixture did not parse");
+
+   declare
+      Item : constant Graph := Build (Find_Subprogram (Unit.Root));
+   begin
+      Check (Is_Complete (Item),
+             "a named loop, a named block or an exit naming a loop is refused");
+      Check (Is_Well_Formed (Item),
+             "CFG with named statements is structurally invalid");
+      Check (Count (Item, Loop_Header_Node) = 2,
+             "the two named loops were not modeled once each");
+      Check (Count (Item, Loop_Exit_Edge) = 4,
+             "an exit naming a loop, or a loop condition, has no exit edge");
+   end;
+
+   Unit := Context.Get_From_File ("tests/control_flow_graph_unknown_exit.adb");
+   Check (not Unit.Has_Diagnostics, "unknown exit CFG fixture did not parse");
+
+   declare
+      Item : constant Graph := Build (Find_Subprogram (Unit.Root));
+   begin
+      Check (not Is_Complete (Item),
+             "an exit naming no enclosing loop was accepted");
+      Check (Is_Well_Formed (Item), "incomplete CFG is structurally invalid");
    end;
 
    Ada.Text_IO.Put_Line ("control-flow graph model tests passed");

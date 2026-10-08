@@ -6,6 +6,11 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Characters.Handling;
+with Ada.Strings.Unbounded;
+
+with Langkit_Support.Slocs;
+with Langkit_Support.Text;
 with Libadalang.Common;
 
 package body Adalang_Analyzer.Control_Flow_Graph is
@@ -159,12 +164,59 @@ package body Adalang_Analyzer.Control_Flow_Graph is
    is
       Result : Graph;
 
+      --  Name is the name the loop statement is given, lower case, or
+      --  empty: "exit Name" leaves the innermost enclosing loop so named.
       type Loop_Context is record
          Exit_Target : Node_Id := No_Node;
+         Name        : Ada.Strings.Unbounded.Unbounded_String;
       end record;
       package Loop_Context_Vectors is new Ada.Containers.Vectors
         (Index_Type => Positive, Element_Type => Loop_Context);
       Loop_Stack : Loop_Context_Vectors.Vector;
+
+      function Lower_Text
+        (Node : Libadalang.Analysis.Ada_Node'Class)
+         return Ada.Strings.Unbounded.Unbounded_String
+      is (Ada.Strings.Unbounded.To_Unbounded_String
+            (Ada.Characters.Handling.To_Lower
+               (Langkit_Support.Text.To_UTF8 (Node.Text))));
+
+      --  Where "exit Name" goes: the exit of the innermost enclosing loop
+      --  of that name, which hides any other; No_Node when there is none.
+      function Named_Exit_Target
+        (Name : Libadalang.Analysis.Ada_Node'Class) return Node_Id
+      is
+         use type Ada.Strings.Unbounded.Unbounded_String;
+         Wanted : constant Ada.Strings.Unbounded.Unbounded_String :=
+           Lower_Text (Name);
+      begin
+         for Index in reverse 1 .. Natural (Loop_Stack.Length) loop
+            if Loop_Stack (Index).Name = Wanted then
+               return Loop_Stack (Index).Exit_Target;
+            end if;
+         end loop;
+         return No_Node;
+      end Named_Exit_Target;
+
+      --  The statement lists are built last statement first, so a goto is
+      --  given its edge once every label has its node. Continuation is
+      --  where a goto that stays unsupported is taken to go on.
+      type Label_Target is record
+         Decl : Libadalang.Analysis.Ada_Node;
+         Id   : Node_Id;
+      end record;
+      package Label_Target_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Label_Target);
+      Labels : Label_Target_Vectors.Vector;
+
+      type Pending_Goto is record
+         Id           : Node_Id;
+         Stmt         : Libadalang.Analysis.Ada_Node;
+         Continuation : Node_Id;
+      end record;
+      package Pending_Goto_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Pending_Goto);
+      Gotos : Pending_Goto_Vectors.Vector;
 
       function Add_Node
         (Kind      : Node_Kind;
@@ -314,6 +366,22 @@ package body Adalang_Analyzer.Control_Flow_Graph is
                   Id : constant Node_Id := Add_Node (Statement_Node, Stmt);
                begin
                   Add_Edge (Id, Continuation, Normal_Edge);
+                  if Stmt.Kind = Ada_Label then
+                     Labels.Append
+                       ((Decl =>
+                           Libadalang.Analysis.Ada_Node
+                             (Stmt.As_Label.F_Decl),
+                         Id   => Id));
+                  end if;
+                  return Id;
+               end;
+
+            when Ada_Goto_Stmt =>
+               declare
+                  Id : constant Node_Id := Add_Node (Statement_Node, Stmt);
+               begin
+                  Gotos.Append
+                    ((Id => Id, Stmt => Stmt, Continuation => Continuation));
                   return Id;
                end;
 
@@ -345,8 +413,13 @@ package body Adalang_Analyzer.Control_Flow_Graph is
                   Named          : constant Boolean :=
                     not Libadalang.Analysis.Is_Null
                       (Exit_Statement.F_Loop_Name);
+                  Named_Target   : constant Node_Id :=
+                    (if Named
+                     then Named_Exit_Target (Exit_Statement.F_Loop_Name)
+                     else No_Node);
                   Supported      : constant Boolean :=
-                    not Loop_Stack.Is_Empty and then not Named;
+                    not Loop_Stack.Is_Empty
+                    and then (not Named or else Named_Target /= No_Node);
                   Id             : constant Node_Id :=
                     Add_Node
                        ((if not Supported then Unsupported_Node
@@ -356,6 +429,8 @@ package body Adalang_Analyzer.Control_Flow_Graph is
                   Target         : constant Node_Id :=
                     (if Loop_Stack.Is_Empty
                      then Continuation
+                     elsif Named_Target /= No_Node
+                     then Named_Target
                      else Loop_Stack.Last_Element.Exit_Target);
                begin
                   if Conditional then
@@ -429,7 +504,16 @@ package body Adalang_Analyzer.Control_Flow_Graph is
                     Add_Node (Merge_Node);
                   Body_Entry : Node_Id;
                begin
-                  Loop_Stack.Append ((Exit_Target => Continuation));
+                  --  The loop has the name of the named statement it is
+                  --  the statement of.
+                  Loop_Stack.Append
+                    ((Exit_Target => Continuation,
+                      Name        =>
+                        (if not Libadalang.Analysis.Is_Null (Stmt.Parent)
+                           and then Stmt.Parent.Kind = Ada_Named_Stmt
+                         then Lower_Text
+                                (Stmt.Parent.As_Named_Stmt.F_Decl.F_Name)
+                         else Ada.Strings.Unbounded.Null_Unbounded_String)));
                   Body_Entry := Build_List
                     (Stmt.As_Base_Loop_Stmt.F_Stmts, Back_Edge_Node,
                      Exception_Target, Return_Target);
@@ -447,6 +531,14 @@ package body Adalang_Analyzer.Control_Flow_Graph is
                   end if;
                   return Header;
                end;
+
+            when Ada_Named_Stmt =>
+               --  A loop or a block with a name. A loop takes its name
+               --  from here; the name of a block is nothing an exit can
+               --  go to.
+               return Build_Statement
+                 (Libadalang.Analysis.Ada_Node (Stmt.As_Named_Stmt.F_Stmt),
+                  Continuation, Exception_Target, Return_Target);
 
             when Ada_Begin_Block =>
                return Build_Handled
@@ -550,6 +642,45 @@ package body Adalang_Analyzer.Control_Flow_Graph is
          end;
       end Build_Handled;
 
+      --  The node of the label Jump goes to, when that label is further
+      --  down in this subprogram; No_Node otherwise. A jump back up makes
+      --  a cycle with no loop header in it, where nothing cuts it.
+      function Forward_Target (Jump : Pending_Goto) return Node_Id is
+         use type Libadalang.Analysis.Ada_Node;
+         use type Langkit_Support.Slocs.Line_Number;
+         use type Langkit_Support.Slocs.Column_Number;
+
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Jump.Stmt.As_Goto_Stmt.F_Label_Name.P_Referenced_Decl;
+         From : constant Langkit_Support.Slocs.Source_Location_Range :=
+           Jump.Stmt.Sloc_Range;
+      begin
+         if Libadalang.Analysis.Is_Null (Decl) then
+            return No_Node;
+         end if;
+
+         for Label of Labels loop
+            if Label.Decl = Libadalang.Analysis.Ada_Node (Decl) then
+               declare
+                  To : constant Langkit_Support.Slocs.Source_Location_Range :=
+                    Result.Nodes (Positive (Label.Id)).Source.Sloc_Range;
+               begin
+                  if To.Start_Line > From.Start_Line
+                    or else (To.Start_Line = From.Start_Line
+                             and then To.Start_Column > From.Start_Column)
+                  then
+                     return Label.Id;
+                  end if;
+                  return No_Node;
+               end;
+            end if;
+         end loop;
+         return No_Node;
+      exception
+         when others =>
+            return No_Node;
+      end Forward_Target;
+
       Body_Entry : Node_Id;
       Full_Entry : Node_Id;
    begin
@@ -564,6 +695,21 @@ package body Adalang_Analyzer.Control_Flow_Graph is
         (Subprogram.F_Decls.F_Decls, Body_Entry,
          Result.Exceptional_Exit_Id);
       Add_Edge (Result.Entry_Id, Full_Entry, Normal_Edge);
+
+      for Jump of Gotos loop
+         declare
+            Target : constant Node_Id := Forward_Target (Jump);
+         begin
+            if Target /= No_Node then
+               Add_Edge (Jump.Id, Target, Goto_Edge);
+            else
+               Result.Nodes (Positive (Jump.Id)).Kind := Unsupported_Node;
+               Result.Nodes (Positive (Jump.Id)).Supported := False;
+               Result.Unsupported_Nodes := Result.Unsupported_Nodes + 1;
+               Add_Edge (Jump.Id, Jump.Continuation, Unsupported_Edge);
+            end if;
+         end;
+      end loop;
       return Result;
    end Build;
 

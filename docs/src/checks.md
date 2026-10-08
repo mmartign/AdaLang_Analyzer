@@ -484,7 +484,8 @@ invalidation. Relational contract transfer still requires SPARK mode, an
 explicit `Global` aspect, and non-aliased simple writable actuals. Access types
 and explicit dereference, dispatching/class-wide behavior, tasking and
 protected operations, floating-point proof, generic subprogram instantiations,
-and unsupported transfers such as `goto` are outside the proof boundary.
+and unsupported transfers such as a `goto` back up to a label are outside the
+proof boundary.
 
 For assertions that remain unknown after abstract interpretation, `--verify`
 also has a small scalar verification-condition backend. It translates

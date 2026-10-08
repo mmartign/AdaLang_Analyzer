@@ -44,7 +44,7 @@ h02.adb	147	BAD	division-by-zero	unproved
 h02.adb	160	BAD	division-by-zero	unproved
 h02.adb	162	OK	division-by-zero	proved-safe
 h02.adb	171	BAD	division-by-zero	unproved
-h02.adb	187	BAD	division-by-zero	unsupported
+h02.adb	187	BAD	division-by-zero	unproved
 h02.adb	199	BAD	division-by-zero	unproved
 h02.adb	213	BAD	division-by-zero	unproved
 h02.adb	222	BAD	division-by-zero	unproved
@@ -67,7 +67,7 @@ h02.adb	337	BAD	range-check	no-obligation
 h02.adb	346	BAD	division-by-zero	unproved
 h02.adb	362	BAD	division-by-zero	unproved
 h02.adb	378	BAD	division-by-zero	definite-error
-h02.adb	396	BAD	division-by-zero	unsupported
+h02.adb	396	BAD	division-by-zero	unproved
 h03_arith.adb	12	BAD	division-by-zero	unproved
 h03_arith.adb	13	BAD	division-by-zero	unproved
 h03_arith.adb	15	BAD	division-by-zero	unproved

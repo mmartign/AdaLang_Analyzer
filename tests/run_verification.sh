@@ -98,6 +98,8 @@ fp112=$(mktemp "${TMPDIR:-/tmp}/adalang-fp112.XXXXXX")
 fp113=$(mktemp "${TMPDIR:-/tmp}/adalang-fp113.XXXXXX")
 quantified_invariant=$(mktemp "${TMPDIR:-/tmp}/adalang-quantified-invariant.XXXXXX")
 named_values=$(mktemp "${TMPDIR:-/tmp}/adalang-named-values.XXXXXX")
+forward_goto=$(mktemp "${TMPDIR:-/tmp}/adalang-forward-goto.XXXXXX")
+named_loops=$(mktemp "${TMPDIR:-/tmp}/adalang-named-loops.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -128,7 +130,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -1008,6 +1010,7 @@ if grep -F '"method": "external-prover"' "$vc_unavailable" >/dev/null; then
    exit 1
 fi
 
+#  A goto back up to a label makes a cycle no loop header cuts.
 run_json "$unsupported" tests/verification_unsupported.adb
 grep -F '"status": "unsupported"' "$unsupported" >/dev/null
 if grep -F '"status": "proved-safe"' "$unsupported" >/dev/null; then
@@ -1859,5 +1862,54 @@ do
 done
 must_not_prove "$named_values" division-by-zero '(Exact - Limit + 1)' \
   "the value of a named number"
+
+# A goto to a label further down is one more way into that label, and no
+# longer puts the subprogram outside the verification subset. What holds at
+# the label is what holds on every way in; what follows the goto is reached
+# only another way.
+run_json_pair "$forward_goto" tests/verification_forward_goto
+if grep -F '"status": "unsupported"' "$forward_goto" >/dev/null; then
+   echo "a goto to a label further down puts its subprogram outside the" \
+     "verification subset" >&2
+   exit 1
+fi
+must_prove "$forward_goto" division-by-zero Either abstract-interpretation \
+  "a goto to a label further down"
+must_prove "$forward_goto" division-by-zero Five abstract-interpretation \
+  "a goto to a label further down"
+must_prove "$forward_goto" postcondition 'Same = 2' abstract-interpretation \
+  "a goto to a label further down"
+grep -F '"kind": "range-check"' "$forward_goto" |
+  grep -F '"operation": "0"' |
+  grep -F '"status": "unreachable"' >/dev/null
+for operation in Skipped Last Value Guarded; do
+   must_not_prove "$forward_goto" division-by-zero "$operation" \
+     "a goto to a label further down"
+done
+must_not_prove "$forward_goto" initialization-check Unset_Result \
+  "a goto to a label further down"
+must_not_prove "$forward_goto" postcondition 'Differs = 2' \
+  "a goto to a label further down"
+must_not_prove "$forward_goto" loop-invariant-preservation 'Kept >= 0' \
+  "a goto to a label further down"
+
+# A loop or a block with a name, and an exit that names the loop it leaves,
+# no longer put the subprogram outside the verification subset. An exit
+# that names an outer loop goes past what the outer loop's body does after
+# the inner loop.
+run_json_pair "$named_loops" tests/verification_named_loops
+if grep -F '"status": "unsupported"' "$named_loops" >/dev/null; then
+   echo "a named loop or block puts its subprogram outside the" \
+     "verification subset" >&2
+   exit 1
+fi
+must_prove "$named_loops" division-by-zero Passed abstract-interpretation \
+  "an exit that names a loop"
+must_not_prove "$named_loops" division-by-zero Skipped \
+  "an exit that names a loop"
+must_not_prove "$named_loops" initialization-check Unset_Result \
+  "an exit that names a loop"
+must_not_prove "$named_loops" postcondition 'Differs = 2' \
+  "an exit that names a loop"
 
 echo "bounded verification tests passed"

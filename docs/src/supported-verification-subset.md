@@ -358,8 +358,16 @@ cannot produce `Proved_Safe` or `Definite_Error`.
 
 The verification CFG covers sequential statements and declaration
 elaboration; `if`/`elsif`/`else`; `case`; `while`, `for`, and unconditional
-loops; unnamed exits; returns; raises; nested blocks; and conservative
-exception-handler dispatch. Fixed-point iteration widens growing loop ranges.
+loops, with or without a name; exits, including one that names the loop it
+leaves; a `goto` to a label further down; returns; raises; nested blocks,
+with or without a name; and conservative exception-handler dispatch. An
+exit that names a loop goes to the end of the innermost enclosing loop of
+that name. A `goto` to a label further down is one more way into that
+label, so what holds there is what holds on every way in; a `goto` back up
+to a label makes a cycle that no loop statement heads, and puts the
+subprogram outside the subset, as SPARK itself excludes it. A loop
+invariant is not proved preserved by a body that has a `goto` on the way to
+its end. Fixed-point iteration widens growing loop ranges.
 A subprogram with an incomplete or malformed CFG cannot yield a proof based on
 that boundary. If the fixed-point run itself fails (for example on a
 Libadalang property error), every obligation of that subprogram is

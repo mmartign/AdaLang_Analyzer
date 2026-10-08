@@ -41,6 +41,7 @@ package Adalang_Analyzer.Control_Flow_Graph is
       Case_Edge,
       Loop_Back_Edge,
       Loop_Exit_Edge,
+      Goto_Edge,
       Return_Edge,
       Raise_Edge,
       Exceptional_Edge,
@@ -91,8 +92,13 @@ package Adalang_Analyzer.Control_Flow_Graph is
    function Exceptional_Exit (Item : Graph) return Node_Id;
 
    function Is_Complete (Item : Graph) return Boolean;
-   --  False when a statement outside the supported sequential subset, or a
-   --  named loop exit whose target has not been resolved, was encountered.
+   --  False when a statement outside the supported sequential subset, an
+   --  exit naming no enclosing loop, or a goto that does not jump to a
+   --  label further down was encountered. An exit that names a loop goes
+   --  to the exit of the innermost enclosing loop of that name. A goto to a
+   --  label further down has a Goto_Edge to the node of that label: it
+   --  adds a way into the label and no cycle, every cycle of the graph
+   --  still going through the header of a loop statement.
 
    function Unsupported_Count (Item : Graph) return Natural;
    function Is_Well_Formed (Item : Graph) return Boolean;

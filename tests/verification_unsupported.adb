@@ -1,9 +1,11 @@
 procedure Verification_Unsupported (Input : Integer) is
    Result : Integer := 0;
 begin
-   goto Finished;
-   Result := 10 / Input;
+   <<Again>>
+   Result := Result + 1;
+   if Result < Input then
+      goto Again;
+   end if;
 
-   <<Finished>>
-   pragma Assert (Result = 0);
+   pragma Assert (Result > 0);
 end Verification_Unsupported;

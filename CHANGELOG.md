@@ -16,6 +16,16 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   operand or the callee names it. Such names were outside the scalar VC
   language, which left unproved most preconditions of code that qualifies
   every name, as generated code does.
+- A loop or a block with a name, and an exit that names the loop it
+  leaves, no longer put the subprogram outside the verification subset.
+  `exit Outer when Found` inside an inner loop goes to the end of `Outer`,
+  past what the body of `Outer` does after the inner loop.
+- A `goto` to a label further down no longer puts the subprogram outside
+  the verification subset. It is one more way into the label: what holds
+  there is what holds on every way in, and what follows the `goto` is
+  reached only another way. A `goto` back up to a label stays outside the
+  subset, as it is outside SPARK. A loop invariant is not proved preserved
+  by a body with a `goto` on the way to its end.
 - A named number is its value, in the scalar VC language and in the
   abstract interpretation alike: `Value < Limit` bounds `Value` where
   `Limit : constant := 10`. The value is computed for an expression of
@@ -59,7 +69,10 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The mutation manifest has 130 seeded defects (102 in 1.8.2).
+- The mutation manifest has 140 seeded defects (102 in 1.8.2).
+- `tests/verification_unsupported.adb` and
+  `tests/control_flow_graph_unsupported.adb`, the examples of control flow
+  outside the subset, are a `goto` back up to a label.
 
 ## [1.8.2] - 2026-10-06
 

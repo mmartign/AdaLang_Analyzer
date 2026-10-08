@@ -8153,6 +8153,13 @@ package body Adalang_Analyzer.Flow_Interp is
                                (Symbols_After_Call
                                   (Symbols, Source.As_Call_Stmt, State),
                                 Source.As_Call_Stmt, State);
+                        elsif Node_Info.Kind = CFG.Statement_Node
+                          and then Source.Kind =
+                            Libadalang.Common.Ada_Goto_Stmt
+                        then
+                           --  A jump leaves the line of statements this
+                           --  walk follows to the back edge.
+                           return False;
                         elsif Node_Info.Kind in  --  adalang-analyzer: ignore Empty_Elsif_Body
                           CFG.Statement_Node | CFG.Merge_Node
                         then

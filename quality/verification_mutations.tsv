@@ -129,3 +129,13 @@ named-number-quotient	tests/verification_named_values.adb	assertion	Middle < 2	u
 named-number-modular	tests/verification_named_values.adb	assertion	Octet <= Wrapped	unproved	a named number declared with a sum of a mod 256 type is 44 and not 300
 named-number-real	tests/verification_named_values.adb	assertion	Integer (Ratio) = 2	unproved	a real named number is not cut down to an integer
 named-number-divisor	tests/verification_named_values.adb	division-by-zero	(Exact - Limit + 1)	unproved	a divisor written with a named number is zero for one of the values
+goto-skips-assignment	tests/verification_forward_goto.adb	division-by-zero	Skipped	unproved	a goto goes past the assignment that makes the divisor nonzero
+goto-out-of-loop	tests/verification_forward_goto.adb	division-by-zero	Last	unproved	a goto leaves a loop before its first assignment and goes past the one after the loop
+goto-skips-assertion	tests/verification_forward_goto.adb	division-by-zero	Value	unproved	an assertion a goto goes past is assumed on the other way only
+goto-leaves-unset	tests/verification_forward_goto.adb	initialization-check	Unset_Result	unproved	a goto goes past the only assignment of an out parameter
+goto-postcondition	tests/verification_forward_goto.adb	postcondition	Differs = 2	unproved	the postcondition holds on the way that does not take the goto only
+goto-in-loop-body	tests/verification_forward_goto.adb	loop-invariant-preservation	Kept >= 0	unproved	the loop body breaks the invariant on the way that does not take the goto
+goto-from-handler	tests/verification_forward_goto.adb	division-by-zero	Guarded	unproved	a goto out of a handler arrives with the divisor at zero
+named-exit-skips-outer-body	tests/verification_named_loops.adb	division-by-zero	Skipped	unproved	an exit that names the outer loop goes past the assignment after the inner loop
+named-exit-leaves-unset	tests/verification_named_loops.adb	initialization-check	Unset_Result	unproved	an exit that names the outer loop goes past the only assignment of an out parameter
+named-exit-postcondition	tests/verification_named_loops.adb	postcondition	Differs = 2	unproved	the postcondition holds only on the way that does not take the exit naming the outer loop

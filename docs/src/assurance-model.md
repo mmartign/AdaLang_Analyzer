@@ -318,9 +318,9 @@ dispatcher connects to every handler that could conservatively apply; a
 catch-all handler prevents direct propagation from that dispatcher, while
 exceptions raised inside a handler propagate to the enclosing scope.
 
-Unsupported transfers such as `goto`, extended return, tasking statements,
-and named exits are represented by `Unsupported_Node` and make the graph
-incomplete. No `Proved_Safe` status may be derived from an incomplete graph.
+Unsupported transfers such as a `goto` back up to a label, extended return,
+tasking statements, and an exit that names no enclosing loop are represented
+by `Unsupported_Node` and make the graph incomplete. No `Proved_Safe` status may be derived from an incomplete graph.
 The verifier consumes a complete graph with a terminating work list. After
 repeated growth at a loop header, moving interval bounds widen to infinity;
 a final iteration guard conservatively havocs the state rather than assuming
