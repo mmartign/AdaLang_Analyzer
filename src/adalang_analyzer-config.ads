@@ -22,7 +22,7 @@ with Adalang_Analyzer.Rules;
 --  that registry stays a pure, stateless constant table.
 package Adalang_Analyzer.Config is
 
-   Analyzer_Version : constant String := "1.8.3";
+   Analyzer_Version : constant String := "1.8.4";
 
    type Rule_State is (Disabled, Enabled);
    type Preset_Kind is

@@ -5,7 +5,54 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.4] - 2026-10-09
+
+A `--verify` release that corrects a false-safe and brings in checks
+GNATprove has and AdaLang did not. The fault is `FP-116`: an operator that a
+declaration defines was read as the operation its symbol stands for. The
+checks are the length check of an array given to a target, a new kind of
+obligation; the range check on the length of an array where it is
+converted to an integer type; and the precondition of an operator that a
+declaration defines.
+
+Who `FP-116` concerns: every release before this one. A `Proved_Safe` or
+`Definite_Error` result of 1.8.3 or earlier is not to be relied on where
+it depends on the value of an operation whose operator a declaration
+defines -- on a type of the program, in the place of a predefined operator
+of `Integer` or `Boolean`, inherited by a derived type, or as a renaming --
+unless that function computes what the predefined operator of its symbol
+would. The obligations concerned are the assertions, preconditions,
+postconditions, loop invariants and the range, index, overflow and division
+checks written with such an operation, or with an object, a bound or a
+subtype whose value comes from one; a `Division_By_Zero` or
+`Known_Negative_Exponent_Failure` finding on such an operation is a false
+positive. No corpus of the benchmarks shows a wrong verdict: their operators
+compute what their symbol says.
+
+Of the 15,043 checks GNATprove proves on the five fully proved corpora,
+`--verify` proves 4,757 (4,299 in 1.8.3) and has an obligation for 12,551
+(11,922), 308 of GNATprove's 311 length checks among them, with no check
+it proves that GNATprove does not and no definite error on a check
+GNATprove proves (`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). Given
+GNATprove's logs it accounts for all 15,043 as before: the 4,757 it proves
+itself, 7,794 that carry GNATprove's verdict on an obligation AdaLang has
+and did not decide, and 2,492 that carry it with no AdaLang obligation.
+Every preset reports, on each of the ten corpora, exactly the findings of
+1.8.3.
+
+What to expect when upgrading:
+
+- A report has obligations of a new kind, `length-check`. A consumer that
+  lists the kinds it knows meets one it does not.
+- There are more range checks, at the lengths of arrays, most of them
+  `Proved_Safe`, and preconditions at operators that a declaration defines.
+- Results that depended on `FP-116` change: `Proved_Safe` becomes
+  `Unproved`, and the `Definite_Error` results and the findings on a
+  declared `"/"`, `"mod"`, `"rem"` or `"**"` are gone, with the overflow and
+  division obligations that stood on calls of declared operators.
+- An array that is assigned, declared with an initial value or converted
+  has no range check on its value any more; where a compiler keeps a
+  check it has a length check.
 
 ### Added
 
@@ -107,6 +154,16 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - `tests/gnatprove_import/` and `tests/gap_ledger/`: the length check of
   the sample is now one AdaLang proves too, and the example of a check
   without a kind is a predicate check.
+- `tests/run_gnatprove_differential.sh` sets GNATprove's verdicts beside
+  AdaLang's on the fixtures of `FP-116` and of the length check, one check
+  at a time: nothing GNATprove refuses is proved, and the length checks are
+  at the same places. Its broken corpus has 24 units (22).
+- The per-corpus comparisons (`benchmarks/*/compare.awk`) pair GNATprove's
+  length checks with the new obligations.
+- The results documents of the benchmarks are named
+  `benchmarks/<corpus>/RESULTS_2026-10-09.md`; they were
+  `RESULTS_2026-10-02.md`, which is the name earlier entries of this file
+  give them.
 - `tests/verification_pp_length_attr.adb` indexes its array by an
   enumeration type: the lower bound of the length of an array indexed by
   an integer subtype no longer needs the scalar VC translation that the
