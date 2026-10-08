@@ -53,6 +53,15 @@ package Adalang_Analyzer.Flow_Eval is
    --  membership tests, and an "if" expression whose condition itself
    --  resolves. Bool_Unknown for anything else.
 
+   function Static_Condition_Value
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Bool;
+   --  What a rule check asks of a condition: whether it is constant as it
+   --  is written. Boolean_Value with no state, but for a condition that
+   --  names a named number, which is Bool_Unknown: the value of a named
+   --  number is how a program is configured, and a test of it is the
+   --  usual way of selecting code for one configuration, not a condition
+   --  that has gone constant by mistake.
+
    function Expression_Modulus
      (Node       : Libadalang.Analysis.Ada_Node'Class;
       Is_Modular : out Boolean) return Abstract_Int;
@@ -98,8 +107,9 @@ package Adalang_Analyzer.Flow_Eval is
 
    function Is_Boolean_Literal
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
-   --  True when Node is the identifier "True" or "False" (case-insensitive),
-   --  i.e. a syntactic boolean literal rather than an evaluated expression.
+   --  True when Node is the identifier "True" or "False" (case-insensitive)
+   --  and names the literal: an object, a parameter or a function may be
+   --  called True or False too, and hides it (FP-115).
 
    function Compare_Integers
      (Op   : Libadalang.Common.Ada_Node_Kind_Type;

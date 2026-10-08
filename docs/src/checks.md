@@ -554,6 +554,14 @@ precision-dependent "extra edge" findings while retaining conservative
 "may depend" information. These checks establish inexpensive flow properties;
 they do not generate verification conditions or replace GNATprove.
 
+A named number is known to the analysis by its value: a division by one that
+is zero is a `Division_By_Zero`, an index written with one is checked against
+the bounds. The checks that look for a condition which is constant as it is
+written -- `Constant_Condition`, `Unreachable_Branch`, the redundant Boolean
+operators -- do not count a test of a named number among them: `if
+Buffer_Limit = 0 then` is the usual way of selecting code for one
+configuration, not a condition that has gone constant by mistake.
+
 `Division_By_Zero` and `Constant_Condition` are additionally strengthened by a
 flow-sensitive abstract-execution pass that tracks both a variable's known
 integer value and its known boolean value across straight-line code,

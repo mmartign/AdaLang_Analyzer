@@ -2263,7 +2263,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               Loop_Node.As_While_Loop_Stmt.F_Spec;
          begin
             Is_Unconditional := not Libadalang.Analysis.Is_Null (Spec)
-              and then Boolean_Value (Spec.As_While_Loop_Spec.F_Expr) =
+              and then Static_Condition_Value (Spec.As_While_Loop_Spec.F_Expr) =
                 Bool_True;
          end;
       end if;
@@ -2315,7 +2315,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
         Stmt.F_Cond_Expr;
       First_Text          : constant String := Canonical_Text (First_Cond);
       First_Value         : constant Abstract_Bool :=
-        Boolean_Value (First_Cond);
+        Static_Condition_Value (First_Cond);
       Alternatives        : constant Libadalang.Analysis.Elsif_Stmt_Part_List :=
         Stmt.F_Alternatives;
       Previous_Always_True : Boolean := First_Value = Bool_True;
@@ -2334,7 +2334,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               Alt_Node.As_Elsif_Stmt_Part;
             Cond     : constant Libadalang.Analysis.Expr := Alt.F_Cond_Expr;
             Cond_Text : constant String := Canonical_Text (Cond);
-            Value    : constant Abstract_Bool := Boolean_Value (Cond);
+            Value    : constant Abstract_Bool := Static_Condition_Value (Cond);
          begin
             if Cond_Text /= "" and then Cond_Text = First_Text then
                Report_Duplicate_Condition (Unit, Cond);
@@ -2456,14 +2456,14 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          begin
             if Is_Standard_Boolean_Literal (Then_Expr)
               and then Is_Standard_Boolean_Literal (Else_Expr)
-              and then Boolean_Value (Then_Expr) /= Boolean_Value (Else_Expr)
+              and then Static_Condition_Value (Then_Expr) /= Static_Condition_Value (Else_Expr)
             then
                Report_Rule_Violation
                  (Unit, Stmt, Redundant_If_Boolean_Return,
                   "if statement returns an opposite boolean literal on " &
                   "each branch and can be simplified to returning the " &
                   "condition" &
-                  (if Boolean_Value (Then_Expr) = Bool_False
+                  (if Static_Condition_Value (Then_Expr) = Bool_False
                    then " negated" else ""));
             end if;
          end;
@@ -2480,7 +2480,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
         Expr.F_Cond_Expr;
       First_Text          : constant String := Canonical_Text (First_Cond);
       First_Value         : constant Abstract_Bool :=
-        Boolean_Value (First_Cond);
+        Static_Condition_Value (First_Cond);
       Alternatives        : constant Libadalang.Analysis.Elsif_Expr_Part_List :=
         Expr.F_Alternatives;
       Previous_Always_True : Boolean := First_Value = Bool_True;
@@ -2500,7 +2500,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               Alt_Node.As_Elsif_Expr_Part;
             Cond     : constant Libadalang.Analysis.Expr := Alt.F_Cond_Expr;
             Cond_Text : constant String := Canonical_Text (Cond);
-            Value    : constant Abstract_Bool := Boolean_Value (Cond);
+            Value    : constant Abstract_Bool := Static_Condition_Value (Cond);
          begin
             if Cond_Text /= "" and then Cond_Text = First_Text then
                Report_Duplicate_Condition (Unit, Cond);

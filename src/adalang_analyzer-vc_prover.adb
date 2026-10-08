@@ -1734,7 +1734,7 @@ package body Adalang_Analyzer.VC_Prover is
             then
                Mark_Unsupported (Context, Node, Sort_Mismatch);
                return Null_Unbounded_String;
-            elsif Text = "true" or else Text = "false" then
+            elsif Eval.Is_Boolean_Literal (Node) then
                return To_Unbounded_String (Text);
             end if;
             Key := Referenced_Key (Node);

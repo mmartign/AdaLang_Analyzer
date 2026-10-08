@@ -40,6 +40,11 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   integer literals, other named numbers, constants, `T'First` and
   `T'Last`, qualified expressions and the arithmetic operators; a real
   number, and a number declared with anything else, stays unknown.
+  The rule checks that look for a condition which is constant as it is
+  written -- `Constant_Condition`, `Unreachable_Branch` and the others of
+  that kind -- do not count a test of a named number: `if Buffer_Limit = 0
+  then` is how code is selected for one configuration, and is reported no
+  more than it was.
 
 ### Fixed
 
@@ -80,6 +85,11 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   (Count >= 1)` was a `Definite_Error` though it holds whenever the loop
   runs, and the division `10 / Count` after it a definite division by
   zero.
+- `True` and `False` are the literals only where the name denotes them
+  (`FP-115`, a false-safe). They were recognized by their spelling, and
+  neither is a reserved word: with `procedure P (False : Boolean)`,
+  `pragma Assert (not False)` was `Proved_Safe` and the branch of `if False
+  then` `Unreachable`, a division by zero in it included.
 - A quantified expression in a `Loop_Invariant` or an `Assert_And_Cut` no
   longer puts the whole subprogram outside the verification subset. It was
   meant to be decided there as it is in an `Assert`, a `Pre` or a `Post`;
@@ -88,7 +98,7 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The mutation manifest has 149 seeded defects (102 in 1.8.2).
+- The mutation manifest has 152 seeded defects (102 in 1.8.2).
 - `tests/verification_unsupported.adb` and
   `tests/control_flow_graph_unsupported.adb`, the examples of control flow
   outside the subset, are a `goto` back up to a label.

@@ -99,7 +99,7 @@ package body Adalang_Analyzer.Checks is
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Cond : Libadalang.Analysis.Ada_Node'Class)
    is
-      Value : constant Abstract_Bool := Boolean_Value (Cond);
+      Value : constant Abstract_Bool := Static_Condition_Value (Cond);
    begin
       if Rule_States (Constant_Condition) = Enabled
         and then Value /= Bool_Unknown
@@ -682,7 +682,7 @@ package body Adalang_Analyzer.Checks is
                      end if;
 
                      if Rule_States (Known_Assertion_Failure) = Enabled then
-                        if Boolean_Value (Cond) = Bool_False then
+                        if Static_Condition_Value (Cond) = Bool_False then
                            Adalang_Analyzer.Proof_Obligations.Register_At
                              (Unit           => Unit,
                               Node           => Cond,

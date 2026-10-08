@@ -786,4 +786,33 @@ if [ "$(grep -c '\[Identical_Branches\]' "$output")" -ne 1 ]; then
    exit 1
 fi
 
+# A named number is known to be its value, and a test of one is how code
+# is selected for a configuration: neither Constant_Condition nor
+# Unreachable_Branch reports it. A condition that is constant as written
+# is still reported, once.
+configuration_checks='Constant_Condition,Unreachable_Branch'
+if "$analyzer" -checks="$configuration_checks" \
+     tests/named_number_configuration_test.adb >"$output" 2>&1
+then
+   echo "expected named_number_configuration_test.adb to produce the" \
+     "finding of its literal condition" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Constant_Condition\]' "$output")" -ne 1 ] ||
+   ! grep -F ':23:' "$output" | grep -F '[Constant_Condition]' >/dev/null
+then
+   echo "a test of a named number is reported as a constant condition," \
+     "or the literal condition is not" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+if [ "$(grep -c '\[Unreachable_Branch\]' "$output")" -ne 1 ]; then
+   echo "a branch that a named number leaves out is reported unreachable," \
+     "or the one of the literal condition is not" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 echo "bug-finding regression tests passed"

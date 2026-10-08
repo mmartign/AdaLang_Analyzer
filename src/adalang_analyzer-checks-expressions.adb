@@ -479,12 +479,12 @@ package body Adalang_Analyzer.Checks.Expressions is
                     and then Is_Static_One (Expr.F_Right))
            or else (Op in Libadalang.Common.Ada_Op_And
                       | Libadalang.Common.Ada_Op_And_Then
-                    and then (Boolean_Value (Expr.F_Left) = Bool_True
-                              or else Boolean_Value (Expr.F_Right) = Bool_True))
+                    and then (Static_Condition_Value (Expr.F_Left) = Bool_True
+                              or else Static_Condition_Value (Expr.F_Right) = Bool_True))
            or else (Op in Libadalang.Common.Ada_Op_Or
                       | Libadalang.Common.Ada_Op_Or_Else
-                    and then (Boolean_Value (Expr.F_Left) = Bool_False
-                              or else Boolean_Value (Expr.F_Right) = Bool_False))
+                    and then (Static_Condition_Value (Expr.F_Left) = Bool_False
+                              or else Static_Condition_Value (Expr.F_Right) = Bool_False))
          then
             Report_Rule_Violation
               (Unit, Expr, Ineffective_Operation,
@@ -503,12 +503,12 @@ package body Adalang_Analyzer.Checks.Expressions is
                     and then Is_Static_One (Expr.F_Right))
            or else (Op in Libadalang.Common.Ada_Op_And
                       | Libadalang.Common.Ada_Op_And_Then
-                    and then (Boolean_Value (Expr.F_Left) = Bool_False
-                              or else Boolean_Value (Expr.F_Right) = Bool_False))
+                    and then (Static_Condition_Value (Expr.F_Left) = Bool_False
+                              or else Static_Condition_Value (Expr.F_Right) = Bool_False))
            or else (Op in Libadalang.Common.Ada_Op_Or
                       | Libadalang.Common.Ada_Op_Or_Else
-                    and then (Boolean_Value (Expr.F_Left) = Bool_True
-                              or else Boolean_Value (Expr.F_Right) = Bool_True))
+                    and then (Static_Condition_Value (Expr.F_Left) = Bool_True
+                              or else Static_Condition_Value (Expr.F_Right) = Bool_True))
          then
             Report_Rule_Violation
               (Unit, Expr, Constant_Result_Operation,

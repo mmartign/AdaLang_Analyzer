@@ -148,3 +148,6 @@ size-given	tests/verification_type_size.adb	assertion	Stored'Size = 7	definite-e
 size-representation-clause	tests/verification_type_size.adb	assertion	Coded'Size = 1	unproved	an enumeration type with a representation clause has no size the analysis knows
 size-of-object	tests/verification_type_size.adb	assertion	Item'Size = 4	unproved	the size of an object is not that of its subtype
 provisional-error-assertion	tests/verification_provisional_error.adb	assertion	Count >= 1	unproved	FP-114: after a loop that may not run the counter may be zero; that is no definite error, the assertion holding whenever the loop runs
+hidden-false-parameter	tests/verification_fp115_hidden_literal.adb	assertion	not False	unproved	FP-115: a parameter named False may be True
+hidden-true-constant	tests/verification_fp115_hidden_literal.adb	assertion	True	unproved	FP-115: a constant named True holds what it is given
+hidden-false-branch	tests/verification_fp115_hidden_literal.adb	division-by-zero	Count	definite-error	FP-115: the branch a parameter named False guards is reached, with the divisor at zero

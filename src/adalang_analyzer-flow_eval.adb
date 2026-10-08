@@ -865,8 +865,27 @@ package body Adalang_Analyzer.Flow_Eval is
          Text : constant String :=
            Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Node));
       begin
-         return Text = "true" or else Text = "false";
+         if Text /= "true" and then Text /= "false" then
+            return False;
+         end if;
       end;
+
+      --  The name is the literal unless it is seen to be something else.
+      --  Where the expression does not resolve, the first declaration of
+      --  that name in sight is taken, which is the one that hides the
+      --  literal when one does.
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      begin
+         return Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.Kind in Libadalang.Common.Ada_Enum_Literal_Decl
+                              | Libadalang.Common.Ada_Synthetic_Char_Enum_Lit;
+      end;
+   exception
+      when others =>
+         --  Nothing says what it names.
+         return False;
    end Is_Boolean_Literal;
 
    function Compare_Integers
@@ -1182,9 +1201,9 @@ package body Adalang_Analyzer.Flow_Eval is
                    (Langkit_Support.Text.To_UTF8
                       (Libadalang.Analysis.Text (Node)));
             begin
-               if Text = "true" then
+               if Text = "true" and then Is_Boolean_Literal (Node) then
                   return Bool_True;
-               elsif Text = "false" then
+               elsif Text = "false" and then Is_Boolean_Literal (Node) then
                   return Bool_False;
                else
                   return Flow_Bool_Lookup
@@ -1415,6 +1434,53 @@ package body Adalang_Analyzer.Flow_Eval is
       when others =>
          return Bool_Unknown;
    end Boolean_Value;
+
+   --  True when the name Node denotes a named number.
+   function Is_Named_Number
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Node.As_Name.P_Referenced_Decl;
+   begin
+      return not Libadalang.Analysis.Is_Null (Decl)
+        and then Decl.Kind = Libadalang.Common.Ada_Number_Decl;
+   exception
+      when others =>
+         return False;
+   end Is_Named_Number;
+
+   --  True when a name in Node denotes a named number.
+   function Names_Named_Number
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind in Libadalang.Common.Ada_Identifier
+                       | Libadalang.Common.Ada_Dotted_Name
+        and then Is_Named_Number (Node)
+      then
+         return True;
+      end if;
+
+      for Index in 1 .. Node.Children_Count loop
+         if Names_Named_Number (Node.Child (Index)) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Names_Named_Number;
+
+   function Static_Condition_Value
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Bool
+   is
+      Value : constant Abstract_Bool := Boolean_Value (Node);
+   begin
+      if Value /= Bool_Unknown and then Names_Named_Number (Node) then
+         return Bool_Unknown;
+      end if;
+      return Value;
+   end Static_Condition_Value;
 
    function Mirror_Comparison
      (Op : Libadalang.Common.Ada_Node_Kind_Type)
