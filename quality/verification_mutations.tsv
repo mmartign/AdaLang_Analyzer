@@ -183,3 +183,19 @@ length-limit-one-less	tests/verification_length_limits.adb	assertion	Grid'Length
 length-limit-modular	tests/verification_length_limits.adb	assertion	Octets'Length <= 255	unproved	an array over a modular type of 256 values may have 256 components
 length-limit-unknown-index	tests/verification_length_limits.adb	assertion	Items'Length <= 10	unproved	nothing is known of the length where the bounds of the index subtype are not static
 length-limit-empty	tests/verification_length_limits.adb	assertion	Cells'Length >= 1	unproved	an array may be empty
+length-slice-one-more	tests/verification_length_check.adb	length-check	Front (1 .. Count) := Back (1 .. Count + 1);	unproved	a slice of Count components is given one of Count + 1
+length-slice-one-more-value	tests/verification_length_check.adb	length-check	Back (1 .. Count + 1)	unproved	the value converted to the slice it is assigned to is one component longer
+length-slice-one-less	tests/verification_length_check.adb	length-check	Head (2 .. Count) := Tail (1 .. Count);	unproved	a slice of Count - 1 components is given one of Count
+length-unrelated	tests/verification_length_check.adb	length-check	Sink := Origin;	unproved	nothing relates the lengths of two unconstrained formals
+length-into-constrained	tests/verification_length_check.adb	length-check	Given	unproved	an array of unknown length is given to a subtype of five
+length-six-into-five	tests/verification_length_check.adb	length-check	Long	unproved	an array known to have six components is given to a subtype of five; not a definite error, which a length check never is
+length-short-chunk	tests/verification_length_check.adb	length-check	Store (8 * Place .. 8 * Place + 6) := Word_Of (Place);	unproved	a slice of seven components is given a function result of eight
+length-declared-from	tests/verification_length_check.adb	length-check	Seed	unproved	the initial value of an object declared 1 .. Count has any length
+length-returned	tests/verification_length_check.adb	length-check	Result_Source	unproved	the value a function returns as a subtype of five has any length
+length-actual	tests/verification_length_check.adb	length-check	Argument	unproved	the actual for a formal of a subtype of five has any length
+length-converted	tests/verification_length_check.adb	length-check	Operand	unproved	the operand of a conversion to a subtype of five has any length
+length-operands	tests/verification_length_check.adb	length-check	or	unproved	the right operand of an array operator has any length
+length-stale-declaration	tests/verification_length_check_state.adb	length-check	Goal (1 .. Size) := Local;	unproved	an array keeps the bounds it was declared with when the variable they were written with has grown
+length-stale-variable	tests/verification_length_check_state.adb	length-check	From (1 .. Limit)	unproved	a variable that has changed since it was given the value of another is no longer that value
+length-stale-subtype	tests/verification_length_check_state.adb	length-check	Kept	unproved	a subtype keeps the bounds it was elaborated with
+length-slice-of-constrained	tests/verification_length_check.adb	length-check	Part (1 .. Count)	unproved	a slice of an array of a constrained subtype has the length of its range, not that of the subtype

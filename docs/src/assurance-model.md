@@ -184,10 +184,10 @@ obligation as safe, erroneous, inconclusive, unreachable, or unsupported.
 generation, and per-run registry. Enabled checks enumerate applicable
 division, integer-overflow, range, index, selected discriminant,
 initialization, assertion, precondition, postcondition, loop-invariant, and
-loop-variant operations. `--verify` adds three obligations about a
-subprogram as a whole: termination, where SPARK requires it, and the data
-dependencies and flow dependencies its `Global` and `Depends` aspects
-state.
+loop-variant operations. `--verify` adds the length check of an array
+given to a target, and three obligations about a subprogram as a whole:
+termination, where SPARK requires it, and the data dependencies and flow
+dependencies its `Global` and `Depends` aspects state.
 
 Without `--verify`, known-failure evidence produces `Definite_Error` and other
 enumerated outcomes produce `Unproved`. With `--verify`, the CFG fixed-point

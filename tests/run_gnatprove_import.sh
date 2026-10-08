@@ -111,12 +111,12 @@ def obligation(report, identifier):
     return found[0]
 
 
-# 3. GNATprove's own log: fourteen checks, eleven of them proved. Nine
-#    AdaLang proves too; one it has an obligation for and leaves unproved;
-#    one, the length check, it has no obligation for.
+# 3. GNATprove's own log: fourteen checks, eleven of them proved. Ten
+#    AdaLang proves too, and one it has an obligation for and leaves
+#    unproved.
 expect(real, "real", checks=14, proved=11, justified=0, notProved=3,
-       provedByBoth=9, provedByGnatproveOnObligation=1,
-       provedByGnatproveWithoutObligation=1,
+       provedByBoth=10, provedByGnatproveOnObligation=1,
+       provedByGnatproveWithoutObligation=0,
        definiteErrorWhereGnatproveProved=0,
        provedSafeWhereGnatproveNotProved=0)
 
@@ -127,10 +127,13 @@ carried = obligation(real, overflow["obligation"])
 if (carried["status"], carried.get("gnatprove")) != ("unproved", "proved"):
     fail("the obligation of that addition is " + str(carried))
 
+#    The length check of the assignment is at its ":=", where AdaLang has
+#    its obligation too.
 length = check_at(real, "sample.adb", 5, 14, "length check")
-if (length["adalang"], length["obligation"], length["kind"]) != (
-        "no such obligation kind", None, None):
+if (length["adalang"], length["kind"]) != ("proved-safe", "length-check"):
     fail("the length check is " + str(length))
+if obligation(real, length["obligation"])["column"] != 14:
+    fail("the length check went to " + str(length))
 
 #    A check at another column of the line goes to the nearest obligation.
 division = check_at(real, "sample.ads", 9, 61, "division check")
@@ -217,10 +220,10 @@ grep -F "GNATprove verdicts (read from 1 log; not AdaLang's own results):" \
   "$work/text" >/dev/null
 grep -F 'Checks in the log : 14 (11 proved, 0 justified, 3 not proved)' \
   "$work/text" >/dev/null
-grep -F 'proved by AdaLang too : 9' "$work/text" >/dev/null
+grep -F 'proved by AdaLang too : 10' "$work/text" >/dev/null
 grep -F "GNATprove's verdict alone, on an AdaLang obligation : 1" \
   "$work/text" >/dev/null
-grep -F "GNATprove's verdict alone, no AdaLang obligation : 1" \
+grep -F "GNATprove's verdict alone, no AdaLang obligation : 0" \
   "$work/text" >/dev/null
 
 # shellcheck disable=SC2086

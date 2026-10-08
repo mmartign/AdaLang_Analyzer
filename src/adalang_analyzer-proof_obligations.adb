@@ -74,6 +74,8 @@ package body Adalang_Analyzer.Proof_Obligations is
             return "range-check";
          when Index_Check =>
             return "index-check";
+         when Length_Check =>
+            return "length-check";
          when Discriminant_Check =>
             return "discriminant-check";
          when Initialization_Check =>
@@ -435,5 +437,22 @@ package body Adalang_Analyzer.Proof_Obligations is
          end if;
       end;
    end Set_Subject;
+
+   procedure Set_Position
+     (Unit   : Libadalang.Analysis.Analysis_Unit;
+      Node   : Libadalang.Analysis.Ada_Node'Class;
+      Kind   : Obligation_Kind;
+      Place  : Langkit_Support.Slocs.Source_Location)
+   is
+      Index : constant Natural := Find (Stable_Id_For (Unit, Node, Kind));
+      Item  : Obligation;
+   begin
+      if Index /= 0 then
+         Item := Obligations.Element (Index);
+         Item.Location.Line := Natural (Place.Line);
+         Item.Location.Column := Natural (Place.Column);
+         Obligations.Replace_Element (Index, Item);
+      end if;
+   end Set_Position;
 
 end Adalang_Analyzer.Proof_Obligations;

@@ -48,7 +48,7 @@ CHECKS = [
     ("index check", "run-time check", "index-check"),
     ("range check", "run-time check", "range-check"),
     ("discriminant check", "run-time check", "discriminant-check"),
-    ("length check", "run-time check", None),
+    ("length check", "run-time check", "length-check"),
     ("predicate check", "run-time check", None),
     ("invariant check", "run-time check", None),
     ("tag check", "run-time check", None),

@@ -8,6 +8,7 @@
 
 with Ada.Strings.Unbounded;
 
+with Langkit_Support.Slocs;
 with Libadalang.Analysis;
 
 --  Data model and per-run registry for verification obligations. Obligations
@@ -27,6 +28,7 @@ package Adalang_Analyzer.Proof_Obligations is
       Integer_Overflow_Check,
       Range_Check,
       Index_Check,
+      Length_Check,
       Discriminant_Check,
       Initialization_Check,
       Assertion_Check,
@@ -173,6 +175,17 @@ package Adalang_Analyzer.Proof_Obligations is
    --  Records Subject's position as the subject of the obligation of Kind
    --  that Register_At anchored at Node. Does nothing when there is no such
    --  obligation or Subject is null.
+
+   procedure Set_Position
+     (Unit   : Libadalang.Analysis.Analysis_Unit;
+      Node   : Libadalang.Analysis.Ada_Node'Class;
+      Kind   : Obligation_Kind;
+      Place  : Langkit_Support.Slocs.Source_Location);
+   --  Reports the obligation of Kind that Register_At anchored at Node at
+   --  Place in the same file, not at the start of Node: for a
+   --  check that belongs to a token the tree has no node for, the ":=" of
+   --  an assignment. The identifier stays that of Node. Does nothing when
+   --  there is no such obligation.
 
    procedure Reset;
    --  Removes all obligations from the per-run registry.

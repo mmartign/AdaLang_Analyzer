@@ -239,6 +239,14 @@ package Adalang_Analyzer.Flow_Eval is
    --  range test: a caller may still conclude that a member lies within
    --  Type_Range, but never that a value within Type_Range is a member.
 
+   function Index_Constraint_Range
+     (Constraint : Libadalang.Analysis.Constraint;
+      Dimension  : Positive;
+      State      : Flow_State) return Abstract_Range;
+   --  The Dimension-th range of an index constraint such as the
+   --  "(1 .. 10)" of "String (1 .. 10)"; Unknown_Range for any other
+   --  constraint.
+
    function Array_Index_Range
      (Array_Type : Libadalang.Analysis.Base_Type_Decl;
       Dimension  : Positive;

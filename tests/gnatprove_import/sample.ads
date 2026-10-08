@@ -20,7 +20,7 @@ package Sample with SPARK_Mode is
                  and then (for all Index in Data'Range =>
                              Data (Index) in 0 .. 100);
 
-   --  The assignment has a length check, of which AdaLang raises none.
+   --  The assignment has a length check, which the precondition proves.
    procedure Copy (Source : Vector; Target : out Vector)
      with Pre => Source'Length = Target'Length;
 

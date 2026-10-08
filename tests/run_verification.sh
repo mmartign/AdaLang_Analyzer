@@ -106,6 +106,8 @@ fp115=$(mktemp "${TMPDIR:-/tmp}/adalang-fp115.XXXXXX")
 fp116=$(mktemp "${TMPDIR:-/tmp}/adalang-fp116.XXXXXX")
 length_conversion=$(mktemp "${TMPDIR:-/tmp}/adalang-length-conversion.XXXXXX")
 length_limits=$(mktemp "${TMPDIR:-/tmp}/adalang-length-limits.XXXXXX")
+length_check=$(mktemp "${TMPDIR:-/tmp}/adalang-length-check.XXXXXX")
+length_check_state=$(mktemp "${TMPDIR:-/tmp}/adalang-length-check-state.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -136,7 +138,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2084,5 +2086,72 @@ if grep -F '"status": "definite-error"' "$length_limits" >/dev/null; then
    echo "length limits: a definite error on a claim that may hold" >&2
    exit 1
 fi
+
+# The length check of an array given to a target. GNATprove has one at
+# each place the fixture has one, at the same line and column, and proves
+# what is proved here.
+run_json "$length_check" tests/verification_length_check.adb
+must_prove "$length_check" length-check 'Target := (others => 0);' \
+  abstract-interpretation "length check"
+must_prove "$length_check" length-check '(others => 0)' \
+  abstract-interpretation "length check"
+must_prove "$length_check" length-check 'and' abstract-interpretation \
+  "length check"
+for claim in 'Left (1 .. Count) := Right (1 .. Count);' \
+  'Right (1 .. Count)' 'Data (2 .. Count) := Data (1 .. Count - 1);' \
+  'Data (1 .. Count - 1)' 'Whole := Other;' 'Source' \
+  'Buffer (8 * Slot .. 8 * Slot + 7) := Word_Of (Slot);' 'Word_Of (Slot)' \
+  'Loose'
+do
+   must_prove "$length_check" length-check "$claim" external-prover \
+     "length check"
+done
+for claim in 'Front (1 .. Count) := Back (1 .. Count + 1);' \
+  'Back (1 .. Count + 1)' 'Head (2 .. Count) := Tail (1 .. Count);' \
+  'Tail (1 .. Count)' 'Sink := Origin;' 'Given' 'Long' \
+  'Part (1 .. Count)' \
+  'Store (8 * Place .. 8 * Place + 6) := Word_Of (Place);' \
+  'Word_Of (Place)' 'Seed' 'Result_Source' 'Argument' 'Operand' \
+  'Bits or More' 'or'
+do
+   must_not_prove "$length_check" length-check "$claim" "length check"
+done
+# Never a definite error, and no check where both lengths are static and
+# the same or where no constrained subtype receives the value.
+if grep -F '"kind": "length-check"' "$length_check" |
+  grep -F '"status": "definite-error"' >/dev/null
+then
+   echo "length check: a definite error" >&2
+   exit 1
+fi
+for claim in 'Kept := Again;' 'Again' 'Again := (others => 0);' \
+  'Plenty (1 .. 5)' 'Kept (1 .. 2) := Plenty (3 .. 4);' 'Plenty (3 .. 4)' \
+  '(1, 2, 3, 4, 5)' 'Shades := Tints;' 'Tints' '(others => 1)' 'Kept' \
+  'Plenty' "(if Plenty'Last = 5 then Again else Kept)"
+do
+   if grep -F '"kind": "length-check"' "$length_check" |
+     grep -F "\"operation\": \"$claim\"" >/dev/null
+   then
+      echo "length check: an obligation at '$claim'" >&2
+      exit 1
+   fi
+done
+# The check of the assignment itself is reported at its ":=".
+if ! grep -F '"kind": "length-check"' "$length_check" |
+  grep -F '"operation": "Whole := Other;"' |
+  grep -F '"line": 53, "column": 13,' >/dev/null
+then
+   echo "length check: not at the assignment symbol" >&2
+   exit 1
+fi
+# An array has the bounds it was declared with, a slice those of its range
+# where it is written: a variable changed since proves nothing.
+run_json "$length_check_state" tests/verification_length_check_state.adb
+for claim in 'Goal (1 .. Size) := Local;' 'Local' \
+  'Into (1 .. Count) := From (1 .. Limit);' 'From (1 .. Limit)' 'Kept'
+do
+   must_not_prove "$length_check_state" length-check "$claim" \
+     "length check"
+done
 
 echo "bounded verification tests passed"

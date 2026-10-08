@@ -1079,14 +1079,19 @@ package body Adalang_Analyzer.VC_Prover is
       if not Libadalang.Analysis.Is_Null (Prefix_Decl)
         and then Prefix_Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
       then
-         --  X'First/'Last/'Length where X is itself a discrete subtype
-         --  mark (e.g. Some_Subtype'Last).
-         if Dimension /= 1 then
+         --  X'First/'Last/'Length where X is itself a subtype mark: of a
+         --  constrained array subtype, whose bounds are those of all its
+         --  objects, or of a discrete subtype (Some_Subtype'Last).
+         if Prefix_Decl.As_Base_Type_Decl.P_Is_Array_Type then
+            Bounds := Eval.Array_Index_Range
+              (Prefix_Decl.As_Base_Type_Decl, Dimension, Context.State);
+         elsif Dimension /= 1 then
             Mark_Unsupported (Context, Node, Unsupported_Attribute);
             return Null_Unbounded_String;
+         else
+            Bounds := Eval.Type_Range
+              (Prefix_Decl.As_Base_Type_Decl, Context.State);
          end if;
-         Bounds := Eval.Type_Range
-           (Prefix_Decl.As_Base_Type_Decl, Context.State);
       else
          --  X'First/'Last/'Length where X is an array object.
          Bounds :=
@@ -4115,6 +4120,184 @@ package body Adalang_Analyzer.VC_Prover is
       when others =>
          return Unknown_Outcome;
    end Decide_Index_In_Object;
+
+   --  The term for the length of the Dimension-th dimension of the array
+   --  Item denotes, or of the range Item is; empty, with Context marked,
+   --  when it has none.
+   function Array_Length_Term
+     (Item      : Libadalang.Analysis.Expr'Class;
+      Dimension : Positive;
+      Context   : in out Translation_Context) return Unbounded_String
+   is
+      Interval : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Item) then
+         Mark_Unsupported (Context, Item, Null_Expression);
+         return Null_Unbounded_String;
+      elsif Item.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Array_Length_Term
+           (Item.As_Paren_Expr.F_Expr, Dimension, Context);
+      elsif Item.Kind in Libadalang.Common.Ada_Identifier
+                       | Libadalang.Common.Ada_Dotted_Name
+      then
+         return
+           Array_Attribute_Term
+             (Item.As_Name, "length", Item, Context, Dimension);
+      elsif Item.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Item.As_Call_Expr.P_Kind = Libadalang.Common.Array_Slice
+      then
+         Interval := Item.As_Call_Expr.F_Suffix.As_Ada_Node;
+      elsif Item.Kind = Libadalang.Common.Ada_Bin_Op then
+         Interval := Libadalang.Analysis.Ada_Node (Item);
+      end if;
+
+      --  A slice over Y'Range is as long as Y, array or subtype; one over
+      --  a subtype, as long as the subtype has values.
+      if Dimension = 1
+        and then not Libadalang.Analysis.Is_Null (Interval)
+        and then Interval.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                   (Adalang_Analyzer.Ada_Text.Node_Text
+                      (Interval.As_Attribute_Ref.F_Attribute)) = "range"
+        and then
+          (Libadalang.Analysis.Is_Null (Interval.As_Attribute_Ref.F_Args)
+           or else Interval.As_Attribute_Ref.F_Args.Children_Count = 0)
+      then
+         return
+           Array_Attribute_Term
+             (Interval.As_Attribute_Ref.F_Prefix, "length", Item, Context);
+      elsif Dimension = 1
+        and then not Libadalang.Analysis.Is_Null (Interval)
+        and then Interval.Kind in Libadalang.Common.Ada_Identifier
+                                | Libadalang.Common.Ada_Dotted_Name
+      then
+         declare
+            Decl   : constant Libadalang.Analysis.Basic_Decl :=
+              Interval.As_Name.P_Referenced_Decl;
+            Bounds : Domain.Abstract_Range := Domain.Unknown_Range;
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+            then
+               Bounds :=
+                 Eval.Type_Range (Decl.As_Base_Type_Decl, Context.State);
+            end if;
+            if Bounds.Has_Low and then Bounds.Has_High then
+               return To_Unbounded_String
+                 (if Bounds.Low > Bounds.High then "0"
+                  else SMT_Integer (Bounds.High - Bounds.Low + 1));
+            end if;
+         end;
+      end if;
+
+      if Dimension = 1
+        and then not Libadalang.Analysis.Is_Null (Interval)
+        and then Interval.Kind = Libadalang.Common.Ada_Bin_Op
+        and then Interval.As_Bin_Op.F_Op.Kind =
+          Libadalang.Common.Ada_Op_Double_Dot
+      then
+         declare
+            Low  : constant Unbounded_String :=
+              Integer_Term (Interval.As_Bin_Op.F_Left, Context);
+            High : constant Unbounded_String :=
+              (if Context.Supported and then Length (Low) > 0
+               then Integer_Term (Interval.As_Bin_Op.F_Right, Context)
+               else Null_Unbounded_String);
+         begin
+            if not Context.Supported or else Length (High) = 0 then
+               return Null_Unbounded_String;
+            end if;
+            return
+              To_Unbounded_String
+                ("(ite (<= " & To_String (Low) & " " & To_String (High) &
+                 ") (+ (- " & To_String (High) & " " & To_String (Low) &
+                 ") 1) 0)");
+         end;
+      end if;
+
+      Mark_Unsupported (Context, Item, Unsupported_Expression_Kind);
+      return Null_Unbounded_String;
+   end Array_Length_Term;
+
+   function Decide_Same_Length
+     (Target     : Libadalang.Analysis.Expr'Class;
+      Value      : Libadalang.Analysis.Expr'Class;
+      Dimensions : Positive;
+      State      : Domain.Flow_State;
+      Symbols    : Symbolic_State) return VC_Outcome
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
+      Goal    : Unbounded_String := To_Unbounded_String ("(and true");
+   begin
+      for Dimension in 1 .. Dimensions loop
+         declare
+            Of_Target : constant Unbounded_String :=
+              Array_Length_Term (Target, Dimension, Context);
+            Of_Value  : constant Unbounded_String :=
+              (if Context.Supported and then Length (Of_Target) > 0
+               then Array_Length_Term (Value, Dimension, Context)
+               else Null_Unbounded_String);
+         begin
+            if not Context.Supported or else Length (Of_Value) = 0 then
+               if Context.Supported then
+                  Mark_Unsupported (Context, Value, Missing_Static_Bounds);
+               end if;
+               return
+                 (Result => VC_Unsupported,
+                  Provenance => Unsupported_Provenance_For (Context, Value));
+            end if;
+            Append
+              (Goal,
+               " (= " & To_String (Of_Target) & " " & To_String (Of_Value) &
+               ")");
+         end;
+      end loop;
+
+      return Decide_Goal (Goal & ")", Context);
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Same_Length;
+
+   function Decide_Length
+     (Value   : Libadalang.Analysis.Expr'Class;
+      Length  : Long_Long_Integer;
+      State   : Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0);
+      Term    : constant Unbounded_String :=
+        Array_Length_Term (Value, 1, Context);
+   begin
+      if not Context.Supported
+        or else Ada.Strings.Unbounded.Length (Term) = 0
+      then
+         if Context.Supported then
+            Mark_Unsupported (Context, Value, Missing_Static_Bounds);
+         end if;
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Value));
+      end if;
+      return Decide_Goal
+        (To_Unbounded_String
+           ("(= " & To_String (Term) & " " & SMT_Integer (Length) & ")"),
+         Context);
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Length;
 
    function Array_Bound_Facts (State : Symbolic_State) return Symbolic_State
    is

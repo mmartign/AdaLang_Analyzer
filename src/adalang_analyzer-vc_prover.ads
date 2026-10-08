@@ -257,6 +257,29 @@ package Adalang_Analyzer.VC_Prover is
    --  check for an object whose bounds are not known as numbers: an
    --  unconstrained formal, most often.
 
+   function Decide_Same_Length
+     (Target     : Libadalang.Analysis.Expr'Class;
+      Value      : Libadalang.Analysis.Expr'Class;
+      Dimensions : Positive;
+      State      : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols    : Symbolic_State) return VC_Outcome;
+   --  Decides that the arrays Target and Value denote have the same length
+   --  in each of their Dimensions: the length check of an array
+   --  assignment. The length of an object or a component is the term of
+   --  its 'Length, a number where a declaration fixes its bounds and a
+   --  symbol otherwise; that of a slice written with its two bounds is
+   --  worked out from them, and Target may be such a range alone, the one
+   --  that constrains what the value is given to. VC_Unsupported for any
+   --  other form.
+
+   function Decide_Length
+     (Value   : Libadalang.Analysis.Expr'Class;
+      Length  : Long_Long_Integer;
+      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome;
+   --  As Decide_Same_Length, for a one-dimensional Value given to a
+   --  subtype whose length is the number Length.
+
    function Array_Bound_Facts (State : Symbolic_State) return Symbolic_State;
    --  What State knows about the bounds and lengths of array objects, and
    --  nothing else. Those never change while the objects are visible, so

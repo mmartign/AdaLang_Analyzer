@@ -9,6 +9,34 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- The length check of an array, a new kind of obligation, `length-check`
+  (`--verify`). An array given to a target must have the target's length
+  in each dimension, and the obligation is raised where a compiler keeps
+  that check, which is where GNATprove reports one. In an assignment the
+  value is converted to the subtype of the target when the target has a
+  constrained one -- a slice, a component, an object or a formal declared
+  with one -- and that is checked at the value; where the bounds of the
+  target are not static the assignment has a check of its own, reported
+  at the `:=`. So `A (1 .. N) := B (1 .. N)` has two, `Fixed := B` one at
+  `B`, `Whole := B` one at the `:=`, and `Fixed := (others => 0)` none.
+  The same for the initial value of an object declared with a constrained
+  subtype, the value a function returns, an actual parameter, the operand
+  of a conversion, a component named in a record aggregate, and for the
+  operands of `and`, `or` and `xor` on arrays, at the operator. There is
+  none where both lengths are static and the same or the two are of one
+  constrained subtype. It is `Proved_Safe` for an aggregate with an
+  `others` choice, which has the bounds of what it is given to, and where
+  a scalar VC shows the lengths equal -- by a precondition such as
+  `Left'Length = Right'Length`, by the bounds of two slices, by the
+  subtype of a function's result -- and is never a `Definite_Error`. On
+  `tests/verification_length_check.adb` GNATprove (FSF 16.1.0) has its 28
+  length checks at the 28 places AdaLang has its obligations, line and
+  column, and proves the 12 that AdaLang proves.
+  With `--gnatprove-log`, GNATprove's length checks are paired with these
+  obligations. See "Enumerated obligations" in
+  `docs/src/supported-verification-subset.md`.
+- `T'First`, `T'Last` and `T'Length` of a constrained array subtype `T`
+  are numbers in the scalar VC language, as those of an array object are.
 - The length of an array has its range check where it is converted
   (`--verify`). `X'Length` is a universal integer: where the context
   expects a value of an integer type it is converted to that type, and
@@ -69,8 +97,16 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The mutation manifest has 184 seeded defects (152 in 1.8.3), and the
-  proof-path evidence 76 routes over 25 producers (74 over 24).
+- An array that is assigned, declared with an initial value or converted
+  no longer carries a range check on its value. An array has a length to
+  check, not a range: the obligation was `Unsupported` or `Unproved`
+  wherever it was raised, and GNATprove has none there.
+- The mutation manifest has 200 seeded defects (152 in 1.8.3), and the
+  proof-path evidence 79 routes over 28 producers (74 over 24). There are
+  16 kinds of obligation (15).
+- `tests/gnatprove_import/` and `tests/gap_ledger/`: the length check of
+  the sample is now one AdaLang proves too, and the example of a check
+  without a kind is a predicate check.
 - `tests/verification_pp_length_attr.adb` indexes its array by an
   enumeration type: the lower bound of the length of an array indexed by
   an integer subtype no longer needs the scalar VC translation that the

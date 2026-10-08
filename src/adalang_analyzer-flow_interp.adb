@@ -22,6 +22,7 @@ with Ada.Strings.Unbounded;
 with GNATCOLL.GMP.Integers;
 
 with Libadalang.Common;
+with Langkit_Support.Slocs;
 with Langkit_Support.Text;
 
 with Adalang_Analyzer.Ada_Text;
@@ -1266,6 +1267,26 @@ package body Adalang_Analyzer.Flow_Interp is
       when others =>
          return Libadalang.Analysis.No_Base_Type_Decl;
    end Formal_Subtype;
+
+   --  As Formal_Subtype, the subtype of the formal as it is written.
+   function Formal_Type_Expr
+     (Param : Libadalang.Analysis.Defining_Name'Class)
+      return Libadalang.Analysis.Type_Expr
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Param);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_Param_Spec then
+            return Current.As_Param_Spec.F_Type_Expr;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return Libadalang.Analysis.No_Type_Expr;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Type_Expr;
+   end Formal_Type_Expr;
 
    --  True when the subtype Typ has every value of its type: a modular
    --  type, a predefined integer type, or a subtype or a derived type that
@@ -3492,6 +3513,806 @@ package body Adalang_Analyzer.Flow_Interp is
       when others =>
          return Unknown_Range;
    end Least_Base_Range;
+
+   --  The number of dimensions of the array type Typ, and zero when it is
+   --  not one.
+   function Array_Dimensions
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Natural
+   is
+      Max_Dimensions : constant := 8;
+      Count          : Natural := 0;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) or else not Typ.P_Is_Array_Type
+      then
+         return 0;
+      end if;
+
+      for Dimension in 0 .. Max_Dimensions - 1 loop
+         begin
+            exit when Libadalang.Analysis.Is_Null
+                        (Typ.P_Index_Type (Dimension));
+         exception
+            when others =>
+               exit;
+         end;
+         Count := Count + 1;
+      end loop;
+      return Count;
+   exception
+      when others =>
+         return 0;
+   end Array_Dimensions;
+
+   --  The number of values of Bounds when both of them are known.
+   function Range_Length (Bounds : Abstract_Range) return Abstract_Int is
+      Span : Abstract_Int;
+   begin
+      if not Bounds.Has_Low or else not Bounds.Has_High then
+         return Unknown_Int;
+      elsif Bounds.Low > Bounds.High then
+         return Known_Int (0);
+      end if;
+      Span := Safe_Sub (Bounds.High, Bounds.Low);
+      return (if Span.Known then Safe_Add (Span.Value, 1) else Unknown_Int);
+   end Range_Length;
+
+   --  The bounds a declaration fixes for the Dimension-th index of what
+   --  Prefix names: an array object or component, a constrained array
+   --  subtype, or, for the first, an integer subtype.
+   function Fixed_Bounds
+     (Prefix    : Libadalang.Analysis.Name'Class;
+      Dimension : Positive) return Abstract_Range
+   is
+      Decl : Libadalang.Analysis.Basic_Decl :=
+        Libadalang.Analysis.No_Basic_Decl;
+   begin
+      if Prefix.Kind in Libadalang.Common.Ada_Identifier
+                      | Libadalang.Common.Ada_Dotted_Name
+      then
+         Decl := Prefix.P_Referenced_Decl;
+      end if;
+
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else Decl.Kind not in Libadalang.Common.Ada_Base_Type_Decl
+      then
+         return Array_Object_Index_Range
+           (Prefix, Dimension, Empty_Flow_State);
+      elsif Decl.As_Base_Type_Decl.P_Is_Array_Type then
+         return Array_Index_Range
+           (Decl.As_Base_Type_Decl, Dimension, Empty_Flow_State);
+      elsif Dimension = 1 then
+         return Type_Range (Decl.As_Base_Type_Decl, Empty_Flow_State);
+      end if;
+      return Unknown_Range;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Fixed_Bounds;
+
+   --  The value of Item when it is a static expression: one the analysis
+   --  folds, one a compiler does, a bound or the length of an array whose
+   --  bounds a declaration fixes, or a sum or a difference of such.
+   function Static_Integer
+     (Item : Libadalang.Analysis.Expr'Class) return Abstract_Int
+   is
+      --  What Libadalang evaluates, when it takes Item for static.
+      function Evaluated return Abstract_Int is
+      begin
+         if Item.P_Is_Static_Expr then
+            return Known_Int
+              (Long_Long_Integer'Value
+                 (GNATCOLL.GMP.Integers.Image (Item.P_Eval_As_Int)));
+         end if;
+         return Unknown_Int;
+      exception
+         when others =>
+            return Unknown_Int;
+      end Evaluated;
+
+      Folded : Abstract_Int;
+   begin
+      if Libadalang.Analysis.Is_Null (Item) then
+         return Unknown_Int;
+      elsif Item.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Static_Integer (Item.As_Paren_Expr.F_Expr);
+      end if;
+
+      Folded := Integer_Value (Item, Empty_Flow_State);
+      if Folded.Known then
+         return Folded;
+      elsif Item.Kind = Libadalang.Common.Ada_Attribute_Ref then
+         declare
+            Attribute : constant Libadalang.Analysis.Attribute_Ref :=
+              Item.As_Attribute_Ref;
+            Name      : constant String :=
+              Normalized_Text (Attribute.F_Attribute);
+            Dimension : constant Abstract_Int :=
+              (if Libadalang.Analysis.Is_Null (Attribute.F_Args)
+                 or else Attribute.F_Args.Children_Count = 0
+               then Known_Int (1)
+               else Integer_Value
+                      (Assoc_Expression (Attribute.F_Args, 1),
+                       Empty_Flow_State));
+            Bounds    : Abstract_Range := Unknown_Range;
+
+            --  True when the prefix names an object or a subtype outright.
+            --  A compiler folds the bounds of those; those of a component
+            --  it leaves to be computed, static as its subtype may be.
+            function Named_Outright return Boolean is
+               Decl : Libadalang.Analysis.Basic_Decl;
+            begin
+               if Attribute.F_Prefix.Kind not in
+                 Libadalang.Common.Ada_Identifier
+                   | Libadalang.Common.Ada_Dotted_Name
+               then
+                  return False;
+               end if;
+               Decl := Attribute.F_Prefix.P_Referenced_Decl;
+               return not Libadalang.Analysis.Is_Null (Decl)
+                 and then
+                   (Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+                      | Libadalang.Common.Ada_Object_Decl_Range
+                    or else Decl.Kind = Libadalang.Common.Ada_Param_Spec);
+            exception
+               when others =>
+                  return False;
+            end Named_Outright;
+         begin
+            if Name in "first" | "last" | "length"
+              and then Dimension.Known
+              and then Dimension.Value in 1 .. 8
+              and then Named_Outright
+            then
+               Bounds :=
+                 Fixed_Bounds
+                   (Attribute.F_Prefix, Positive (Dimension.Value));
+            end if;
+            --  Both bounds, or neither: an array with one bound that is
+            --  not static has no static attribute, whatever the other is.
+            if Bounds.Has_Low and then Bounds.Has_High then
+               if Name = "length" then
+                  return Range_Length (Bounds);
+               elsif Name = "first" then
+                  return Known_Int (Bounds.Low);
+               elsif Name = "last" then
+                  return Known_Int (Bounds.High);
+               end if;
+            end if;
+         end;
+      elsif Item.Kind = Libadalang.Common.Ada_Bin_Op
+        and then Item.As_Bin_Op.F_Op.Kind in Libadalang.Common.Ada_Op_Plus
+          | Libadalang.Common.Ada_Op_Minus
+        and then Origin_Of_Operator (Item) = Predefined
+      then
+         declare
+            Left  : constant Abstract_Int :=
+              Static_Integer (Item.As_Bin_Op.F_Left);
+            Right : constant Abstract_Int :=
+              (if Left.Known then Static_Integer (Item.As_Bin_Op.F_Right)
+               else Unknown_Int);
+         begin
+            if Right.Known then
+               return
+                 (if Item.As_Bin_Op.F_Op.Kind = Libadalang.Common.Ada_Op_Plus
+                  then Safe_Add (Left.Value, Right.Value)
+                  else Safe_Sub (Left.Value, Right.Value));
+            end if;
+         end;
+      end if;
+      return Evaluated;
+   exception
+      when others =>
+         return Unknown_Int;
+   end Static_Integer;
+
+   --  The number of literals of the enumeration type that is the
+   --  Dimension-th index of the constrained array type Typ, when that
+   --  index is written as the name of the whole type: a length a compiler
+   --  knows as well as one between two integer bounds.
+   function Enumeration_Index_Length
+     (Typ       : Libadalang.Analysis.Base_Type_Decl;
+      Dimension : Positive) return Abstract_Int
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl := Typ;
+      Index     : Libadalang.Analysis.Ada_Node;
+      Named     : Libadalang.Analysis.Basic_Decl;
+   begin
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Unknown_Int;
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            if not Libadalang.Analysis.Is_Null
+                     (Current.As_Subtype_Decl.F_Subtype.F_Constraint)
+            then
+               return Unknown_Int;
+            end if;
+            Current :=
+              Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         elsif Current.Kind in Libadalang.Common.Ada_Type_Decl
+           and then not Libadalang.Analysis.Is_Null
+                          (Current.As_Type_Decl.F_Type_Def)
+           and then Current.As_Type_Decl.F_Type_Def.Kind =
+             Libadalang.Common.Ada_Array_Type_Def
+         then
+            exit;
+         else
+            return Unknown_Int;
+         end if;
+      end loop;
+
+      declare
+         Indices : constant Libadalang.Analysis.Array_Indices :=
+           Current.As_Type_Decl.F_Type_Def.As_Array_Type_Def.F_Indices;
+      begin
+         if Indices.Kind not in
+              Libadalang.Common.Ada_Constrained_Array_Indices_Range
+           or else Indices.As_Constrained_Array_Indices.F_List
+             .Children_Count < Dimension
+         then
+            return Unknown_Int;
+         end if;
+         Index :=
+           Indices.As_Constrained_Array_Indices.F_List.Child (Dimension);
+      end;
+
+      if Index.Kind in Libadalang.Common.Ada_Subtype_Indication_Range
+        and then Libadalang.Analysis.Is_Null
+                   (Index.As_Subtype_Indication.F_Constraint)
+      then
+         Named := Index.As_Subtype_Indication.F_Name.P_Referenced_Decl;
+      elsif Index.Kind in Libadalang.Common.Ada_Identifier
+                        | Libadalang.Common.Ada_Dotted_Name
+      then
+         Named := Index.As_Name.P_Referenced_Decl;
+      else
+         return Unknown_Int;
+      end if;
+
+      if not Libadalang.Analysis.Is_Null (Named)
+        and then Named.Kind in Libadalang.Common.Ada_Type_Decl
+        and then not Libadalang.Analysis.Is_Null
+                       (Named.As_Type_Decl.F_Type_Def)
+        and then Named.As_Type_Decl.F_Type_Def.Kind =
+          Libadalang.Common.Ada_Enum_Type_Def
+      then
+         return Known_Int
+           (Long_Long_Integer
+              (Named.As_Type_Decl.F_Type_Def.As_Enum_Type_Def
+                 .F_Enum_Literals.Children_Count));
+      end if;
+      return Unknown_Int;
+   exception
+      when others =>
+         return Unknown_Int;
+   end Enumeration_Index_Length;
+
+   --  The length of the Dimension-th dimension of the constrained array
+   --  subtype Typ, when its bounds are static.
+   function Subtype_Array_Length
+     (Typ       : Libadalang.Analysis.Base_Type_Decl;
+      Dimension : Positive) return Abstract_Int
+   is
+      Counted : constant Abstract_Int :=
+        Range_Length (Array_Index_Range (Typ, Dimension, Empty_Flow_State));
+   begin
+      return
+        (if Counted.Known then Counted
+         else Enumeration_Index_Length (Typ, Dimension));
+   end Subtype_Array_Length;
+
+   --  The subtype a declaration gives with Type_Expr: the type or subtype
+   --  it names, none when there is nothing to name.
+   function Designated_Type
+     (Type_Expr : Libadalang.Analysis.Type_Expr'Class)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Type_Expr) then
+         return Libadalang.Analysis.No_Base_Type_Decl;
+      end if;
+      return Type_Expr.P_Designated_Type_Decl;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Type_Decl;
+   end Designated_Type;
+
+   --  True when Type_Expr adds an index constraint to the type it names.
+   function Has_Index_Constraint
+     (Type_Expr : Libadalang.Analysis.Type_Expr'Class) return Boolean
+   is (not Libadalang.Analysis.Is_Null (Type_Expr)
+       and then Type_Expr.Kind in
+         Libadalang.Common.Ada_Subtype_Indication_Range
+       and then not Libadalang.Analysis.Is_Null
+                      (Type_Expr.As_Subtype_Indication.F_Constraint));
+
+   --  The length of the Dimension-th dimension that an array subtype gives
+   --  what is declared with it, when it gives one with static bounds: by
+   --  the index constraint of Type_Expr, if there is one, or by the
+   --  constrained array subtype Typ.
+   function Declared_Array_Length
+     (Typ       : Libadalang.Analysis.Base_Type_Decl;
+      Type_Expr : Libadalang.Analysis.Type_Expr'Class;
+      Dimension : Positive) return Abstract_Int
+   is
+   begin
+      if Has_Index_Constraint (Type_Expr) then
+         return Range_Length
+           (Index_Constraint_Range
+              (Type_Expr.As_Subtype_Indication.F_Constraint, Dimension,
+               Empty_Flow_State));
+      end if;
+      return Subtype_Array_Length (Typ, Dimension);
+   exception
+      when others =>
+         return Unknown_Int;
+   end Declared_Array_Length;
+
+   --  True when the array subtype Typ, with the constraint Type_Expr may
+   --  add to it, is a constrained one: what is declared with it has the
+   --  bounds it gives, static or not.
+   function Is_Constrained_Array
+     (Typ       : Libadalang.Analysis.Base_Type_Decl;
+      Type_Expr : Libadalang.Analysis.Type_Expr'Class) return Boolean
+   is
+   begin
+      if Array_Dimensions (Typ) = 0 then
+         return False;
+      end if;
+      return Has_Index_Constraint (Type_Expr)
+        or else Typ.P_Is_Definite_Subtype (Typ);
+   exception
+      when others =>
+         return False;
+   end Is_Constrained_Array;
+
+   --  True when the array Target names has a constrained subtype of its
+   --  own: a slice, a component, or an object or a formal parameter
+   --  declared with one. An object or a formal of an unconstrained subtype
+   --  has the bounds of its initial value or of its actual, and no subtype
+   --  to convert a value to.
+   function Target_Is_Constrained
+     (Target : Libadalang.Analysis.Expr'Class) return Boolean
+   is
+      Decl : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Target) then
+         return False;
+      elsif Target.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Target_Is_Constrained (Target.As_Paren_Expr.F_Expr);
+      elsif Target.Kind = Libadalang.Common.Ada_Call_Expr then
+         return Target.As_Call_Expr.P_Kind in
+           Libadalang.Common.Array_Slice | Libadalang.Common.Array_Index;
+      elsif Target.Kind = Libadalang.Common.Ada_Explicit_Deref then
+         return Target.P_Expression_Type.P_Is_Definite_Subtype (Target);
+      elsif Target.Kind not in Libadalang.Common.Ada_Identifier
+                             | Libadalang.Common.Ada_Dotted_Name
+      then
+         return False;
+      end if;
+
+      Decl := Target.As_Name.P_Referenced_Decl;
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return False;
+      elsif Decl.Kind = Libadalang.Common.Ada_Component_Decl then
+         return True;
+      elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+         return Is_Constrained_Array
+           (Designated_Type (Decl.As_Param_Spec.F_Type_Expr),
+            Decl.As_Param_Spec.F_Type_Expr);
+      elsif Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range then
+         if not Libadalang.Analysis.Is_Null
+                  (Decl.As_Object_Decl.F_Renaming_Clause)
+         then
+            return Target_Is_Constrained
+              (Decl.As_Object_Decl.F_Renaming_Clause.F_Renamed_Object);
+         end if;
+         return Is_Constrained_Array
+           (Designated_Type (Decl.As_Object_Decl.F_Type_Expr),
+            Decl.As_Object_Decl.F_Type_Expr);
+      end if;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Target_Is_Constrained;
+
+   --  The aggregate that gives the Dimension-th dimension of the array
+   --  aggregate Value its components: Value itself for the first, the
+   --  value of its first component for the second, and so on. None when
+   --  Value is not written so.
+   function Aggregate_Of_Dimension
+     (Value     : Libadalang.Analysis.Expr'Class;
+      Dimension : Positive) return Libadalang.Analysis.Expr
+   is
+      Current : Libadalang.Analysis.Expr := Value.As_Expr;
+   begin
+      for Level in 1 .. Dimension loop
+         while not Libadalang.Analysis.Is_Null (Current)
+           and then Current.Kind = Libadalang.Common.Ada_Paren_Expr
+         loop
+            Current := Current.As_Paren_Expr.F_Expr;
+         end loop;
+
+         if Libadalang.Analysis.Is_Null (Current)
+           or else Current.Kind not in Libadalang.Common.Ada_Base_Aggregate
+         then
+            return Libadalang.Analysis.No_Expr;
+         elsif Level < Dimension then
+            if Current.As_Base_Aggregate.F_Assocs.Children_Count = 0
+              or else Current.As_Base_Aggregate.F_Assocs.Child (1).Kind /=
+                Libadalang.Common.Ada_Aggregate_Assoc
+            then
+               return Libadalang.Analysis.No_Expr;
+            end if;
+            Current :=
+              Current.As_Base_Aggregate.F_Assocs.Child (1)
+                .As_Aggregate_Assoc.F_R_Expr;
+         end if;
+      end loop;
+      return Current;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Aggregate_Of_Dimension;
+
+   --  True when Value is an array aggregate with an others choice: it has
+   --  the bounds of what it is given to, whatever they are.
+   function Takes_Target_Bounds
+     (Value : Libadalang.Analysis.Expr'Class) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Value) then
+         return False;
+      elsif Value.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Takes_Target_Bounds (Value.As_Paren_Expr.F_Expr);
+      elsif Value.Kind not in Libadalang.Common.Ada_Base_Aggregate then
+         return False;
+      end if;
+
+      for Assoc of Value.As_Base_Aggregate.F_Assocs loop
+         if Assoc.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
+            for Choice of Assoc.As_Aggregate_Assoc.F_Designators loop
+               if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
+                  return True;
+               end if;
+            end loop;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Takes_Target_Bounds;
+
+   --  The values a choice of an array aggregate stands for, when it is a
+   --  static value or a range between two.
+   function Static_Choice
+     (Choice : Libadalang.Analysis.Ada_Node'Class) return Abstract_Range
+   is
+      Low, High : Abstract_Int;
+   begin
+      if Choice.Kind not in Libadalang.Common.Ada_Expr then
+         return Unknown_Range;
+      elsif Choice.Kind = Libadalang.Common.Ada_Bin_Op
+        and then Choice.As_Bin_Op.F_Op.Kind =
+          Libadalang.Common.Ada_Op_Double_Dot
+      then
+         Low := Static_Integer (Choice.As_Bin_Op.F_Left);
+         High := Static_Integer (Choice.As_Bin_Op.F_Right);
+      else
+         Low := Static_Integer (Choice.As_Expr);
+         High := Low;
+      end if;
+      return
+        (Has_Low => Low.Known, Low => Low.Value,
+         Has_High => High.Known, High => High.Value);
+   exception
+      when others =>
+         return Unknown_Range;
+   end Static_Choice;
+
+   --  True when the subtype of the array Item is its own: that of the
+   --  object or component it names, of the function it calls or of the
+   --  subtype it is converted to or qualified with. An aggregate, a string
+   --  literal or a conditional expression has the type its context
+   --  expects, which says nothing of its length, and a slice the type of
+   --  its prefix.
+   function Has_Own_Subtype
+     (Item : Libadalang.Analysis.Expr'Class) return Boolean
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Item) then
+         return False;
+      elsif Item.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Has_Own_Subtype (Item.As_Paren_Expr.F_Expr);
+      elsif Item.Kind in Libadalang.Common.Ada_Bin_Op_Range
+                       | Libadalang.Common.Ada_Un_Op
+      then
+         return Origin_Of_Operator (Item) = Declared;
+      end if;
+      --  A slice has the type of what it is a slice of, and the bounds
+      --  of its range.
+      return Item.Kind in Libadalang.Common.Ada_Identifier
+        | Libadalang.Common.Ada_Dotted_Name
+        | Libadalang.Common.Ada_Qual_Expr
+        | Libadalang.Common.Ada_Explicit_Deref
+        or else
+          (Item.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Item.As_Call_Expr.P_Kind /=
+             Libadalang.Common.Array_Slice);
+   exception
+      when others =>
+         return False;
+   end Has_Own_Subtype;
+
+   --  True when Left and Right are one and the same constrained array
+   --  subtype: what is of it has its bounds, whatever they are.
+   function Same_Constrained_Subtype
+     (Left, Right : Libadalang.Analysis.Base_Type_Decl) return Boolean
+   is
+   begin
+      return not Libadalang.Analysis.Is_Null (Left)
+        and then not Libadalang.Analysis.Is_Null (Right)
+        and then Libadalang.Analysis."="
+                   (Libadalang.Analysis.Ada_Node (Left),
+                    Libadalang.Analysis.Ada_Node (Right))
+        and then Array_Dimensions (Left) > 0
+        and then Left.P_Is_Definite_Subtype (Left);
+   exception
+      when others =>
+         return False;
+   end Same_Constrained_Subtype;
+
+   --  The length of the Dimension-th dimension of the array Item denotes,
+   --  when its form and the declarations it names give it with static
+   --  values, as a compiler knows it: an object, a component or the result
+   --  of a call or a conversion whose subtype fixes its bounds, a slice
+   --  between two static bounds, a string literal, a positional aggregate.
+   function Static_Array_Length
+     (Item      : Libadalang.Analysis.Expr'Class;
+      Dimension : Positive) return Abstract_Int
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Item) then
+         return Unknown_Int;
+      end if;
+
+      case Item.Kind is
+         when Libadalang.Common.Ada_Paren_Expr =>
+            return Static_Array_Length
+              (Item.As_Paren_Expr.F_Expr, Dimension);
+
+         when Libadalang.Common.Ada_String_Literal =>
+            return
+              (if Dimension = 1
+               then Known_Int
+                 (Long_Long_Integer
+                    (Item.As_String_Literal.P_Denoted_Value'Length))
+               else Unknown_Int);
+
+         when Libadalang.Common.Ada_Base_Aggregate =>
+            declare
+               Level : constant Libadalang.Analysis.Expr :=
+                 Aggregate_Of_Dimension (Item, Dimension);
+               Count : Long_Long_Integer := 0;
+            begin
+               if Libadalang.Analysis.Is_Null (Level)
+                 or else not Libadalang.Analysis.Is_Null
+                               (Level.As_Base_Aggregate.F_Ancestor_Expr)
+               then
+                  return Unknown_Int;
+               end if;
+               for Assoc of Level.As_Base_Aggregate.F_Assocs loop
+                  if Assoc.Kind /= Libadalang.Common.Ada_Aggregate_Assoc then
+                     return Unknown_Int;
+                  elsif Assoc.As_Aggregate_Assoc.F_Designators
+                    .Children_Count = 0
+                  then
+                     Count := Count + 1;
+                  else
+                     --  Named: each choice a static value or a range
+                     --  between two, which a legal aggregate has without
+                     --  gap or overlap.
+                     for Choice of Assoc.As_Aggregate_Assoc.F_Designators
+                     loop
+                        declare
+                           Chosen : constant Abstract_Range :=
+                             Static_Choice (Choice);
+                        begin
+                           if not Chosen.Has_Low or else not Chosen.Has_High
+                             or else Chosen.Low > Chosen.High
+                           then
+                              return Unknown_Int;
+                           end if;
+                           Count := Count + (Chosen.High - Chosen.Low) + 1;
+                        end;
+                     end loop;
+                  end if;
+               end loop;
+               return Known_Int (Count);
+            end;
+
+         when Libadalang.Common.Ada_Identifier
+            | Libadalang.Common.Ada_Dotted_Name =>
+            --  What the declaration of the object, the formal or the
+            --  component says, when it gives a constrained subtype: one
+            --  declared with an unconstrained subtype has the bounds of
+            --  its initial value, which are not static whatever that is.
+            declare
+               Decl      : constant Libadalang.Analysis.Basic_Decl :=
+                 Item.As_Name.P_Referenced_Decl;
+               Type_Expr : Libadalang.Analysis.Type_Expr :=
+                 Libadalang.Analysis.No_Type_Expr;
+            begin
+               if Libadalang.Analysis.Is_Null (Decl) then
+                  return Unknown_Int;
+               elsif Decl.Kind = Libadalang.Common.Ada_Component_Decl then
+                  Type_Expr :=
+                    Decl.As_Component_Decl.F_Component_Def.F_Type_Expr;
+               elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+                  Type_Expr := Decl.As_Param_Spec.F_Type_Expr;
+               elsif Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
+               then
+                  if not Libadalang.Analysis.Is_Null
+                           (Decl.As_Object_Decl.F_Renaming_Clause)
+                  then
+                     return Static_Array_Length
+                       (Decl.As_Object_Decl.F_Renaming_Clause
+                          .F_Renamed_Object,
+                        Dimension);
+                  end if;
+                  Type_Expr := Decl.As_Object_Decl.F_Type_Expr;
+               end if;
+
+               if Is_Constrained_Array
+                    (Designated_Type (Type_Expr), Type_Expr)
+               then
+                  return Declared_Array_Length
+                    (Designated_Type (Type_Expr), Type_Expr, Dimension);
+               end if;
+               return Unknown_Int;
+            end;
+
+         when Libadalang.Common.Ada_If_Expr =>
+            --  A conditional expression: each of its dependent
+            --  expressions is given to the target, and it has a static
+            --  length when they all have the same.
+            declare
+               Chosen : constant Libadalang.Analysis.If_Expr :=
+                 Item.As_If_Expr;
+               Length : constant Abstract_Int :=
+                 Static_Array_Length (Chosen.F_Then_Expr, Dimension);
+            begin
+               if not Length.Known
+                 or else Libadalang.Analysis.Is_Null (Chosen.F_Else_Expr)
+                 or else Static_Array_Length (Chosen.F_Else_Expr, Dimension)
+                   /= Length
+               then
+                  return Unknown_Int;
+               end if;
+               for Part of Chosen.F_Alternatives loop
+                  if Static_Array_Length
+                       (Part.As_Elsif_Expr_Part.F_Then_Expr, Dimension) /=
+                    Length
+                  then
+                     return Unknown_Int;
+                  end if;
+               end loop;
+               return Length;
+            end;
+
+         when Libadalang.Common.Ada_Case_Expr =>
+            declare
+               Length : Abstract_Int := Unknown_Int;
+               First  : Boolean := True;
+            begin
+               for Part of Item.As_Case_Expr.F_Cases loop
+                  declare
+                     Here : constant Abstract_Int :=
+                       Static_Array_Length
+                         (Part.As_Case_Expr_Alternative.F_Expr, Dimension);
+                  begin
+                     if not Here.Known
+                       or else (not First and then Here /= Length)
+                     then
+                        return Unknown_Int;
+                     end if;
+                     Length := Here;
+                     First := False;
+                  end;
+               end loop;
+               return Length;
+            end;
+
+         when Libadalang.Common.Ada_Call_Expr =>
+            if Item.As_Call_Expr.P_Kind = Libadalang.Common.Array_Slice then
+               declare
+                  Interval : constant Libadalang.Analysis.Ada_Node :=
+                    Item.As_Call_Expr.F_Suffix.As_Ada_Node;
+                  Low, High : Abstract_Int;
+               begin
+                  if Dimension /= 1 then
+                     return Unknown_Int;
+                  elsif Interval.Kind = Libadalang.Common.Ada_Attribute_Ref
+                    and then Normalized_Text
+                               (Interval.As_Attribute_Ref.F_Attribute) =
+                      "range"
+                    and then
+                      (Libadalang.Analysis.Is_Null
+                         (Interval.As_Attribute_Ref.F_Args)
+                       or else Interval.As_Attribute_Ref.F_Args
+                         .Children_Count = 0)
+                  then
+                     --  X (Y'Range): as long as Y, or as the subtype Y.
+                     return Range_Length
+                       (Fixed_Bounds (Interval.As_Attribute_Ref.F_Prefix, 1));
+                  elsif Interval.Kind /= Libadalang.Common.Ada_Bin_Op
+                    or else Interval.As_Bin_Op.F_Op.Kind /=
+                      Libadalang.Common.Ada_Op_Double_Dot
+                  then
+                     --  X (Subtype_Name), most of all.
+                     return Range_Length
+                       (Discrete_Definition_Range
+                          (Interval, Empty_Flow_State));
+                  end if;
+                  Low := Static_Integer (Interval.As_Bin_Op.F_Left);
+                  High := Static_Integer (Interval.As_Bin_Op.F_Right);
+                  if not Low.Known or else not High.Known then
+                     return Unknown_Int;
+                  end if;
+                  return Range_Length
+                    ((Has_Low => True, Low => Low.Value,
+                      Has_High => True, High => High.Value));
+               end;
+            end if;
+
+         when Libadalang.Common.Ada_Bin_Op_Range =>
+            --  The result of "and", "or" and "xor" on arrays has the
+            --  bounds of the left operand, and the operation its own check
+            --  that the right one has the same length.
+            if Item.As_Bin_Op.F_Op.Kind in Libadalang.Common.Ada_Op_And
+                 | Libadalang.Common.Ada_Op_Or
+                 | Libadalang.Common.Ada_Op_Xor
+              and then Origin_Of_Operator (Item) = Predefined
+            then
+               declare
+                  Left : constant Abstract_Int :=
+                    Static_Array_Length (Item.As_Bin_Op.F_Left, Dimension);
+               begin
+                  return
+                    (if Left.Known then Left
+                     else Static_Array_Length
+                       (Item.As_Bin_Op.F_Right, Dimension));
+               end;
+            elsif Origin_Of_Operator (Item) /= Declared then
+               --  A concatenation, most of all.
+               return Unknown_Int;
+            end if;
+
+         when Libadalang.Common.Ada_Un_Op =>
+            if Item.As_Un_Op.F_Op.Kind = Libadalang.Common.Ada_Op_Not
+              and then Origin_Of_Operator (Item) = Predefined
+            then
+               return Static_Array_Length (Item.As_Un_Op.F_Expr, Dimension);
+            elsif Origin_Of_Operator (Item) /= Declared then
+               return Unknown_Int;
+            end if;
+
+         when others =>
+            null;
+      end case;
+
+      --  A call, a conversion, a qualified expression, a dereference: what
+      --  its subtype says.
+      if Has_Own_Subtype (Item) then
+         return Subtype_Array_Length (Item.P_Expression_Type, Dimension);
+      end if;
+      return Unknown_Int;
+   exception
+      when others =>
+         return Unknown_Int;
+   end Static_Array_Length;
 
    --  True when an Array_Index Call_Expr is indexing into an array *slice*
    --  (X (Lo .. Hi) (I)), not an array object. A slice's index bounds are
@@ -8808,6 +9629,382 @@ package body Adalang_Analyzer.Flow_Interp is
          end;
       end Finalize_Slice_Check;
 
+      --  What the form of an array value alone says of its length against
+      --  that of what it is given to: nothing; that in each dimension it
+      --  either has a static length that is the target's or is an
+      --  aggregate with an others choice, which has the bounds of what it
+      --  is given to; that both lengths are static and the same.
+      type Length_Evidence is (No_Evidence, Bounds_Taken, Static_Equal);
+
+      --  The length check of an array that is given to a target: the two
+      --  have the same length in each dimension. The obligation is at
+      --  Where. Target is what the value is given to, when that is an
+      --  array the source names or the range that constrains it; Fixed is
+      --  the length of the target when its subtype says it with a number;
+      --  Evidence, what the form of the value says. Never a definite
+      --  error: lengths known to differ are not proved.
+      procedure Record_Length_Match
+        (Where      : Libadalang.Analysis.Ada_Node'Class;
+         Target     : Libadalang.Analysis.Expr'Class;
+         Fixed      : Abstract_Int;
+         Value      : Libadalang.Analysis.Expr'Class;
+         Dimensions : Positive;
+         Container  : CFG.Node_Id;
+         Evidence   : Length_Evidence)
+      is
+      begin
+         if not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Where, Proof.Length_Check,
+               "the value has not been established to have the length " &
+                 "of its target");
+         elsif Unreached (Container) then
+            Record_Unreachable
+              (Unit, Where, Proof.Length_Check,
+               "the containing CFG node is unreachable");
+         elsif Evidence = Static_Equal then
+            --  proof-path: length-static
+            Record_Proved_Safe
+              (Unit, Where, Proof.Length_Check,
+               Proof.Abstract_Interpretation,
+               "the two lengths are static and the same",
+               "both lengths are fixed by declarations", Final => True);
+         elsif Evidence = Bounds_Taken then
+            --  proof-path: length-of-target
+            Record_Proved_Safe
+              (Unit, Where, Proof.Length_Check,
+               Proof.Abstract_Interpretation,
+               "an aggregate with an others choice has the bounds of " &
+                 "what it is given to",
+               "the value takes the bounds of its target", Final => True);
+         else
+            declare
+               --  A length that is a number on one side is asked of the
+               --  other, when the two are not both terms: the value of a
+               --  call has none, and its subtype may say how long it is.
+               Of_Value : constant Abstract_Int :=
+                 (if Dimensions = 1 then Static_Array_Length (Value, 1)
+                  else Unknown_Int);
+               Outcome  : VC.VC_Outcome :=
+                 (if not Libadalang.Analysis.Is_Null (Target)
+                  then VC.Decide_Same_Length
+                    (Target, Value, Dimensions, State_At (Container),
+                     Symbols_At (Container))
+                  elsif Fixed.Known and then Dimensions = 1
+                  then VC.Decide_Length
+                    (Value, Fixed.Value, State_At (Container),
+                     Symbols_At (Container))
+                  else VC.Unknown_Outcome);
+            begin
+               if Outcome.Result /= VC.VC_Proved
+                 and then Of_Value.Known
+                 and then not Libadalang.Analysis.Is_Null (Target)
+               then
+                  Outcome :=
+                    VC.Decide_Length
+                      (Target, Of_Value.Value, State_At (Container),
+                       Symbols_At (Container));
+               end if;
+               if Outcome.Result = VC.VC_Proved then
+                  --  proof-path: length-equal
+                  Record_Proved_Safe
+                    (Unit, Where, Proof.Length_Check, Proof.External_Prover,
+                     "scalar verification condition proves the value has " &
+                       "the length of its target",
+                     VC.Evidence, Final => True);
+               else
+                  Record_VC_Unproved
+                    (Unit, Where, Proof.Length_Check,
+                     Proof.Abstract_Interpretation,
+                     "length-check failure is not established, but " &
+                       "absence is not proved",
+                     "the two lengths are not known to be equal",
+                     Outcome, Final => True);
+               end if;
+            end;
+         end if;
+
+         --  A binary operation is reported at its operator, as GNATprove
+         --  reports it: the last "&" of a concatenation over several
+         --  lines.
+         if Where.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+            Proof.Set_Position
+              (Unit, Where, Proof.Length_Check,
+               Langkit_Support.Slocs.Start_Sloc
+                 (Where.As_Bin_Op.F_Op.Sloc_Range));
+         elsif Where.Kind = Libadalang.Common.Ada_Concat_Op
+           and then Where.As_Concat_Op.F_Other_Operands.Children_Count > 0
+         then
+            Proof.Set_Position
+              (Unit, Where, Proof.Length_Check,
+               Langkit_Support.Slocs.Start_Sloc
+                 (Where.As_Concat_Op.F_Other_Operands.Child
+                    (Where.As_Concat_Op.F_Other_Operands.Children_Count)
+                    .As_Concat_Operand.F_Operator.Sloc_Range));
+         end if;
+      end Record_Length_Match;
+
+      --  An array assignment. The value is converted to the subtype of
+      --  the target when the target has a constrained one -- a slice, a
+      --  component, an object or a formal declared with one -- and that
+      --  conversion is checked at the value, unless both lengths are
+      --  static and the same. And where the bounds of the target are not
+      --  static the assignment has its own check, at the statement. That
+      --  is where GNATprove has a length check, and where it has two.
+      procedure Finalize_Array_Assignment
+        (Stmt      : Libadalang.Analysis.Assign_Stmt;
+         Container : CFG.Node_Id)
+      is
+         Target        : constant Libadalang.Analysis.Expr :=
+           Stmt.F_Dest.As_Expr;
+         Value         : constant Libadalang.Analysis.Expr := Stmt.F_Expr;
+         Dimensions    : constant Natural :=
+           Array_Dimensions (Target.P_Expression_Type);
+         Target_Static : Boolean := True;
+         Same          : Boolean := True;
+         Taken         : Boolean := True;
+      begin
+         if Dimensions = 0
+           or else
+             (Has_Own_Subtype (Target)
+              and then Has_Own_Subtype (Value)
+              and then Same_Constrained_Subtype
+                         (Target.P_Expression_Type, Value.P_Expression_Type))
+         then
+            return;
+         end if;
+
+         for Dimension in 1 .. Dimensions loop
+            declare
+               Of_Target : constant Abstract_Int :=
+                 Static_Array_Length (Target, Dimension);
+               Of_Value  : constant Abstract_Int :=
+                 Static_Array_Length (Value, Dimension);
+               Fits      : constant Boolean :=
+                 (Of_Target.Known and then Of_Value.Known
+                  and then Of_Target.Value = Of_Value.Value)
+                 or else Takes_Target_Bounds
+                           (Aggregate_Of_Dimension (Value, Dimension));
+            begin
+               if not Of_Target.Known then
+                  Target_Static := False;
+               end if;
+               Same := Same and then Of_Target.Known and then Fits;
+               Taken := Taken and then Fits;
+            end;
+         end loop;
+
+         if Target_Is_Constrained (Target) and then not Same then
+            Record_Length_Match
+              (Value, Target, Unknown_Int, Value, Dimensions, Container,
+               (if Taken then Bounds_Taken else No_Evidence));
+         end if;
+         if not Target_Static then
+            Record_Length_Match
+              (Stmt, Target, Unknown_Int, Value, Dimensions, Container,
+               (if Taken then Bounds_Taken else No_Evidence));
+
+            --  It is the check of the ":=", and is reported there.
+            declare
+               Assign : constant Libadalang.Common.Token_Reference :=
+                 Libadalang.Common.Next
+                   (Stmt.F_Dest.Token_End, Exclude_Trivia => True);
+               Place  : constant Langkit_Support.Slocs.Source_Location_Range :=
+                 Libadalang.Common.Sloc_Range (Libadalang.Common.Data (Assign));
+            begin
+               if Libadalang.Common."="
+                    (Libadalang.Common.Kind (Libadalang.Common.Data (Assign)),
+                     Libadalang.Common.Ada_Assign)
+               then
+                  Proof.Set_Position
+                    (Unit, Stmt, Proof.Length_Check,
+                     Langkit_Support.Slocs.Start_Sloc (Place));
+               end if;
+            end;
+         end if;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize array assignment length check",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Array_Assignment;
+
+      --  An array given to what is declared with a constrained subtype --
+      --  the initial value of an object, the value a function returns, an
+      --  actual parameter, the operand of a conversion: checked at the
+      --  value, unless both lengths are static and the same. Typ is the
+      --  subtype named, Type_Expr how it is written where it is.
+      procedure Finalize_Array_Given
+        (Typ       : Libadalang.Analysis.Base_Type_Decl;
+         Type_Expr : Libadalang.Analysis.Type_Expr'Class;
+         Value     : Libadalang.Analysis.Expr'Class;
+         Container : CFG.Node_Id)
+      is
+         Dimensions : constant Natural := Array_Dimensions (Typ);
+         Same       : Boolean := True;
+         Taken      : Boolean := True;
+         First      : Abstract_Int := Unknown_Int;
+         Interval   : Libadalang.Analysis.Expr := Libadalang.Analysis.No_Expr;
+      begin
+         if Libadalang.Analysis.Is_Null (Value)
+           or else not Is_Constrained_Array (Typ, Type_Expr)
+           or else
+             (not Has_Index_Constraint (Type_Expr)
+              and then Has_Own_Subtype (Value)
+              and then Same_Constrained_Subtype
+                         (Typ, Value.P_Expression_Type))
+         then
+            return;
+         end if;
+
+         for Dimension in 1 .. Dimensions loop
+            declare
+               Declared : constant Abstract_Int :=
+                 Declared_Array_Length (Typ, Type_Expr, Dimension);
+               Of_Value : constant Abstract_Int :=
+                 Static_Array_Length (Value, Dimension);
+               Fits     : constant Boolean :=
+                 (Declared.Known and then Of_Value.Known
+                  and then Declared.Value = Of_Value.Value)
+                 or else Takes_Target_Bounds
+                           (Aggregate_Of_Dimension (Value, Dimension));
+            begin
+               if Dimension = 1 then
+                  First := Declared;
+               end if;
+               Same := Same and then Declared.Known and then Fits;
+               Taken := Taken and then Fits;
+            end;
+         end loop;
+
+         if Same then
+            return;
+         end if;
+
+         --  The range of a constraint written with its two bounds stands
+         --  for the target where its length is not a number.
+         if Dimensions = 1
+           and then not First.Known
+           and then Has_Index_Constraint (Type_Expr)
+           and then Type_Expr.As_Subtype_Indication.F_Constraint.Kind =
+             Libadalang.Common.Ada_Composite_Constraint
+         then
+            declare
+               Item : constant Libadalang.Analysis.Ada_Node :=
+                 Type_Expr.As_Subtype_Indication.F_Constraint
+                   .As_Composite_Constraint.F_Constraints.Child (1)
+                   .As_Composite_Constraint_Assoc.F_Constraint_Expr;
+            begin
+               if Item.Kind = Libadalang.Common.Ada_Bin_Op then
+                  Interval := Item.As_Expr;
+               end if;
+            end;
+         end if;
+
+         Record_Length_Match
+           (Value, Interval, First, Value, Dimensions, Container,
+            (if Taken then Bounds_Taken else No_Evidence));
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize array length check",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Array_Given;
+
+      --  "and", "or" and "xor" on arrays check that their operands have
+      --  the same length, at the operator, static lengths or not.
+      procedure Finalize_Array_Operator
+        (Operation : Libadalang.Analysis.Bin_Op;
+         Container : CFG.Node_Id)
+      is
+         Dimensions : Natural;
+         Same       : Boolean := True;
+      begin
+         if Operation.F_Op.Kind not in Libadalang.Common.Ada_Op_And
+              | Libadalang.Common.Ada_Op_Or
+              | Libadalang.Common.Ada_Op_Xor
+           or else Origin_Of_Operator (Operation) /= Predefined
+         then
+            return;
+         end if;
+
+         Dimensions := Array_Dimensions (Operation.F_Left.P_Expression_Type);
+         if Dimensions = 0 then
+            return;
+         end if;
+
+         for Dimension in 1 .. Dimensions loop
+            declare
+               Left  : constant Abstract_Int :=
+                 Static_Array_Length (Operation.F_Left, Dimension);
+               Right : constant Abstract_Int :=
+                 Static_Array_Length (Operation.F_Right, Dimension);
+            begin
+               if not Left.Known or else not Right.Known
+                 or else Left.Value /= Right.Value
+               then
+                  Same := False;
+               end if;
+            end;
+         end loop;
+
+         Record_Length_Match
+           (Operation.F_Op, Operation.F_Left, Unknown_Int, Operation.F_Right,
+            Dimensions, Container,
+            (if Same then Static_Equal else No_Evidence));
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize array operator length check",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Array_Operator;
+
+      --  An array given to a component in a record aggregate that names
+      --  the component is given to the component's subtype.
+      procedure Finalize_Array_Component
+        (Assoc     : Libadalang.Analysis.Aggregate_Assoc;
+         Container : CFG.Node_Id)
+      is
+         --  The component the association names, when it names one: the
+         --  choice of an array aggregate names none.
+         function Named_Component return Libadalang.Analysis.Basic_Decl is
+            Decl : Libadalang.Analysis.Basic_Decl;
+         begin
+            if Assoc.F_Designators.Children_Count /= 1
+              or else Assoc.F_Designators.Child (1).Kind /=
+                Libadalang.Common.Ada_Identifier
+            then
+               return Libadalang.Analysis.No_Basic_Decl;
+            end if;
+            Decl := Assoc.F_Designators.Child (1).As_Name.P_Referenced_Decl;
+            return
+              (if not Libadalang.Analysis.Is_Null (Decl)
+                 and then Decl.Kind = Libadalang.Common.Ada_Component_Decl
+               then Decl
+               else Libadalang.Analysis.No_Basic_Decl);
+         exception
+            when others =>
+               return Libadalang.Analysis.No_Basic_Decl;
+         end Named_Component;
+
+         Component : constant Libadalang.Analysis.Basic_Decl :=
+           Named_Component;
+      begin
+         if not Libadalang.Analysis.Is_Null (Component) then
+            Finalize_Array_Given
+              (Designated_Type
+                 (Component.As_Component_Decl.F_Component_Def.F_Type_Expr),
+               Component.As_Component_Decl.F_Component_Def.F_Type_Expr,
+               Assoc.F_R_Expr, Container);
+         end if;
+      end Finalize_Array_Component;
+
       --  The value of an actual parameter is to fit the subtype of its
       --  formal on the way in, and what an "out" or "in out" formal holds at
       --  the return is to fit the subtype of the actual. One obligation,
@@ -8840,7 +10037,13 @@ package body Adalang_Analyzer.Flow_Interp is
              and then Outer.Low <= Inner.Low
              and then Inner.High <= Outer.High);
       begin
-         if Libadalang.Analysis.Is_Null (Formal_Type)
+         if Array_Dimensions (Formal_Type) > 0 then
+            --  An array given to a formal of a constrained subtype has
+            --  that subtype's length.
+            Finalize_Array_Given
+              (Formal_Type, Formal_Type_Expr (Param), Actual, Container);
+            return;
+         elsif Libadalang.Analysis.Is_Null (Formal_Type)
            or else Libadalang.Analysis.Is_Null (Actual)
            or else not Formal_Type.P_Is_Int_Type
          then
@@ -9685,9 +10888,16 @@ package body Adalang_Analyzer.Flow_Interp is
                   Finalize_Division_Check (Expr, Here);
                   Finalize_Overflow_Check (Expr, Here);
                   Finalize_Operator_Call (Expr.F_Op, Here);
+                  Finalize_Array_Operator (Expr, Here);
                end;
             elsif Node.Kind = Libadalang.Common.Ada_Un_Op then
                Finalize_Operator_Call (Node.As_Un_Op.F_Op, Here);
+            elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt
+              and then Array_Dimensions
+                         (Node.As_Assign_Stmt.F_Dest.P_Expression_Type) > 0
+            then
+               --  An array has a length to check, not a range.
+               Finalize_Array_Assignment (Node.As_Assign_Stmt, Here);
             elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
                declare
                   Target : constant Target_Subtype :=
@@ -9703,6 +10913,17 @@ package body Adalang_Analyzer.Flow_Interp is
             elsif Node.Kind = Libadalang.Common.Ada_Object_Decl
               and then not Libadalang.Analysis.Is_Null
                 (Node.As_Object_Decl.F_Default_Expr)
+              and then Array_Dimensions
+                         (Node.As_Object_Decl.F_Type_Expr
+                            .P_Designated_Type_Decl) > 0
+            then
+               Finalize_Array_Given
+                 (Node.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl,
+                  Node.As_Object_Decl.F_Type_Expr,
+                  Node.As_Object_Decl.F_Default_Expr, Here);
+            elsif Node.Kind = Libadalang.Common.Ada_Object_Decl
+              and then not Libadalang.Analysis.Is_Null
+                (Node.As_Object_Decl.F_Default_Expr)
             then
                Finalize_Range_Check
                  (Node.As_Object_Decl.F_Default_Expr,
@@ -9711,6 +10932,16 @@ package body Adalang_Analyzer.Flow_Interp is
                   "initial value is outside the object's subtype range",
                   Declared_Constraint
                     (Node.As_Object_Decl.F_Type_Expr, State_At (Here)));
+            elsif Node.Kind = Libadalang.Common.Ada_Return_Stmt
+              and then not Libadalang.Analysis.Is_Null
+                (Node.As_Return_Stmt.F_Return_Expr)
+            then
+               --  The value a function returns is given to its result
+               --  subtype.
+               Finalize_Array_Given
+                 (Designated_Type (Subprogram.F_Subp_Spec.F_Subp_Returns),
+                  Subprogram.F_Subp_Spec.F_Subp_Returns,
+                  Node.As_Return_Stmt.F_Return_Expr, Here);
             elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
                declare
                   Call : constant Libadalang.Analysis.Call_Expr :=
@@ -9729,10 +10960,22 @@ package body Adalang_Analyzer.Flow_Interp is
                                Libadalang.Common.Ada_Base_Type_Decl
                              and then not Libadalang.Analysis.Is_Null (Value)
                            then
-                              Finalize_Range_Check
-                                (Value, Decl.As_Base_Type_Decl, Here,
-                                 Rules.Known_Range_Check_Failure,
-                                 "value is outside the target subtype range");
+                              if Array_Dimensions (Decl.As_Base_Type_Decl) > 0
+                              then
+                                 --  A conversion to a constrained array
+                                 --  subtype checks the length of its
+                                 --  operand.
+                                 Finalize_Array_Given
+                                   (Decl.As_Base_Type_Decl,
+                                    Libadalang.Analysis.No_Type_Expr, Value,
+                                    Here);
+                              else
+                                 Finalize_Range_Check
+                                   (Value, Decl.As_Base_Type_Decl, Here,
+                                    Rules.Known_Range_Check_Failure,
+                                    "value is outside the target subtype " &
+                                      "range");
+                              end if;
                            end if;
                         end;
 
@@ -9815,6 +11058,8 @@ package body Adalang_Analyzer.Flow_Interp is
                end;
             elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref then
                Finalize_Length_Check (Node.As_Attribute_Ref, Here);
+            elsif Node.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
+               Finalize_Array_Component (Node.As_Aggregate_Assoc, Here);
             elsif Node.Kind = Libadalang.Common.Ada_Pragma_Node then
                declare
                   Pragma_Node : constant Libadalang.Analysis.Pragma_Node :=
