@@ -189,7 +189,7 @@ length-slice-one-less	tests/verification_length_check.adb	length-check	Head (2 .
 length-unrelated	tests/verification_length_check.adb	length-check	Sink := Origin;	unproved	nothing relates the lengths of two unconstrained formals
 length-into-constrained	tests/verification_length_check.adb	length-check	Given	unproved	an array of unknown length is given to a subtype of five
 length-six-into-five	tests/verification_length_check.adb	length-check	Long	unproved	an array known to have six components is given to a subtype of five; not a definite error, which a length check never is
-length-short-chunk	tests/verification_length_check.adb	length-check	Store (8 * Place .. 8 * Place + 6) := Word_Of (Place);	unproved	a slice of seven components is given a function result of eight
+length-short-chunk	tests/verification_length_check.adb	length-check	Store (8 * Place .. Last) := Word_Of (Place);	unproved	a slice of seven components is given a function result of eight
 length-declared-from	tests/verification_length_check.adb	length-check	Seed	unproved	the initial value of an object declared 1 .. Count has any length
 length-returned	tests/verification_length_check.adb	length-check	Result_Source	unproved	the value a function returns as a subtype of five has any length
 length-actual	tests/verification_length_check.adb	length-check	Argument	unproved	the actual for a formal of a subtype of five has any length

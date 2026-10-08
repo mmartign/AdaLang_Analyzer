@@ -2110,7 +2110,7 @@ for claim in 'Front (1 .. Count) := Back (1 .. Count + 1);' \
   'Back (1 .. Count + 1)' 'Head (2 .. Count) := Tail (1 .. Count);' \
   'Tail (1 .. Count)' 'Sink := Origin;' 'Given' 'Long' \
   'Part (1 .. Count)' \
-  'Store (8 * Place .. 8 * Place + 6) := Word_Of (Place);' \
+  'Store (8 * Place .. Last) := Word_Of (Place);' \
   'Word_Of (Place)' 'Seed' 'Result_Source' 'Argument' 'Operand' \
   'Bits or More' 'or'
 do

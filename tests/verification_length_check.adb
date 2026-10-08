@@ -147,13 +147,13 @@ procedure Verification_Length_Check with SPARK_Mode is
       Short := Long;
    end Six_Into_Five;
 
-   procedure Short_Chunk (Store : in out Bytes; Place : Index)
+   procedure Short_Chunk (Store : in out Bytes; Place, Last : Index)
      with Global => null,
           Pre => Store'First = 0 and then Place <= 100
-                 and then Store'Last >= 8 * Place + 7
+                 and then Last = 8 * Place + 6 and then Last <= Store'Last
    is
    begin
-      Store (8 * Place .. 8 * Place + 6) := Word_Of (Place);
+      Store (8 * Place .. Last) := Word_Of (Place);
    end Short_Chunk;
 
    procedure Declared_From (Count : Index; Seed : Bytes; Total : out Natural)
