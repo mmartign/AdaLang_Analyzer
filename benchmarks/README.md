@@ -106,9 +106,9 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 3,536 | 23.5% |
-| Has the obligation, leaves it unproved | 6,062 | 40.3% |
-| Has the obligation, calls it unsupported | 2,324 | 15.4% |
+| Proves it | 4,299 | 28.6% |
+| Has the obligation, leaves it unproved | 6,317 | 42.0% |
+| Has the obligation, calls it unsupported | 1,306 | 8.7% |
 | Has no obligation of that kind at that place | 1,496 | 9.9% |
 | Has no obligation of that kind at all | 1,416 | 9.4% |
 | Raises nothing in that file | 209 | 1.4% |
@@ -153,15 +153,36 @@ functions of records and private objects (`Has_Buffer (Ctx)`), which the
 scalar language of the provers could not express. A call to a function of
 its arguments is now a term; a procedure call with known effects leaves
 what is known of the caller's own scalars; and a callee's postcondition is
-assumed after the call. AdaLang now proves 479 of those preconditions and
-3,536 of the 15,043 checks, 518 more, with the same obligations. Reading
-the checks that were there before building on
-them turned up three more false-safes (`FP-109` to `FP-111`): a guard that
+assumed after the call. With that AdaLang proved 479 of those
+preconditions and 3,536 of the 15,043 checks, 518 more, with the same
+obligations. Reading the checks that were there before building on them
+turned up three more false-safes (`FP-109` to `FP-111`): a guard that
 survived a state-changing call in its own condition, solver symbols named
 without their file, and a loop-invariant proof that stepped over the calls
-in the loop body. What the remaining preconditions of the largest corpus
-need is the definition of the functions their contracts call and the
-predicate of the type they are about; neither is used yet.
+in the loop body.
+
+The next 763 came from asking, check by check, what stood in the way, and
+finding it was seldom the proof. Generated code writes every name with its
+package in front of it, and such a name was outside the language of the
+provers: once `RFLX.CoAP.CoAP_Message.F_Ver` is the literal it names, the
+largest corpus has 599 of its 2,294 preconditions proved where it had 391.
+A named number was an object with no value, and `Byte'Size` an attribute
+nobody knew: with the first its value and the second the eight bits RM
+13.3(55) gives it, the divisions by them are proved, 643 of GNATprove's 809
+where there were 259.
+And a subprogram was given up whole for a loop with a name, for a `goto`
+to a label further down or for a quantified loop invariant, none of which
+needs more than an edge in the graph: 1,306 checks are unsupported where
+2,324 were, none of them in Saatana and two in libkeccak. AdaLang now
+proves 4,299 of the 15,043 checks and 687 of the 2,938 preconditions. The
+checks read on the way had four more faults: `FP-112`, the prefix of `'Old`
+checked in the state at the exit; `FP-113`, modular arithmetic in a bound
+that did not wrap; `FP-114`, a definite error recorded from a state that
+had not settled; and `FP-115`, an object named `True` taken for the
+literal. What keeps the remaining 1,306 outside is an explicit dereference,
+an allocator or a generic instantiation in the subprogram; what the
+remaining preconditions need is still the definition of the functions
+their contracts call and the predicate of the type they are about.
 
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a
