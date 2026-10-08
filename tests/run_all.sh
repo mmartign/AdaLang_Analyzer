@@ -28,6 +28,7 @@ for test_script in \
   tests/run_compiler_checks.sh \
   tests/run_gnatcheck_names.sh \
   tests/run_gap_ledger.sh \
+  tests/run_gnatprove_import.sh \
   tests/run_reporting.sh \
   tests/run_recommended.sh \
   tests/run_recommended_gate.sh \

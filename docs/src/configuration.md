@@ -120,6 +120,9 @@ Useful options include:
 --recommended    Enable low-noise defect checks for routine local and CI use
 --spark          Enable a proof-focused preset (later check switches refine it)
 --verify         Classify bounded scalar proof obligations
+--gnatprove-log=<file>
+                 With --verify: set beside each obligation what GNATprove
+                 said of the same check, read from a log of it (repeatable)
 --automotive     Enable the strict automotive Ada preset
 --do178c=<level> Enable DO-178C verification support for level A, B, C, or D
 -checks=<list>   Enable or disable a comma-separated set of checks
@@ -161,6 +164,76 @@ finding that matches `--baseline` remains visible in JSON or SARIF output as an
 existing result, but it does not contribute to the exit status. Fingerprints
 exclude line and column numbers, so inserting unrelated lines does not turn an
 existing finding into a new one.
+
+## GNATprove's verdicts beside AdaLang's
+
+Where a project is also proved with GNATprove, the log of that run can be
+given to a `--verify` run:
+
+```sh
+gnatprove -P project.gpr --mode=all --report=all --output=oneline \
+  > gnatprove.log
+adalang_analyzer --verify --gnatprove-log=gnatprove.log \
+  --format=json --output=adalang.json -P project.gpr
+```
+
+GNATprove is a separate tool, of AdaCore. AdaLang Analyzer does not contain
+it and does not run it: it reads the text GNATprove wrote. Each check
+message of the log is paired with the AdaLang obligation at the same place
+and of the corresponding kind, and what GNATprove said of it -- `proved`,
+`justified`, `not-proved` -- is reported with that obligation.
+
+The verdict is GNATprove's and is reported as GNATprove's. It never changes
+what AdaLang says: the `status` of every obligation, the `proofSummary` and
+the findings are exactly what they are without the log, and an obligation
+AdaLang left `Unproved` stays `Unproved`, with `"gnatprove": "proved"` next
+to it. Nothing here makes a check proved by AdaLang.
+
+The JSON report gains three things when a log is given:
+
+- a `gnatprove` member on each obligation a check of the log is paired
+  with;
+- `gnatproveImport`, the counts: the checks of the log by verdict, and the
+  checks GNATprove proved by what AdaLang has for them -- proved by AdaLang
+  too (`provedByBoth`), an obligation AdaLang did not decide
+  (`provedByGnatproveOnObligation`), no obligation
+  (`provedByGnatproveWithoutObligation`), or an obligation AdaLang calls a
+  definite error (`definiteErrorWhereGnatproveProved`). The four add up to
+  the checks GNATprove proved: none is left out;
+- `gnatproveChecks`, every check of the log with the obligation it is paired
+  with or the reason it has none: AdaLang raises no obligation of that kind,
+  has none at that place, has none in a file of that name, or two analyzed
+  files have that name.
+
+The text report prints the counts after those of the obligations, and `-v`
+adds the verdict to each obligation's lines. SARIF carries the counts and
+the verdict of each obligation in the run's properties.
+
+Two counts are there to be looked at before anything else.
+`definiteErrorWhereGnatproveProved` is a check GNATprove proved that AdaLang
+calls a definite error: one of the two is wrong, or the log is of other
+sources. `provedSafeWhereGnatproveNotProved` is an obligation AdaLang proved
+whose check GNATprove did not prove; GNATprove gives up where its provers
+run out of time, so this need not be a fault of either tool.
+
+What the user answers for:
+
+- **The log is that of the sources analyzed.** A log names a file without
+  its directory and says nothing of the state of the sources it was written
+  for. A log of an earlier state pairs badly, which shows as checks without
+  an obligation; AdaLang cannot tell it from a check it has no obligation
+  for.
+- **What GNATprove's verdicts are worth.** They hold under GNATprove's own
+  assumptions, switches and justifications, for which see its
+  documentation. A `justified` check is one a reviewer accepted, not one a
+  prover discharged.
+- **The terms under which GNATprove is used.** AdaLang reads a file the
+  user produced with their own copy of GNATprove.
+
+A check of a generic unit, which GNATprove repeats for every instance, is
+one check, as good as the worst of its instances. GNATprove reports the
+initialization of an object once, at its declaration, where AdaLang checks
+each read: the obligations about one object take the verdict together.
 
 For routine analysis, start with the recommended preset:
 

@@ -172,6 +172,13 @@ documented SPARK scope. AdaLang's bounded mode uses CFG fixed-point abstract
 interpretation to classify a much narrower scalar subset. It does not
 reproduce GNATprove's verification-condition or prover engine.
 
+The two can be used together. `--gnatprove-log` reads the log of a
+GNATprove run on the same sources and reports GNATprove's verdict on each
+check beside AdaLang's own result for the obligation at that place. The
+verdicts stay GNATprove's: AdaLang's statuses and counts are what they are
+without the log. AdaLang Analyzer neither contains nor runs GNATprove, and
+is not endorsed by AdaCore.
+
 `benchmarks/sparknacl/` quantifies this on a real, fully-proved SPARK
 library: across 924 proof obligations both tools could evaluate at the same
 location, AdaLang never called something safe that GNATprove could not
@@ -358,6 +365,8 @@ The following descriptions accurately characterize the current product:
 - "Provides automotive, DO-178C, and EN 50128 verification-support
   profiles."
 - "Suitable for integration into CI."
+- "Reports GNATprove's verdicts beside its own, from a GNATprove log the
+  user supplies, and accounts for every check GNATprove proved."
 
 The following claims must not be made for the current product:
 
@@ -367,6 +376,9 @@ The following claims must not be made for the current product:
 - "Exhaustively checks all execution paths."
 - "Zero false negatives."
 - "Equivalent to GNATprove or Polyspace."
+- "Proves what GNATprove proves," or any count of proved checks that adds
+  the verdicts read from a GNATprove log to AdaLang's own.
+- "Includes GNATprove" or "runs GNATprove."
 - "Ensures MISRA, AUTOSAR, DO-178C, ISO 26262, or EN 50128 compliance."
 - "Qualified verification tool."
 

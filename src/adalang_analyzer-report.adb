@@ -27,6 +27,7 @@ with Interfaces;
 
 with Adalang_Analyzer.Compliance_Mapping;
 with Adalang_Analyzer.Config;
+with Adalang_Analyzer.Gnatprove_Import;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Text_Utils;
 
@@ -864,6 +865,95 @@ package body Adalang_Analyzer.Report is
         (File, Indent & "}" & (if Followed_By_More then "," else ""));
    end Emit_Analysis_Configuration;
 
+   --  The member that says what GNATprove said of the check the
+   --  obligation at Index stands for; nothing where no log says anything
+   --  of it. The status of the obligation is AdaLang's and stays as it is.
+   function Gnatprove_Field (Index : Positive) return String
+   is (if Gnatprove_Import.Has_Verdict (Index)
+       then ", ""gnatprove"": """ &
+            Gnatprove_Import.Verdict_Name
+              (Gnatprove_Import.Verdict_Of (Index)) & """"
+       else "");
+
+   --  The counts of the verdicts read from GNATprove logs, as one member
+   --  followed by a comma.
+   procedure Emit_Gnatprove_Summary
+     (File : Ada.Text_IO.File_Type; Indent : String)
+   is
+      Sum : constant Gnatprove_Import.Summary := Gnatprove_Import.Totals;
+   begin
+      Ada.Text_IO.Put (File, Indent & """gnatproveImport"": {""logs"": [");
+      for Index in 1 .. Gnatprove_Import.Log_Count loop
+         Ada.Text_IO.Put
+           (File,
+            (if Index > 1 then ", " else "") & """" &
+            JSON_Escape (Normalized_Path (Gnatprove_Import.Log_Name (Index))) &
+            """");
+      end loop;
+      Ada.Text_IO.Put_Line
+        (File,
+         "], ""checks"": " & Text_Utils.To_Decimal (Sum.Checks) &
+         ", ""proved"": " & Text_Utils.To_Decimal (Sum.Proved) &
+         ", ""justified"": " & Text_Utils.To_Decimal (Sum.Justified) &
+         ", ""notProved"": " & Text_Utils.To_Decimal (Sum.Not_Proved) &
+         ", ""provedByBoth"": " &
+         Text_Utils.To_Decimal (Sum.Proved_By_Both) &
+         ", ""provedByGnatproveOnObligation"": " &
+         Text_Utils.To_Decimal (Sum.On_Obligation) &
+         ", ""provedByGnatproveWithoutObligation"": " &
+         Text_Utils.To_Decimal (Sum.Without_Obligation) &
+         ", ""definiteErrorWhereGnatproveProved"": " &
+         Text_Utils.To_Decimal (Sum.Error_Where_Proved) &
+         ", ""provedSafeWhereGnatproveNotProved"": " &
+         Text_Utils.To_Decimal (Sum.Proved_Where_Not_Proved) &
+         ", ""obligationsWithVerdict"": " &
+         Text_Utils.To_Decimal (Sum.Obligations_With_Verdict) & "},");
+   end Emit_Gnatprove_Summary;
+
+   --  The summary and every check of the logs, with the obligation that
+   --  stands for it or why none does.
+   procedure Emit_Gnatprove_Import (File : Ada.Text_IO.File_Type) is
+      package Proof renames Adalang_Analyzer.Proof_Obligations;
+   begin
+      Emit_Gnatprove_Summary (File, "  ");
+      Ada.Text_IO.Put_Line (File, "  ""gnatproveChecks"": [");
+      for Index in 1 .. Gnatprove_Import.Check_Count loop
+         declare
+            Item : constant Gnatprove_Import.Check :=
+              Gnatprove_Import.Element (Index);
+         begin
+            Ada.Text_IO.Put
+              (File,
+               (if Index > 1 then "," & Ada.Characters.Latin_1.LF else "") &
+               "    {""file"": """ & JSON_Escape (To_String (Item.Filename)) &
+               """, ""line"": " & Text_Utils.To_Decimal (Item.Line) &
+               ", ""column"": " & Text_Utils.To_Decimal (Item.Column) &
+               ", ""check"": """ & JSON_Escape (To_String (Item.Label)) &
+               """, ""kind"": " &
+               (if Item.Has_Kind
+                then """" & Proof.Kind_Name (Item.Kind) & """"
+                else "null") &
+               ", ""verdict"": """ &
+               Gnatprove_Import.Verdict_Name (Item.Result) &
+               """, ""instances"": " &
+               Text_Utils.To_Decimal (Item.Instances) &
+               ", ""adalang"": """ & Gnatprove_Import.Outcome_Name (Item) &
+               """, ""obligation"": " &
+               (if Item.Obligation = 0 then "null"
+                else """" &
+                  JSON_Escape
+                    (To_String (Proof.Element (Item.Obligation).Stable_Id)) &
+                  """") &
+               (if Item.Grouped = 0 then ""
+                else ", ""obligationsAboutTheObject"": " &
+                  Text_Utils.To_Decimal (Item.Grouped)) &
+               "}");
+         end;
+      end loop;
+      Ada.Text_IO.New_Line (File);
+      Ada.Text_IO.Put_Line (File, "  ]");
+   end Emit_Gnatprove_Import;
+
    procedure Emit_JSON (File : Ada.Text_IO.File_Type) is
       First : Boolean := True;
    begin
@@ -1005,11 +1095,19 @@ package body Adalang_Analyzer.Report is
                   Text_Utils.To_Decimal (Item.Subject.Line) &
                   ", ""column"": " &
                   Text_Utils.To_Decimal (Item.Subject.Column) & "}") &
+               --  What GNATprove said of the same check, when a log of it
+               --  was given and has one.
+               Gnatprove_Field (Index) &
                "}");
          end;
       end loop;
       Ada.Text_IO.New_Line (File);
-      Ada.Text_IO.Put_Line (File, "  ]");
+      if Gnatprove_Import.Active then
+         Ada.Text_IO.Put_Line (File, "  ],");
+         Emit_Gnatprove_Import (File);
+      else
+         Ada.Text_IO.Put_Line (File, "  ]");
+      end if;
       Ada.Text_IO.Put_Line (File, "}");
    end Emit_JSON;
 
@@ -1073,11 +1171,15 @@ package body Adalang_Analyzer.Report is
                """, ""blockingExpression"": """ &
                JSON_Escape (To_String (Item.Blocking_Expression)) &
                """, ""inlinePath"": """ &
-               JSON_Escape (To_String (Item.Inline_Path)) & """}");
+               JSON_Escape (To_String (Item.Inline_Path)) & """" &
+               Gnatprove_Field (Index) & "}");
          end;
       end loop;
       Ada.Text_IO.New_Line (File);
       Ada.Text_IO.Put_Line (File, "    ],");
+      if Gnatprove_Import.Active then
+         Emit_Gnatprove_Summary (File, "    ");
+      end if;
       Emit_Analysis_Configuration
         (File, "    ", Followed_By_More => False);
       Ada.Text_IO.Put_Line (File, "  },");

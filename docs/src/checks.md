@@ -473,6 +473,11 @@ only to that individual operation under the reported assumptions. It is not a
 claim that a subprogram or program is correct, and this mode is not a
 replacement for GNATprove.
 
+Where the same sources are also proved with GNATprove, `--gnatprove-log`
+sets what GNATprove said of each check beside the obligation that stands
+for it, without changing anything AdaLang reports of its own; see
+"GNATprove's verdicts beside AdaLang's" in the configuration reference.
+
 The supported verification core is structured sequential integer and Boolean
 code, statically bounded array indexing, initialization tracking, and simple
 assertion, precondition, and postcondition facts. Calls to bodies present in

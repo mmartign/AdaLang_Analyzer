@@ -83,8 +83,15 @@ MESSAGE = re.compile(r"^(.*?):(\d+):(\d+): (info|low|medium|high): (.*)$")
 
 
 def label_of(text):
+    """What the message is about, from what it says before its remarks.
+
+    The remarks in brackets and the names in quotes are not looked at: a
+    division check that "might fail [possible fix: add precondition ...]"
+    is not a precondition, nor is the initialization of "precondition_met".
+    """
+    said = re.sub(r'"[^"]*"', '""', text.split(" [")[0])
     for pattern, group, kind in CHECKS:
-        if pattern in text:
+        if pattern in said:
             return pattern, group, kind
     return None
 

@@ -1,0 +1,17 @@
+Phase 1 of 3: generation of data representation information ...
+Phase 2 of 3: generation of Global contracts ...
+Phase 3 of 3: flow analysis and proof ...
+sample.adb:5:14: info: length check proved
+sample.adb:11:20: medium: divide by zero might fail [provers gave up before completing the proof]
+sample.ads:9:13: info: implicit aspect Always_Terminates on "Half" has been proved, subprogram will terminate
+sample.ads:9:61: info: division check proved
+sample.ads:12:13: info: implicit aspect Always_Terminates on "Quotient" has been proved, subprogram will terminate
+sample.ads:13:12: medium: divide by zero might fail [possible fix: add precondition (Right /= 0) to subprogram at line 12] [provers gave up before completing the proof]
+sample.ads:13:12: medium: overflow check might fail, cannot prove lower bound for Left / Right [reason for check: result of division must fit in a 32-bits machine integer] [possible fix: add precondition (Left / Right >= Integer'First) to subprogram at line 12] [provers reached time limit before completing the proof]
+sample.ads:17:13: info: implicit aspect Always_Terminates on "Sum_Of_Two" has been proved, subprogram will terminate
+sample.ads:18:17: info: index check proved
+sample.ads:18:25: info: overflow check proved
+sample.ads:18:37: info: index check proved
+sample.ads:21:36: info: index check proved
+sample.ads:24:37: info: initialization of "Target" proved
+sample.ads:28:30: info: initialization of "Result" proved

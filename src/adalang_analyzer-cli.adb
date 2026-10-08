@@ -35,6 +35,7 @@ with Adalang_Analyzer.Checks;
 with Adalang_Analyzer.Circular_Dependencies;
 with Adalang_Analyzer.Compiler_Checks;
 with Adalang_Analyzer.GNATcheck_Names;
+with Adalang_Analyzer.Gnatprove_Import;
 with Adalang_Analyzer.Clone_Detection;
 with Adalang_Analyzer.Compliance_Mapping;
 with Adalang_Analyzer.Config;        use Adalang_Analyzer.Config;
@@ -61,6 +62,9 @@ package body Adalang_Analyzer.CLI is
    Invalid_Options  : Boolean := False;
    Baseline_File    : Unbounded_String;
    Baseline_Output  : Unbounded_String;
+   Gnatprove_Log_Option : constant String := "--gnatprove-log=";
+   Gnatprove_Logs   : File_Name_Vectors.Vector;
+   --  The GNATprove logs whose verdicts are set beside the obligations.
    Report_Filename  : Unbounded_String;
    Report_Format    : Output_Format := Text_Output;
    Compliance_Report_Standard : Unbounded_String;
@@ -82,6 +86,47 @@ package body Adalang_Analyzer.CLI is
          --  its normal diagnostic. Exact repetitions are still collapsed.
          return Name;
    end Normalized_File_Name;
+
+   --  What GNATprove said, in the logs given, of the checks it has and of
+   --  the obligations that stand for them. The verdicts are GNATprove's:
+   --  the counts of the obligations above are AdaLang's own and are as
+   --  they would be without the logs.
+   procedure Put_Gnatprove_Summary is
+      package Import renames Adalang_Analyzer.Gnatprove_Import;
+      Sum : constant Import.Summary := Import.Totals;
+   begin
+      Ada.Text_IO.Put_Line ("");
+      Ada.Text_IO.Put_Line
+        ("GNATprove verdicts (read from " &
+         To_Decimal (Import.Log_Count) &
+         (if Import.Log_Count = 1 then " log" else " logs") &
+         "; not AdaLang's own results):");
+      Ada.Text_IO.Put_Line
+        ("  Checks in the log : " & To_Decimal (Sum.Checks) & " (" &
+         To_Decimal (Sum.Proved) & " proved, " &
+         To_Decimal (Sum.Justified) & " justified, " &
+         To_Decimal (Sum.Not_Proved) & " not proved)");
+      Ada.Text_IO.Put_Line
+        ("  Of the checks GNATprove proved:");
+      Ada.Text_IO.Put_Line
+        ("    proved by AdaLang too : " & To_Decimal (Sum.Proved_By_Both));
+      Ada.Text_IO.Put_Line
+        ("    GNATprove's verdict alone, on an AdaLang obligation : " &
+         To_Decimal (Sum.On_Obligation));
+      Ada.Text_IO.Put_Line
+        ("    GNATprove's verdict alone, no AdaLang obligation : " &
+         To_Decimal (Sum.Without_Obligation));
+      Ada.Text_IO.Put_Line
+        ("    a definite error for AdaLang : " &
+         To_Decimal (Sum.Error_Where_Proved));
+      Ada.Text_IO.Put_Line
+        ("  Proved by AdaLang where GNATprove did not prove : " &
+         To_Decimal (Sum.Proved_Where_Not_Proved));
+      Ada.Text_IO.Put_Line
+        ("  Obligations with a GNATprove verdict : " &
+         To_Decimal (Sum.Obligations_With_Verdict) & " of " &
+         To_Decimal (Adalang_Analyzer.Proof_Obligations.Count));
+   end Put_Gnatprove_Summary;
 
    procedure Deduplicate_Files (Files : in out File_Name_Vectors.Vector) is
       Unique_Files : File_Name_Vectors.Vector;
@@ -131,6 +176,15 @@ package body Adalang_Analyzer.CLI is
         ("  --spark               Enable proof-focused SPARK checks");
       Ada.Text_IO.Put_Line
         ("  --verify              Run bounded scalar verification");
+      Ada.Text_IO.Put_Line
+        ("  --gnatprove-log=<file>  With --verify: set beside each " &
+         "obligation what");
+      Ada.Text_IO.Put_Line
+        ("                        GNATprove said of the same check, read " &
+         "from the log");
+      Ada.Text_IO.Put_Line
+        ("                        of 'gnatprove --output=oneline " &
+         "--report=all' (repeatable)");
       Ada.Text_IO.Put_Line
         ("  --automotive          Enable automotive Ada restrictions");
       Ada.Text_IO.Put_Line
@@ -1188,6 +1242,25 @@ package body Adalang_Analyzer.CLI is
                then
                   Baseline_File :=
                     To_Unbounded_String (Arg (Arg'First + 11 .. Arg'Last));
+               elsif Arg = "--gnatprove-log" then
+                  if Current_Arg = Argument_Count then
+                     Ada.Text_IO.Put_Line
+                       ("adalang-analyzer: expected argument for " &
+                        "--gnatprove-log");
+                     Invalid_Options := True;
+                  else
+                     Gnatprove_Logs.Append
+                       (File_Name_Vectors.Element
+                          (Merged_Args, Current_Arg + 1));
+                     Current_Arg := Current_Arg + 1;
+                  end if;
+               elsif Arg'Length > Gnatprove_Log_Option'Length
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, Gnatprove_Log_Option) = Arg'First
+               then
+                  Gnatprove_Logs.Append
+                    (Arg (Arg'First + Gnatprove_Log_Option'Length ..
+                            Arg'Last));
                elsif Arg = "--write-baseline" then
                   if Current_Arg = Argument_Count then
                      Ada.Text_IO.Put_Line
@@ -1575,6 +1648,31 @@ package body Adalang_Analyzer.CLI is
          end;
       end if;
 
+      --  GNATprove's verdicts go beside obligations, and only --verify
+      --  raises any.
+      if not Gnatprove_Logs.Is_Empty and then not Verification_Mode then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: --gnatprove-log requires --verify");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+
+      Adalang_Analyzer.Gnatprove_Import.Reset;
+      for Log of Gnatprove_Logs loop
+         begin
+            Adalang_Analyzer.Gnatprove_Import.Load (Log);
+         exception
+            when E : others =>
+               Ada.Text_IO.Put_Line
+                 (Ada.Text_IO.Standard_Error,
+                  "adalang-analyzer: could not read GNATprove log '" &
+                  Log & "': " & Ada.Exceptions.Exception_Message (E));
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+               return;
+         end;
+      end loop;
+
       --  Project files contribute their own Ada sources on top of any file
       --  names given directly on the command line.
       for P of Project_Gpr_Files loop
@@ -1712,6 +1810,10 @@ package body Adalang_Analyzer.CLI is
          Adalang_Analyzer.Clone_Detection.Analyze (Ctx, Files_To_Process);
       end if;
 
+      if Adalang_Analyzer.Gnatprove_Import.Active then
+         Adalang_Analyzer.Gnatprove_Import.Pair;
+      end if;
+
       Finalize_Output;
 
       if Baseline_Output /= Null_Unbounded_String then
@@ -1783,6 +1885,14 @@ package body Adalang_Analyzer.CLI is
                         Proof.Status_Name (Item.Status));
                      Ada.Text_IO.Put_Line
                        ("      method: " & Proof.Method_Name (Item.Method));
+                     if Adalang_Analyzer.Gnatprove_Import.Has_Verdict (Index)
+                     then
+                        Ada.Text_IO.Put_Line
+                          ("      GNATprove: " &
+                           Adalang_Analyzer.Gnatprove_Import.Verdict_Name
+                             (Adalang_Analyzer.Gnatprove_Import.Verdict_Of
+                                (Index)));
+                     end if;
                      if Item.Explanation /= Null_Unbounded_String then
                         Ada.Text_IO.Put_Line
                           ("      why: " & To_String (Item.Explanation));
@@ -1818,6 +1928,10 @@ package body Adalang_Analyzer.CLI is
                  ("  (details suppressed; rerun with -v to list each" &
                   " proof obligation)");
             end if;
+         end if;
+
+         if Adalang_Analyzer.Gnatprove_Import.Active then
+            Put_Gnatprove_Summary;
          end if;
 
          if Baseline_Matches > 0 then

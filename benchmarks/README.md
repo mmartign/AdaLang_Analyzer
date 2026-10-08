@@ -113,6 +113,14 @@ what AdaLang does with each:
 | Has no obligation of that kind at all | 1,416 | 9.4% |
 | Raises nothing in that file | 209 | 1.4% |
 
+Since 1.8.3 the analyzer does this accounting itself when it is given the
+log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
+on each check beside its own result, and on these corpora that leaves none
+of the 15,043 unaccounted for -- 4,299 proved by AdaLang too, 7,623 with
+GNATprove's verdict alone on an obligation AdaLang has, 3,121 with
+GNATprove's verdict alone and no AdaLang obligation. The first figure is
+the only one that is AdaLang's.
+
 The ledger has already paid for itself several times. Its first run led to
 `FP-104`: obligations written in a specification were reported under the
 body's file name, so 949 of them could not be paired with GNATprove's

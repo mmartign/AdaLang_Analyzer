@@ -1,0 +1,13 @@
+Phase 3 of 3: flow analysis and proof ...
+sample.adb:11:20: info: division check proved
+sample.ads:9:61: medium: divide by zero might fail
+sample.ads:18:25: info: overflow check proved, in instantiation at first.adb:3
+sample.ads:18:25: medium: overflow check might fail, in instantiation at second.adb:4
+sample.ads:18:25: info: overflow check proved, in instantiation at third.adb:5
+sample.ads:18:25: info: in instantiation at third.adb:5
+sample.ads:18:25: warning: this is no check
+other.adb:3:4: info: range check proved
+sample.ads:13:12: info: divide by zero justified
+C:\work\sources\sample.ads:12:13: info: implicit aspect Always_Terminates on "Quotient" has been proved, subprogram will terminate
+sample.ads:30:5: info: range check proved
+not a message at all

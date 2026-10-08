@@ -97,6 +97,39 @@ GNATprove proves 15043 checks on these 5 corpora. What AdaLang does with each of
 
 Disagreements: 0 checks AdaLang proved that GNATprove did not, 0 definite errors on checks GNATprove proved.
 
+## With GNATprove's verdicts read in
+
+Since 1.8.3 the analyzer does this pairing itself. Given the log of a
+GNATprove run on the same sources (`--gnatprove-log`), `--verify` reports
+what GNATprove said of each check beside the AdaLang obligation that stands
+for it, and lists the checks that have none. Run on the five corpora with
+the logs this ledger is made from, it accounts for every check GNATprove
+proved, and gives the figures of the table above:
+
+| Corpus | Proved by GNATprove | Proved by AdaLang too | GNATprove's verdict alone, on an AdaLang obligation | GNATprove's verdict alone, no AdaLang obligation | A definite error for AdaLang |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| sparknacl | 2,446 | 897 | 1,252 | 297 | 0 |
+| saatana | 367 | 115 | 201 | 51 | 0 |
+| libkeccak | 3,321 | 679 | 1,859 | 783 | 0 |
+| coap_spark | 6,795 | 1,795 | 3,309 | 1,691 | 0 |
+| tokeneer | 2,114 | 813 | 1,002 | 299 | 0 |
+| All five | 15,043 | 4,299 | 7,623 | 3,121 | 0 |
+
+The second column is what AdaLang proves; it is 4,299 with the logs and
+without them. The third and fourth are GNATprove's work, reported as
+GNATprove's: 7,623 checks on an obligation AdaLang has and did not decide
+(the 6,317 unproved and the 1,306 unsupported above) and 3,121 for which it
+has no obligation. Nothing is left over, which is all that "the gap is
+zero" means here: with GNATprove's log beside it, an AdaLang report says
+of each of the 15,043 checks who proved it. It does not mean AdaLang proves
+them. The logs also hold 13 checks justified in Tokeneer and 22 GNATprove
+did not prove (8 in SPARKNaCl, 14 in CoAP-SPARK), none of which AdaLang
+proves.
+
+That the analyzer and `gnatprove_gap_ledger.py` pair alike is tested on a
+small case by `tests/run_gnatprove_import.sh`; that they give the same
+totals on these corpora is what the table shows.
+
 ## Where the missing obligations are
 
 3119 checks GNATprove proved have no AdaLang obligation at their place. By the construct they are in:

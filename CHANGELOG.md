@@ -9,6 +9,20 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `--gnatprove-log=<file>`, with `--verify`: what GNATprove said of each
+  check is set beside the AdaLang obligation that stands for it, read from
+  the log of a `gnatprove --report=all --output=oneline` run on the same
+  sources. GNATprove is a separate tool of AdaCore, which AdaLang Analyzer
+  neither contains nor runs. The verdict is reported as GNATprove's -- a
+  `gnatprove` member on the obligation, `gnatproveImport` for the counts and
+  `gnatproveChecks` for every check of the log, in JSON; the counts in text
+  and SARIF -- and changes nothing AdaLang reports of its own: an obligation
+  left `Unproved` stays `Unproved`. Every check GNATprove proved is one of
+  four things, which add up: proved by AdaLang too, an obligation AdaLang
+  did not decide, no AdaLang obligation, or an obligation AdaLang calls a
+  definite error. See "GNATprove's verdicts beside AdaLang's" in
+  `docs/src/configuration.md`, where what the user answers for is set out:
+  that the log is of the sources analyzed, most of all.
 - A name written with its package in front of it is the entity it names,
   an enumeration literal or a named number as much as an object:
   `Pkg.Literal`, `Pkg.Number`. What a precondition says of
@@ -99,6 +113,11 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - The mutation manifest has 152 seeded defects (102 in 1.8.2).
+- `benchmarks/gnatprove_gap_ledger.py` names a check by what its message
+  says before the remarks in brackets and outside the names in quotes. A
+  division check that "might fail [possible fix: add precondition ...]" was
+  taken for a precondition. Only checks GNATprove did not prove carry such
+  remarks: no figure of the ledger changes.
 - `tests/verification_unsupported.adb` and
   `tests/control_flow_graph_unsupported.adb`, the examples of control flow
   outside the subset, are a `goto` back up to a label.

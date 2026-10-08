@@ -229,6 +229,11 @@ independent project maintained solely by Spazio IT and is not endorsed,
 sponsored, or officially supported by AdaCore. “Libadalang” and “AdaCore” are
 trademarks of AdaCore.
 
+GNATprove is a separate tool of AdaCore. AdaLang Analyzer does not include
+it or run it; `--gnatprove-log` reads a log the user produced with their
+own copy and reports GNATprove's verdicts as GNATprove's, beside AdaLang's
+own.
+
 ## Requirements
 
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
