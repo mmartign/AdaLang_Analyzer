@@ -50,6 +50,7 @@ function gp_kind(msg) {
    if (msg ~ /division check/)      return "division-by-zero"
    if (msg ~ /index check/)         return "index-check"
    if (msg ~ /range check/)         return "range-check"
+   if (msg ~ /length check/)        return "length-check"
    if (msg ~ /discriminant check/)  return "discriminant-check"
    if (msg ~ /loop invariant/) {
       if (msg ~ /initialization/ || msg ~ /first iteration/)

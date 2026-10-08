@@ -60,7 +60,7 @@ span nine scalar obligation kinds across far more distinct code shapes than
 the six real projects reach; its value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-10-02.md`. The first run
+`proved-safe`. See `spark_testsuite/RESULTS_2026-10-09.md`. The first run
 of this corpus found two analyzer defects (`FP-064`, `FP-065`), both fixed
 with regression tests before it landed; the 2026-10-02 run found a third
 (`FP-100`).
@@ -91,7 +91,7 @@ have precondition obligations (`FP-096`). The refresh was also the first
 run of 1.6.1 on the non-SPARK corpora and on the SPARK testsuite, and found
 three defects that release introduced: a `--verify` run time of 39 minutes
 on AWS (159 s before, 69 s now) and two false `Definite_Error` results,
-`FP-099` and `FP-100`. Each corpus's `RESULTS_2026-10-02.md` has the
+`FP-099` and `FP-100`. Each corpus's `RESULTS_2026-10-09.md` has the
 details.
 
 ### How much of what GNATprove proves does `--verify` prove?
@@ -106,18 +106,18 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 4,299 | 28.6% |
-| Has the obligation, leaves it unproved | 6,317 | 42.0% |
-| Has the obligation, calls it unsupported | 1,306 | 8.7% |
-| Has no obligation of that kind at that place | 1,496 | 9.9% |
-| Has no obligation of that kind at all | 1,416 | 9.4% |
+| Proves it | 4,757 | 31.6% |
+| Has the obligation, leaves it unproved | 6,397 | 42.5% |
+| Has the obligation, calls it unsupported | 1,397 | 9.3% |
+| Has no obligation of that kind at that place | 1,178 | 7.8% |
+| Has no obligation of that kind at all | 1,105 | 7.3% |
 | Raises nothing in that file | 209 | 1.4% |
 
 Since 1.8.3 the analyzer does this accounting itself when it is given the
 log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
 on each check beside its own result, and on these corpora that leaves none
-of the 15,043 unaccounted for -- 4,299 proved by AdaLang too, 7,623 with
-GNATprove's verdict alone on an obligation AdaLang has, 3,121 with
+of the 15,043 unaccounted for -- 4,757 proved by AdaLang too, 7,794 with
+GNATprove's verdict alone on an obligation AdaLang has, 2,492 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
 
@@ -149,10 +149,10 @@ specifications.
 
 Before all of this AdaLang proved 433 of the 15,043 checks and had an
 obligation for 5,954; with those additions it proved 3,018 and had one for
-11,922. What is left without one, 3,121 checks, is mostly kinds AdaLang
-does not have (predicate, length, pointer-dereference and discriminant
-checks, memory leaks) and range, index and precondition checks at places it
-does not yet look.
+11,922. What was left without one then, 3,121 checks, was mostly kinds
+AdaLang did not have (predicate, length, pointer-dereference and
+discriminant checks, memory leaks) and range, index and precondition checks
+at places it did not yet look.
 
 With an obligation for four checks in five, the question became how many
 of them are proved. The largest group that was not was the precondition of
@@ -181,16 +181,39 @@ where there were 259.
 And a subprogram was given up whole for a loop with a name, for a `goto`
 to a label further down or for a quantified loop invariant, none of which
 needs more than an edge in the graph: 1,306 checks are unsupported where
-2,324 were, none of them in Saatana and two in libkeccak. AdaLang now
-proves 4,299 of the 15,043 checks and 687 of the 2,938 preconditions. The
+2,324 were, none of them in Saatana and two in libkeccak. AdaLang then
+proved 4,299 of the 15,043 checks and 687 of the 2,938 preconditions. The
 checks read on the way had four more faults: `FP-112`, the prefix of `'Old`
 checked in the state at the exit; `FP-113`, modular arithmetic in a bound
 that did not wrap; `FP-114`, a definite error recorded from a state that
 had not settled; and `FP-115`, an object named `True` taken for the
-literal. What keeps the remaining 1,306 outside is an explicit dereference,
+literal. What kept the remaining 1,306 outside was an explicit dereference,
 an allocator or a generic instantiation in the subprogram; what the
 remaining preconditions need is still the definition of the functions
 their contracts call and the predicate of the type they are about.
+
+The 458 after that came with obligations AdaLang did not have, 629 of
+them, which is the other half of the distance. The largest kind it lacked
+and could reach was the length check of an array given to a target. It is
+now a kind of its own, raised where a compiler keeps the check and placed
+as GNATprove places it -- at the value that is converted to a constrained
+subtype, and at the `:=` when the bounds of the target are not static: 308
+of GNATprove's 311 have an obligation and 129 are proved, by an aggregate
+that takes the bounds of its target or by the two lengths being equal as
+terms. The length of an array, a universal integer, is checked where it
+is converted to an integer type; and since an array has no more
+components than its index subtype has values, 313 of those checks are
+proved with it, and the arithmetic written with a length after them. The
+precondition of an operator that a declaration defines is an obligation at
+the operator. Asking what such an operator had been taken for until then
+turned up `FP-116`: the operation its symbol stands for, whatever the
+function computes. AdaLang now proves 4,757 of the 15,043 checks and has
+an obligation for 12,551. What is left without one, 2,492 checks, is
+predicate, pointer-dereference and discriminant checks and memory leaks,
+which AdaLang does not have, and range, index and precondition checks at
+places it does not yet look. Another 1,397 have their obligation in a
+subprogram it gives up for an explicit dereference, an allocator or a
+generic instantiation.
 
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a
@@ -293,7 +316,7 @@ unsoundness and zero false positives on every corpus. The single-project
 corpora are unchanged; coap_spark gains nine matched pairs (942 to 951)
 and CubedOS one (7 to 8), and CubedOS, gnatcoll-core and AWS get verdicts
 for obligations that were `Unsupported` before (CubedOS 667 to 32). Each
-of those corpora's `RESULTS_2026-10-02.md` has a 2026-10-04 section.
+of those corpora's `RESULTS_2026-10-09.md` has a 2026-10-04 section.
 
 The 2026-10-05 refresh closed a second gap, `FP-103`: a source that uses
 the GNAT preprocessor did not parse, so nothing was reported for it. All
