@@ -116,7 +116,10 @@ status=0
   tests/verification_mutation_actual_range.adb \
   tests/verification_mutation_termination.adb \
   tests/verification_mutation_flow_contracts.adb \
-  tests/verification_mutation_expression_functions.adb || status=$?
+  tests/verification_mutation_expression_functions.adb \
+  tests/verification_fp116_declared_operator.ads \
+  tests/verification_fp116_declared_operator.adb \
+  tests/verification_length_check.adb || status=$?
 if [ "$status" -gt 1 ]; then
    echo "AdaLang Analyzer broken-corpus run failed with status $status" >&2
    exit "$status"
@@ -132,7 +135,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 22 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 24 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -151,7 +154,9 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_mutation_actual_range \
   verification_mutation_termination \
   verification_mutation_flow_contracts \
-  verification_mutation_expression_functions; do
+  verification_mutation_expression_functions \
+  verification_fp116_declared_operator \
+  verification_length_check; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -213,5 +218,117 @@ do
       exit 1
    fi
 done
+
+#  Two fixtures are compared check by check. On the one of FP-116 no claim
+#  GNATprove fails to prove may be proved here, none it proves may be a
+#  definite error, and the precondition of a declared operator is at the
+#  operator for both. On the one of the length check GNATprove has its
+#  checks at the places of AdaLang's obligations, line and column, and
+#  proves what is proved here.
+pair_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-pair.XXXXXX")
+pair_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-pair.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$pair_results" \
+  tests/verification_fp116_declared_operator.ads \
+  tests/verification_fp116_declared_operator.adb \
+  tests/verification_length_check.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer check-by-check run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=1 --report=all --output=oneline \
+  -u verification_fp116_declared_operator.adb >"$pair_log" 2>&1 || true
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=1 --report=all --output=oneline \
+  -u verification_length_check.adb >>"$pair_log" 2>&1 || true
+
+python3 - "$pair_results" "$pair_log" <<'PYTHON'
+import collections
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+#  (file, line, column, proved, text) of each check of GNATprove's.
+checks = []
+for line in log:
+    found = re.match(
+        r"(\S+\.ad[bs]):(\d+):(\d+): (info|low|medium|high): (.*)", line)
+    if found:
+        text = found.group(5)
+        checks.append((found.group(1), int(found.group(2)),
+                       int(found.group(3)),
+                       found.group(4) == "info" and " proved" in text, text))
+
+
+def mine(unit, kind):
+    return [item for item in report["proofObligations"]
+            if item["file"].endswith(unit) and item["kind"] == kind]
+
+
+operators = "verification_fp116_declared_operator.adb"
+asserted = [check for check in checks
+            if check[0] == operators and check[4].startswith("assertion")]
+if len(asserted) != 25:
+    fail(f"FP-116: GNATprove reports {len(asserted)} assertions, not 25")
+refused = 0
+for _, line, _, proved, _ in asserted:
+    here = [item for item in mine(operators, "assertion")
+            if item["line"] == line]
+    if len(here) != 1:
+        fail(f"FP-116: {len(here)} assertion obligations at line {line}")
+    if not proved:
+        refused += 1
+        if here[0]["status"] == "proved-safe":
+            fail(f"FP-116: line {line} is proved, and GNATprove refuses it")
+    elif here[0]["status"] == "definite-error":
+        fail(f"FP-116: line {line} is an error, and GNATprove proves it")
+if refused != 21:
+    fail(f"FP-116: GNATprove refuses {refused} assertions, not 21")
+theirs = sorted((check[1], check[2]) for check in checks
+                if check[0] == operators
+                and check[4].startswith("precondition"))
+ours = sorted((item["line"], item["column"])
+              for item in mine(operators, "precondition"))
+if len(theirs) != 2 or theirs != ours:
+    fail(f"FP-116: preconditions at {theirs} for GNATprove, {ours} here")
+
+lengths = "verification_length_check.adb"
+theirs = collections.Counter(
+    (check[1], check[2]) for check in checks
+    if check[0] == lengths and check[4].startswith("length check"))
+ours = collections.Counter(
+    (item["line"], item["column"]) for item in mine(lengths, "length-check"))
+if not theirs or theirs != ours:
+    fail("length check: GNATprove and AdaLang differ at "
+         + str(sorted((theirs - ours) + (ours - theirs))))
+proved_there = collections.Counter(
+    (check[1], check[2]) for check in checks
+    if check[0] == lengths and check[4].startswith("length check")
+    and check[3])
+proved_here = collections.Counter(
+    (item["line"], item["column"]) for item in mine(lengths, "length-check")
+    if item["status"] == "proved-safe")
+if proved_here - proved_there:
+    fail("length check: proved here and not by GNATprove at "
+         + str(sorted(proved_here - proved_there)))
+if not proved_here:
+    fail("length check: nothing is proved")
+print(f"check by check: {len(asserted)} assertions of FP-116, "
+      f"{sum(theirs.values())} length checks at the same places, "
+      f"{sum(proved_here.values())} of them proved by both")
+PYTHON
 
 echo "GNATprove differential tests passed"
