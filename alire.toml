@@ -43,16 +43,6 @@ append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
 [environment.'case(os)'.macos.LIBRARY_PATH]
 append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
 
-[gpr-externals]
-ADALANG_ANALYZER_OS = ["linux", "macos", "windows"]
-
-[gpr-set-externals.'case(os)'.linux]
-ADALANG_ANALYZER_OS = "linux"
-[gpr-set-externals.'case(os)'.macos]
-ADALANG_ANALYZER_OS = "macos"
-[gpr-set-externals.'case(os)'.windows]
-ADALANG_ANALYZER_OS = "windows"
-
 [[depends-on]]
 libadalang = "^26.0.0"
 

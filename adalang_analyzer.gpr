@@ -4,9 +4,6 @@
 with "config/adalang_analyzer_config.gpr";
 project AdaLang_Analyzer is
 
-   type OS_Kind is ("linux", "macos", "windows");
-   Host_OS : OS_Kind := external ("ADALANG_ANALYZER_OS", "linux");
-
    for Source_Dirs use ("src/", "config/");
    for Object_Dir use "obj/" & Adalang_Analyzer_Config.Build_Profile;
    for Create_Missing_Dirs use "True";
@@ -31,7 +28,9 @@ project AdaLang_Analyzer is
    end Binder;
 
    package Linker is
-      case Host_OS is
+      --  The host is the one Alire found when it wrote the configuration
+      --  project.
+      case Adalang_Analyzer_Config.Alire_Host_OS is
          when "macos" =>
             --  Homebrew GNAT on recent macOS needs the Command Line Tools
             --  sysroot pointed out explicitly, or the linker cannot find

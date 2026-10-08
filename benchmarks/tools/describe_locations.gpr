@@ -8,9 +8,6 @@ with "../../adalang_analyzer.gpr";
 --  what construct each of a list of source locations is in.
 project Describe_Locations is
 
-   type OS_Kind is ("linux", "macos", "windows");
-   Host_OS : OS_Kind := external ("ADALANG_ANALYZER_OS", "linux");
-
    for Source_Dirs use (".");
    for Object_Dir use "../../obj/describe-locations";
    for Create_Missing_Dirs use "True";
@@ -22,17 +19,7 @@ project Describe_Locations is
         ("-g", "-O0", "-gnat2022", "-gnatwa", "-gnatwe", "-gnatyM120");
    end Compiler;
 
-   package Linker is
-      case Host_OS is
-         when "macos" =>
-            for Switches ("Ada") use (
-               "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
-               "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
-               "-lgnarl"
-            );
-         when others =>
-            for Switches ("Ada") use ("-lgnarl");
-      end case;
-   end Linker;
+   --  Linked as the analyzer is.
+   package Linker renames AdaLang_Analyzer.Linker;
 
 end Describe_Locations;
