@@ -576,6 +576,35 @@ package body Adalang_Analyzer.Flow_Eval is
             --  "Pkg.Number"; an object so named was looked up before.
             return Named_Number_Value (Node);
 
+         when Libadalang.Common.Ada_Attribute_Ref =>
+            --  T'Size, where T is named outright: T'Base is another
+            --  subtype, and the size of an object is the target's affair.
+            declare
+               Attr : constant Libadalang.Analysis.Attribute_Ref :=
+                 Node.As_Attribute_Ref;
+               Decl : Libadalang.Analysis.Basic_Decl;
+            begin
+               if Text_Utils.Normalize_Rule_Name
+                    (Ada_Text.Node_Text (Attr.F_Attribute)) /= "size"
+                 or else Attr.F_Prefix.Kind not in
+                   Libadalang.Common.Ada_Identifier
+                     | Libadalang.Common.Ada_Dotted_Name
+                 or else
+                   (not Libadalang.Analysis.Is_Null (Attr.F_Args)
+                    and then Attr.F_Args.Children_Count > 0)
+               then
+                  return Unknown_Int;
+               end if;
+
+               Decl := Attr.F_Prefix.P_Referenced_Decl;
+               if Libadalang.Analysis.Is_Null (Decl)
+                 or else Decl.Kind not in Libadalang.Common.Ada_Base_Type_Decl
+               then
+                  return Unknown_Int;
+               end if;
+               return Type_Size (Decl.As_Base_Type_Decl);
+            end;
+
          when Libadalang.Common.Ada_Paren_Expr =>
             return Integer_Value (Node.As_Paren_Expr.F_Expr, State);
 
@@ -2319,6 +2348,193 @@ package body Adalang_Analyzer.Flow_Eval is
       when others =>
          return Unknown_Range;
    end Type_Range;
+
+   --  The number of bits the values of Bounds take: without a sign bit
+   --  unless one of them is negative, and none when there is no value.
+   function Bits_For (Bounds : Abstract_Range) return Abstract_Int is
+      Widest : constant := 64;
+   begin
+      if not (Bounds.Has_Low and then Bounds.Has_High) then
+         return Unknown_Int;
+      elsif Bounds.Low > Bounds.High then
+         return Known_Int (0);
+      elsif Bounds.Low >= 0 then
+         for Bits in 0 .. Widest - 2 loop
+            if Bounds.High < 2 ** Bits then
+               return Known_Int (Long_Long_Integer (Bits));
+            end if;
+         end loop;
+         return Known_Int (Widest - 1);
+      end if;
+
+      for Bits in 1 .. Widest - 1 loop
+         if Bounds.Low >= -(2 ** (Bits - 1))
+           and then Bounds.High <= 2 ** (Bits - 1) - 1
+         then
+            return Known_Int (Long_Long_Integer (Bits));
+         end if;
+      end loop;
+      return Known_Int (Widest);
+   end Bits_For;
+
+   --  N when Expr, the modulus of a modular type, is written "2 ** N":
+   --  the type then takes N bits, also where 2 ** N is more than
+   --  Long_Long_Integer holds. Unknown_Int otherwise.
+   function Power_Of_Two_Bits
+     (Expr : Libadalang.Analysis.Ada_Node'Class) return Abstract_Int
+   is
+      Widest_Modulus : constant := 128;
+   begin
+      if Libadalang.Analysis.Is_Null (Expr) then
+         return Unknown_Int;
+      elsif Expr.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Power_Of_Two_Bits (Expr.As_Paren_Expr.F_Expr);
+      elsif Expr.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+        or else Expr.As_Bin_Op.F_Op /= Libadalang.Common.Ada_Op_Pow
+      then
+         return Unknown_Int;
+      end if;
+
+      declare
+         Base     : constant Abstract_Int :=
+           Declared_Bound_Value (Expr.As_Bin_Op.F_Left, Empty_Flow_State);
+         Exponent : constant Abstract_Int :=
+           Declared_Bound_Value (Expr.As_Bin_Op.F_Right, Empty_Flow_State);
+      begin
+         if Base.Known and then Base.Value = 2
+           and then Exponent.Known
+           and then Exponent.Value in 0 .. Widest_Modulus
+         then
+            return Exponent;
+         end if;
+         return Unknown_Int;
+      end;
+   end Power_Of_Two_Bits;
+
+   function Type_Size
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Abstract_Int
+   is
+      Max_Depth : constant := 64;
+      Current   : Libadalang.Analysis.Base_Type_Decl :=
+        (if Libadalang.Analysis.Is_Null (Typ)
+         then Libadalang.Analysis.No_Base_Type_Decl
+         else Typ.As_Base_Type_Decl);
+
+      function Aspect_Named
+        (Name : Wide_Wide_String) return Libadalang.Analysis.Aspect
+      is (Current.P_Get_Aspect
+            (Langkit_Support.Text.To_Unbounded_Text (Name)));
+
+      --  The size of Current from the range of its values. Type_Range
+      --  gives none for a type that is not an integer type.
+      function From_Range return Abstract_Int
+      is (Bits_For (Type_Range (Current, Empty_Flow_State)));
+   begin
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Unknown_Int;
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            --  A subtype that adds a constraint has the size of its own
+            --  values; one that adds none is its parent over again.
+            declare
+               Indication : constant Libadalang.Analysis.Subtype_Indication :=
+                 Current.As_Subtype_Decl.F_Subtype;
+            begin
+               if not Libadalang.Analysis.Is_Null (Indication.F_Constraint)
+               then
+                  return From_Range;
+               end if;
+               Current := Indication.P_Designated_Type_Decl;
+            end;
+         elsif Current.Kind /= Libadalang.Common.Ada_Concrete_Type_Decl then
+            --  A generic formal type, an incomplete type, a task type.
+            return Unknown_Int;
+         else
+            declare
+               Def       : constant Libadalang.Analysis.Type_Def :=
+                 Current.As_Type_Decl.F_Type_Def;
+               Specified : constant Libadalang.Analysis.Aspect :=
+                 Aspect_Named ("size");
+            begin
+               --  A Size its parent is given is that of a derived type
+               --  only when the derived type adds no constraint, and the
+               --  parent is then come to below.
+               if Libadalang.Analysis.Exists (Specified)
+                 and then not Libadalang.Analysis.Inherited (Specified)
+               then
+                  return Integer_Value
+                    (Libadalang.Analysis.Value (Specified));
+               elsif Libadalang.Analysis.Exists (Aspect_Named ("value_size"))
+               then
+                  return Unknown_Int;
+               end if;
+
+               case Def.Kind is
+                  when Libadalang.Common.Ada_Signed_Int_Type_Def =>
+                     return From_Range;
+
+                  when Libadalang.Common.Ada_Mod_Int_Type_Def =>
+                     declare
+                        Bits : constant Abstract_Int :=
+                          Power_Of_Two_Bits (Def.As_Mod_Int_Type_Def.F_Expr);
+                     begin
+                        if Bits.Known then
+                           return Bits;
+                        end if;
+                        return From_Range;
+                     end;
+
+                  when Libadalang.Common.Ada_Enum_Type_Def =>
+                     if Current.P_Is_Char_Type
+                       or else not Libadalang.Analysis.Is_Null
+                         (Current.P_Get_Enum_Representation_Clause)
+                     then
+                        return Unknown_Int;
+                     end if;
+                     return Bits_For
+                       ((Has_Low  => True, Low => 0,
+                         Has_High => True,
+                         High     =>
+                           Long_Long_Integer
+                             (Def.As_Enum_Type_Def.F_Enum_Literals
+                                .Children_Count) - 1));
+
+                  when Libadalang.Common.Ada_Derived_Type_Def =>
+                     declare
+                        Derived    : constant
+                          Libadalang.Analysis.Derived_Type_Def :=
+                            Def.As_Derived_Type_Def;
+                        Indication : constant
+                          Libadalang.Analysis.Subtype_Indication :=
+                            Derived.F_Subtype_Indication;
+                     begin
+                        if not Libadalang.Analysis.Is_Null
+                                 (Derived.F_Record_Extension)
+                          or else not Libadalang.Analysis.Is_Null
+                            (Current.P_Get_Enum_Representation_Clause)
+                        then
+                           return Unknown_Int;
+                        elsif not Libadalang.Analysis.Is_Null
+                                    (Indication.F_Constraint)
+                        then
+                           return From_Range;
+                        end if;
+                        --  It inherits the Size its parent is given, or
+                        --  has the size of the same values.
+                        Current := Indication.P_Designated_Type_Decl;
+                     end;
+
+                  when others =>
+                     return Unknown_Int;
+               end case;
+            end;
+         end if;
+      end loop;
+      return Unknown_Int;
+   exception
+      when others =>
+         return Unknown_Int;
+   end Type_Size;
 
    function Has_Subtype_Predicate
      (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Boolean

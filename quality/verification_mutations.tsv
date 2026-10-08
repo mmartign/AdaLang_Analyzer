@@ -139,3 +139,12 @@ goto-from-handler	tests/verification_forward_goto.adb	division-by-zero	Guarded	u
 named-exit-skips-outer-body	tests/verification_named_loops.adb	division-by-zero	Skipped	unproved	an exit that names the outer loop goes past the assignment after the inner loop
 named-exit-leaves-unset	tests/verification_named_loops.adb	initialization-check	Unset_Result	unproved	an exit that names the outer loop goes past the only assignment of an out parameter
 named-exit-postcondition	tests/verification_named_loops.adb	postcondition	Differs = 2	unproved	the postcondition holds only on the way that does not take the exit naming the outer loop
+size-constrained-subtype	tests/verification_type_size.adb	assertion	Nibble'Size = 8	definite-error	a subtype with a range of sixteen values takes four bits, not the eight of its type
+size-constrained-under-clause	tests/verification_type_size.adb	assertion	Cut'Size = 16	definite-error	a subtype that adds a range does not keep the Size its type is given
+size-sign-bit	tests/verification_type_size.adb	assertion	Signed'Size = 3	definite-error	a range with a negative value takes a sign bit
+size-derived-with-range	tests/verification_type_size.adb	assertion	Tight'Size = 16	definite-error	a derived type that adds a range does not inherit the Size of its parent
+size-subtype-of-integer	tests/verification_type_size.adb	assertion	Positive'Size = 32	definite-error	Positive takes 31 bits
+size-given	tests/verification_type_size.adb	assertion	Stored'Size = 7	definite-error	a type given a Size has that Size, not the bits its values take
+size-representation-clause	tests/verification_type_size.adb	assertion	Coded'Size = 1	unproved	an enumeration type with a representation clause has no size the analysis knows
+size-of-object	tests/verification_type_size.adb	assertion	Item'Size = 4	unproved	the size of an object is not that of its subtype
+provisional-error-assertion	tests/verification_provisional_error.adb	assertion	Count >= 1	unproved	FP-114: after a loop that may not run the counter may be zero; that is no definite error, the assertion holding whenever the loop runs

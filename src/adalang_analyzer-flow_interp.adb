@@ -276,6 +276,14 @@ package body Adalang_Analyzer.Flow_Interp is
       end if;
    end Assume_Into;
 
+   --  True while Verify_Subprogram's fixed-point run is still iterating. A
+   --  state seen then is one some path reaches, not yet the join of all of
+   --  them, so what it shows to be certain may not be: a divisor that is
+   --  zero before a loop has run need not be zero after it. Rule findings
+   --  are therefore reported only from converged states, when
+   --  Finalize_Node replays each determination.
+   Fixpoint_In_Progress : Boolean := False;
+
    procedure Record_Outcome
      (Unit           : Libadalang.Analysis.Analysis_Unit;
       Node           : Libadalang.Analysis.Ada_Node'Class;
@@ -315,6 +323,19 @@ package body Adalang_Analyzer.Flow_Interp is
       Abstract_State : String := "";
       Final          : Boolean := False) is
    begin
+      --  Nor is an obligation a definite error on the showing of a state
+      --  that has not settled. Finalize_Node records what the converged
+      --  state says of it; until then it is undecided, so that a proof of
+      --  it from another such state is not taken for a contradiction, for
+      --  which the whole subprogram would be given up.
+      if Fixpoint_In_Progress and then not Final then
+         Record_Outcome
+           (Unit, Node, Kind, Proof.Unproved, Method,
+            "not decided before the fixed point has converged",
+            Abstract_State);
+         return;
+      end if;
+
       Record_Outcome
         (Unit, Node, Kind, Proof.Definite_Error, Method, Explanation,
          Abstract_State, Final => Final);
@@ -404,14 +425,6 @@ package body Adalang_Analyzer.Flow_Interp is
         (Unit, Node, Kind, Proof.Unsupported, Proof.No_Analysis,
          Explanation, Imprecision => "outside bounded verification subset");
    end Record_Unsupported;
-
-   --  True while Verify_Subprogram's fixed-point run is still iterating. A
-   --  state seen then is one some path reaches, not yet the join of all of
-   --  them, so what it shows to be certain may not be: a divisor that is
-   --  zero before a loop has run need not be zero after it. Rule findings
-   --  are therefore reported only from converged states, when
-   --  Finalize_Node replays each determination.
-   Fixpoint_In_Progress : Boolean := False;
 
    procedure Report_Flow_Violation
      (Unit        : Libadalang.Analysis.Analysis_Unit;

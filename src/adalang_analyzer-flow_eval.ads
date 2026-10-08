@@ -162,6 +162,19 @@ package Adalang_Analyzer.Flow_Eval is
    --  a plain expression, or the statically evaluated bounds of a ".."
    --  range choice. Known is False when either bound can't be evaluated.
 
+   function Type_Size
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Abstract_Int;
+   --  Typ'Size for a static integer or enumeration subtype: the Size its
+   --  first subtype is given by an aspect or a clause, for that subtype
+   --  and for a subtype or a derived type that adds no constraint to it;
+   --  otherwise the number of bits the values of the subtype take, with a
+   --  sign bit only if one of them is negative and none at all when there
+   --  is no value (RM 13.3(55), which GNAT follows). Unknown_Int for a
+   --  type that is not discrete, for a generic formal type, a private
+   --  type, a character type, an enumeration type with a representation
+   --  clause, a range of an enumeration type, and for bounds that are not
+   --  static.
+
    function Type_Range
      (Typ   : Libadalang.Analysis.Base_Type_Decl;
       State : Flow_State) return Abstract_Range;

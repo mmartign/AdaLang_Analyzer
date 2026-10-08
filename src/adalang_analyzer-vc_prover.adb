@@ -1471,11 +1471,25 @@ package body Adalang_Analyzer.VC_Prover is
                  Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
                    (Adalang_Analyzer.Ada_Text.Node_Text (Attr.F_Attribute));
             begin
-               --  'First/'Last/'Length only, of the dimension a literal
-               --  argument names (the first without one), and no attempt
-               --  at 'Range (not itself integer-valued) or any other
-               --  attribute. A wrong guess here only costs Unsupported,
-               --  never an incorrect bound.
+               --  T'Size of a static discrete subtype is a number.
+               if Name = "size" then
+                  declare
+                     Size : constant Domain.Abstract_Int :=
+                       Eval.Integer_Value (Node);
+                  begin
+                     if Size.Known then
+                        return To_Unbounded_String (SMT_Integer (Size.Value));
+                     end if;
+                     Mark_Unsupported (Context, Node, Unsupported_Attribute);
+                     return Null_Unbounded_String;
+                  end;
+               end if;
+
+               --  Otherwise 'First/'Last/'Length only, of the dimension a
+               --  literal argument names (the first without one), and no
+               --  attempt at 'Range (not itself integer-valued) or any
+               --  other attribute. A wrong guess here only costs
+               --  Unsupported, never an incorrect bound.
                if Attribute_Dimension (Attr) = 0
                  or else Name not in "first" | "last" | "length"
                then

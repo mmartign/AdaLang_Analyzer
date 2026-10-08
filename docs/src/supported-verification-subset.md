@@ -64,6 +64,21 @@ type its operands give it, so that one of a modular type wraps. A real
 named number, and one declared with any other attribute, a conversion, a
 call or a conditional expression, has no value the analysis knows.
 
+`T'Size` is a number where `T` is a static integer or enumeration subtype
+named outright. It is the `Size` the first subtype is given by an aspect or
+an attribute definition clause, for that subtype and for a subtype or a
+derived type that adds no constraint to it; otherwise it is the number of
+bits the values of the subtype take, with a sign bit only if one of them is
+negative and no bit at all for a range without a value, as RM 13.3(55)
+recommends and GNAT does: 8 for `mod 2 ** 8`, 7 for `range 0 .. 100`, 31
+for `Natural`, 2 for a constrained subtype `range 0 .. 3` of a type given
+`Size => 16`. For the predefined integer types the ranges are those the
+analysis takes them to have throughout. `T'Size` stays unknown for a
+generic formal type, a private type, a character type, an enumeration type
+with a representation clause, a range of an enumeration type, bounds that
+are not static, `T'Base` and `T'Class`, a type that is not discrete, and
+for an object: the size of an object is the target's affair.
+
 Symbolic assignments resolve their scalar sort from Ada semantic type
 identity: signed integers use mathematical-integer terms, `Standard.Boolean`
 uses SMT Boolean terms, and enumeration values use their declaration-order
@@ -386,6 +401,11 @@ expression over a range known to be empty. The same holds for statements:
 the body of a `for` loop over a range known to be empty and a `case`
 alternative that the selector does not select are not reached.
 
+A `Definite_Error` is reported on the showing of a converged state only.
+While a loop is iterated to its fixed point a state is one that some path
+reaches, not yet the join of all of them, and what fails in it need not
+fail in the end.
+
 `Definite_Error` is a statement about the operation when it executes. Under
 a condition the analysis cannot evaluate, such as a call, the state does not
 say whether the operation ever executes; a definite error reported there
@@ -441,8 +461,9 @@ form.
 
 Explicit access dereference, general alias/points-to reasoning, tasking,
 protected operations, dispatching/class-wide calls, floating-point proof,
-unchecked conversion, target-dependent representation, and unmodeled
-exception semantics are outside the supported subset. Other unsupported
+unchecked conversion, target-dependent representation other than the
+`Size` of a static discrete subtype, and unmodeled exception semantics are
+outside the supported subset. Other unsupported
 scalar forms must retain a stable provenance reason rather than silently
 becoming proof evidence.
 

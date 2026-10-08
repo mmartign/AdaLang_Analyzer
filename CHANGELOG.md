@@ -16,6 +16,14 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   operand or the callee names it. Such names were outside the scalar VC
   language, which left unproved most preconditions of code that qualifies
   every name, as generated code does.
+- `T'Size` is a number where `T` is a static integer or enumeration
+  subtype: the `Size` its first subtype is given, or the number of bits its
+  values take (RM 13.3(55), which GNAT follows). A division by
+  `Byte'Size` is `Proved_Safe`, and the arithmetic written with it is
+  exact. The values agree with GNAT's on 56 shapes of type; four kinds
+  are left unknown, an enumeration type with a representation clause and
+  the size of an object among them. See "Scalar VC language" in
+  `docs/src/supported-verification-subset.md`.
 - A loop or a block with a name, and an exit that names the loop it
   leaves, no longer put the subprogram outside the verification subset.
   `exit Outer when Found` inside an inner loop goes to the end of `Outer`,
@@ -61,6 +69,17 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   One_Hundred` is 44, and `Byte'Last + 1` is 0 -- because Libadalang gives
   every operator of a number declaration as `universal_integer`; each
   operator is now taken in the type its operands give it.
+- An obligation is a definite error only on the showing of a converged
+  state (`FP-114`, a false positive). While a loop is iterated to its fixed
+  point a state has not settled, and a definite error recorded from one
+  was overwritten in the end, unless a proof of the same obligation from
+  another such state was met first: the two were taken for a
+  contradiction, the subprogram was given up with every obligation
+  `Unsupported`, and the definite errors recorded until then stood. After
+  a `for` loop with the invariant `Count = Round - 1`, `pragma Assert
+  (Count >= 1)` was a `Definite_Error` though it holds whenever the loop
+  runs, and the division `10 / Count` after it a definite division by
+  zero.
 - A quantified expression in a `Loop_Invariant` or an `Assert_And_Cut` no
   longer puts the whole subprogram outside the verification subset. It was
   meant to be decided there as it is in an `Assert`, a `Pre` or a `Post`;
@@ -69,10 +88,15 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The mutation manifest has 140 seeded defects (102 in 1.8.2).
+- The mutation manifest has 149 seeded defects (102 in 1.8.2).
 - `tests/verification_unsupported.adb` and
   `tests/control_flow_graph_unsupported.adb`, the examples of control flow
   outside the subset, are a `goto` back up to a label.
+- Three recorded outcomes of the seeded-defect campaign changed: two
+  divisions of `tests/seeded_defects/h02.adb`, after an exit naming an
+  outer loop and after a named block, from `Unsupported` to `Unproved`;
+  and an assertion of `h04.adb`, from the `Definite_Error` of `FP-114` to
+  `Unproved`.
 
 ## [1.8.2] - 2026-10-06
 

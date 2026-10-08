@@ -126,7 +126,7 @@ h04.adb	72	BAD	division-by-zero	unproved
 h04.adb	78	BAD	division-by-zero	unproved
 h04.adb	80	BAD	division-by-zero	definite-error
 h04.adb	87	BAD	division-by-zero	unproved
-h04.adb	155	BAD	assertion	definite-error
+h04.adb	155	BAD	assertion	unproved
 h04.adb	164	OK	loop-invariant-preservation	proved-safe
 h04.adb	165	BAD	loop-invariant-preservation	unproved
 h04.adb	177	BAD	loop-invariant-preservation	unproved
