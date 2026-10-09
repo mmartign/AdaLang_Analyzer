@@ -106,8 +106,8 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 4,757 | 31.6% |
-| Has the obligation, leaves it unproved | 6,397 | 42.5% |
+| Proves it | 5,980 | 39.8% |
+| Has the obligation, leaves it unproved | 5,174 | 34.4% |
 | Has the obligation, calls it unsupported | 1,397 | 9.3% |
 | Has no obligation of that kind at that place | 1,178 | 7.8% |
 | Has no obligation of that kind at all | 1,105 | 7.3% |
@@ -116,7 +116,7 @@ what AdaLang does with each:
 Since 1.8.3 the analyzer does this accounting itself when it is given the
 log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
 on each check beside its own result, and on these corpora that leaves none
-of the 15,043 unaccounted for -- 4,757 proved by AdaLang too, 7,794 with
+of the 15,043 unaccounted for -- 5,980 proved by AdaLang too, 6,571 with
 GNATprove's verdict alone on an obligation AdaLang has, 2,492 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
@@ -207,7 +207,38 @@ proved with it, and the arithmetic written with a length after them. The
 precondition of an operator that a declaration defines is an obligation at
 the operator. Asking what such an operator had been taken for until then
 turned up `FP-116`: the operation its symbol stands for, whatever the
-function computes. AdaLang now proves 4,757 of the 15,043 checks and has
+function computes. AdaLang then proved 4,757 of the 15,043 checks and had
+an obligation for 12,551.
+
+The 1,223 after that came with no new obligation at all: 1.8.5 has those
+of 1.8.4 and decides more of them. Most of what it could not decide was not
+hard arithmetic but something it did not know and the language says. An
+object was not known to be initialized: a constant declared in a package,
+the parameter of a quantified expression, and above all whatever a call
+had been given or could have reached -- an actual of a parameter the callee
+can write lost its initialization with its value, and a call of effects
+that are not known dropped every fact about every object, the caller's own
+local variables with the rest. A constant, an `in` parameter and a loop
+parameter now hold a value of their subtype wherever they are read; an
+`in out` actual stays initialized, an `out` actual is initialized where
+the callee writes it on every path, and a callee declared outside a
+subprogram leaves alone what that subprogram declares and gives no access
+to. 1,139 of GNATprove's 1,703 initialization checks are proved, where
+1.8.4 proved 754. For code under `SPARK_Mode` the rules of SPARK say more:
+a scalar actual comes back within the subtype of the parameter, and a
+scalar component of a record is within its own. The bounds of an array
+that no declaration fixes were symbols of which nothing was known; each is
+a value of the index type, and a formal has the bounds of its actual where
+a precondition speaks of them -- `Description'First = 1`, the precondition
+of one procedure of Tokeneer, is proved at 62 of its 72 calls. An operation
+of a type declared with a range is checked against the part of its base
+range that the language guarantees. Reading the code that decides what a
+call leaves known turned up two false-safes, `FP-117` and `FP-118`: an
+`out` actual taken to be initialized after a callee that can return
+without writing it, and an expression function that completes an earlier
+declaration read with its formals bound to nothing, so that what a contract
+said of one object held of every object. Neither shows in a corpus as a
+proof that is lost. AdaLang now proves 5,980 of the 15,043 checks and has
 an obligation for 12,551. What is left without one, 2,492 checks, is
 predicate, pointer-dereference and discriminant checks and memory leaks,
 which AdaLang does not have, and range, index and precondition checks at
