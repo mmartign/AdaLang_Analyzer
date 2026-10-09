@@ -5,7 +5,64 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.5] - 2026-10-09
+
+A `--verify` release that corrects two false-safes and decides a quarter
+more of what GNATprove proves, with the obligations 1.8.4 had: no kind of
+obligation is new, none is added and none is gone on the ten corpora.
+
+Who `FP-117` concerns: every release before this one. A `Proved_Safe`
+initialization check on an object is not to be relied on where the object
+was last given a value as the `out` actual of a call, and the callee has a
+`return` inside a loop or a block statement before it writes the parameter,
+a `goto` that passes the write, or a block whose handler ends what was
+raised before the write. Nor is a result that rests on the value an object
+had before it was the `out` actual of a callee that never writes the
+parameter: the object has no value after such a call.
+
+Who `FP-118` concerns: 1.8.4, and the releases back to 1.8.2 as far as the
+code shows. A `Proved_Safe` precondition, postcondition, assertion or loop
+invariant is not to be relied on where it is written with a call of a
+function that is declared in one place and completed by an expression
+function in another -- the visible and the private part of a package,
+typically -- and that takes a record, an array or a private type: what a
+contract said of such a function for one object was taken to hold for every
+object, and after the object had changed. On the five fully proved corpora
+the correction takes no proof away, and gives 15 more, the contracts
+meeting where they did not; GNATprove agrees with the corrected verdicts on
+the fixture of the fault, check by check.
+
+What the release decides that 1.8.4 did not is mostly what the language
+says of an object and 1.8.4 did not use. A constant, an `in` parameter and
+a loop parameter hold a value of their subtype wherever they are read. A
+call leaves an `in out` actual initialized, and an `out` actual where the
+callee writes it on every path or is SPARK code; a callee declared outside
+a subprogram leaves alone what that subprogram declares and gives no
+access to. The bounds of an array are values of its index type, and a
+formal has the bounds of its actual where a precondition speaks of them.
+Two things are taken from the rules of SPARK, for code under `SPARK_Mode`
+only, and hold if that code keeps them: after a call a scalar actual is
+within the subtype of the parameter, and a scalar component of a record is
+within the subtype it is declared with. A generic unit that sets no
+`SPARK_Mode` counts as SPARK code where every instantiation of it in the
+run is. `docs/src/supported-verification-subset.md` says what each rests
+on.
+
+Of the 15,043 checks GNATprove proves on the five fully proved corpora,
+`--verify` proves 5,980 (4,757 in 1.8.4) and has an obligation for 12,551,
+as before, with no check it proves that GNATprove does not and no definite
+error on a check GNATprove proves
+(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). Given GNATprove's logs
+it accounts for all 15,043: the 5,980 it proves itself, 6,571 that carry
+GNATprove's verdict on an obligation AdaLang has and did not decide, and
+2,492 that carry it with no AdaLang obligation. Every preset reports, on
+each of the ten corpora, exactly the findings of 1.8.4.
+
+What to expect of a report: more `Proved_Safe`, fewer `Unproved`; an
+`initialization-check` that was `Proved_Safe` through `FP-117` is
+`Unproved`, or a `Definite_Error` where the callee is known never to write
+the parameter; some obligations change their `method` from
+`external-prover` to `abstract-interpretation`.
 
 ### Added
 
