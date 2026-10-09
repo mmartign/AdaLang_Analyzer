@@ -86,6 +86,28 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   object is declared with before it is given up, and the iteration goes on
   from there: an object of subtype `Small` that a loop counts up stays
   within `Small` where the body of the loop keeps it so.
+- What is known of the bounds of an array whatever they are (`--verify`).
+  `A'First` and `A'Last` of an object whose bounds no declaration fixes
+  were symbols of which nothing was known. Each is now a value of the type
+  of the index, where that is a predefined integer type or a modular type,
+  and both belong to the index subtype unless the array is null: for an
+  array over `Natural` that is not null, `A'Last - A'First` does not
+  overflow.
+- In the precondition of a call, a formal of an unconstrained array type
+  has the bounds of its actual: those a declaration fixes for an object,
+  the first value of the index subtype and the length for a string
+  literal, those of the subtype for the result of a function, a conversion
+  or a qualified expression of a constrained array subtype. A precondition
+  `Text'First = 1` is proved for a string literal or a constant of
+  `String (1 .. 80)`, and is a `Definite_Error` for an object declared
+  from 5. Until now nothing related the bounds of the formal to those of
+  its actual.
+- An operation of a type declared `range L .. H` is known not to overflow
+  when its result is within the part of the base range that the language
+  guarantees, whatever base range the compiler chose, and each operand
+  that is itself an operation is within it too. Until now such a type had
+  no known base range and every operation of it was `Unproved`. A result
+  outside the guaranteed part is `Unproved`, not an error.
 
 ### Fixed
 
@@ -141,14 +163,14 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   obligation of the ten corpora does.
 
 Of the 15,043 checks GNATprove proves on the five fully proved corpora,
-`--verify` now proves 5,653 (4,757 in 1.8.4): 1,139 of the 1,703
-initializations (754), 854 of the 2,938 preconditions (687), 699 of the
-809 division checks (643), 689 of the 2,372 range checks (602), 188 of the
+`--verify` now proves 5,980 (4,757 in 1.8.4): 1,139 of the 1,703
+initializations (754), 1,013 of the 2,938 preconditions (687), 733 of the
+2,372 range checks (602), 699 of the 809 division checks (643), 312 of the
 1,062 overflow checks (122), 157 of the 311 length checks (129) and 151 of
 the 522 index checks (82). No check is proved that GNATprove does not
 prove, and none it proves is a definite error. On the ten corpora every
 preset reports exactly the findings of 1.8.4; in the nine `--verify` lanes
-12,198 obligations go from `Unproved` to `Proved_Safe`, none the other
+13,709 obligations go from `Unproved` to `Proved_Safe`, none the other
 way, and no obligation is added, removed or made a definite error.
 
 ## [1.8.4] - 2026-10-09

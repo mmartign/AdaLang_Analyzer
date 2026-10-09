@@ -1203,6 +1203,27 @@ package body Adalang_Analyzer.VC_Prover is
             return Null_Unbounded_String;
          end if;
 
+         --  A formal that stands for an object has the bounds of that
+         --  object, where its own subtype fixes none.
+         declare
+            Own : constant Domain.Abstract_Range :=
+              Eval.Declared_Index_Range (Object_Key, Dimension, Context.State);
+         begin
+            if not Bounds.Has_Low and then not Bounds.Has_High
+              and then Own.Has_Low and then Own.Has_High
+            then
+               if Name = "first" then
+                  return To_Unbounded_String (SMT_Integer (Own.Low));
+               elsif Name = "last" then
+                  return To_Unbounded_String (SMT_Integer (Own.High));
+               else
+                  return To_Unbounded_String
+                    (if Own.Low > Own.High then "0"
+                     else SMT_Integer (Own.High - Own.Low + 1));
+               end if;
+            end if;
+         end;
+
          declare
             Key    : constant Symbol_Key := Plain_Key (Object_Key);
             First  : constant String := Root_Name (Key, "af" & Tag);
@@ -1212,7 +1233,25 @@ package body Adalang_Analyzer.VC_Prover is
               To_Unbounded_String
                 ("(= " & Length & " (ite (<= " & First & " " & Last &
                  ") (+ (- " & Last & " " & First & ") 1) 0))");
-            Linked : Boolean := False;
+
+            --  What the index type says of the bounds, whatever they are:
+            --  each is a value of that type, and both belong to the index
+            --  subtype unless the array is null.
+            Limits  : constant Eval.Index_Limits :=
+              Eval.Array_Index_Limits (Prefix, Dimension);
+            Within  : constant Domain.Abstract_Range := Limits.Within;
+            Of_Type : constant Domain.Abstract_Range := Limits.Of_Type;
+
+            procedure Assume (Fact : Unbounded_String) is
+               Present : Boolean := False;
+            begin
+               for Item of Context.Symbols.Assumptions loop
+                  Present := Present or else Item = Fact;
+               end loop;
+               if not Present then
+                  Context.Symbols.Assumptions.Append (Fact);
+               end if;
+            end Assume;
          begin
             --  A bound one declaration does fix pins its symbol, so the
             --  literal and the symbol can never disagree.
@@ -1222,23 +1261,30 @@ package body Adalang_Analyzer.VC_Prover is
                  (if Bounds.Has_Low
                   then (Has_Low => True, Low => Bounds.Low,
                         Has_High => True, High => Bounds.Low)
-                  else Domain.Unknown_Range));
+                  else Of_Type));
             Add_Root
               (Context.Symbols, Last, Key, Integer_Sort, Context.State,
                Explicit_Bounds =>
                  (if Bounds.Has_High
                   then (Has_Low => True, Low => Bounds.High,
                         Has_High => True, High => Bounds.High)
-                  else Domain.Unknown_Range));
+                  else Of_Type));
             Add_Root
               (Context.Symbols, Length, Key, Integer_Sort, Context.State,
                Explicit_Bounds => (Has_Low => True, Low => 0, others => <>));
 
-            for Item of Context.Symbols.Assumptions loop
-               Linked := Linked or else Item = Link;
-            end loop;
-            if not Linked then
-               Context.Symbols.Assumptions.Append (Link);
+            Assume (Link);
+            if Within.Has_Low then
+               Assume
+                 (To_Unbounded_String
+                    ("(=> (<= " & First & " " & Last & ") (<= " &
+                     SMT_Integer (Within.Low) & " " & First & "))"));
+            end if;
+            if Within.Has_High then
+               Assume
+                 (To_Unbounded_String
+                    ("(=> (<= " & First & " " & Last & ") (<= " & Last &
+                     " " & SMT_Integer (Within.High) & "))"));
             end if;
 
             return To_Unbounded_String
@@ -3409,6 +3455,193 @@ package body Adalang_Analyzer.VC_Prover is
          return Havoc;
    end Forget_Object;
 
+   --  A formal of an unconstrained array type takes its bounds from its
+   --  actual. What is known of the first bounds of Actual is said here of
+   --  those of Formal: the bounds a declaration fixes for an object, a
+   --  constrained subtype for the result of a function, of a conversion or
+   --  of a qualified expression, and the language for a string literal,
+   --  which starts at the first value of the index subtype; or the bounds
+   --  of an object, whatever they are. Nothing is said of any other
+   --  actual, nor of a formal whose own subtype fixes its bounds.
+   procedure Bind_Array_Bounds
+     (Context : in out Translation_Context;
+      Formal  : Libadalang.Analysis.Ada_Node;
+      Actual  : Libadalang.Analysis.Expr'Class)
+   is
+      Formal_Type : Libadalang.Analysis.Base_Type_Decl;
+      First_Term, Last_Term, Length_Term : Unbounded_String;
+
+      --  The subtype a value is given by what computes it, where that is
+      --  an array subtype with bounds of its own.
+      function Own_Subtype return Libadalang.Analysis.Base_Type_Decl is
+         Named : Libadalang.Analysis.Basic_Decl;
+      begin
+         if Actual.Kind = Libadalang.Common.Ada_Qual_Expr then
+            Named := Actual.As_Qual_Expr.F_Prefix.P_Referenced_Decl;
+         elsif Actual.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Actual.As_Call_Expr.P_Kind =
+             Libadalang.Common.Type_Conversion
+         then
+            Named := Actual.As_Call_Expr.F_Name.P_Referenced_Decl;
+         elsif Actual.Kind in Libadalang.Common.Ada_Call_Expr
+                            | Libadalang.Common.Ada_Identifier
+                            | Libadalang.Common.Ada_Dotted_Name
+         then
+            --  A call, with or without arguments: the result subtype.
+            Named :=
+              (if Actual.Kind = Libadalang.Common.Ada_Call_Expr
+               then Actual.As_Call_Expr.F_Name.P_Referenced_Decl
+               else Actual.As_Name.P_Referenced_Decl);
+            if Libadalang.Analysis.Is_Null (Named)
+              or else Libadalang.Analysis.Is_Null (Named.P_Subp_Spec_Or_Null)
+              or else Libadalang.Analysis.Is_Null
+                (Named.P_Subp_Spec_Or_Null.P_Returns)
+              or else
+                (Actual.Kind = Libadalang.Common.Ada_Call_Expr
+                 and then Actual.As_Call_Expr.P_Kind /=
+                   Libadalang.Common.Call)
+            then
+               return Libadalang.Analysis.No_Base_Type_Decl;
+            end if;
+            return Named.P_Subp_Spec_Or_Null.P_Returns
+              .P_Designated_Type_Decl;
+         end if;
+         if Libadalang.Analysis.Is_Null (Named)
+           or else Named.Kind not in Libadalang.Common.Ada_Base_Type_Decl
+         then
+            return Libadalang.Analysis.No_Base_Type_Decl;
+         end if;
+         return Named.As_Base_Type_Decl;
+      end Own_Subtype;
+
+      procedure From_Range (Bounds : Domain.Abstract_Range) is
+      begin
+         if Bounds.Has_Low and then Bounds.Has_High then
+            First_Term := To_Unbounded_String (SMT_Integer (Bounds.Low));
+            Last_Term := To_Unbounded_String (SMT_Integer (Bounds.High));
+            Length_Term := To_Unbounded_String
+              (if Bounds.Low > Bounds.High then "0"
+               else SMT_Integer (Bounds.High - Bounds.Low + 1));
+         end if;
+      end From_Range;
+
+      --  The object Actual names, if it names one.
+      Object : constant Libadalang.Analysis.Ada_Node :=
+        Array_Object_Key (Context, Actual);
+      Before : constant Symbolic_State := Context.Symbols;
+   begin
+      if Libadalang.Analysis.Is_Null (Formal)
+        or else Formal.Kind /= Libadalang.Common.Ada_Defining_Name
+        or else Formal.As_Defining_Name.P_Basic_Decl.Kind /=
+          Libadalang.Common.Ada_Param_Spec
+      then
+         return;
+      end if;
+
+      Formal_Type :=
+        Formal.As_Defining_Name.P_Basic_Decl.As_Param_Spec.F_Type_Expr
+          .P_Designated_Type_Decl;
+      if Libadalang.Analysis.Is_Null (Formal_Type)
+        or else not Formal_Type.P_Is_Array_Type
+        or else Formal_Type.P_Is_Access_Type
+      then
+         return;
+      end if;
+
+      declare
+         Fixed : constant Domain.Abstract_Range :=
+           Eval.Array_Index_Range (Formal_Type, 1, Context.State);
+      begin
+         if Fixed.Has_Low or else Fixed.Has_High then
+            return;
+         end if;
+      end;
+
+      if Actual.Kind = Libadalang.Common.Ada_String_Literal then
+         declare
+            Index : constant Libadalang.Analysis.Base_Type_Decl :=
+              Formal_Type.P_Index_Type (0);
+            Start : constant Domain.Abstract_Range :=
+              (if Libadalang.Analysis.Is_Null (Index)
+                 or else not Index.P_Is_Int_Type
+               then Domain.Unknown_Range
+               else Eval.Type_Range (Index, Context.State));
+         begin
+            if Start.Has_Low then
+               From_Range
+                 ((Has_Low => True, Low => Start.Low, Has_High => True,
+                   High => Start.Low + Long_Long_Integer
+                     (Actual.As_String_Literal.P_Denoted_Value'Length) - 1));
+            end if;
+         end;
+      elsif not Libadalang.Analysis.Is_Null (Object) then
+         --  Its declared bounds, or the symbols that stand for them.
+         declare
+            Probe : Translation_Context := Context;
+            F : constant Unbounded_String :=
+              Array_Attribute_Term
+                (Actual.As_Name, "first", Actual, Probe);
+            L : constant Unbounded_String :=
+              Array_Attribute_Term (Actual.As_Name, "last", Actual, Probe);
+            N : constant Unbounded_String :=
+              Array_Attribute_Term
+                (Actual.As_Name, "length", Actual, Probe);
+         begin
+            if Probe.Supported and then Length (F) > 0
+              and then Length (L) > 0 and then Length (N) > 0
+            then
+               Context := Probe;
+               First_Term := F;
+               Last_Term := L;
+               Length_Term := N;
+            end if;
+         end;
+      else
+         declare
+            Own : constant Libadalang.Analysis.Base_Type_Decl := Own_Subtype;
+         begin
+            if not Libadalang.Analysis.Is_Null (Own)
+              and then Own.P_Is_Array_Type
+            then
+               From_Range (Eval.Array_Index_Range (Own, 1, Context.State));
+            end if;
+         end;
+      end if;
+
+      if Length (First_Term) = 0 then
+         return;
+      end if;
+
+      declare
+         --  The formal as the caller of this gives it: the one a contract
+         --  names is given in its turn (see Check_Call_Precondition), and
+         --  a symbol for it here would read as the caller speaking of it.
+         Key : constant Symbol_Key := Plain_Key (Formal);
+
+         procedure Say (Prefix : String; Term : Unbounded_String) is
+            Name : constant String := Root_Name (Key, Prefix);
+         begin
+            Add_Root
+              (Context.Symbols, Name, Key, Integer_Sort, Context.State,
+               Explicit_Bounds =>
+                 (if Prefix = "an"
+                  then (Has_Low => True, Low => 0, others => <>)
+                  else Domain.Unknown_Range));
+            Context.Symbols.Assumptions.Append
+              (To_Unbounded_String
+                 ("(= " & Name & " " & To_String (Term) & ")"));
+         end Say;
+      begin
+         Say ("af", First_Term);
+         Say ("al", Last_Term);
+         Say ("an", Length_Term);
+      end;
+   exception
+      when others =>
+         --  Nothing half said.
+         Context.Symbols := Before;
+   end Bind_Array_Bounds;
+
    function Bind_Actual
      (State  : Symbolic_State;
       Formal : Libadalang.Analysis.Ada_Node;
@@ -3449,9 +3682,20 @@ package body Adalang_Analyzer.VC_Prover is
       begin
          if not Context.Supported or else Length (Term) = 0 then
             --  No token for the actual: the formal is left with a value
-            --  of which nothing is known.
-            return State;
+            --  of which nothing is known but, for an array, its bounds.
+            declare
+               Bounds_Only : Translation_Context :=
+                 (State => Flow, Symbols => State, Supported => True,
+                  Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+                  Failure_Reason => No_Unsupported_Reason,
+                  Failure_Node => Libadalang.Analysis.No_Ada_Node,
+                  Inlining_Path => Null_Unbounded_String, Depth => 0);
+            begin
+               Bind_Array_Bounds (Bounds_Only, Formal, Actual);
+               return Bounds_Only.Symbols;
+            end;
          end if;
+         Bind_Array_Bounds (Context, Formal, Actual);
          Set_Binding
            (Context.Symbols,
             (Key => Value_Key (Formal), Sort => Opaque_Sort, Term => Term));

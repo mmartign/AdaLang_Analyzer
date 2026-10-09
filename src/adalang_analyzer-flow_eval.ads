@@ -267,6 +267,31 @@ package Adalang_Analyzer.Flow_Eval is
    --  type. Unknown_Range when Prefix isn't an array or its bounds aren't
    --  fixed by a declaration.
 
+   function Declared_Index_Range
+     (Key       : Libadalang.Analysis.Ada_Node;
+      Dimension : Positive;
+      State     : Flow_State) return Abstract_Range;
+   --  As Array_Object_Index_Range, for the array object or parameter whose
+   --  defining name is Key: the bounds its own declaration fixes. A formal
+   --  of an unconstrained array type stands for an actual with bounds of
+   --  its own, and where it stands for an object these are that object's.
+
+   type Index_Limits is record
+      Within  : Abstract_Range := Unknown_Range;
+      Of_Type : Abstract_Range := Unknown_Range;
+   end record;
+
+   function Array_Index_Limits
+     (Prefix    : Libadalang.Analysis.Ada_Node'Class;
+      Dimension : Positive) return Index_Limits;
+   --  What the Dimension-th bounds of the array Prefix names can be,
+   --  whatever they are. Within is the range of the index subtype, as far
+   --  as it is static: both bounds of an array that is not null belong to
+   --  it. Of_Type is the range of the type of that subtype where the
+   --  language or the compiler fixes it -- a predefined integer type, or a
+   --  modular type -- and every bound is a value of it, those of a null
+   --  array too. Unknown_Range for each where it is not known.
+
    function Length_Limits
      (Attribute : Libadalang.Analysis.Attribute_Ref) return Abstract_Range;
    --  What the type of its prefix says of X'Length or X'Length (N),

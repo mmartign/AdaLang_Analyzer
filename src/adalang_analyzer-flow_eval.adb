@@ -2971,6 +2971,111 @@ package body Adalang_Analyzer.Flow_Eval is
          return Unknown_Range;
    end Array_Index_Range;
 
+   function Declared_Index_Range
+     (Key       : Libadalang.Analysis.Ada_Node;
+      Dimension : Positive;
+      State     : Flow_State) return Abstract_Range
+   is
+      Decl      : Libadalang.Analysis.Basic_Decl;
+      Type_Expr : Libadalang.Analysis.Type_Expr;
+      Designated : Libadalang.Analysis.Base_Type_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Key)
+        or else Key.Kind /= Libadalang.Common.Ada_Defining_Name
+      then
+         return Unknown_Range;
+      end if;
+
+      Decl := Key.As_Defining_Name.P_Basic_Decl;
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return Unknown_Range;
+      elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+         Type_Expr := Decl.As_Param_Spec.F_Type_Expr;
+      elsif Decl.Kind = Libadalang.Common.Ada_Object_Decl
+        and then Libadalang.Analysis.Is_Null
+          (Decl.As_Object_Decl.F_Renaming_Clause)
+      then
+         Type_Expr := Decl.As_Object_Decl.F_Type_Expr;
+      else
+         return Unknown_Range;
+      end if;
+
+      if Libadalang.Analysis.Is_Null (Type_Expr) then
+         return Unknown_Range;
+      elsif Type_Expr.Kind in Libadalang.Common.Ada_Subtype_Indication_Range
+        and then not Libadalang.Analysis.Is_Null
+          (Type_Expr.As_Subtype_Indication.F_Constraint)
+      then
+         return Index_Constraint_Range
+           (Type_Expr.As_Subtype_Indication.F_Constraint, Dimension, State);
+      end if;
+
+      Designated := Type_Expr.P_Designated_Type_Decl;
+      if Libadalang.Analysis.Is_Null (Designated)
+        or else not Designated.P_Is_Array_Type
+      then
+         return Unknown_Range;
+      end if;
+      return Array_Index_Range (Designated, Dimension, State);
+   exception
+      when others =>
+         return Unknown_Range;
+   end Declared_Index_Range;
+
+   function Array_Index_Limits
+     (Prefix    : Libadalang.Analysis.Ada_Node'Class;
+      Dimension : Positive) return Index_Limits
+   is
+      Array_Type : Libadalang.Analysis.Base_Type_Decl;
+      Index      : Libadalang.Analysis.Base_Type_Decl;
+      Root       : Libadalang.Analysis.Base_Type_Decl;
+      Result     : Index_Limits;
+   begin
+      if Libadalang.Analysis.Is_Null (Prefix)
+        or else Prefix.Kind not in Libadalang.Common.Ada_Expr
+      then
+         return Result;
+      end if;
+
+      Array_Type := Prefix.As_Expr.P_Expression_Type;
+      if Libadalang.Analysis.Is_Null (Array_Type)
+        or else not Array_Type.P_Is_Array_Type
+      then
+         return Result;
+      end if;
+
+      Index := Array_Type.P_Index_Type (Dimension - 1);
+      if Libadalang.Analysis.Is_Null (Index)
+        or else not Index.P_Is_Int_Type
+      then
+         return Result;
+      end if;
+      Result.Within := Type_Range (Index, Empty_Flow_State);
+
+      Root := Index.P_Root_Type (Prefix);
+      if Libadalang.Analysis.Is_Null (Root) then
+         return Result;
+      end if;
+
+      declare
+         Name : constant String :=
+           Langkit_Support.Text.To_UTF8
+             (Root.P_Canonical_Fully_Qualified_Name);
+      begin
+         if Modular_Type (Root).Is_Modular
+           or else
+             (Name'Length > 9
+              and then Name (Name'First .. Name'First + 8) = "standard.")
+         then
+            Result.Of_Type := Type_Range (Root, Empty_Flow_State);
+         end if;
+      end;
+      return Result;
+   exception
+      when others =>
+         return (others => <>);
+   end Array_Index_Limits;
+
    function Array_Object_Index_Range
      (Prefix    : Libadalang.Analysis.Ada_Node'Class;
       Dimension : Positive;

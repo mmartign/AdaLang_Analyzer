@@ -3456,6 +3456,51 @@ package body Adalang_Analyzer.Flow_Interp is
       end;
    end Overflow_Base_Range;
 
+   --  The part of the base range of an integer type declared "range L ..
+   --  H" that the language guarantees (Least_Base_Range): what a result has
+   --  to be within for it to be known not to overflow where the base range
+   --  itself, which the compiler chooses, is not known. A result outside
+   --  it may still be within the base range: it says nothing of a failure.
+   function Guaranteed_Base_Range
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Abstract_Range;
+
+   --  True unless an operand of Node is itself an arithmetic operation
+   --  whose result is not known to be within Bounds. What is proved of a
+   --  result from the guaranteed part of a base range is proved of the
+   --  value the operation would have if its operands were computed
+   --  exactly: it is not said where an operand may already be outside.
+   function Operands_Within
+     (Node   : Libadalang.Analysis.Expr'Class;
+      Bounds : Abstract_Range;
+      State  : Flow_State) return Boolean
+   is
+      function Within
+        (Operand : Libadalang.Analysis.Expr'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Operand) then
+            return True;
+         elsif Operand.Kind = Libadalang.Common.Ada_Paren_Expr then
+            return Within (Operand.As_Paren_Expr.F_Expr);
+         elsif Operand.Kind in Libadalang.Common.Ada_Bin_Op_Range
+                             | Libadalang.Common.Ada_Un_Op
+         then
+            return Definitely_Inside_Range (Operand, Bounds, State);
+         end if;
+         return True;
+      end Within;
+   begin
+      if Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+         return Within (Node.As_Bin_Op.F_Left)
+           and then Within (Node.As_Bin_Op.F_Right);
+      elsif Node.Kind = Libadalang.Common.Ada_Un_Op then
+         return Within (Node.As_Un_Op.F_Expr);
+      end if;
+      return True;
+   exception
+      when others =>
+         return False;
+   end Operands_Within;
+
    function Arithmetic_Proved_Safe
      (Node  : Libadalang.Analysis.Expr'Class;
       State : Flow_State) return Boolean
@@ -3480,6 +3525,13 @@ package body Adalang_Analyzer.Flow_Interp is
            and then Name = "standard.integer"
          then
             Bounds := Type_Range (Expr_Type, State);
+         end if;
+         --  A result within the part of the base range the language
+         --  guarantees does not overflow, whatever the compiler chose.
+         if not Bounds.Has_Low and then not Bounds.Has_High then
+            Bounds := Guaranteed_Base_Range (Expr_Type);
+            return Definitely_Inside_Range (Node, Bounds, State)
+              and then Operands_Within (Node, Bounds, State);
          end if;
          return Definitely_Inside_Range (Node, Bounds, State);
       end;
@@ -3850,6 +3902,10 @@ package body Adalang_Analyzer.Flow_Interp is
       when others =>
          return Unknown_Range;
    end Least_Base_Range;
+
+   function Guaranteed_Base_Range
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Abstract_Range
+   is (Least_Base_Range (Typ));
 
    --  The number of dimensions of the array type Typ, and zero when it is
    --  not one.
@@ -5229,6 +5285,7 @@ package body Adalang_Analyzer.Flow_Interp is
                        Overflow_Base_Range (Expr_Type, Node, State);
                      Name : constant String := Langkit_Support.Text.To_UTF8
                        (Expr_Type.P_Canonical_Fully_Qualified_Name);
+                     Guaranteed : Boolean := False;
                   begin
                      if not Bounds.Has_Low
                        and then not Bounds.Has_High
@@ -5236,11 +5293,25 @@ package body Adalang_Analyzer.Flow_Interp is
                      then
                         Bounds := Type_Range (Expr_Type, State);
                      end if;
+                     if not Bounds.Has_Low and then not Bounds.Has_High then
+                        Bounds := Guaranteed_Base_Range (Expr_Type);
+                        Guaranteed := Bounds.Has_Low and then Bounds.Has_High;
+                     end if;
 
                      declare
-                        Outcome : constant VC.VC_Outcome :=
+                        Decided : constant VC.VC_Outcome :=
                           VC.Decide_Bounds
                             (Node.As_Expr, Bounds, State, Symbols);
+                        --  Outside what the language guarantees is not
+                        --  outside the base range.
+                        Outcome : constant VC.VC_Outcome :=
+                          (if Guaranteed
+                             and then
+                               (Decided.Result = VC.VC_Refuted
+                                or else not Operands_Within
+                                              (Node.As_Expr, Bounds, State))
+                           then VC.Unknown_Outcome
+                           else Decided);
                      begin
                         case Outcome.Result is
                            when VC.VC_Proved =>

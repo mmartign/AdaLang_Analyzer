@@ -233,3 +233,10 @@ call-outside-object	tests/verification_mutation_call_actuals.adb	division-by-zer
 call-handed-local-code	tests/verification_mutation_call_actuals.adb	division-by-zero	Reached	unproved	a callee declared outside is handed a nested procedure that clears the local object
 widened-past-index	tests/verification_mutation_call_actuals.adb	index-check	Far	unproved	a loop takes the object past the index range, within its own subtype
 call-given-address	tests/verification_mutation_call_actuals.adb	assertion	Counted = 0	unproved	a callee given the address of a local object writes it without naming it
+actual-bounds-slice	tests/verification_mutation_array_bounds.adb	precondition	Log (Whole (2 .. 5))	unproved	a slice has the bounds it is given, not those of a whole array
+actual-bounds-declared-elsewhere	tests/verification_mutation_array_bounds.adb	precondition	Log (Moved)	definite-error	an object declared from 5 does not start at 1
+actual-bounds-unconstrained-result	tests/verification_mutation_array_bounds.adb	precondition	Log (Got)	unproved	nothing fixes the bounds of the result of a function of an unconstrained subtype
+actual-bounds-unconstrained-formal	tests/verification_mutation_array_bounds.adb	precondition	Log (Passed)	unproved	nothing fixes the bounds of a formal of an unconstrained subtype
+array-last-plus-one	tests/verification_mutation_array_bounds.adb	integer-overflow	Data'Last + 1	unproved	the last bound of an array may be the last value of its index type
+null-array-first	tests/verification_mutation_array_bounds.adb	assertion	Data'First >= 0	unproved	the bounds of a null array are values of the index type, not of the index subtype
+guaranteed-base-range-passed	tests/verification_mutation_array_bounds.adb	integer-overflow	Left + Right	unproved	a result outside the guaranteed part of a base range is neither safe nor a failure
