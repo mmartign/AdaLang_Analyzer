@@ -235,6 +235,71 @@ package body Adalang_Analyzer.VC_Prover is
       end if;
    end Number_File;
 
+   --  The number of a file as a symbol carries it. Files are numbered as
+   --  the analysis meets them, so the number of one depends on which other
+   --  files were analyzed before it. A query must not: a solver's answer
+   --  to a formula at the edge of what it decides can change with the
+   --  names in it, and the verdict on a subprogram would then depend on
+   --  what else the run analyzed. Renumbered gives a query numbers of its
+   --  own before it is sent.
+   File_Mark_Character : constant Character := '#';
+
+   function File_Mark (File : Positive) return String is
+     (File_Mark_Character & Natural_Image (File) & File_Mark_Character);
+
+   package File_Rank_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Positive);
+
+   --  Formula with each file number, as File_Mark wrote it, replaced by
+   --  the rank of that file among those Formula names, in the order it
+   --  names them. Two files keep two numbers.
+   function Renumbered (Formula : String) return String is
+      Result : Unbounded_String;
+      Seen   : File_Rank_Vectors.Vector;
+      Index  : Natural := Formula'First;
+
+      function Rank (File : Positive) return Positive is
+      begin
+         for Position in 1 .. Natural (Seen.Length) loop
+            if Seen.Element (Position) = File then
+               return Position;
+            end if;
+         end loop;
+         Seen.Append (File);
+         return Positive (Seen.Length);
+      end Rank;
+   begin
+      while Index <= Formula'Last loop
+         declare
+            Stop : Natural := Index + 1;
+         begin
+            if Formula (Index) = File_Mark_Character then
+               while Stop <= Formula'Last
+                 and then Formula (Stop) in '0' .. '9'
+               loop
+                  Stop := Stop + 1;
+               end loop;
+            end if;
+
+            if Formula (Index) = File_Mark_Character
+              and then Stop > Index + 1
+              and then Stop <= Formula'Last
+              and then Formula (Stop) = File_Mark_Character
+            then
+               Append
+                 (Result,
+                  Natural_Image
+                    (Rank (Positive'Value (Formula (Index + 1 .. Stop - 1)))));
+               Index := Stop + 1;
+            else
+               Append (Result, Formula (Index));
+               Index := Index + 1;
+            end if;
+         end;
+      end loop;
+      return To_String (Result);
+   end Renumbered;
+
    function Root_Name
      (Key    : Symbol_Key;
       Prefix : String := "b") return String
@@ -244,7 +309,7 @@ package body Adalang_Analyzer.VC_Prover is
       Number_File (Key.Object.Unit.Get_Filename, File);
       declare
          Object_Name : constant String :=
-           Prefix & Natural_Image (File) & "_" &
+           Prefix & File_Mark (File) & "_" &
            Natural_Image (Natural (Key.Object.Sloc_Range.Start_Line)) & "_" &
            Natural_Image (Natural (Key.Object.Sloc_Range.Start_Column));
       begin
@@ -2240,6 +2305,12 @@ package body Adalang_Analyzer.VC_Prover is
             end;
          end loop;
 
+         --  The actuals were translated in the caller's context: a symbol
+         --  one of them is the first to use is declared there, and the
+         --  declarations of the body are added to those, not put in their
+         --  place.
+         Callee.Symbols.Roots := Context.Symbols.Roots;
+
          declare
             Body_Expr : constant Libadalang.Analysis.Expr :=
               Decl.As_Expr_Function.F_Expr;
@@ -2340,7 +2411,7 @@ package body Adalang_Analyzer.VC_Prover is
       File : Positive;
    begin
       Number_File (Name.Unit.Get_Filename, File);
-      return "|f!" & Natural_Image (File) & "!" &
+      return "|f!" & File_Mark (File) & "!" &
         Natural_Image (Natural (Name.Sloc_Range.Start_Line)) & "!" &
         Natural_Image (Natural (Name.Sloc_Range.Start_Column)) &
         Profile & "|";
@@ -2506,7 +2577,7 @@ package body Adalang_Analyzer.VC_Prover is
             Number_File (Instance.Unit.Get_Filename, File);
             Append
               (Instances,
-               "@" & Natural_Image (File) & "." &
+               "@" & File_Mark (File) & "." &
                Natural_Image (Natural (Instance.Sloc_Range.Start_Line)) & "." &
                Natural_Image (Natural (Instance.Sloc_Range.Start_Column)));
          end;
@@ -2903,7 +2974,7 @@ package body Adalang_Analyzer.VC_Prover is
       File : Positive;
    begin
       Number_File (Writer.Unit.Get_Filename, File);
-      return "w" & Natural_Image (File) & "_" &
+      return "w" & File_Mark (File) & "_" &
         Natural_Image (Natural (Writer.Sloc_Range.Start_Line)) & "_" &
         Natural_Image (Natural (Writer.Sloc_Range.Start_Column)) & "_";
    end Writer_Prefix;
@@ -3920,7 +3991,8 @@ package body Adalang_Analyzer.VC_Prover is
       Negate  : Boolean;
       Answer  : out Solver_Answer)
    is
-      Key      : constant Unbounded_String := To_Unbounded_String (Formula);
+      Text     : constant String := Renumbered (Formula);
+      Key      : constant Unbounded_String := To_Unbounded_String (Text);
       Position : constant Answer_Maps.Cursor := Answers (Negate).Find (Key);
    begin
       if Answer_Maps.Has_Element (Position) then
@@ -3928,7 +4000,7 @@ package body Adalang_Analyzer.VC_Prover is
          return;
       end if;
 
-      Answer := Run_Query (Formula, Negate);
+      Answer := Run_Query (Text, Negate);
       --  A missing solver is not an answer about the formula.
       if Answer /= Solver_Unavailable then
          if Answers (Negate).Length >= Max_Remembered_Answers then
@@ -4302,14 +4374,15 @@ package body Adalang_Analyzer.VC_Prover is
    function Array_Bound_Facts (State : Symbolic_State) return Symbolic_State
    is
       --  True for the name Array_Attribute_Term gives a bound or length
-      --  symbol: "af", "al" or "an", then the object's line and column.
+      --  symbol: "af", "al" or "an", then the object's file, line and
+      --  column.
       function Is_Bound_Symbol (Token : String) return Boolean is
         (Token'Length > 4
          and then Token (Token'First) = 'a'
          and then Token (Token'First + 1) in 'f' | 'l' | 'n'
          and then
            (for all Item of Token (Token'First + 2 .. Token'Last) =>
-              Item in '0' .. '9' | '_'));
+              Item in '0' .. '9' | '_' | File_Mark_Character));
 
       --  True when every name in the SMT term Text is a bound symbol, an
       --  operator or a literal.

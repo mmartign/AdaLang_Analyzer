@@ -378,7 +378,7 @@ boundary cases; none may become `Proved_Safe` unexpectedly.
 construction; it rejects a `Proved_Safe` or `Unreachable` result on a marked
 defect and pins the outcome of every marked line.
 `tests/run_proof_path_evidence.sh` separately inventories every source-level
-`Record_Proved_Safe` producer and checks 63 method-specific routes. The first
+`Record_Proved_Safe` producer and checks 85 method-specific routes. The first
 23 are organised by obligation kind and method; a further 25 exercise the
 scalar VC sub-boundaries within them -- individual operators (`*`, unary and
 Boolean connectives, relational comparison, non-zero `/`/`mod`/`rem`, and the
@@ -410,7 +410,13 @@ index subtype of an unconstrained formal, each dimension against bounds of
 its own; a subtype bound that reads a
 variable is unknown once the variable may have changed; a membership test
 narrows an interval on both outcomes, except that a non-member of a
-predicated subtype is not placed outside its range. Each
+predicated subtype is not placed outside its range. A fourth covers the
+objects that always hold a value: a read of a constant is safe where one
+of a variable declared outside the subprogram is not known to be; a
+divisor within `Positive` is not zero where one within `Natural` may be;
+the parameter of a quantified expression, or of a loop over `T range
+L .. H`, is an index within its range, and one past it or of a wider type
+is not; a named number is its value in a product. Each
 route has positive and adversarial evidence, while solver-dependent routes
 also exercise unsupported translation and unavailable solvers. The gate
 compares the manifest with stable `proof-path` source tags, so a new

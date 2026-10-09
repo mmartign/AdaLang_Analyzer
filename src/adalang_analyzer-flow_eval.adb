@@ -12,6 +12,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Containers.Hashed_Maps;
 with Ada.Exceptions;
 
 with Langkit_Support.Text;
@@ -997,10 +998,25 @@ package body Adalang_Analyzer.Flow_Eval is
       end if;
 
       if Node.Kind = Libadalang.Common.Ada_Identifier then
-         return Flow_Range_Lookup
-           (State,
-            Libadalang.Analysis.Ada_Node
-              (Node.As_Name.P_Referenced_Defining_Name));
+         declare
+            Held : constant Abstract_Range :=
+              Flow_Range_Lookup
+                (State,
+                 Libadalang.Analysis.Ada_Node
+                   (Node.As_Name.P_Referenced_Defining_Name));
+         begin
+            if Held.Has_Low and then Held.Has_High then
+               return Held;
+            end if;
+
+            --  A name whose value is known lies nowhere else: a named
+            --  number is no object, and no state has a range for it.
+            declare
+               Value : constant Abstract_Int := Integer_Value (Node, State);
+            begin
+               return (if Value.Known then Range_From_Int (Value) else Held);
+            end;
+         end;
       elsif Node.Kind = Libadalang.Common.Ada_Paren_Expr then
          return Range_Value (Node.As_Paren_Expr.F_Expr, State);
       elsif Node.Kind = Libadalang.Common.Ada_Qual_Expr then
@@ -3415,4 +3431,153 @@ package body Adalang_Analyzer.Flow_Eval is
          return Result;
    end Stored_Subtype;
 
+   --  The oracle of Flow_Domain.Set_Standing_Oracle. Under --verify, four
+   --  kinds of object hold a value wherever a subprogram reads them, and
+   --  no statement changes it:
+   --    a constant of a scalar type declared with its value, which the
+   --    elaboration of its declaration has converted to its subtype before
+   --    any subprogram that can name it runs;
+   --    a generic formal object of mode "in" of a scalar type, which is
+   --    such a constant in every instance;
+   --    a formal parameter of mode "in" of a scalar type, passed by copy;
+   --    the parameter of a "for ... in" loop or quantified expression.
+   --  The first three are then within the subtype they are declared with.
+   --  For a parameter that is what its subprogram is entered with, the
+   --  check being the caller's; for a constant it is the same, the check
+   --  being that of the elaboration. A constant that can change without
+   --  being named, or that another name may denote (Classify), is not one
+   --  of them, nor is a deferred constant where its value is not in view.
+   --  The answer for an object does not change, and is kept.
+   package Standing_Fact_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Standing_Fact,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=");
+   Standing_Facts : Standing_Fact_Maps.Map;
+
+   Nothing_Standing : constant Standing_Fact := (others => <>);
+
+   function Decided_Standing_Fact
+     (Key : Libadalang.Analysis.Ada_Node) return Standing_Fact
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Key.As_Defining_Name.P_Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return Nothing_Standing;
+      elsif Decl.Kind = Libadalang.Common.Ada_For_Loop_Var_Decl then
+         --  "for E of A" names a component, which is a variable. The
+         --  parameter of "for I in ..." is within what the range is
+         --  declared to be, as far as that is fixed whatever the state:
+         --  the state a loop is entered in may say more, and then holds
+         --  it.
+         if Decl.Parent.Kind /= Libadalang.Common.Ada_For_Loop_Spec
+           or else Decl.Parent.As_For_Loop_Spec.F_Loop_Type.Kind /=
+             Libadalang.Common.Ada_Iter_Type_In
+         then
+            return Nothing_Standing;
+         end if;
+         return
+           (Holds_A_Value => True,
+            Bounds        =>
+              Discrete_Definition_Range
+                (Decl.Parent.As_For_Loop_Spec.F_Iter_Expr,
+                 Empty_Flow_State));
+      elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+         declare
+            Param : constant Libadalang.Analysis.Param_Spec :=
+              Decl.As_Param_Spec;
+            Typ   : constant Libadalang.Analysis.Base_Type_Decl :=
+              Param.F_Type_Expr.P_Designated_Type_Decl;
+         begin
+            if Param.F_Mode.Kind not in Libadalang.Common.Ada_Mode_In
+                 | Libadalang.Common.Ada_Mode_Default
+              or else Param.F_Has_Aliased
+              or else Libadalang.Analysis.Is_Null (Typ)
+              or else not Typ.P_Is_Scalar_Type
+            then
+               return Nothing_Standing;
+            end if;
+            return
+              (Holds_A_Value => True,
+               Bounds        => Type_Range (Typ, Empty_Flow_State));
+         end;
+      elsif Decl.Kind /= Libadalang.Common.Ada_Object_Decl then
+         return Nothing_Standing;
+      end if;
+
+      declare
+         Object : constant Libadalang.Analysis.Object_Decl :=
+           Decl.As_Object_Decl;
+         Typ    : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         if not Libadalang.Analysis.Is_Null (Object.F_Renaming_Clause) then
+            return Nothing_Standing;
+         elsif Decl.Parent.Kind = Libadalang.Common.Ada_Generic_Formal_Obj_Decl
+         then
+            if Object.F_Mode.Kind not in Libadalang.Common.Ada_Mode_In
+                 | Libadalang.Common.Ada_Mode_Default
+            then
+               return Nothing_Standing;
+            end if;
+         elsif not Object.F_Has_Constant
+           or else Libadalang.Analysis.Is_Null (Object.F_Default_Expr)
+         then
+            return Nothing_Standing;
+         end if;
+
+         if Classify (Key) /= Tracked then
+            return Nothing_Standing;
+         end if;
+
+         Typ := Object.F_Type_Expr.P_Designated_Type_Decl;
+         if Libadalang.Analysis.Is_Null (Typ)
+           or else not Typ.P_Is_Scalar_Type
+         then
+            return Nothing_Standing;
+         end if;
+
+         declare
+            Constraint : constant Subtype_Constraint :=
+              Declared_Constraint (Object.F_Type_Expr, Empty_Flow_State);
+         begin
+            return
+              (Holds_A_Value => True,
+               Bounds        =>
+                 (if Constraint.Present then Constraint.Bounds
+                  else Type_Range (Typ, Empty_Flow_State)));
+         end;
+      end;
+   exception
+      when others =>
+         return Nothing_Standing;
+   end Decided_Standing_Fact;
+
+   function Standing_Fact_Of
+     (Key : Libadalang.Analysis.Ada_Node) return Standing_Fact
+   is
+      Position : Standing_Fact_Maps.Cursor;
+      Fact     : Standing_Fact;
+   begin
+      if not Config.Verification_Mode
+        or else Libadalang.Analysis.Is_Null (Key)
+        or else Key.Kind /= Libadalang.Common.Ada_Defining_Name
+      then
+         return Nothing_Standing;
+      end if;
+
+      Position := Standing_Facts.Find (Key);
+      if Standing_Fact_Maps.Has_Element (Position) then
+         return Standing_Fact_Maps.Element (Position);
+      end if;
+
+      --  Working the answer out may ask about the same object again.
+      Standing_Facts.Include (Key, Nothing_Standing);
+      Fact := Decided_Standing_Fact (Key);
+      Standing_Facts.Include (Key, Fact);
+      return Fact;
+   end Standing_Fact_Of;
+
+begin
+   Set_Standing_Oracle (Standing_Fact_Of'Access);
 end Adalang_Analyzer.Flow_Eval;

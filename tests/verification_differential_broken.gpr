@@ -25,6 +25,8 @@ project Verification_Differential_Broken is
       "verification_mutation_expression_functions.adb",
       "verification_fp116_declared_operator.ads",
       "verification_fp116_declared_operator.adb",
-      "verification_length_check.adb");
+      "verification_length_check.adb",
+      "verification_standing_values.ads",
+      "verification_standing_values.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;

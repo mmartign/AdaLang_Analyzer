@@ -108,6 +108,7 @@ length_conversion=$(mktemp "${TMPDIR:-/tmp}/adalang-length-conversion.XXXXXX")
 length_limits=$(mktemp "${TMPDIR:-/tmp}/adalang-length-limits.XXXXXX")
 length_check=$(mktemp "${TMPDIR:-/tmp}/adalang-length-check.XXXXXX")
 length_check_state=$(mktemp "${TMPDIR:-/tmp}/adalang-length-check-state.XXXXXX")
+standing_values=$(mktemp "${TMPDIR:-/tmp}/adalang-standing-values.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -138,7 +139,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -1849,8 +1850,8 @@ must_prove "$named_values" assertion \
 must_prove "$named_values" assertion \
   'Copy /= Verification_Named_Values.F_C' external-prover \
   "an expanded name of a literal"
-must_prove "$named_values" assertion 'Value < Limit' external-prover \
-  "the value of a named number"
+must_prove "$named_values" assertion 'Value < Limit' \
+  abstract-interpretation "the value of a named number"
 must_prove "$named_values" assertion 'Small < 3' external-prover \
   "the value of a named number"
 must_prove "$named_values" division-by-zero \
@@ -2153,5 +2154,63 @@ do
    must_not_prove "$length_check_state" length-check "$claim" \
      "length check"
 done
+
+# A constant, a generic formal object of mode "in", an "in" parameter and
+# the parameter of a loop or of a quantified expression hold a value
+# wherever they are read, within their subtype: a division by one of
+# subtype Positive is safe, an index that is one is within an array of its
+# range, and neither needs a solver. The parameter of "for I in T range
+# L .. H" is within T and within what L and H can be. A named number has
+# its value as an operand of a product. An object first named as the
+# actual of an inlined call is declared to the solvers like any other.
+run_json_pair "$standing_values" tests/verification_standing_values
+for operation in Bits Width Step Ceiling; do
+   must_prove "$standing_values" division-by-zero "$operation" \
+     abstract-interpretation "an object that always holds a value"
+done
+for operation in Bits Width Ceiling Chosen; do
+   if ! grep -F '"kind": "initialization-check"' "$standing_values" |
+     grep -F "\"operation\": \"$operation\"" |
+     grep -F '"status": "proved-safe"' >/dev/null
+   then
+      echo "an object that always holds a value: '$operation' is not" \
+        "known to hold one" >&2
+      exit 1
+   fi
+done
+must_prove "$standing_values" range-check Bits abstract-interpretation \
+  "an object that always holds a value"
+for operation in Each Done Tail Slot Place Spot Chosen Seen Held Turn; do
+   must_prove "$standing_values" index-check "$operation" \
+     abstract-interpretation "the parameter of a loop or of a quantifier"
+done
+must_prove "$standing_values" integer-overflow 'Scale * (Left + Right)' \
+  abstract-interpretation "the range of a named number"
+must_prove "$standing_values" integer-overflow "Natural'Last - Used" \
+  external-prover "the actual of an inlined call"
+must_prove "$standing_values" integer-overflow 'Used + Extra' \
+  external-prover "the actual of an inlined call"
+# Within a subtype is not away from zero; a variable, a formal object of
+# mode "in out" and an aliased constant are not known to hold a value.
+for operation in Spare Count Shared Level Anchor; do
+   must_not_prove "$standing_values" division-by-zero "$operation" \
+     "an object that always holds a value"
+done
+for operation in Shared Level Anchor Mark; do
+   must_not_prove "$standing_values" initialization-check "$operation" \
+     "an object that always holds a value"
+done
+must_not_prove "$standing_values" index-check 'Next + 1' \
+  "the parameter of a loop or of a quantifier"
+must_not_prove "$standing_values" range-check Step \
+  "the parameter of a loop or of a quantifier"
+must_not_prove "$standing_values" range-check Far \
+  "the parameter of a loop or of a quantifier"
+for operation in 'Seen = 0' 'Held <= 5' 'Turn <= 6' 'Mark = 5'; do
+   must_not_prove "$standing_values" assertion "$operation" \
+     "an object that always holds a value"
+done
+must_not_prove "$standing_values" integer-overflow 'Huge * Both' \
+  "the range of a named number"
 
 echo "bounded verification tests passed"

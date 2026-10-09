@@ -5,6 +5,88 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Objects that always hold a value (`--verify`). A constant of a scalar
+  type declared with its value, a generic formal object of mode `in`, a
+  formal parameter of mode `in` and the parameter of a `for ... in` loop
+  or of a quantified expression hold a value wherever a subprogram reads
+  them, and no statement changes it. A read of one is `Proved_Safe` for
+  initialization whatever the state, and its value is within the subtype
+  it is declared with. Until now an object declared outside the subprogram
+  under analysis had no state at all: `Value / Bits` was `Unproved` for a
+  package constant `Bits : constant Positive`, for want of knowing that
+  `Bits` was initialized, and every obligation written with such a name
+  was `Unproved` with it. What is known is the subtype and no more: a
+  constant of subtype `Natural` may be zero, and a constant of a block in
+  a loop is declared again each time round. A variable declared outside
+  the subprogram is not one of these objects, nor is a formal object of
+  mode `in out`, a constant that is aliased, volatile, imported or has an
+  address, a deferred constant read where its value is not in view, or a
+  constant that is not scalar. A call whose effects are not known drops
+  what is known of every variable, and nothing of these. The check that
+  puts such an object within its subtype is the elaboration's, or the
+  caller's for a parameter, as it has always been for a parameter. See
+  "Objects that always hold a value" in
+  `docs/src/supported-verification-subset.md`.
+- The parameter of a quantified expression has a range where the predicate
+  is evaluated, the one a loop over the same range gives its parameter:
+  the checks inside `(for all K in Index range 0 .. Last => X (K) = 0)` are
+  decided with `K` in it. They were `Unproved`, `K` being unknown there.
+- The parameter of a loop over `T range L .. H`, and of a quantified
+  expression over it, is within `T` as well as within what `L` and `H` can
+  be: a range that is not null has both its bounds in the subtype it
+  constrains. A bound of which the state says nothing is the one a
+  declaration would take from it, so that a loop to `Index'Last` ends
+  there. `for I in Index range 0 .. Last` gave `I` no upper bound when
+  `Last` was not a known value.
+- A name whose value is known has that value as a range too: the product
+  of a named number and a sum is decided by the interval analysis, without
+  a solver.
+
+### Fixed
+
+- An object first named as the actual of an inlined expression function
+  was not declared in the query sent to the solvers, which rejected the
+  query; the obligation was `Unproved`. Never a wrong verdict: a rejected
+  query proves nothing. On coap_spark 332 of the 4,052 queries of 1.8.4
+  were rejected for it. The symbols of the actuals are now kept with those
+  of the body.
+- The verdict on a subprogram no longer depends on which other files are
+  analyzed with it. The symbols of a query carry the number of the file
+  they are declared in, and files were numbered as the run met them; a
+  solver's answer to a formula at the edge of what it decides can change
+  with the names in it. Z3 answered `unsat` or `unknown` to one and the
+  same lemma about `mod`, in libkeccak, according to that number alone. A
+  query now has numbers of its own.
+
+### Changed
+
+- Some obligations that the solvers proved are now proved by the interval
+  analysis, and their `method` says so: `abstract-interpretation` where it
+  said `external-prover`.
+- A read of an object that always holds a value is reported with the
+  method `static-evaluation` and the explanation "object holds a value
+  wherever it is read", where the state does not already say it is
+  initialized.
+- A check that could not be decided may now be decided against the code.
+  `Needs_Pos (N - N)`, for a precondition `X > 0` and a parameter `N`,
+  is a `Definite_Error` where it was `Unproved` after a call had dropped
+  what was known of `N`. Two lines of the seeded defects change so; no
+  obligation of the ten corpora does.
+
+Of the 15,043 checks GNATprove proves on the five fully proved corpora,
+`--verify` now proves 5,094 (4,757 in 1.8.4): 823 of the 2,938
+preconditions (687), 683 of the 809 division checks (643), 653 of the
+2,372 range checks (602), 151 of the 522 index checks (82) and 149 of the
+1,062 overflow checks (122). No check is proved that GNATprove does not
+prove, and none it proves is a definite error. On the ten corpora every
+preset reports exactly the findings of 1.8.4; in the nine `--verify` lanes
+4,910 obligations go from `Unproved` to `Proved_Safe`, none the other
+way, and no obligation is added, removed or made a definite error.
+
 ## [1.8.4] - 2026-10-09
 
 A `--verify` release that corrects a false-safe and brings in checks

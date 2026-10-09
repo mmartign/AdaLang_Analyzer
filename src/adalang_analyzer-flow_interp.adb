@@ -405,6 +405,32 @@ package body Adalang_Analyzer.Flow_Interp is
          Abstract_State, Final => Final);
    end Record_Proved_Safe;
 
+   --  Records the read Node of the object Key as safe where it is what
+   --  always holds of Key that says it is initialized, and not State: a
+   --  constant, an "in" parameter or the parameter of a loop holds a value
+   --  wherever it is read. Recorded is False where State says so itself,
+   --  or nothing does, and nothing is recorded then.
+   procedure Record_Standing_Value
+     (Unit     : Libadalang.Analysis.Analysis_Unit;
+      Node     : Libadalang.Analysis.Ada_Node'Class;
+      Key      : Libadalang.Analysis.Ada_Node;
+      State    : Flow_State;
+      Final    : Boolean;
+      Recorded : out Boolean) is
+   begin
+      Recorded :=
+        Stored_Initialization (State, Key) /= Bool_True
+        and then Flow_Initialization (State, Key) = Bool_True;
+      if Recorded then
+         --  proof-path: initialization-standing
+         Record_Proved_Safe
+           (Unit, Node, Proof.Initialization_Check, Proof.Static_Evaluation,
+            "object holds a value wherever it is read",
+            "a constant, an in parameter or a loop parameter",
+            Final => Final);
+      end if;
+   end Record_Standing_Value;
+
    procedure Record_Unreachable
      (Unit        : Libadalang.Analysis.Analysis_Unit;
       Node        : Libadalang.Analysis.Ada_Node'Class;
@@ -5151,6 +5177,15 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end Case_Alternative_Excluded;
 
+   --  Gives State the parameter of Spec, the specification of a "for"
+   --  loop or of a quantified expression, as it is where the body or the
+   --  predicate is evaluated: holding a value, between the least its low
+   --  bound can be in State and the greatest its high bound can. Nothing
+   --  for "for E of A", whose parameter names a component.
+   procedure Enter_Loop_Parameter
+     (Spec  : Libadalang.Analysis.For_Loop_Spec;
+      State : in out Flow_State);
+
    --  Narrows State and Symbols to those in which Child, a child of Parent,
    --  is evaluated when Parent is evaluated in them. Dead when it is not.
    procedure Narrow_For_Operand
@@ -5234,11 +5269,15 @@ package body Adalang_Analyzer.Flow_Interp is
             end if;
 
          when Libadalang.Common.Ada_Quantified_Expr =>
-            if Is_Operand (Parent.As_Quantified_Expr.F_Expr)
-              and then Loop_Range_Is_Empty
-                         (Parent.As_Quantified_Expr.F_Loop_Spec, State)
-            then
-               Dead := True;
+            if Is_Operand (Parent.As_Quantified_Expr.F_Expr) then
+               if Loop_Range_Is_Empty
+                    (Parent.As_Quantified_Expr.F_Loop_Spec, State)
+               then
+                  Dead := True;
+               else
+                  Enter_Loop_Parameter
+                    (Parent.As_Quantified_Expr.F_Loop_Spec, State);
+               end if;
             end if;
 
          when others =>
@@ -5297,28 +5336,38 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
 
             if Tracked then
-               case Flow_Initialization (State, Key) is
-                  when Bool_True =>
-                     --  proof-path: initialization-live
-                     Record_Proved_Safe
-                       (Unit, Node, Proof.Initialization_Check,
-                        Proof.Flow_Analysis,
-                        "object is initialized on every incoming path",
-                        "initialization => true");
-                  when Bool_False =>
-                     Record_Definite_Error
-                       (Unit, Node, Proof.Initialization_Check,
-                        Proof.Flow_Analysis,
-                        "object is uninitialized on every incoming path",
-                        "initialization => false");
-                  when Bool_Unknown =>
-                     Record_Unproved
-                       (Unit, Node, Proof.Initialization_Check,
-                        Proof.Flow_Analysis,
-                        "object initialization is not established",
-                        Imprecision =>
-                          "incoming paths disagree or object is external");
-               end case;
+               declare
+                  Standing : Boolean;
+               begin
+                  Record_Standing_Value
+                    (Unit, Node, Key, State, False, Standing);
+                  if not Standing then
+                     case Flow_Initialization (State, Key) is
+                        when Bool_True =>
+                           --  proof-path: initialization-live
+                           Record_Proved_Safe
+                             (Unit, Node, Proof.Initialization_Check,
+                              Proof.Flow_Analysis,
+                              "object is initialized on every incoming path",
+                              "initialization => true");
+                        when Bool_False =>
+                           Record_Definite_Error
+                             (Unit, Node, Proof.Initialization_Check,
+                              Proof.Flow_Analysis,
+                              "object is uninitialized on every incoming " &
+                                "path",
+                              "initialization => false");
+                        when Bool_Unknown =>
+                           Record_Unproved
+                             (Unit, Node, Proof.Initialization_Check,
+                              Proof.Flow_Analysis,
+                              "object initialization is not established",
+                              Imprecision =>
+                                "incoming paths disagree or object is " &
+                                  "external");
+                     end case;
+                  end if;
+               end;
                Proof.Set_Subject
                  (Unit, Node, Proof.Initialization_Check, Key);
             end if;
@@ -5941,6 +5990,80 @@ package body Adalang_Analyzer.Flow_Interp is
      (Iter_Expr : Libadalang.Analysis.Ada_Node'Class;
       State     : Flow_State) return Abstract_Range
    is
+      --  What a loop over "L .. H", the bounds of Bounds, gives its
+      --  parameter: it is never below the least value L can have in State,
+      --  nor above the greatest H can. A side State says nothing of is the
+      --  one a declaration would take from it ("T'Last", a constant).
+      function Between
+        (Bounds : Libadalang.Analysis.Bin_Op) return Abstract_Range
+      is
+         Low        : constant Abstract_Int :=
+           Integer_Value (Bounds.F_Left, State);
+         High       : constant Abstract_Int :=
+           Integer_Value (Bounds.F_Right, State);
+         Low_Range  : constant Abstract_Range :=
+           Range_Value (Bounds.F_Left, State);
+         High_Range : constant Abstract_Range :=
+           Range_Value (Bounds.F_Right, State);
+         Declared   : constant Abstract_Range :=
+           Discrete_Definition_Range (Bounds, State);
+         Result     : Abstract_Range;
+      begin
+         if Low.Known then
+            Result.Has_Low := True;
+            Result.Low := Low.Value;
+         elsif Low_Range.Has_Low then
+            Result.Has_Low := True;
+            Result.Low := Low_Range.Low;
+         elsif Declared.Has_Low then
+            Result.Has_Low := True;
+            Result.Low := Declared.Low;
+         end if;
+
+         if High.Known then
+            Result.Has_High := True;
+            Result.High := High.Value;
+         elsif High_Range.Has_High then
+            Result.Has_High := True;
+            Result.High := High_Range.High;
+         elsif Declared.Has_High then
+            Result.Has_High := True;
+            Result.High := Declared.High;
+         end if;
+
+         return Result;
+      end Between;
+
+      --  Inner, the range "L .. H" gives, within that of the subtype Mark
+      --  names: a range that is not null has both its bounds in the
+      --  subtype it constrains, or its elaboration raises Constraint_Error.
+      function Within_Subtype
+        (Inner : Abstract_Range;
+         Mark  : Libadalang.Analysis.Name) return Abstract_Range
+      is
+         Outer  : constant Abstract_Range :=
+           Discrete_Definition_Range (Mark, State);
+         Result : Abstract_Range := Inner;
+      begin
+         if Outer.Has_Low
+           and then (not Inner.Has_Low or else Inner.Low < Outer.Low)
+         then
+            Result.Has_Low := True;
+            Result.Low := Outer.Low;
+         end if;
+         if Outer.Has_High
+           and then (not Inner.Has_High or else Inner.High > Outer.High)
+         then
+            Result.Has_High := True;
+            Result.High := Outer.High;
+         end if;
+         return Result;
+      end Within_Subtype;
+
+      function Is_Bounds
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is (Node.Kind = Libadalang.Common.Ada_Bin_Op
+          and then Node.As_Bin_Op.F_Op = Libadalang.Common.Ada_Op_Double_Dot);
    begin
       if Libadalang.Analysis.Is_Null (Iter_Expr) then
          return Unknown_Range;
@@ -5948,8 +6071,7 @@ package body Adalang_Analyzer.Flow_Interp is
 
       --  "for I in A'Range" over an array object whose bounds a
       --  declaration fixes; any other form that names a subtype ("for I in
-      --  Index", "for I in Index'Range", "for I in Index range 1 .. 3")
-      --  is a discrete subtype definition.
+      --  Index", "for I in Index'Range") is a discrete subtype definition.
       if Iter_Expr.Kind = Libadalang.Common.Ada_Attribute_Ref then
          declare
             Target : constant Own_Range_Target :=
@@ -5962,45 +6084,42 @@ package body Adalang_Analyzer.Flow_Interp is
             end if;
          end;
          return Discrete_Definition_Range (Iter_Expr, State);
-      elsif Iter_Expr.Kind /= Libadalang.Common.Ada_Bin_Op
-        or else Iter_Expr.As_Bin_Op.F_Op /=
-          Libadalang.Common.Ada_Op_Double_Dot
+      elsif Is_Bounds (Iter_Expr) then
+         return Between (Iter_Expr.As_Bin_Op);
+      elsif Iter_Expr.Kind in Libadalang.Common.Ada_Subtype_Indication_Range
+        and then not Libadalang.Analysis.Is_Null
+                       (Iter_Expr.As_Subtype_Indication.F_Constraint)
+        and then Iter_Expr.As_Subtype_Indication.F_Constraint.Kind =
+          Libadalang.Common.Ada_Range_Constraint
       then
-         return Discrete_Definition_Range (Iter_Expr, State);
+         --  "for I in Index range L .. H".
+         declare
+            Indication : constant Libadalang.Analysis.Subtype_Indication :=
+              Iter_Expr.As_Subtype_Indication;
+            Bounds     : constant Libadalang.Analysis.Expr :=
+              Indication.F_Constraint.As_Range_Constraint.F_Range.F_Range;
+         begin
+            if Is_Bounds (Bounds) then
+               return Within_Subtype
+                 (Between (Bounds.As_Bin_Op), Indication.F_Name);
+            end if;
+         end;
       end if;
-
-      --  The parameter is never below the least value the low bound can
-      --  have, nor above the greatest the high bound can.
-      declare
-         Low        : constant Abstract_Int :=
-           Integer_Value (Iter_Expr.As_Bin_Op.F_Left, State);
-         High       : constant Abstract_Int :=
-           Integer_Value (Iter_Expr.As_Bin_Op.F_Right, State);
-         Low_Range  : constant Abstract_Range :=
-           Range_Value (Iter_Expr.As_Bin_Op.F_Left, State);
-         High_Range : constant Abstract_Range :=
-           Range_Value (Iter_Expr.As_Bin_Op.F_Right, State);
-         Result     : Abstract_Range;
-      begin
-         if Low.Known then
-            Result.Has_Low := True;
-            Result.Low := Low.Value;
-         elsif Low_Range.Has_Low then
-            Result.Has_Low := True;
-            Result.Low := Low_Range.Low;
-         end if;
-
-         if High.Known then
-            Result.Has_High := True;
-            Result.High := High.Value;
-         elsif High_Range.Has_High then
-            Result.Has_High := True;
-            Result.High := High_Range.High;
-         end if;
-
-         return Result;
-      end;
+      return Discrete_Definition_Range (Iter_Expr, State);
    end For_Loop_Range;
+
+   procedure Enter_Loop_Parameter
+     (Spec  : Libadalang.Analysis.For_Loop_Spec;
+      State : in out Flow_State)
+   is
+      Key : constant Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Spec.F_Var_Decl.F_Id);
+   begin
+      if Spec.F_Loop_Type.Kind = Libadalang.Common.Ada_Iter_Type_In then
+         Flow_Range_Set (State, Key, For_Loop_Range (Spec.F_Iter_Expr, State));
+         Flow_Set_Initialized (State, Key, Bool_True);
+      end if;
+   end Enter_Loop_Parameter;
 
    --  Interprets a loop: every variable assigned anywhere in the body (and
    --  every actual parameter of any call within it) is havoced before the
@@ -8319,24 +8438,8 @@ package body Adalang_Analyzer.Flow_Interp is
       is
       begin
          if Node.Kind = Libadalang.Common.Ada_For_Loop_Stmt then
-            declare
-               Spec : constant Libadalang.Analysis.For_Loop_Spec :=
-                 Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
-            begin
-               if Spec.F_Loop_Type.Kind =
-                 Libadalang.Common.Ada_Iter_Type_In
-               then
-                  declare
-                     Key : constant Libadalang.Analysis.Ada_Node :=
-                       Libadalang.Analysis.Ada_Node (Spec.F_Var_Decl.F_Id);
-                  begin
-                     Flow_Range_Set
-                       (State, Key,
-                        For_Loop_Range (Spec.F_Iter_Expr, State));
-                     Flow_Set_Initialized (State, Key, Bool_True);
-                  end;
-               end if;
-            end;
+            Enter_Loop_Parameter
+              (Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec, State);
          end if;
       exception
          when E : others =>
@@ -10825,6 +10928,37 @@ package body Adalang_Analyzer.Flow_Interp is
             raise;
       end Finalize_Earlier;
 
+      --  The verdict on the read Node of an object of which the converged
+      --  state of its node says Initialized.
+      procedure Record_Final_Initialization
+        (Node        : Libadalang.Analysis.Ada_Node'Class;
+         Initialized : Abstract_Bool) is
+      begin
+         case Initialized is
+            when Bool_True =>
+               --  proof-path: initialization-final
+               Record_Proved_Safe
+                 (Unit, Node, Proof.Initialization_Check,
+                  Proof.Flow_Analysis,
+                  "object is initialized on every incoming path",
+                  "initialization => true", Final => True);
+            when Bool_False =>
+               Record_Definite_Error
+                 (Unit, Node, Proof.Initialization_Check,
+                  Proof.Flow_Analysis,
+                  "object is uninitialized on every incoming path",
+                  "initialization => false", Final => True);
+            when Bool_Unknown =>
+               Record_Unproved
+                 (Unit, Node, Proof.Initialization_Check,
+                  Proof.Flow_Analysis,
+                  "object initialization is not established",
+                  Imprecision =>
+                    "incoming paths disagree or object is external",
+                  Final => True);
+         end case;
+      end Record_Final_Initialization;
+
       procedure Finalize_Node
         (Node      : Libadalang.Analysis.Ada_Node'Class;
          Container : CFG.Node_Id := CFG.No_Node)
@@ -11123,35 +11257,18 @@ package body Adalang_Analyzer.Flow_Interp is
                         --  is marked Final to always supersede whatever a
                         --  premature live recording left behind for the same
                         --  obligation (see FP-031).
-                        case Flow_Initialization
-                               (State_At (Here),
-                                Key)
-                        is
-                           when Bool_True =>
-                              --  proof-path: initialization-final
-                              Record_Proved_Safe
-                                (Unit, Node, Proof.Initialization_Check,
-                                 Proof.Flow_Analysis,
-                                 "object is initialized on every incoming " &
-                                   "path",
-                                 "initialization => true", Final => True);
-                           when Bool_False =>
-                              Record_Definite_Error
-                                (Unit, Node, Proof.Initialization_Check,
-                                 Proof.Flow_Analysis,
-                                 "object is uninitialized on every incoming " &
-                                   "path",
-                                 "initialization => false", Final => True);
-                           when Bool_Unknown =>
-                              Record_Unproved
-                                (Unit, Node, Proof.Initialization_Check,
-                                 Proof.Flow_Analysis,
-                                 "object initialization is not established",
-                                 Imprecision =>
-                                   "incoming paths disagree or object is " &
-                                     "external",
-                                 Final => True);
-                        end case;
+                        declare
+                           Standing : Boolean;
+                        begin
+                           Record_Standing_Value
+                             (Unit, Node, Key, State_At (Here), True,
+                              Standing);
+                           if not Standing then
+                              Record_Final_Initialization
+                                (Node, Flow_Initialization
+                                         (State_At (Here), Key));
+                           end if;
+                        end;
                      end if;
                      Proof.Set_Subject
                        (Unit, Node, Proof.Initialization_Check, Key);

@@ -108,7 +108,7 @@ h03_arith.adb	67	BAD	division-by-zero	definite-error
 h03_arith.adb	68	BAD	division-by-zero	definite-error
 h03_arith.adb	69	BAD	division-by-zero	definite-error
 h04.adb	22	BAD	precondition	unproved,unproved
-h04.adb	23	BAD	precondition	unproved,unproved
+h04.adb	23	BAD	precondition	definite-error,definite-error
 h04.adb	24	BAD	precondition	definite-error,definite-error
 h04.adb	25	OK	precondition	proved-safe,proved-safe
 h04.adb	26	BAD	precondition	definite-error,definite-error
@@ -229,7 +229,7 @@ h07.adb	205	BAD	assertion	unproved
 h07.adb	208	BAD	assertion	unproved
 h07.adb	211	BAD	assertion	unproved
 h07.adb	222	BAD	range-check	unproved
-h07.adb	223	BAD	range-check	unproved
+h07.adb	223	BAD	range-check	definite-error
 h07.adb	224	BAD	range-check	unproved
 h07.adb	234	BAD	division-by-zero	unproved
 h07.adb	242	BAD	division-by-zero	unproved

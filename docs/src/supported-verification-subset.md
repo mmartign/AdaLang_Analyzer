@@ -34,7 +34,7 @@ interpreted as proof of safety.
 | Index | The indexed object's own bounds per dimension -- the index constraint on its declaration, or its constrained array type or subtype -- otherwise scalar bounds VC against those bounds; or, with no bounds a declaration fixes, either the index is the parameter of a `for` loop over that same dimension of that same object (`for I in A'Range`, `A'Range (N)`, or `A'First .. A'Last`), or a scalar VC places it between the object's own `'First` and `'Last` taken as symbols, one pair per dimension | Array objects whose bounds a declaration fixes, and scalar indices. An object of an unconstrained array type that takes its bounds from a string literal, or from another object whose bounds are known, has those bounds. One with no bounds anything fixes (a formal parameter, or an object initialized from one, from a call or from an aggregate) proves only in the own-range loop form or against those symbols: its index subtype says what its bounds may be, not what they are |
 | Length | The value is an aggregate with an `others` choice, which has the bounds of what it is given to, in every dimension where the two lengths are not static and the same; otherwise a scalar VC that the two lengths are equal in each dimension. The length of an object or a component is a number where a declaration fixes its bounds and a symbol of its own otherwise, that of a slice is worked out from its two bounds, or is that of `Y` for a slice over `Y'Range`, and that of a call or a conversion is the number its subtype gives; a length that is a number on one side is asked of the other | An array given to a target, where a compiler keeps the check, which is where GNATprove reports one. In an assignment the value is converted to the subtype of the target when the target has a constrained one -- a slice, a component, an object or a formal declared with one: checked at the value. The same for the initial value of an object declared with a constrained subtype, the value a function with a constrained result subtype returns, an actual parameter for a formal of a constrained subtype, the operand of a conversion to one, and a component given by name in a record aggregate. And where the bounds of the target of an assignment are not static the assignment has a check of its own, reported at the `:=`. None where both lengths are static and the same, or where the two are of one and the same constrained subtype; a bound is static when it is written with static values or with `X'First`, `X'Last` or `X'Length` of an object or a subtype named outright whose bounds are, as a compiler folds it; an object declared with an unconstrained subtype has the bounds of its initial value, which are not static whatever that is; a slice has the length of its range, not that of what it is a slice of; a conditional expression has a static length when its dependent expressions all have the same. Also the operands of `and`, `or` and `xor` on arrays, at the operator, static lengths or not. Never a `Definite_Error`: lengths known to differ are `Unproved`. `Unproved` for a value that is a call of a function with an unconstrained result or a concatenation, for a conditional expression whose dependent expressions are not all of one static length, and where a length depends on a record component the analysis does not follow. A generic unit is analyzed as it is written: a length that is static only in its instances has its check, which GNATprove, analyzing the instances, does not have |
 | Discriminant | The prefix object's own static discriminant constraint (an integer expression or an enumeration literal) selects the variant declaring the component; a constrained object's discriminants never change | A component of a top-level variant part, selected directly from an object declared with an explicit discriminant constraint; a constant, variable, or subtype-name constraint or choice is never resolved by spelling and stays `Unproved` |
-| Initialization | Flow-sensitive definite-initialization state | Tracked scalar objects and documented composite write summaries, at each read; and each `out` parameter at the subprogram's normal exit, proved when every path that returns has assigned the whole parameter or passed it to a callee that always writes it. An `out` parameter assigned component by component is `Unproved`. A global of mode `Output` in a `Global` or `Refined_Global` aspect has the same obligation as an `out` parameter, at its name in the aspect: proved when the state at the normal exit has the whole object initialized, `Unproved` for a state abstraction and when the object is written by a callee only |
+| Initialization | Flow-sensitive definite-initialization state; an object that always holds a value (see below) is `Proved_Safe` whatever the state | Tracked scalar objects and documented composite write summaries, at each read; and each `out` parameter at the subprogram's normal exit, proved when every path that returns has assigned the whole parameter or passed it to a callee that always writes it. An `out` parameter assigned component by component is `Unproved`. A global of mode `Output` in a `Global` or `Refined_Global` aspect has the same obligation as an `out` parameter, at its name in the aspect: proved when the state at the normal exit has the whole object initialized, `Unproved` for a state abstraction and when the object is written by a callee only |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
 | Precondition | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts. An operation whose operator a declaration defines is such a call, and its obligation is at the operator: decided where the precondition says nothing of the operands, `Unproved` where it does, the operands not being substituted for the formals yet |
 | Postcondition | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions |
@@ -76,7 +76,9 @@ literals, other named numbers, constants, `T'First` and `T'Last`, qualified
 expressions and the arithmetic operators; each operator is taken in the
 type its operands give it, so that one of a modular type wraps. A real
 named number, and one declared with any other attribute, a conversion, a
-call or a conditional expression, has no value the analysis knows.
+call or a conditional expression, has no value the analysis knows. In the
+interval analysis a name whose value is known is that value as an operand
+too: the product of a named number and a sum has the range that follows.
 
 `T'Size` is a number where `T` is a static integer or enumeration subtype
 named outright. It is the `Size` the first subtype is given by an aspect or
@@ -158,6 +160,54 @@ scalar VC language a modular sum, difference or product by a constant is the
 term reduced with `mod`; the product of two unknown modular values is only
 known to be some value of the type, the same one for the same two operands.
 
+## Objects that always hold a value
+
+Four kinds of object hold a value wherever a subprogram reads them, and no
+statement changes it:
+
+- a constant of a scalar type that is declared with its value, in the
+  subprogram under analysis or outside it;
+- a generic formal object of mode `in` of a scalar type, which is such a
+  constant in each instance;
+- a formal parameter of mode `in` of a scalar type;
+- the parameter of a `for ... in` loop or of a quantified expression.
+
+A read of one of them is `Proved_Safe` for initialization whatever the
+state, and its value is within the subtype it is declared with: both
+bounds where they are static, one side where only that one is. For the
+parameter of a loop the subtype is the range of the loop, as far as it is
+fixed whatever the state; the state the loop is entered in may say more,
+and is used first. Nothing else is known of such an object from here. A
+constant declared `Positive` is not zero; what it is equal to is known
+only where the subprogram itself declares it or tests it, and a constant
+of a block is declared again each time round a loop.
+
+This rests on what has happened before the subprogram can read the object.
+The declaration of a constant has been elaborated, and its value converted
+to its subtype with the check a conversion has; so has the actual of a
+formal object, when the unit was instantiated; so has the actual of a
+parameter, at the call. That check is the elaboration's or the caller's,
+as it has always been for a parameter. A verdict that uses the subtype of
+such an object holds for the executions in which that check did not fail
+and the value given was a valid one.
+
+A call whose effects are not known drops every fact about a variable. It
+drops none of these: no callee can change them.
+
+What is not one of them:
+
+- a variable declared outside the subprogram, whatever its subtype and
+  whatever it was declared with: nothing here says it still holds that
+  value, or any;
+- a generic formal object of mode `in out`, which names a variable;
+- a constant that can change without being named or that another name may
+  denote -- aliased, volatile, imported, or with an address (see below);
+- a deferred constant read where only its first declaration, which has no
+  value, is in view;
+- a constant of a type that is not scalar: its components each have a
+  state of their own;
+- the parameter of `for E of A`, which names a component.
+
 ## Objects and effects the analysis does not follow
 
 A fact about an object is kept only while nothing but the object's own name
@@ -200,7 +250,9 @@ the direct name, for reads and writes alike.
   which changes state is such a call.
 - A procedure call drops every fact when what the callee does is not
   known: no effect summary of its body, no `Global` aspect, a callee
-  declared inside the subprogram under analysis, a dispatching call.
+  declared inside the subprogram under analysis, a dispatching call. What
+  always holds of an object is no such fact, and stands (see "Objects that
+  always hold a value").
   When it is known, the *call frame* stands: what the symbolic state says
   of a scalar object declared in the subprogram under analysis that the
   call does not have as an `out` or `in out` actual still holds after the
@@ -390,6 +442,13 @@ An external result is accepted only when both configured CVC5 and Z3 runs
 agree by returning `unsat` for the negated goal. Solver absence or disagreement
 cannot produce `Proved_Safe` or `Definite_Error`.
 
+The symbols of a query are named after the declarations they stand for:
+the file, the line and the column. The file is a number, and a query has
+numbers of its own, given in the order it names its files. A solver's
+answer to a formula at the edge of what it decides can change with the
+names in it; with numbers taken from the whole run, the verdict on a
+subprogram could depend on which other files were analyzed with it.
+
 ## Supported control flow
 
 The verification CFG covers sequential statements and declaration
@@ -464,6 +523,17 @@ in a `Pre` or a `Post`, and in an `Assert`, an `Assert_And_Cut` or a
 `Loop_Invariant`. One that is used as a value anywhere else in a body --
 the condition of an `if`, the right side of an assignment -- puts the
 subprogram outside the verified subset.
+
+The parameter of a `for` loop and that of a quantified expression have the
+same range, and the checks inside the body or the predicate are decided
+with it. Over `L .. H` the parameter is never below the least value `L`
+can have where the loop is entered, nor above the greatest `H` can; a
+bound of which the state says nothing is the one a declaration would take
+from it, so `Index'Last` and a constant are their values. Over `T range
+L .. H` it is within that and within `T` as well: a range that is not null
+has both its bounds in the subtype it constrains. So `X (K)` under `for all
+K in Index range 0 .. Last` is an index within an array over `Index`,
+whatever `Last` is, and `X (K + 1)` is not.
 
 Other code that is declared inside the subprogram and evaluated later is
 not checked in the state at its declaration: the default expression of a

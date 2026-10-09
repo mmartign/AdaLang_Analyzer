@@ -140,6 +140,33 @@ package Adalang_Analyzer.Flow_Domain is
      (State : Flow_State;
       Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool;
 
+   --  What is true of an object wherever it is read, whatever the state: a
+   --  constant, a generic formal object of mode "in" and the parameter of a
+   --  loop or of a quantified expression hold a value from their
+   --  elaboration on, and nothing changes it. Holds_A_Value says the
+   --  object is one of those; Bounds are then those of its subtype, a side
+   --  absent where it is not known.
+   type Standing_Fact is record
+      Holds_A_Value : Boolean := False;
+      Bounds        : Abstract_Range := Unknown_Range;
+   end record;
+
+   type Standing_Oracle is access
+     function (Key : Libadalang.Analysis.Ada_Node) return Standing_Fact;
+
+   procedure Set_Standing_Oracle (Oracle : Standing_Oracle);
+   --  Flow_Initialization and Flow_Range_Lookup ask Oracle about an object
+   --  that State says less of than a standing fact would: no state, and no
+   --  havoc of one, loses what the oracle answers. Without an oracle
+   --  nothing is known but what a state holds.
+
+   function Stored_Initialization
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool;
+   --  What State itself holds of the initialization of Key, leaving out
+   --  what always holds of the object: where this is not Bool_True and
+   --  Flow_Initialization is, it is the standing fact that says so.
+
    procedure Flow_Set_Initialized
      (State       : in out Flow_State;
       Key         : Libadalang.Analysis.Ada_Node;

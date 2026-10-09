@@ -352,7 +352,52 @@ package body Adalang_Analyzer.Flow_Domain is
       return Bool_Unknown;
    end Flow_Bool_Lookup;
 
-   function Flow_Range_Lookup
+   Standing : Standing_Oracle := null;
+
+   procedure Set_Standing_Oracle (Oracle : Standing_Oracle) is
+   begin
+      Standing := Oracle;
+   end Set_Standing_Oracle;
+
+   function Standing_Of
+     (Key : Libadalang.Analysis.Ada_Node) return Standing_Fact
+   is (if Standing = null then (others => <>) else Standing (Key));
+
+   --  Held, a range a state has for the object Key, with each side it
+   --  lacks taken from what always holds of that object. A side a state
+   --  has was narrowed from the standing one, so it is kept.
+   function Within_Standing
+     (Held : Abstract_Range;
+      Key  : Libadalang.Analysis.Ada_Node) return Abstract_Range
+   is
+      Result : Abstract_Range := Held;
+   begin
+      if Held.Has_Low and then Held.Has_High then
+         return Held;
+      end if;
+
+      declare
+         Fact : constant Standing_Fact := Standing_Of (Key);
+      begin
+         if not Fact.Holds_A_Value then
+            return Held;
+         end if;
+         if not Held.Has_Low and then Fact.Bounds.Has_Low then
+            Result.Has_Low := True;
+            Result.Low := Fact.Bounds.Low;
+         end if;
+         if not Held.Has_High and then Fact.Bounds.Has_High then
+            Result.Has_High := True;
+            Result.High := Fact.Bounds.High;
+         end if;
+      end;
+      return Result;
+   end Within_Standing;
+
+   --  What State itself holds for Key: what the comparison, the join and
+   --  the widening of states work on, a standing fact being no part of any
+   --  state.
+   function Stored_Range
      (State : Flow_State;
       Key   : Libadalang.Analysis.Ada_Node) return Abstract_Range
    is
@@ -368,9 +413,9 @@ package body Adalang_Analyzer.Flow_Domain is
       end loop;
 
       return Unknown_Range;
-   end Flow_Range_Lookup;
+   end Stored_Range;
 
-   function Flow_Initialization
+   function Stored_Initialization
      (State : Flow_State;
       Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool
    is
@@ -385,6 +430,23 @@ package body Adalang_Analyzer.Flow_Domain is
          end if;
       end loop;
       return Bool_Unknown;
+   end Stored_Initialization;
+
+   function Flow_Range_Lookup
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) return Abstract_Range
+   is (Within_Standing (Stored_Range (State, Key), Key));
+
+   function Flow_Initialization
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool
+   is
+      Held : constant Abstract_Bool := Stored_Initialization (State, Key);
+   begin
+      if Held /= Bool_True and then Standing_Of (Key).Holds_A_Value then
+         return Bool_True;
+      end if;
+      return Held;
    end Flow_Initialization;
 
    procedure Flow_Set_Initialized
@@ -584,11 +646,11 @@ package body Adalang_Analyzer.Flow_Domain is
             Left_Range  : constant Abstract_Range :=
               Left.Bindings (I).Range_Value;
             Right_Range : constant Abstract_Range :=
-              Flow_Range_Lookup (Right, Decl);
+              Stored_Range (Right, Decl);
             Left_Init   : constant Abstract_Bool :=
               Left.Bindings (I).Initialized;
             Right_Init  : constant Abstract_Bool :=
-              Flow_Initialization (Right, Decl);
+              Stored_Initialization (Right, Decl);
          begin
             if Left_Value.Known and then Right_Value.Known
               and then Left_Value.Value = Right_Value.Value
@@ -629,13 +691,13 @@ package body Adalang_Analyzer.Flow_Domain is
             Other_Bool  : constant Abstract_Bool :=
               Flow_Bool_Lookup (Right, Item.Decl);
             Other_Range : constant Abstract_Range :=
-              Flow_Range_Lookup (Right, Item.Decl);
+              Stored_Range (Right, Item.Decl);
          begin
             if Item.Value /= Other_Value
               or else Item.Bool_Value /= Other_Bool
               or else Item.Range_Value /= Other_Range
               or else Item.Initialized /=
-                Flow_Initialization (Right, Item.Decl)
+                Stored_Initialization (Right, Item.Decl)
             then
                return False;
             end if;
@@ -656,9 +718,9 @@ package body Adalang_Analyzer.Flow_Domain is
             Next_Bool  : constant Abstract_Bool :=
               Flow_Bool_Lookup (Next, Item.Decl);
             Next_Range : constant Abstract_Range :=
-              Flow_Range_Lookup (Next, Item.Decl);
+              Stored_Range (Next, Item.Decl);
             Next_Init  : constant Abstract_Bool :=
-              Flow_Initialization (Next, Item.Decl);
+              Stored_Initialization (Next, Item.Decl);
             Wide       : Abstract_Range;
          begin
             if Item.Value.Known

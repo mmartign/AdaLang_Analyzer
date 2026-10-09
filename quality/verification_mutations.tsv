@@ -199,3 +199,16 @@ length-stale-declaration	tests/verification_length_check_state.adb	length-check	
 length-stale-variable	tests/verification_length_check_state.adb	length-check	From (1 .. Limit)	unproved	a variable that has changed since it was given the value of another is no longer that value
 length-stale-subtype	tests/verification_length_check_state.adb	length-check	Kept	unproved	a subtype keeps the bounds it was elaborated with
 length-slice-of-constrained	tests/verification_length_check.adb	length-check	Part (1 .. Count)	unproved	a slice of an array of a constrained subtype has the length of its range, not that of the subtype
+standing-natural-constant	tests/verification_standing_values.adb	division-by-zero	Spare	unproved	a constant of subtype Natural is within its subtype, which has zero
+standing-natural-formal	tests/verification_standing_values.adb	division-by-zero	Count	unproved	a generic formal object of subtype Natural can be given zero
+standing-variable	tests/verification_standing_values.adb	division-by-zero	Shared	unproved	a variable of subtype Positive declared outside the subprogram is not a constant: it is not known to hold a value
+standing-in-out-formal	tests/verification_standing_values.adb	division-by-zero	Level	unproved	a generic formal object of mode in out names a variable
+standing-aliased-constant	tests/verification_standing_values.adb	division-by-zero	Anchor	unproved	an aliased constant can be reached without being named
+standing-variable-after-call	tests/verification_standing_values.adb	assertion	Mark = 5	unproved	a call whose effects are not known may change a variable, though it changes no constant
+standing-block-constant	tests/verification_standing_values.adb	assertion	Seen = 0	unproved	a constant of a block in a loop is declared again each time round
+standing-next-round	tests/verification_standing_values.adb	assertion	Held <= 5	unproved	what one round of a loop found of its constant is not true of the constant of the next
+standing-loop-parameter	tests/verification_standing_values.adb	assertion	Turn <= 6	unproved	what one round of a loop found of its parameter is not true in the next
+quantifier-past-range	tests/verification_standing_values.adb	index-check	Next + 1	unproved	one past the parameter of a quantified expression is one past its range
+loop-wider-type	tests/verification_standing_values.adb	range-check	Step	unproved	the parameter of a loop over a wider type is within that type, not within the index type
+quantifier-wider-type	tests/verification_standing_values.adb	range-check	Far	unproved	the parameter of a quantified expression over a wider type is within that type
+named-number-product	tests/verification_standing_values.adb	integer-overflow	Huge * Both	unproved	a named number of 2**62 times a sum of up to 2000 does not fit in 64 bits
