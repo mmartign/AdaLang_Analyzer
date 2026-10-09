@@ -212,3 +212,24 @@ quantifier-past-range	tests/verification_standing_values.adb	index-check	Next + 
 loop-wider-type	tests/verification_standing_values.adb	range-check	Step	unproved	the parameter of a loop over a wider type is within that type, not within the index type
 quantifier-wider-type	tests/verification_standing_values.adb	range-check	Far	unproved	the parameter of a quantified expression over a wider type is within that type
 named-number-product	tests/verification_standing_values.adb	integer-overflow	Huge * Both	unproved	a named number of 2**62 times a sum of up to 2000 does not fit in 64 bits
+out-actual-return-in-loop	tests/verification_fp117_unwritten_out.adb	initialization-check	Looped	unproved	the callee returns from a loop before it writes its out parameter (FP-117)
+out-actual-goto-past-write	tests/verification_fp117_unwritten_out.adb	initialization-check	Jumped	unproved	a goto in the callee passes the write of its out parameter (FP-117)
+out-actual-return-in-block	tests/verification_fp117_unwritten_out.adb	initialization-check	Blocked	unproved	the callee returns from a block before it writes its out parameter (FP-117)
+out-actual-handled-raise	tests/verification_fp117_unwritten_out.adb	initialization-check	Swallowed	definite-error	a handler of a block ends what was raised before the write of the out parameter (FP-117)
+out-actual-never-written-value	tests/verification_mutation_call_actuals.adb	assertion	Stale = 5	unproved	an out actual does not keep the value it had when the callee never writes the parameter (FP-117)
+out-actual-never-written	tests/verification_mutation_call_actuals.adb	initialization-check	Stale	definite-error	an out actual has no value after a callee that never writes the parameter (FP-117)
+function-out-actual-never-written	tests/verification_mutation_call_actuals.adb	initialization-check	Taken	definite-error	an out actual of a function that never writes it has no value after the call (FP-117)
+out-actual-dispatching	tests/verification_mutation_call_actuals.adb	initialization-check	Dispatched	unsupported	a dispatching call may run an overriding body that does not write the out parameter
+completed-function-other-object	tests/verification_fp118_completed_function.adb	precondition	Need (Other)	unproved	what holds of one record says nothing of another passed to the same completed function (FP-118)
+completed-function-other-number	tests/verification_fp118_completed_function.adb	precondition	Need_Low (Other_N)	unproved	what holds of one number says nothing of another passed to the same completed function (FP-118)
+completed-function-default	tests/verification_fp118_completed_function.adb	precondition	Need_Single (Doubled)	unproved	a formal left to its default is not the one another call gives a value (FP-118)
+actual-bounds-outside-spark	tests/verification_mutation_call_actuals.adb	index-check	Given	unproved	after a call of code that is not SPARK the actual is not taken to be within the subtype of the parameter
+actual-bounds-loose-generic	tests/verification_mutation_call_actuals.adb	index-check	Loosened	unproved	a generic unit instantiated outside SPARK code is not SPARK code
+in-out-actual-value	tests/verification_mutation_call_actuals.adb	assertion	Carried = 5	unproved	an in out actual is still initialized after the call and no longer has its value
+in-out-actual-unset	tests/verification_mutation_call_actuals.adb	index-check	Unset	unproved	an in out actual that was not initialized before the call is not known to be after it
+component-outside-spark	tests/verification_mutation_call_actuals.adb	index-check	C.Count	unproved	outside SPARK code a component is not taken to be within its subtype
+component-half-subtype	tests/verification_mutation_call_actuals.adb	assertion	C.Count <= 50	unproved	a component within its subtype is not within half of it
+call-outside-object	tests/verification_mutation_call_actuals.adb	division-by-zero	Shared	unproved	a call of unknown effects may write an object declared outside the subprogram
+call-handed-local-code	tests/verification_mutation_call_actuals.adb	division-by-zero	Reached	unproved	a callee declared outside is handed a nested procedure that clears the local object
+widened-past-index	tests/verification_mutation_call_actuals.adb	index-check	Far	unproved	a loop takes the object past the index range, within its own subtype
+call-given-address	tests/verification_mutation_call_actuals.adb	assertion	Counted = 0	unproved	a callee given the address of a local object writes it without naming it

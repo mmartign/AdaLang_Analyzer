@@ -3553,6 +3553,54 @@ package body Adalang_Analyzer.Flow_Eval is
          return Nothing_Standing;
    end Decided_Standing_Fact;
 
+   function Declared_Range
+     (Key : Libadalang.Analysis.Ada_Node) return Abstract_Range
+   is
+      Decl      : Libadalang.Analysis.Basic_Decl;
+      Type_Expr : Libadalang.Analysis.Type_Expr;
+      Typ       : Libadalang.Analysis.Base_Type_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Key)
+        or else Key.Kind /= Libadalang.Common.Ada_Defining_Name
+      then
+         return Unknown_Range;
+      end if;
+
+      Decl := Key.As_Defining_Name.P_Basic_Decl;
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return Unknown_Range;
+      elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+         Type_Expr := Decl.As_Param_Spec.F_Type_Expr;
+      elsif Decl.Kind = Libadalang.Common.Ada_Component_Decl then
+         Type_Expr := Decl.As_Component_Decl.F_Component_Def.F_Type_Expr;
+      elsif Decl.Kind = Libadalang.Common.Ada_Object_Decl
+        and then Libadalang.Analysis.Is_Null
+          (Decl.As_Object_Decl.F_Renaming_Clause)
+      then
+         Type_Expr := Decl.As_Object_Decl.F_Type_Expr;
+      else
+         return Unknown_Range;
+      end if;
+
+      Typ := Type_Expr.P_Designated_Type_Decl;
+      if Libadalang.Analysis.Is_Null (Typ) or else not Typ.P_Is_Scalar_Type
+      then
+         return Unknown_Range;
+      end if;
+
+      declare
+         Constraint : constant Subtype_Constraint :=
+           Declared_Constraint (Type_Expr, Empty_Flow_State);
+      begin
+         return
+           (if Constraint.Present then Constraint.Bounds
+            else Type_Range (Typ, Empty_Flow_State));
+      end;
+   exception
+      when others =>
+         return Unknown_Range;
+   end Declared_Range;
+
    function Standing_Fact_Of
      (Key : Libadalang.Analysis.Ada_Node) return Standing_Fact
    is

@@ -58,6 +58,34 @@ package Adalang_Analyzer.Subprogram_Summaries is
       Formal : Libadalang.Analysis.Defining_Name'Class) return Boolean;
    --  The latter is deliberately narrower than mode `out`: it is true only
    --  when the registered body establishes a write on every normal return.
+   --  That is read from the statements of the body alone, so it holds
+   --  whether or not the other effects of the body are known. It is the
+   --  body of the subprogram the call names: a dispatching call may run
+   --  another, and the caller has to leave those out.
+
+   --  A generic unit has no SPARK_Mode of its own unless it says so: it has
+   --  that of the place it is instantiated in. The instantiations Scan_Unit
+   --  meets are kept, each with the generic unit it is of, whether it is
+   --  under an explicit SPARK_Mode, and the generic unit it is itself part
+   --  of, if any.
+
+   type Mode_Oracle is access function
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
+
+   procedure Set_SPARK_Mode_Oracle (Oracle : Mode_Oracle);
+   --  Oracle says whether a declaration is under an explicit SPARK_Mode
+   --  (On). Without one no instantiation is taken to be.
+
+   function Generic_Unit_Key
+     (Node : Libadalang.Analysis.Ada_Node'Class) return String;
+   --  A key for the generic unit Node is part of, its declaration or its
+   --  body; "" when it is part of none.
+
+   function Instantiated_In_SPARK (Key : String) return Boolean;
+   --  True when the generic unit of that key is instantiated in the units
+   --  of this run, and every one of its instantiations there is under an
+   --  explicit SPARK_Mode or part of a generic unit of which the same
+   --  holds.
 
    function Count return Natural;
 

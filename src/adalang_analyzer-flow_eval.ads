@@ -309,6 +309,14 @@ package Adalang_Analyzer.Flow_Eval is
    --  designated subtype, or of the object it renames. A Property_Error
    --  from resolving the type of Dest propagates.
 
+   function Declared_Range
+     (Key : Libadalang.Analysis.Ada_Node) return Abstract_Range;
+   --  The range of the scalar subtype that the object, the parameter or
+   --  the record component whose defining name is Key is declared with, as
+   --  far as it is fixed whatever the state: a side is absent where it is
+   --  not. Unknown_Range for anything else, and for an object that renames
+   --  another.
+
    function Safe_Add
      (Left : Long_Long_Integer; Right : Long_Long_Integer) return Abstract_Int;
 

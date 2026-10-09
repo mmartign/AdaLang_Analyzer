@@ -208,6 +208,82 @@ What is not one of them:
   state of their own;
 - the parameter of `for E of A`, which names a component.
 
+## What a call leaves known of its actuals
+
+An actual of a parameter the callee can write loses its value at the call:
+every object named in it does. Whether it is still known to be initialized
+goes by the mode of the parameter.
+
+- An `in out` actual that was initialized before the call is initialized
+  after it. The parameter comes back as it went in or as the callee
+  assigned it, and an assignment initializes. One that was not known to be
+  initialized is not known to be afterwards.
+- An `out` actual is initialized after the call where the callee writes
+  the parameter on every path that returns. That is read from the
+  statements of the callee's body when the body is one of the units of the
+  run: an assignment to the whole parameter, or a call that passes it on
+  to such a callee, on every branch of the `if` and `case` statements and
+  of the blocks without handlers that lead to each return. A write inside
+  a loop, or inside a block that has handlers, is not counted; a `return`
+  or a `goto` inside one, before the parameter is written, means the body
+  does not show it. This holds whatever else the body does.
+- An `out` actual is also initialized after the call of a callee that is
+  *SPARK code* (below), unless its body is in sight and never writes the
+  parameter. SPARK requires an `out` parameter to be initialized when the
+  subprogram returns. That is the callee's own obligation: `--verify`
+  raises it at the parameter when it verifies the callee's body, and
+  GNATprove reports it there.
+- An `out` actual of a callee whose body is in sight and never writes the
+  parameter comes back as the parameter was when the callee was entered:
+  without a value, when it is of a scalar type. What it held before the
+  call is gone.
+- A dispatching call may run a body other than the one it names: nothing
+  is taken from the body it names.
+
+After the call of a callee that is SPARK code, a scalar object that is the
+actual of an `out` or `in out` parameter, and is initialized, is within the
+subtype of that parameter, as far as its bounds are static. The value is
+the one the parameter had when the callee returned: one the call gave it,
+converted to the subtype of the parameter with the check a conversion has,
+or one the callee assigned to it, checked against that subtype where it was
+assigned. Both are the callee's obligations and the caller's. Nothing more
+is known of the value from here; the postcondition of the callee says more
+where it has one (see "The postcondition of a callee").
+
+### SPARK code
+
+A declaration is SPARK code when it is under an explicit `SPARK_Mode` that
+is not `Off` -- its own, that of a unit that encloses it, a pragma before
+the compilation unit, or the configuration pragmas of its project. A child
+unit does not have the mode of its parent.
+
+A generic unit that sets no `SPARK_Mode` has that of each place it is
+instantiated in, which is how GNATprove analyzes it. `--verify` analyzes
+the generic unit itself, once: its declarations are SPARK code when the
+units of the run instantiate it at least once, and every instantiation is
+under an explicit `SPARK_Mode` or is part of a generic unit of which the
+same holds. The actual of a formal package is not an instantiation. An
+instantiation in a unit that is not part of the run is not seen.
+
+### Components of a record in SPARK code
+
+In a subprogram that is SPARK code, a scalar component of a record object
+that is initialized is within the subtype the component is declared with,
+as far as its bounds are static. SPARK requires an object that is read to
+be initialized in all its parts, and no value in SPARK code is an invalid
+one; every assignment to the component was checked against that subtype.
+Outside SPARK code nothing is taken of a component beyond what the
+symbolic state holds of it: a record there may have been given a value by
+an unchecked conversion, by code in another language, or by an aggregate
+that leaves a component to a default it does not have.
+
+A verdict that uses the subtype of an actual or of a component holds for
+the executions in which those earlier checks did not fail and the callee,
+or the code that built the record, kept the rules of SPARK. `--verify`
+does not check those rules where the body is not part of the run; a
+project that gives SPARK_Mode to code that does not keep them has to
+discount what is proved from them.
+
 ## Objects and effects the analysis does not follow
 
 A fact about an object is kept only while nothing but the object's own name
@@ -249,8 +325,21 @@ the direct name, for reads and writes alike.
   state is dropped as well. A call that evaluates a default expression
   which changes state is such a call.
 - A procedure call drops every fact when what the callee does is not
-  known: no effect summary of its body, no `Global` aspect, a callee
-  declared inside the subprogram under analysis, a dispatching call. What
+  known -- no effect summary of its body, no `Global` aspect, a dispatching
+  call -- and the callee can reach the objects of the subprogram under
+  analysis: it is declared inside that subprogram; or that subprogram
+  declares code of its own, which the callee could be handed and run -- a
+  nested subprogram, an instance of a generic, a package, a task or a
+  protected object; or that subprogram takes an access value to something
+  or the address of something, anywhere in it (`'Access`,
+  `'Unchecked_Access`, `'Unrestricted_Access`, `'Address`), which a callee
+  that is given it, then or earlier, writes through without naming the
+  object. A callee declared outside a subprogram that does none of this
+  cannot name what is declared in it: the objects of that subprogram
+  stand, value and initialization, except those the call is given as
+  actuals (see "What a call leaves known of its actuals") and those that
+  can change without being named (aliased, volatile, with an address);
+  every object declared elsewhere loses what was known of it. What
   always holds of an object is no such fact, and stands (see "Objects that
   always hold a value").
   When it is known, the *call frame* stands: what the symbolic state says
@@ -313,6 +402,19 @@ then no fact about the old value says anything of the new one:
   call frame above);
 - a loop, a join of paths that disagree and an exception handler keep what
   they keep of any other symbolic fact.
+
+A call that is translated through the body of an expression function and
+is also a function of its arguments is said to be both: the function term
+has, for those arguments, the value the body has. What a contract says of
+the call where the body could not be used -- a record that was not known to
+be initialized there -- then holds of it where the body is used, and the
+other way round.
+
+The expression of an expression function that completes an earlier
+declaration names the formals of the completion, and a call written before
+the completion names those of the declaration: each actual is bound to the
+formal the expression names. A call that leaves a formal to its default is
+not translated through the body.
 
 A function that is not a function of its arguments is no term: the check
 that depends on it is `Unproved`, with the reason the callee could not be
@@ -462,7 +564,11 @@ label, so what holds there is what holds on every way in; a `goto` back up
 to a label makes a cycle that no loop statement heads, and puts the
 subprogram outside the subset, as SPARK itself excludes it. A loop
 invariant is not proved preserved by a body that has a `goto` on the way to
-its end. Fixed-point iteration widens growing loop ranges.
+its end. Fixed-point iteration widens growing loop ranges: a bound that a
+loop keeps moving is given up, after it has first been taken to the bound
+of the subtype the object is declared with, where that is static and the
+bound has not passed it. The iteration goes on from there, so the wider
+range stands only if the body of the loop keeps to it.
 A subprogram with an incomplete or malformed CFG cannot yield a proof based on
 that boundary. If the fixed-point run itself fails (for example on a
 Libadalang property error), every obligation of that subprogram is

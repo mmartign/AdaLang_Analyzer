@@ -394,6 +394,26 @@ package body Adalang_Analyzer.VC_Prover is
       return 0;
    end Root_Index;
 
+   Component_Subtypes_Hold : Boolean := False;
+
+   procedure Assume_Component_Subtypes (Enabled : Boolean) is
+   begin
+      Component_Subtypes_Hold := Enabled;
+   end Assume_Component_Subtypes;
+
+   --  The bounds of the root for a scalar component of a record object:
+   --  where Assume_Component_Subtypes says so, those of the subtype the
+   --  component is declared with, as far as they are fixed whatever the
+   --  state. A root for the value of a whole object (Value_Key) has none.
+   function Component_Bounds (Key : Symbol_Key) return Domain.Abstract_Range
+   is
+   begin
+      if not Component_Subtypes_Hold or else Key.Component = Key.Object then
+         return Domain.Unknown_Range;
+      end if;
+      return Eval.Declared_Range (Key.Component);
+   end Component_Bounds;
+
    procedure Add_Root
      (State           : in out Symbolic_State;
       Name            : String;
@@ -419,7 +439,7 @@ package body Adalang_Analyzer.VC_Prover is
          elsif Explicit_Bounds.Has_Low or else Explicit_Bounds.Has_High
            then Explicit_Bounds
          elsif not Libadalang.Analysis.Is_Null (Key.Component)
-           then Domain.Unknown_Range
+           then Component_Bounds (Key)
          else Domain.Flow_Range_Lookup (Flow, Key.Object));
       Has_Low     : constant Boolean :=
         Sort in Integer_Sort | Enum_Sort and then Range_Value.Has_Low;
@@ -2213,6 +2233,42 @@ package body Adalang_Analyzer.VC_Prover is
 
       declare
          Callee : Translation_Context := Context;
+         Bound  : Natural := 0;
+
+         --  The formal the body is written with. A call that is resolved
+         --  to a declaration the expression function completes gives the
+         --  formals of that declaration, and the expression names those of
+         --  the completion: what a formal is bound to has to be bound to
+         --  the one the expression names, or it reads there as an object
+         --  nothing is known of, and the same one at every call (FP-118).
+         function Own_Formal
+           (Formal : Libadalang.Analysis.Defining_Name'Class)
+            return Libadalang.Analysis.Ada_Node
+         is
+            Name : constant String :=
+              Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                (Adalang_Analyzer.Ada_Text.Node_Text (Formal));
+         begin
+            for Param of Decl.As_Expr_Function.F_Subp_Spec.P_Params loop
+               for Id of Param.F_Ids loop
+                  if Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                       (Adalang_Analyzer.Ada_Text.Node_Text (Id)) = Name
+                  then
+                     return Libadalang.Analysis.Ada_Node (Id);
+                  end if;
+               end loop;
+            end loop;
+            return Libadalang.Analysis.No_Ada_Node;
+         end Own_Formal;
+
+         function Formal_Count return Natural is
+            Result : Natural := 0;
+         begin
+            for Param of Decl.As_Expr_Function.F_Subp_Spec.P_Params loop
+               Result := Result + Param.F_Ids.Children_Count;
+            end loop;
+            return Result;
+         end Formal_Count;
       begin
          Callee.Depth := Context.Depth + 1;
          Callee.Inlining_Path := Appended_Path (Context.Inlining_Path, Call);
@@ -2223,12 +2279,19 @@ package body Adalang_Analyzer.VC_Prover is
                  Libadalang.Analysis.Param (Pair);
                Actual : constant Libadalang.Analysis.Expr'Class :=
                  Libadalang.Analysis.Actual (Pair);
+               Named  : constant Libadalang.Analysis.Ada_Node :=
+                 Own_Formal (Formal);
             begin
                if Formal_Is_Writable (Formal) then
                   Mark_Unsupported (Callee, Call, Writable_Formal);
                   Copy_Failure (Context, Callee);
                   return Null_Unbounded_String;
+               elsif Libadalang.Analysis.Is_Null (Named) then
+                  Mark_Unsupported (Callee, Call, Unsupported_Call);
+                  Copy_Failure (Context, Callee);
+                  return Null_Unbounded_String;
                end if;
+               Bound := Bound + 1;
 
                if Formal_Is_Record (Formal) then
                   --  A record has no scalar SMT term of its own. For the
@@ -2254,9 +2317,7 @@ package body Adalang_Analyzer.VC_Prover is
                         Copy_Failure (Context, Callee);
                         return Null_Unbounded_String;
                      end if;
-                     Set_Object_Binding
-                       (Callee, Libadalang.Analysis.Ada_Node (Formal),
-                        Actual_Key);
+                     Set_Object_Binding (Callee, Named, Actual_Key);
                   end;
                else
                   declare
@@ -2289,8 +2350,7 @@ package body Adalang_Analyzer.VC_Prover is
 
                      Set_Binding
                        (Callee.Symbols,
-                        (Key  => Plain_Key
-                           (Libadalang.Analysis.Ada_Node (Formal)),
+                        (Key  => Plain_Key (Named),
                          Sort => Formal_Sort_Info.Sort,
                          Term => Term));
                   end;
@@ -2300,10 +2360,16 @@ package body Adalang_Analyzer.VC_Prover is
                --  translation both require the formal to be initialized in
                --  the callee's scratch flow state.
                Domain.Flow_Set_Initialized
-                 (Callee.State, Libadalang.Analysis.Ada_Node (Formal),
-                  Domain.Bool_True);
+                 (Callee.State, Named, Domain.Bool_True);
             end;
          end loop;
+
+         --  A formal the call leaves to its default is bound to nothing.
+         if Bound /= Formal_Count then
+            Mark_Unsupported (Callee, Call, Unsupported_Call);
+            Copy_Failure (Context, Callee);
+            return Null_Unbounded_String;
+         end if;
 
          --  The actuals were translated in the caller's context: a symbol
          --  one of them is the first to use is declared there, and the
@@ -2687,6 +2753,32 @@ package body Adalang_Analyzer.VC_Prover is
    begin
       if Inlined.Supported and then Length (Result) > 0 then
          Context := Inlined;
+
+         --  Where the call is also a function of its arguments, the
+         --  function symbol has, for these arguments, the value its body
+         --  has: said once, so that what is known of the call in one form
+         --  -- a contract translated where the body could not be used --
+         --  is known of it in the other.
+         declare
+            Applied : Translation_Context := Context;
+            Term    : constant Unbounded_String :=
+              Applied_Call_Term (Call, Applied, Sort);
+            Link    : Unbounded_String;
+            Linked  : Boolean := False;
+         begin
+            if Applied.Supported and then Length (Term) > 0
+              and then Term /= Result
+            then
+               Link := "(= " & Term & " " & Result & ")";
+               Context := Applied;
+               for Item of Context.Symbols.Assumptions loop
+                  Linked := Linked or else Item = Link;
+               end loop;
+               if not Linked then
+                  Context.Symbols.Assumptions.Append (Link);
+               end if;
+            end if;
+         end;
          return Result;
       elsif not Context.Supported then
          return Null_Unbounded_String;

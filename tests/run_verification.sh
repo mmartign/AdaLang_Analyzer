@@ -109,6 +109,9 @@ length_limits=$(mktemp "${TMPDIR:-/tmp}/adalang-length-limits.XXXXXX")
 length_check=$(mktemp "${TMPDIR:-/tmp}/adalang-length-check.XXXXXX")
 length_check_state=$(mktemp "${TMPDIR:-/tmp}/adalang-length-check-state.XXXXXX")
 standing_values=$(mktemp "${TMPDIR:-/tmp}/adalang-standing-values.XXXXXX")
+fp117=$(mktemp "${TMPDIR:-/tmp}/adalang-fp117.XXXXXX")
+fp118=$(mktemp "${TMPDIR:-/tmp}/adalang-fp118.XXXXXX")
+call_actuals=$(mktemp "${TMPDIR:-/tmp}/adalang-call-actuals.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -139,7 +142,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2212,5 +2215,65 @@ for operation in 'Seen = 0' 'Held <= 5' 'Turn <= 6' 'Mark = 5'; do
 done
 must_not_prove "$standing_values" integer-overflow 'Huge * Both' \
   "the range of a named number"
+
+# FP-117: an out actual was initialized after a call whose callee returns
+# without writing the parameter -- from a loop, from a block, past the
+# write by a goto, or after a handler ended what was raised before it.
+run_json "$fp117" tests/verification_fp117_unwritten_out.adb
+for operation in Looped Jumped Blocked Swallowed; do
+   must_not_prove "$fp117" initialization-check "$operation" FP-117
+done
+must_prove "$fp117" initialization-check Whole flow-analysis FP-117
+
+# FP-118: an expression function that completes an earlier declaration was
+# translated with the formals of the declaration bound and those its
+# expression names left to themselves, so that a contract about one object
+# held for every object. A formal the call leaves to its default is bound
+# to nothing either.
+run_json_pair "$fp118" tests/verification_fp118_completed_function
+for operation in 'Need (Other)' 'Need_Low (Other_N)' 'Need_Single (Doubled)'
+do
+   must_not_prove "$fp118" precondition "$operation" FP-118
+done
+for operation in 'Need (Known)' 'Need_Low (Known_N)'; do
+   must_prove "$fp118" precondition "$operation" external-prover FP-118
+done
+
+# What a call leaves known. An in out actual that was initialized is so
+# after the call, and an out actual where the callee writes its parameter
+# on every path: as its statements show, or as SPARK asks of a callee that
+# is SPARK code. After a call of SPARK code a scalar actual is within the
+# subtype of the parameter, and in SPARK code a scalar component of a
+# record is within its subtype. A generic unit is SPARK code where every
+# instantiation of it is. A callee declared outside a subprogram that
+# declares no code leaves that subprogram's objects alone. A bound a loop
+# moves is taken to that of the object's subtype before it is given up.
+run_json_pair "$call_actuals" tests/verification_call_actuals
+for operation in Given Bumped Started Fresh Carried Apart; do
+   must_prove "$call_actuals" initialization-check "$operation" \
+     flow-analysis "the actual of a call"
+done
+for operation in Started Fresh Carried; do
+   must_prove "$call_actuals" index-check "$operation" \
+     abstract-interpretation "the actual of a call to SPARK code"
+done
+must_prove "$call_actuals" division-by-zero Apart abstract-interpretation \
+  "an object a call cannot reach"
+for operation in C.Count C.Step; do
+   must_prove "$call_actuals" index-check "$operation" external-prover \
+     "a component of a record in SPARK code"
+done
+must_prove "$call_actuals" index-check Turn abstract-interpretation \
+  "a loop bound within the declared subtype"
+# Outside SPARK code the actual is initialized and nothing more.
+must_not_prove "$call_actuals" range-check Given "the actual of a call"
+# An object a callee is given an access value to is not one the call
+# cannot reach: it is not known to be initialized, nor known not to be.
+must_not_prove "$call_actuals" initialization-check Told \
+  "an object a call cannot reach"
+if grep -F '"status": "definite-error"' "$call_actuals" >/dev/null; then
+   echo "the actual of a call: a definite error where nothing is wrong" >&2
+   exit 1
+fi
 
 echo "bounded verification tests passed"

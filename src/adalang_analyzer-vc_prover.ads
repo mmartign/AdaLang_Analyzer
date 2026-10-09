@@ -167,6 +167,13 @@ package Adalang_Analyzer.VC_Prover is
 
    procedure Set_Function_Oracle (Oracle : Function_Oracle);
 
+   procedure Assume_Component_Subtypes (Enabled : Boolean);
+   --  From here on a symbol for a scalar component of a record object is,
+   --  or is not, within the subtype the component is declared with. It is
+   --  in SPARK code, where an object that is read is initialized in all
+   --  its parts and holds no invalid value; elsewhere only what the state
+   --  holds is known of a component.
+
    function Forget_Composite_Values
      (State  : Symbolic_State;
       Writer : Libadalang.Analysis.Ada_Node'Class) return Symbolic_State;

@@ -54,10 +54,131 @@ package body Adalang_Analyzer.Subprogram_Summaries is
 
    Summaries : Summary_Vectors.Vector;
 
+   type Instantiation is record
+      Unit      : Unbounded_String;
+      Explicit  : Boolean := False;
+      Enclosing : Unbounded_String;
+   end record;
+
+   package Instantiation_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Instantiation);
+
+   Instantiations : Instantiation_Vectors.Vector;
+   Under_SPARK    : Mode_Oracle := null;
+
    procedure Reset is
    begin
       Summaries.Clear;
+      Instantiations.Clear;
    end Reset;
+
+   procedure Set_SPARK_Mode_Oracle (Oracle : Mode_Oracle) is
+   begin
+      Under_SPARK := Oracle;
+   end Set_SPARK_Mode_Oracle;
+
+   --  The key of a generic declaration: where it is.
+   function Key_Of (Unit : Libadalang.Analysis.Ada_Node'Class) return String
+   is
+   begin
+      return Unit.Unit.Get_Filename & ":" &
+        Unit.Sloc_Range.Start_Line'Image & ":" &
+        Unit.Sloc_Range.Start_Column'Image;
+   end Key_Of;
+
+   --  The generic declaration Decl is, or is the inner part of; null
+   --  otherwise.
+   function Generic_Of
+     (Decl : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node is
+   begin
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return Libadalang.Analysis.No_Ada_Node;
+      elsif Decl.Kind in Libadalang.Common.Ada_Generic_Decl then
+         return Libadalang.Analysis.Ada_Node (Decl);
+      elsif not Libadalang.Analysis.Is_Null (Decl.Parent)
+        and then Decl.Parent.Kind in Libadalang.Common.Ada_Generic_Decl
+      then
+         return Decl.Parent;
+      end if;
+      return Libadalang.Analysis.No_Ada_Node;
+   end Generic_Of;
+
+   function Generic_Unit_Key
+     (Node : Libadalang.Analysis.Ada_Node'Class) return String
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Node);
+      Unit    : Libadalang.Analysis.Ada_Node;
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         Unit := Generic_Of (Current);
+         if Libadalang.Analysis.Is_Null (Unit)
+           and then Current.Kind in Libadalang.Common.Ada_Package_Body
+                                  | Libadalang.Common.Ada_Subp_Body
+         then
+            Unit :=
+              Generic_Of
+                (Current.As_Body_Node.P_Decl_Part
+                   (Imprecise_Fallback => True));
+         end if;
+         if not Libadalang.Analysis.Is_Null (Unit) then
+            return Key_Of (Unit);
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return "";
+   exception
+      when others =>
+         return "";
+   end Generic_Unit_Key;
+
+   --  An instantiation named as the actual of a formal package is none.
+   procedure Register_Instantiation
+     (Node : Libadalang.Analysis.Generic_Instantiation)
+   is
+      Unit : Libadalang.Analysis.Ada_Node;
+   begin
+      if Node.Parent.Kind = Libadalang.Common.Ada_Generic_Formal_Package then
+         return;
+      end if;
+      Unit := Generic_Of (Node.P_Designated_Generic_Decl);
+      if Libadalang.Analysis.Is_Null (Unit) then
+         return;
+      end if;
+      Instantiations.Append
+        ((Unit      => To_Unbounded_String (Key_Of (Unit)),
+          Explicit  => Under_SPARK /= null and then Under_SPARK (Node),
+          Enclosing => To_Unbounded_String (Generic_Unit_Key (Node.Parent))));
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping an instantiation: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Register_Instantiation;
+
+   function Instantiated_In_SPARK (Key : String) return Boolean is
+      function Decided (Unit : String; Depth : Natural) return Boolean is
+         Found : Boolean := False;
+      begin
+         if Unit = "" or else Depth > 8 then
+            return False;
+         end if;
+         for Item of Instantiations loop
+            if To_String (Item.Unit) = Unit then
+               Found := True;
+               if not Item.Explicit
+                 and then not Decided (To_String (Item.Enclosing), Depth + 1)
+               then
+                  return False;
+               end if;
+            end if;
+         end loop;
+         return Found;
+      end Decided;
+   begin
+      return Decided (Key, 0);
+   end Instantiated_In_SPARK;
 
    function Declaration_Name
      (Decl : Libadalang.Analysis.Basic_Decl) return String
@@ -525,6 +646,9 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       if Libadalang.Analysis.Is_Null (Node) then
          return;
       end if;
+      if Node.Kind in Libadalang.Common.Ada_Generic_Instantiation then
+         Register_Instantiation (Node.As_Generic_Instantiation);
+      end if;
       if Node.Kind = Libadalang.Common.Ada_Subp_Body then
          Register_Body (Node.As_Subp_Body);
       end if;
@@ -603,9 +727,7 @@ package body Adalang_Analyzer.Subprogram_Summaries is
    is
       Summary_Index : constant Natural := Callee_Index (Call);
    begin
-      if Summary_Index = 0
-        or else not Summaries (Summary_Index).Effects_Complete
-      then
+      if Summary_Index = 0 or else Call.P_Is_Dispatching_Call then
          return False;
       end if;
 
@@ -637,12 +759,46 @@ package body Adalang_Analyzer.Subprogram_Summaries is
          return False;
    end Call_Definitely_Writes;
 
+   --  True when a return or a goto statement lies under Node and belongs
+   --  to the subprogram Node is a statement of: one inside a body declared
+   --  there is that body's own.
+   function Leaves_From_Within
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind in Libadalang.Common.Ada_Body_Node
+      then
+         return False;
+      elsif Node.Kind in Libadalang.Common.Ada_Return_Stmt
+                       | Libadalang.Common.Ada_Extended_Return_Stmt
+                       | Libadalang.Common.Ada_Goto_Stmt
+      then
+         return True;
+      end if;
+      for Index in 1 .. Node.Children_Count loop
+         if Leaves_From_Within (Node.Child (Index)) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Leaves_From_Within;
+
    function Statement_Initialization
      (Node       : Libadalang.Analysis.Ada_Node'Class;
       Formal     : Libadalang.Analysis.Defining_Name;
       Initial    : Boolean;
       Bad_Return : in out Boolean) return Initialization_Result
    is
+      --  A statement this walk does not follow inside -- a loop, a block
+      --  with handlers, an accept or a select statement -- is taken to
+      --  write nothing. A return inside it ends the subprogram there, and a
+      --  goto inside it can pass over the writes that follow (FP-117).
+      procedure Note_What_Leaves is
+      begin
+         if not Initial and then Leaves_From_Within (Node) then
+            Bad_Return := True;
+         end if;
+      end Note_What_Leaves;
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return (True, Initial);
@@ -672,8 +828,12 @@ package body Adalang_Analyzer.Subprogram_Summaries is
             Bad_Return := Bad_Return or else not Initial;
             return (False, Initial);
 
-         when Libadalang.Common.Ada_Raise_Stmt
-            | Libadalang.Common.Ada_Goto_Stmt =>
+         when Libadalang.Common.Ada_Raise_Stmt =>
+            return (False, Initial);
+
+         when Libadalang.Common.Ada_Goto_Stmt =>
+            --  Where it goes, the writes passed over have not been made.
+            Bad_Return := Bad_Return or else not Initial;
             return (False, Initial);
 
          when Libadalang.Common.Ada_If_Stmt =>
@@ -724,11 +884,19 @@ package body Adalang_Analyzer.Subprogram_Summaries is
             end;
 
          when Libadalang.Common.Ada_Decl_Block =>
+            --  A handler of the block can end what was raised in it: the
+            --  statements after the block are then reached all the same.
+            if Node.As_Decl_Block.F_Stmts.F_Exceptions.Children_Count > 0
+            then
+               Note_What_Leaves;
+               return (True, Initial);
+            end if;
             return List_Initialization
               (Node.As_Decl_Block.F_Stmts.F_Stmts, Formal, Initial,
                Bad_Return);
 
          when others =>
+            Note_What_Leaves;
             return (True, Initial);
       end case;
    exception
@@ -934,7 +1102,6 @@ package body Adalang_Analyzer.Subprogram_Summaries is
          else Formal_Index (Summary_Index, Formal));
    begin
       return Index /= 0
-        and then Summaries (Summary_Index).Effects_Complete
         and then Summaries (Summary_Index).Formals (Index).Definitely_Writes;
    end Callee_Formal_Definitely_Writes;
 

@@ -45,9 +45,72 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - A name whose value is known has that value as a range too: the product
   of a named number and a sum is decided by the interval analysis, without
   a solver.
+- What a call leaves known of its actuals (`--verify`). An `in out` actual
+  that was initialized before a call is initialized after it: until now
+  every actual of a parameter the callee can write lost its
+  initialization with its value, and every check written with it
+  afterwards was `Unproved`. An `out` actual is initialized after the call
+  where the callee writes the parameter on every path that returns, which
+  is read from the statements of its body whatever else that body does --
+  it used to be taken only from a body all of whose effects were known --
+  or where the callee is SPARK code, which is required to. After the call
+  of SPARK code a scalar actual that is initialized is within the subtype
+  of the parameter. These are the callee's obligations: `--verify` raises
+  them where it verifies the callee's body, and a verdict that uses them
+  holds if the callee keeps them. See "What a call leaves known of its
+  actuals" in `docs/src/supported-verification-subset.md`.
+- A scalar component of a record that is read in SPARK code is within the
+  subtype the component is declared with (`--verify`): `T (C.Count)` is
+  within an array indexed by the subtype of `Count`. Outside SPARK code a
+  component has only what the symbolic state holds of it, as before.
+- A generic unit that sets no `SPARK_Mode` is SPARK code where the units
+  of the run instantiate it and every instantiation is SPARK code, which
+  is how GNATprove analyzes it; a function, a callee or a record of such a
+  unit is treated accordingly by the two entries above. The other uses of
+  `SPARK_Mode` are unchanged.
+- A callee declared outside a subprogram cannot name what is declared in
+  it. A call whose effects are not known no longer drops what is known of
+  the objects of the subprogram under analysis, when that subprogram
+  declares no code of its own that the callee could be handed and run --
+  no nested subprogram, instance, package, task or protected object -- and
+  takes no access value to, and no address of, anything. It drops what is
+  known of every object declared elsewhere, of an object that can change
+  without being named, and of its actuals as above. Until now such a call
+  dropped everything, and a local variable was not even known to be
+  initialized after it.
+- A call translated through the body of an expression function is also
+  said to be the function term it would otherwise be, where it can be
+  both. A contract translated where the body could not be used then meets
+  a check translated where it is.
+- A loop bound that keeps moving is taken to the bound of the subtype the
+  object is declared with before it is given up, and the iteration goes on
+  from there: an object of subtype `Small` that a loop counts up stays
+  within `Small` where the body of the loop keeps it so.
 
 ### Fixed
 
+- `FP-117`, a false-safe of `--verify`, in 1.8.4 and before. An `out`
+  actual was taken to be initialized after a call whose callee has a path
+  that returns without writing the parameter: a `return` inside a loop or
+  a block statement, a `goto` past the write, or a block whose handler
+  ends what was raised before the write. A read of the actual after the
+  call was `Proved_Safe` for initialization. And an `out` actual of a
+  callee that never writes the parameter kept what the caller knew of it:
+  after `A := 5; Never (A);`, `pragma Assert (A = 5)` was proved, where `A`
+  has no value. The callee's own obligation was `Unproved` in each case;
+  the caller's was wrong. Such a read is now `Unproved`, or a
+  `Definite_Error` where the callee is known never to write the parameter.
+- `FP-118`, a false-safe of `--verify`, in 1.8.4. A function declared in
+  the visible part of a package and completed by an expression function
+  was translated with the formals of the declaration bound to the actuals,
+  while its expression names the formals of the completion: a formal read
+  there as an object nothing is known of, the same one at every call. With
+  `function Good (C : Context) return Boolean` completed by `is (Checked
+  (C))`, the precondition `Good (A)` of a subprogram proved the
+  precondition `Good (B)` of a callee, for another object `B`. Each actual
+  is now bound to the formal the expression names, and a call that leaves
+  a formal to its default is not translated through the body. On the five
+  fully proved corpora the correction takes no proof away.
 - An object first named as the actual of an inlined expression function
   was not declared in the query sent to the solvers, which rejected the
   query; the obligation was `Unproved`. Never a wrong verdict: a rejected
@@ -78,13 +141,14 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   obligation of the ten corpora does.
 
 Of the 15,043 checks GNATprove proves on the five fully proved corpora,
-`--verify` now proves 5,094 (4,757 in 1.8.4): 823 of the 2,938
-preconditions (687), 683 of the 809 division checks (643), 653 of the
-2,372 range checks (602), 151 of the 522 index checks (82) and 149 of the
-1,062 overflow checks (122). No check is proved that GNATprove does not
+`--verify` now proves 5,653 (4,757 in 1.8.4): 1,139 of the 1,703
+initializations (754), 854 of the 2,938 preconditions (687), 699 of the
+809 division checks (643), 689 of the 2,372 range checks (602), 188 of the
+1,062 overflow checks (122), 157 of the 311 length checks (129) and 151 of
+the 522 index checks (82). No check is proved that GNATprove does not
 prove, and none it proves is a definite error. On the ten corpora every
 preset reports exactly the findings of 1.8.4; in the nine `--verify` lanes
-4,910 obligations go from `Unproved` to `Proved_Safe`, none the other
+12,198 obligations go from `Unproved` to `Proved_Safe`, none the other
 way, and no obligation is added, removed or made a definite error.
 
 ## [1.8.4] - 2026-10-09

@@ -102,6 +102,96 @@ package body Adalang_Analyzer.Flow_Interp is
       return False;
    end Inside_Verified_Subprogram;
 
+   --  True when nothing but its own statements can reach the objects of
+   --  the subprogram being verified. It declares no code of its own -- no
+   --  subprogram, no instance of a generic, no package, task or protected
+   --  object -- that something it calls could be handed and run; and it
+   --  takes no access value to, and no address of, anything: a callee that
+   --  is given one writes through it without naming the object, then or
+   --  later.
+   Verified_Keeps_To_Itself : Boolean := False;
+
+   function Keeps_To_Itself
+     (Subprogram : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      function Gives_Away
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind in Libadalang.Common.Ada_Body_Node
+                          | Libadalang.Common.Ada_Generic_Instantiation
+                          | Libadalang.Common.Ada_Base_Package_Decl
+                          | Libadalang.Common.Ada_Task_Type_Decl
+                          | Libadalang.Common.Ada_Single_Task_Decl
+                          | Libadalang.Common.Ada_Protected_Type_Decl
+                          | Libadalang.Common.Ada_Single_Protected_Decl
+           or else
+             (Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+              and then Text_Utils.Normalize_Rule_Name
+                         (Ada_Text.Node_Text
+                            (Node.As_Attribute_Ref.F_Attribute))
+                       in "access" | "unchecked-access"
+                        | "unrestricted-access" | "address")
+         then
+            return True;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Gives_Away (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Gives_Away;
+   begin
+      if Libadalang.Analysis.Is_Null (Subprogram) then
+         return False;
+      end if;
+      for Index in 1 .. Subprogram.Children_Count loop
+         if Gives_Away (Subprogram.Child (Index)) then
+            return False;
+         end if;
+      end loop;
+      return True;
+   exception
+      when others =>
+         return False;
+   end Keeps_To_Itself;
+
+   --  True when the call of a subprogram declared by Decl reaches, of the
+   --  objects of the subprogram being verified, only those it is given as
+   --  actuals: a callee declared outside that subprogram cannot name what
+   --  is declared in it, and that subprogram keeps to itself.
+   function Reaches_Actuals_Only
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean is
+   begin
+      return Config.Verification_Mode
+        and then Verified_Keeps_To_Itself
+        and then not Libadalang.Analysis.Is_Null (Verified_Subprogram)
+        and then not Libadalang.Analysis.Is_Null (Decl)
+        and then not Inside_Verified_Subprogram (Decl);
+   end Reaches_Actuals_Only;
+
+   --  What such a call, of effects that are not known, leaves State able
+   --  to say: of the verified subprogram's own objects everything, of any
+   --  other object nothing, and nothing of one that can change without
+   --  being named (Classify).
+   procedure Havoc_Outside_Objects (State : in out Flow_State) is
+      Keys : array (1 .. Binding_Count (State)) of
+        Libadalang.Analysis.Ada_Node;
+   begin
+      for Index in Keys'Range loop
+         Keys (Index) := Binding_At (State, Index).Decl;
+      end loop;
+      for Key of Keys loop
+         if not Inside_Verified_Subprogram (Key)
+           or else Classify (Key) /= Tracked
+         then
+            Flow_Havoc (State, Key);
+         end if;
+      end loop;
+   end Havoc_Outside_Objects;
+
    --  Found when Node evaluates one of those calls, with the farthest
    --  reach of those it does.
    procedure Find_Evaluated_Effects
@@ -1134,10 +1224,10 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end In_Pure_Unit;
 
-   --  True when Decl is under an explicit SPARK_Mode (On): a SPARK
-   --  function has no side effects unless it says so.
-   function Explicitly_SPARK
-     (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+   --  The explicit SPARK_Mode Decl is under, if any: its own, that of
+   --  what it is declared in, or that of its unit or project.
+   function Explicit_SPARK_Mode
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return SPARK_Mode_State
    is
       Mode     : SPARK_Mode_State := Own_SPARK_Mode (Decl);
       Ancestor : Libadalang.Analysis.Ada_Node :=
@@ -1158,7 +1248,47 @@ package body Adalang_Analyzer.Flow_Interp is
       if not Mode.Has_Mode then
          Mode := Unit_SPARK_Mode (Decl);
       end if;
-      return Mode.Has_Mode and then not Mode.Is_Off
+      return Mode;
+   end Explicit_SPARK_Mode;
+
+   --  True when Decl is under an explicit SPARK_Mode (On).
+   function Declared_In_SPARK
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is
+      Mode : constant SPARK_Mode_State := Explicit_SPARK_Mode (Decl);
+   begin
+      return Mode.Has_Mode and then not Mode.Is_Off;
+   exception
+      when others =>
+         return False;
+   end Declared_In_SPARK;
+
+   --  True when Decl is SPARK code: under an explicit SPARK_Mode (On), or,
+   --  under none, part of a generic unit that is SPARK code wherever the
+   --  units of this run instantiate it. A generic unit that sets no mode
+   --  has that of the place of each instantiation, which is how GNATprove
+   --  analyzes it.
+   function In_SPARK_Code
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is
+      Mode : constant SPARK_Mode_State := Explicit_SPARK_Mode (Decl);
+   begin
+      if Mode.Has_Mode then
+         return not Mode.Is_Off;
+      end if;
+      return Adalang_Analyzer.Subprogram_Summaries.Instantiated_In_SPARK
+        (Adalang_Analyzer.Subprogram_Summaries.Generic_Unit_Key (Decl));
+   exception
+      when others =>
+         return False;
+   end In_SPARK_Code;
+
+   --  True when Decl is under an explicit SPARK_Mode (On): a SPARK
+   --  function has no side effects unless it says so.
+   function Explicitly_SPARK
+     (Decl : Libadalang.Analysis.Basic_Decl) return Boolean is
+   begin
+      return Declared_In_SPARK (Decl)
         and then not Has_Aspect (Decl, "Side_Effects");
    exception
       when others =>
@@ -2683,7 +2813,11 @@ package body Adalang_Analyzer.Flow_Interp is
            Contract_Expression (Decl, "Global");
       begin
          if Libadalang.Analysis.Is_Null (Global) then
-            Flow_Havoc_All (State);
+            if Reaches_Actuals_Only (Decl) then
+               Havoc_Outside_Objects (State);
+            else
+               Flow_Havoc_All (State);
+            end if;
             return;
          elsif Global.Kind not in Libadalang.Common.Ada_Base_Aggregate
          then
@@ -2721,40 +2855,217 @@ package body Adalang_Analyzer.Flow_Interp is
          Flow_Havoc_All (State);
    end Havoc_Global_Effects;
 
+   --  True when Call is to a subprogram that is SPARK code (In_SPARK_Code),
+   --  and to that subprogram whatever the call: not a dispatching call, nor
+   --  one through a formal subprogram, a renaming or an access value. What
+   --  SPARK asks of the declaration is then what the callee leaves behind
+   --  it: an out parameter is initialized when it returns, which is the
+   --  callee's own obligation and is raised at the parameter when its body
+   --  is verified.
+   function Callee_Keeps_SPARK_Rules
+     (Call : Libadalang.Analysis.Name'Class) return Boolean
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Call_Declaration (Call);
+   begin
+      return not Libadalang.Analysis.Is_Null (Decl)
+        and then Decl.Kind in Libadalang.Common.Ada_Subp_Decl
+                            | Libadalang.Common.Ada_Subp_Body
+                            | Libadalang.Common.Ada_Subp_Body_Stub
+        and then not Call.P_Is_Dispatching_Call
+        and then In_SPARK_Code (Decl);
+   exception
+      when others =>
+         return False;
+   end Callee_Keeps_SPARK_Rules;
+
+   --  As Havoc_Identifiers_In, for an object that the write leaves
+   --  initialized if it was: nothing is known of its value any more, and
+   --  what was initialized is still.
+   procedure Forget_Identifiers_In
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : in out Flow_State)
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return;
+      end if;
+
+      if Node.Kind = Libadalang.Common.Ada_Identifier then
+         declare
+            Key : constant Libadalang.Analysis.Ada_Node :=
+              Flow_Referenced_Name (Node);
+            Was : constant Abstract_Bool := Flow_Initialization (State, Key);
+         begin
+            Flow_Havoc (State, Key);
+            if Was = Bool_True then
+               Flow_Set_Initialized (State, Key, Bool_True);
+            end if;
+         end;
+      end if;
+
+      for I in 1 .. Node.Children_Count loop
+         Forget_Identifiers_In (Node.Child (I), State);
+      end loop;
+   end Forget_Identifiers_In;
+
+   --  What the call of Call leaves State able to say of the actuals of the
+   --  parameters it can write.
+   --
+   --  The objects named in such an actual lose their value. Whether they
+   --  are still known to be initialized goes by the mode of the formal. An
+   --  in out parameter comes back as it went in or as the callee assigned
+   --  it, and an assignment initializes: what was initialized is still. An
+   --  out parameter comes back as the callee left it, and one of a scalar
+   --  type has no value until the callee gives it one: the actual is
+   --  initialized after the call only where the callee writes the
+   --  parameter on every path that returns. That is known from the body
+   --  the summaries hold, or, under --verify, from the SPARK_Mode the
+   --  callee is declared under (Callee_Keeps_SPARK_Rules). Otherwise
+   --  nothing is known of it; and where the callee is known never to write
+   --  the parameter, what the actual held before the call is gone with it
+   --  (FP-117).
    procedure Havoc_Call_Actuals
      (Call  : Libadalang.Analysis.Name'Class;
       State : in out Flow_State)
    is
+      Effects_Known : constant Boolean :=
+        Adalang_Analyzer.Subprogram_Summaries.Callee_State_Effects_Known
+          (Call);
+      By_SPARK      : constant Boolean :=
+        Config.Verification_Mode and then Callee_Keeps_SPARK_Rules (Call);
+
+      --  A call that is not known not to dispatch is taken to.
+      function Is_Dispatching return Boolean is
+      begin
+         return Call.P_Is_Dispatching_Call;
+      exception
+         when others =>
+            return True;
+      end Is_Dispatching;
+
+      Dispatching   : constant Boolean := Is_Dispatching;
    begin
       for Pair of Call.P_Call_Params loop
-         if Formal_Is_Writable (Libadalang.Analysis.Param (Pair))
-           and then
-             (not Adalang_Analyzer.Subprogram_Summaries
-                    .Callee_State_Effects_Known (Call)
-              or else Adalang_Analyzer.Subprogram_Summaries
-                .Callee_Formal_May_Write
-                  (Call, Libadalang.Analysis.Param (Pair)))
-         then
-            Havoc_Identifiers_In
-              (Libadalang.Analysis.Actual (Pair), State);
-         end if;
+         if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
+            declare
+               Formal    : constant Libadalang.Analysis.Defining_Name :=
+                 Libadalang.Analysis.Param (Pair).As_Defining_Name;
+               Actual    : constant Libadalang.Analysis.Expr :=
+                 Libadalang.Analysis.Actual (Pair).As_Expr;
+               Out_Only  : constant Boolean :=
+                 Formal_Mode (Formal) in Libadalang.Common.Ada_Mode_Out;
+               May_Write : constant Boolean :=
+                 Dispatching
+                 or else not Effects_Known
+                 or else Adalang_Analyzer.Subprogram_Summaries
+                   .Callee_Formal_May_Write (Call, Formal);
+               --  What SPARK asks of a callee is not taken where its body
+               --  is in sight and never writes the parameter.
+               Written   : constant Boolean :=
+                 (not Dispatching
+                  and then Adalang_Analyzer.Subprogram_Summaries
+                    .Callee_Formal_Definitely_Writes (Call, Formal))
+                 or else (Out_Only and then By_SPARK and then May_Write);
+            begin
+               if not May_Write and then not Written then
+                  --  The callee never writes the parameter. An in out
+                  --  actual is as it was. An out actual comes back as the
+                  --  parameter was when the callee was entered: without a
+                  --  value, if it is of a scalar type.
+                  if Out_Only then
+                     Havoc_Identifiers_In (Actual, State);
+                     if Actual.Kind = Libadalang.Common.Ada_Identifier then
+                        Flow_Set_Initialized
+                          (State, Flow_Referenced_Name (Actual),
+                           Output_Parameter_Initialization
+                             (Formal.P_Basic_Decl.As_Param_Spec));
+                     end if;
+                  end if;
+               elsif Config.Verification_Mode
+                 and then (Written or else not Out_Only)
+               then
+                  Forget_Identifiers_In (Actual, State);
+               else
+                  Havoc_Identifiers_In (Actual, State);
+               end if;
 
-         if Adalang_Analyzer.Subprogram_Summaries
-              .Callee_Formal_Definitely_Writes
-                (Call, Libadalang.Analysis.Param (Pair))
-           and then Libadalang.Analysis.Actual (Pair).Kind =
-             Libadalang.Common.Ada_Identifier
-         then
-            Flow_Set_Initialized
-              (State,
-               Flow_Referenced_Name (Libadalang.Analysis.Actual (Pair)),
-               Bool_True);
+               if Written
+                 and then Actual.Kind = Libadalang.Common.Ada_Identifier
+               then
+                  Flow_Set_Initialized
+                    (State, Flow_Referenced_Name (Actual), Bool_True);
+               end if;
+            end;
          end if;
       end loop;
    exception
       when others =>
          Havoc_Identifiers_In (Call, State);
    end Havoc_Call_Actuals;
+
+   --  After the call of a subprogram that is SPARK code, a scalar object
+   --  that is the actual of a parameter the callee can write holds a value
+   --  of the subtype of that parameter: the value the parameter had when
+   --  the callee returned. An in out parameter was given a value of that
+   --  subtype by the call, which checks it; whatever the callee assigned to
+   --  a parameter was checked against the subtype where it was assigned;
+   --  and an out parameter has been given a value, all of which are the
+   --  callee's own obligations. Nothing is said of an actual that is not
+   --  known to be initialized.
+   procedure Bound_Written_Actuals
+     (Call  : Libadalang.Analysis.Name'Class;
+      State : in out Flow_State)
+   is
+   begin
+      if not Config.Verification_Mode
+        or else not Callee_Keeps_SPARK_Rules (Call)
+      then
+         return;
+      end if;
+
+      for Pair of Call.P_Call_Params loop
+         if Formal_Is_Writable (Libadalang.Analysis.Param (Pair))
+           and then Libadalang.Analysis.Actual (Pair).Kind =
+             Libadalang.Common.Ada_Identifier
+         then
+            declare
+               Formal   : constant Libadalang.Analysis.Defining_Name :=
+                 Libadalang.Analysis.Param (Pair).As_Defining_Name;
+               Key      : constant Libadalang.Analysis.Ada_Node :=
+                 Flow_Referenced_Name (Libadalang.Analysis.Actual (Pair));
+               Declared : constant Abstract_Range :=
+                 Declared_Range (Libadalang.Analysis.Ada_Node (Formal));
+               Held     : Abstract_Range := Flow_Range_Lookup (State, Key);
+            begin
+               if (Declared.Has_Low or else Declared.Has_High)
+                 and then Flow_Initialization (State, Key) = Bool_True
+               then
+                  if Declared.Has_Low
+                    and then
+                      (not Held.Has_Low or else Held.Low < Declared.Low)
+                  then
+                     Held.Has_Low := True;
+                     Held.Low := Declared.Low;
+                  end if;
+                  if Declared.Has_High
+                    and then
+                      (not Held.Has_High or else Held.High > Declared.High)
+                  then
+                     Held.Has_High := True;
+                     Held.High := Declared.High;
+                  end if;
+                  Flow_Range_Set (State, Key, Held);
+               end if;
+            end;
+         end if;
+      end loop;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("no subtype bounds for the actuals of a call: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Bound_Written_Actuals;
 
    function Call_Transfer_Supported
      (Call : Libadalang.Analysis.Name'Class) return Boolean
@@ -6392,6 +6703,7 @@ package body Adalang_Analyzer.Flow_Interp is
                Havoc_Global_Effects (Call, Next);
                Havoc_Call_Actuals (Call, Next);
                Apply_Call_Postcondition (Call, Next);
+               Bound_Written_Actuals (Call, Next);
                return (State => Next, Terminated => False);
             end;
 
@@ -7563,6 +7875,72 @@ package body Adalang_Analyzer.Flow_Interp is
          Work.Append (Id);
       end Enqueue;
 
+      --  Widening gives up a bound that moves outwards. Where the bound of
+      --  Next that moved is still within the subtype the object is declared
+      --  with, Widened is given that subtype's bound instead of none: a
+      --  guess the iteration then confirms or, when the object goes beyond
+      --  it, gives up in its turn. A bound moves at most twice so.
+      procedure Widen_To_Declared
+        (Previous : Flow_State;
+         Widened  : in out Flow_State;
+         Next     : Flow_State)
+      is
+         function Range_In
+           (State : Flow_State;
+            Key   : Libadalang.Analysis.Ada_Node) return Abstract_Range is
+         begin
+            for Index in 1 .. Binding_Count (State) loop
+               if Binding_At (State, Index).Decl = Key then
+                  return Binding_At (State, Index).Range_Value;
+               end if;
+            end loop;
+            return Unknown_Range;
+         end Range_In;
+      begin
+         for Index in 1 .. Binding_Count (Previous) loop
+            declare
+               Key      : constant Libadalang.Analysis.Ada_Node :=
+                 Binding_At (Previous, Index).Decl;
+               Before   : constant Abstract_Range :=
+                 Binding_At (Previous, Index).Range_Value;
+               After    : constant Abstract_Range := Range_In (Next, Key);
+               Kept     : Abstract_Range := Range_In (Widened, Key);
+               Declared : Abstract_Range;
+               Changed  : Boolean := False;
+            begin
+               if (Before.Has_Low and then After.Has_Low
+                   and then not Kept.Has_Low)
+                 or else
+                   (Before.Has_High and then After.Has_High
+                    and then not Kept.Has_High)
+               then
+                  Declared := Declared_Range (Key);
+                  if Before.Has_Low and then After.Has_Low
+                    and then not Kept.Has_Low
+                    and then Declared.Has_Low
+                    and then After.Low >= Declared.Low
+                  then
+                     Kept.Has_Low := True;
+                     Kept.Low := Declared.Low;
+                     Changed := True;
+                  end if;
+                  if Before.Has_High and then After.Has_High
+                    and then not Kept.Has_High
+                    and then Declared.Has_High
+                    and then After.High <= Declared.High
+                  then
+                     Kept.Has_High := True;
+                     Kept.High := Declared.High;
+                     Changed := True;
+                  end if;
+                  if Changed then
+                     Flow_Range_Set (Widened, Key, Kept);
+                  end if;
+               end if;
+            end;
+         end loop;
+      end Widen_To_Declared;
+
       --  The part of Decl's Global contract that names what it may write:
       --  the whole aggregate when any association is an output or one this
       --  does not recognize, nothing for "null", a bare input list, or an
@@ -7682,15 +8060,33 @@ package body Adalang_Analyzer.Flow_Interp is
          --  actual. Whether it does on every path is not worked out, so
          --  unlike a procedure call's actual the object is not taken as
          --  initialized: its value is no longer known, and if it was
-         --  uninitialized it may no longer be (FP-099).
+         --  uninitialized it may no longer be (FP-099). An "out" parameter
+         --  the function is not known to write on every path comes back
+         --  with no value at all: an object that is the actual is then no
+         --  longer known to be initialized either (FP-117).
          procedure Forget_Written_Actuals
            (Call : Libadalang.Analysis.Name) is
          begin
             for Pair of Call.P_Call_Params loop
                if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
                   Forget_Identifiers_In (Libadalang.Analysis.Actual (Pair));
-                  May_Initialize_Identifiers_In
-                    (Libadalang.Analysis.Actual (Pair));
+                  if Formal_Mode (Libadalang.Analysis.Param (Pair)) in
+                       Libadalang.Common.Ada_Mode_Out
+                    and then Libadalang.Analysis.Actual (Pair).Kind =
+                      Libadalang.Common.Ada_Identifier
+                    and then
+                      (Call.P_Is_Dispatching_Call
+                       or else not Adalang_Analyzer.Subprogram_Summaries
+                         .Callee_Formal_Definitely_Writes
+                           (Call, Libadalang.Analysis.Param (Pair)))
+                    and then not Callee_Keeps_SPARK_Rules (Call)
+                  then
+                     Havoc_Identifiers_In
+                       (Libadalang.Analysis.Actual (Pair), State);
+                  else
+                     May_Initialize_Identifiers_In
+                       (Libadalang.Analysis.Actual (Pair));
+                  end if;
                end if;
             end loop;
          exception
@@ -7807,7 +8203,14 @@ package body Adalang_Analyzer.Flow_Interp is
          if CFG.Node_At (Graph, Target).Kind = CFG.Loop_Header_Node
            and then Updates (Target) >= 3
          then
-            Joined := Flow_Widen (States (Target), Joined);
+            declare
+               Unwidened : constant Flow_State := Joined;
+            begin
+               Joined := Flow_Widen (States (Target), Joined);
+               Widen_To_Declared
+                 (Previous => States (Target), Widened => Joined,
+                  Next => Unwidened);
+            end;
             Joined_Symbols := VC.Array_Bound_Facts (Joined_Symbols);
          end if;
          Apply_Invariant_Cutpoint (Target, Joined, Joined_Symbols);
@@ -8378,6 +8781,8 @@ package body Adalang_Analyzer.Flow_Interp is
          Effectful_Call_Reach.Clear;
          Untrusted_Calls.Clear;
          Verified_Subprogram := Libadalang.Analysis.Ada_Node (Subprogram);
+         Verified_Keeps_To_Itself := Keeps_To_Itself (Subprogram);
+         VC.Assume_Component_Subtypes (In_SPARK_Code (Subprogram));
          Implicit_Code_May_Run := False;
          Implicit_Code_Sees_Locals := False;
          Note_Implicit_Code (Subprogram);
@@ -11718,4 +12123,6 @@ package body Adalang_Analyzer.Flow_Interp is
 
 begin
    VC.Set_Function_Oracle (Is_Function_Of_Arguments'Access);
+   Adalang_Analyzer.Subprogram_Summaries.Set_SPARK_Mode_Oracle
+     (Declared_In_SPARK'Access);
 end Adalang_Analyzer.Flow_Interp;
