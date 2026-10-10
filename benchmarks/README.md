@@ -60,7 +60,7 @@ span nine scalar obligation kinds across far more distinct code shapes than
 the six real projects reach; its value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-10-09.md`. The first run
+`proved-safe`. See `spark_testsuite/RESULTS_2026-10-10.md`. The first run
 of this corpus found two analyzer defects (`FP-064`, `FP-065`), both fixed
 with regression tests before it landed; the 2026-10-02 run found a third
 (`FP-100`).
@@ -91,7 +91,7 @@ have precondition obligations (`FP-096`). The refresh was also the first
 run of 1.6.1 on the non-SPARK corpora and on the SPARK testsuite, and found
 three defects that release introduced: a `--verify` run time of 39 minutes
 on AWS (159 s before, 69 s now) and two false `Definite_Error` results,
-`FP-099` and `FP-100`. Each corpus's `RESULTS_2026-10-09.md` has the
+`FP-099` and `FP-100`. Each corpus's `RESULTS_2026-10-10.md` has the
 details.
 
 ### How much of what GNATprove proves does `--verify` prove?
@@ -106,8 +106,8 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 5,980 | 39.8% |
-| Has the obligation, leaves it unproved | 5,174 | 34.4% |
+| Proves it | 6,100 | 40.6% |
+| Has the obligation, leaves it unproved | 5,054 | 33.6% |
 | Has the obligation, calls it unsupported | 1,397 | 9.3% |
 | Has no obligation of that kind at that place | 1,178 | 7.8% |
 | Has no obligation of that kind at all | 1,105 | 7.3% |
@@ -116,7 +116,7 @@ what AdaLang does with each:
 Since 1.8.3 the analyzer does this accounting itself when it is given the
 log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
 on each check beside its own result, and on these corpora that leaves none
-of the 15,043 unaccounted for -- 5,980 proved by AdaLang too, 6,571 with
+of the 15,043 unaccounted for -- 6,100 proved by AdaLang too, 6,451 with
 GNATprove's verdict alone on an obligation AdaLang has, 2,492 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
@@ -238,7 +238,28 @@ call leaves known turned up two false-safes, `FP-117` and `FP-118`: an
 without writing it, and an expression function that completes an earlier
 declaration read with its formals bound to nothing, so that what a contract
 said of one object held of every object. Neither shows in a corpus as a
-proof that is lost. AdaLang now proves 5,980 of the 15,043 checks and has
+proof that is lost. AdaLang then proved 5,980 of the 15,043 checks and had
+an obligation for 12,551.
+
+The 120 after that are again decided on the obligations that were there.
+What stopped the solvers in much of what 1.8.5 left was the form of an
+expression, not its difficulty. The code RecordFlux generates for
+`coap_spark` reads a field of a message as `Ctx.Cursors (F_Token).State`,
+a component of an element of an array that is itself a component, and
+writes its contracts with `if` and `case` expressions; none of that was in
+what AdaLang translates for the solvers. Conditional and case expressions
+now are. The scalar parts of an object that its name settles have symbols
+of their own -- a component of a component, a discriminant, the element of
+an array at an index whose value is known -- and a record or array
+parameter of an inlined expression function stands for the part of the
+caller's object that is its actual. 1,076 of GNATprove's 2,938
+preconditions are proved, where 1.8.5 proved 1,013. Giving each element of
+an array its own symbols is also what turned up `FP-119`: a component read
+in an element had one symbol for every element, so that two elements were
+equal and a condition on two of them could pass for one that cannot hold.
+Eleven obligations of `coap_spark` had been proved through it, on code
+that is correct; they are unproved again, and no check of the ledger that
+1.8.5 proved is lost. AdaLang now proves 6,100 of the 15,043 checks and has
 an obligation for 12,551. What is left without one, 2,492 checks, is
 predicate, pointer-dereference and discriminant checks and memory leaks,
 which AdaLang does not have, and range, index and precondition checks at
@@ -347,7 +368,7 @@ unsoundness and zero false positives on every corpus. The single-project
 corpora are unchanged; coap_spark gains nine matched pairs (942 to 951)
 and CubedOS one (7 to 8), and CubedOS, gnatcoll-core and AWS get verdicts
 for obligations that were `Unsupported` before (CubedOS 667 to 32). Each
-of those corpora's `RESULTS_2026-10-09.md` has a 2026-10-04 section.
+of those corpora's `RESULTS_2026-10-10.md` has a 2026-10-04 section.
 
 The 2026-10-05 refresh closed a second gap, `FP-103`: a source that uses
 the GNAT preprocessor did not parse, so nothing was reported for it. All

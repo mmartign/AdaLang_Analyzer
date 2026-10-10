@@ -76,5 +76,5 @@ the sources, the same as every other benchmark here), then runs:
 - machine-readable JSON summaries and POSIX timing files, written to
   `benchmark-results/gnatcoll/` (override with `RESULTS_DIR`).
 
-See [RESULTS_2026-10-09.md](RESULTS_2026-10-09.md) for the current recorded
+See [RESULTS_2026-10-10.md](RESULTS_2026-10-10.md) for the current recorded
 run.

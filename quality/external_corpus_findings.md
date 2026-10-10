@@ -269,7 +269,7 @@ Extending the CubedOS investigation to `--verify`'s bounded scalar proof
 obligations (full `src/cubedos.gpr`, 49 files) and comparing against
 GNATprove `--mode=prove --level=4` (mirroring `benchmarks/sparknacl/`'s
 methodology; detail in `benchmarks/cubedos/README.md` and
-`benchmarks/cubedos/RESULTS_2026-10-09.md`) surfaced a real analyzer bug:
+`benchmarks/cubedos/RESULTS_2026-10-10.md`) surfaced a real analyzer bug:
 `Finalize_Node` called several Libadalang properties directly outside any
 `begin`/`exception` block, so a `Property_Error` — `Call_Expr.P_Kind`
 genuinely fails for a call whose callee is declared in a separate `with`'d
@@ -994,5 +994,5 @@ false positives wherever GNATprove is an oracle. Nothing that was
 
 The libkeccak and project_bias gains come from `FP-101`: related objects
 keep their relation after an `if` with a branch of several statements. The
-`benchmarks/*/RESULTS_2026-10-09.md` files describe the 1.6.2 run and are
+`benchmarks/*/RESULTS_2026-10-10.md` files describe the 1.6.2 run and are
 left as they are.
