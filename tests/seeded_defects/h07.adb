@@ -140,7 +140,7 @@ package body H07 is
          pragma Assert (N mod (-2) <= 0);       --  OK:assertion
       end if;
       if N in -9 .. -1 then
-         pragma Assert ((-N) / (-2) = N / 2);   --  BAD:assertion
+         pragma Assert ((-N) / (-2) = N / 2);   --  OK:assertion
       end if;
       if N in -9 .. -1 then
          pragma Assert (-7 / 2 = -3);           --  OK:assertion

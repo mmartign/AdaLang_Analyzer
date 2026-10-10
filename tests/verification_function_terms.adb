@@ -15,6 +15,21 @@ package body Verification_Function_Terms with SPARK_Mode is
       Ctx.Used := 0;
    end Fire;
 
+   function Checked (Ctx : Context) return Boolean is
+   begin
+      return Ctx.Used < 8 and then Ctx.Data (1) > 0;
+   end Checked;
+
+   procedure Trust (Ctx : in out Context) is
+   begin
+      Ctx.Used := Ctx.Used + 1;
+   end Trust;
+
+   procedure Forward_Term (Passed : in out Context) is
+   begin
+      Trust (Passed);
+   end Forward_Term;
+
    procedure Forward (Whole : in out Context) is
    begin
       Step (Whole);
@@ -58,6 +73,12 @@ package body Verification_Function_Terms with SPARK_Mode is
       Step (Written);
    end After_Element;
 
+   procedure After_Element_Term (Marked : in out Context) is
+   begin
+      Marked.Data (1) := 0;
+      Trust (Marked);
+   end After_Element_Term;
+
    procedure After_Component (Changed : in out Context) is
    begin
       Changed.Used := 8;
@@ -84,6 +105,14 @@ package body Verification_Function_Terms with SPARK_Mode is
       end if;
       Step (Joined);
    end On_One_Path;
+
+   procedure On_One_Path_Term (Merged : in out Context; Flag : Boolean) is
+   begin
+      if Flag then
+         Merged.Data (1) := 0;
+      end if;
+      Trust (Merged);
+   end On_One_Path_Term;
 
    procedure Unguarded (Loose : in out Context) is
    begin

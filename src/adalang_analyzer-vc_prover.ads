@@ -362,11 +362,18 @@ private
    --  Object is what actually distinguishes one object's field from
    --  another's. Ordinary record-equality comparison (both fields'
    --  Ada_Node "=") is exactly the identity check every use site needs.
+   --
+   --  Path is the way from Object to the record the component is read in,
+   --  where that is not Object itself: ".inner" for a component that is a
+   --  record, "@3" for the element of an array at an index whose value is
+   --  known -- the position, for an enumeration -- and any sequence of the
+   --  two (".cursors@3"). Two elements of one array are two keys by it.
    type Symbol_Key is record
       Object    : Libadalang.Analysis.Ada_Node :=
         Libadalang.Analysis.No_Ada_Node;
       Component : Libadalang.Analysis.Ada_Node :=
         Libadalang.Analysis.No_Ada_Node;
+      Path      : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
    type Symbol_Root is record

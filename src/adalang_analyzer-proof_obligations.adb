@@ -6,7 +6,9 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Vectors;
+with Ada.Strings.Hash;
 with Interfaces;
 
 with Adalang_Analyzer.Ada_Text;
@@ -18,6 +20,16 @@ package body Adalang_Analyzer.Proof_Obligations is
      (Index_Type => Positive, Element_Type => Obligation);
 
    Obligations : Obligation_Vectors.Vector;
+
+   --  Where each obligation is in Obligations, by its identifier: an
+   --  obligation is looked up every time a verdict on it is recorded, and
+   --  a unit of generated code has tens of thousands of them.
+   package Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Positive,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+   Index_Of : Index_Maps.Map;
 
    function Create
      (Stable_Id          : String;
@@ -333,20 +345,14 @@ package body Adalang_Analyzer.Proof_Obligations is
    procedure Reset is
    begin
       Obligations.Clear;
+      Index_Of.Clear;
    end Reset;
 
    function Find (Stable_Id : String) return Natural is
+      Position : constant Index_Maps.Cursor := Index_Of.Find (Stable_Id);
    begin
-      for Index in Obligations.First_Index .. Obligations.Last_Index loop
-         if To_String (Obligations (Index).Stable_Id) = Stable_Id then
-            return Index;
-         end if;
-      end loop;
-      return 0;
-   exception
-      when Constraint_Error =>
-         --  First_Index .. Last_Index raises for an empty vector.
-         return 0;
+      return (if Index_Maps.Has_Element (Position)
+              then Index_Maps.Element (Position) else 0);
    end Find;
 
    procedure Register (Item : Obligation) is
@@ -360,6 +366,7 @@ package body Adalang_Analyzer.Proof_Obligations is
       end if;
 
       Obligations.Append (Item);
+      Index_Of.Insert (Id, Obligations.Last_Index);
    end Register;
 
    function Count return Natural is

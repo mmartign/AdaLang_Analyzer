@@ -5,6 +5,54 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Who `FP-119` concerns: every release with `--verify` up to 1.8.5. A
+`Proved_Safe` assertion, precondition, postcondition, loop invariant or
+runtime check is not to be relied on where it is written with a component
+of an element of an array -- `Row (I).Count`, whatever the index -- or
+stands under a condition written with one. The component had one symbol
+for every element of the array: two elements were the same value, what a
+precondition said of one element was known of all, and of an element that
+had been assigned since. A condition on two elements that no array
+contradicts was taken for one that cannot hold, and everything it guards
+was proved, a division by a component that can be zero among it. Eleven
+checks of the coap_spark corpus were proved that way; the code is correct
+and GNATprove proves them, so no comparison showed it.
+
+### Added
+
+- `--verify`: conditional and case expressions are part of the scalar VC
+  language, as conditions and as numbers. A case expression whose selecting
+  expression is known where it is translated is the alternative chosen.
+- `--verify`: the scalar parts of an object that its name settles have
+  symbols of their own -- a component of a component, a discriminant, the
+  element of an array at an index whose value is known, Boolean ones too --
+  and a record or array parameter of an inlined expression function stands
+  for the part of the caller's object that is its actual, through a private
+  type to its full declaration.
+- `--verify`: `X'Constrained`, True of a constant and of an `in`
+  parameter, that of the actual for a parameter of another mode, and False
+  of a variable declared with the name alone of a type whose discriminants
+  all have defaults. It is kept when the object is written.
+- `--verify`: an access value compared with `null`.
+- `--verify`: a divisor whose value or interval excludes zero is known not
+  to be zero whatever its form (`Byte'Size`).
+
+### Changed
+
+- The registry of proof obligations is looked up by identifier and no
+  longer searched. With the answers that do not change kept -- the sort of
+  a type, the declared range of a component -- the `--verify` lanes of the
+  five fully proved corpora take between 2% and 33% less processor time
+  than in 1.8.5, with more decided.
+
+### Fixed
+
+- `FP-119` (`quality/known_analysis_issues.tsv`): a component read in an
+  element of an array is keyed by the element. See above for whom it
+  concerns.
+
 ## [1.8.5] - 2026-10-09
 
 A `--verify` release that corrects two false-safes and decides a quarter

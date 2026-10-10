@@ -50,11 +50,37 @@ interpreted as proof of safety.
 The external prover portfolio operates on mathematical integers and Booleans.
 The supported translation includes initialized scalar names, integer and
 Boolean literals, unary negation and `not`, arithmetic `+`, `-`, and `*`,
-comparisons, equality, Boolean connectives, supported integer conversions,
-bounded quantifiers, and side-effect-free expression functions that can be
-inlined within the depth limit. Integer `/`, `mod`, and `rem` are translated
-only when the divisor is provably nonzero and their Ada sign semantics are
-encoded.
+comparisons, equality, Boolean connectives, conditional and case
+expressions, supported integer conversions, bounded quantifiers, the scalar
+parts of an object that its name settles (see "Parts of an object"), and
+side-effect-free expression functions that can be inlined within the depth
+limit. Integer `/`, `mod`, and `rem` are translated only when the divisor
+is provably nonzero and their Ada sign semantics are encoded: a nonzero
+literal, a name whose interval excludes zero, or an attribute or an
+arithmetic expression whose value or interval does -- `Byte'Size`, or
+`2 * Width + 1` with `Width` in `0 .. 10`.
+
+A conditional expression is the value of the dependent expression its
+conditions select, and `True` where it is a Boolean one without an `else`
+part and none of its conditions holds. A case expression is the value of
+the alternative that what selects is in; a choice is a value, a range, or
+a subtype without a predicate. Where what selects is known when the
+expression is translated -- a parameter of an expression function that the
+call bound to a literal, most of all -- the alternative is chosen then and
+the others are not translated at all. Where it is not known and no
+alternative is `others`, the value when no choice is met is one of which
+nothing is known: the choices cover the subtype of the selecting
+expression, to which the term that stands for it may not be confined.
+Each dependent expression is translated with what is known where the
+whole expression stands, not with what its condition adds, so that one
+which needs its condition to be translated at all -- the division in
+`(if N /= 0 then Total / N > 1)` -- is not, and the expression with it.
+
+An access value is compared with `null` by `=` and `/=`. It is the token
+that the value of an object that is not a scalar has (see "Calls as
+terms"), and `null` is one token wherever it is written. What is known
+lasts as long as that token does: an assignment to the object ends it, and
+so does a call.
 
 An operator is the operation its symbol stands for only where it denotes
 that operation. Where a declaration defines a function for it -- for a type
@@ -178,6 +204,60 @@ scalar VC language a modular sum, difference or product by a constant is the
 term reduced with `mod`; the product of two unknown modular values is only
 known to be some value of the type, the same one for the same two operands.
 
+## Parts of an object
+
+A scalar component or discriminant of a record, and a scalar element of an
+array, has a symbol of its own where its name settles which object is
+meant and which part of it: the object named directly or by an expanded
+name, then inwards through components of records and through elements at
+an index whose value is known where the name stands. `Deep.Left.Count`,
+`Row (1)` and `Ctx.Cursors (F_Version).Last` are such names. The value of
+the index is that of a literal, a named number or a constant; the
+position of an enumeration literal; what the state holds of a variable; or
+what a call bound a parameter of an inlined expression function to. Two
+elements of one array are two symbols, and nothing known of one is known
+of the other. A discriminant is read as a component is.
+
+There is no symbol for a part that the name does not settle: one behind
+an access value, in the result of a call or of a conversion, or in an
+element at an index that is not known. Nothing is proved from
+`Row (I).Count` while `I` is not known, and it is not taken for
+`Row (1).Count` (FP-119).
+
+An assignment to a component of a record drops the symbolic state. An
+assignment to an element of an array, or to a slice, leaves what is known
+of scalar objects, of the components of records that are in no array, of
+array bounds and of whether an object is constrained; every symbol read
+in an element, of whatever array, gets a value of which nothing is known,
+as does the value of every object that is not a scalar. Which array was
+written, and what it is a part of, is not worked out. A call renews them
+as it renews the components of records (see "Objects and effects the
+analysis does not follow").
+
+A record or array parameter of an expression function that is inlined
+stands for the part of the caller's object that is its actual, where the
+actual is such a name: in `Well_Formed (Cursors (F_Version))`, the
+function's `Cursor.State` is the component `State` of that element. A
+private type is seen through to its full declaration for this, and for
+the names above: the body of an expression function in the private part
+of a package is read as it is written. Any other actual -- a call, an
+aggregate, an element at an index that is not known -- leaves the function
+to be a term (see "Calls as terms").
+
+`X'Constrained` (RM 3.7.2) is `True` of a constant and of a parameter of
+mode `in`. Of a parameter of mode `in out` or `out` it is what it is of
+the actual (RM 6.4.1): where the precondition of a call asks
+`not Ctx'Constrained` and the caller's own precondition says it of the
+parameter it passes on, the two meet. Nothing a subprogram does to an
+object changes whether it is constrained, and what is known of it is kept
+when the object is written, across a call and at the entry of a loop
+body. Of a variable it is `False` where the declaration gives the name of
+a type alone, every discriminant of which has a default, the type being
+neither tagged nor limited. Any other variable -- declared with a
+constraint or with a subtype, a renaming, an aliased object -- is left
+unknown, and an actual that is a component, an element or a conversion
+says nothing of the formal.
+
 ## Objects that always hold a value
 
 Four kinds of object hold a value wherever a subprogram reads them, and no
@@ -287,7 +367,9 @@ instantiation in a unit that is not part of the run is not seen.
 
 In a subprogram that is SPARK code, a scalar component of a record object
 that is initialized is within the subtype the component is declared with,
-as far as its bounds are static. SPARK requires an object that is read to
+as far as its bounds are static. So is a discriminant, and a scalar
+element of an array object is within the subtype of the array's
+components. SPARK requires an object that is read to
 be initialized in all its parts, and no value in SPARK code is an invalid
 one; every assignment to the component was checked against that subtype.
 Outside SPARK code nothing is taken of a component beyond what the
@@ -365,8 +447,8 @@ the direct name, for reads and writes alike.
   call does not have as an `out` or `in out` actual still holds after the
   call. Everything else gets a value of which nothing is known: each
   object declared outside the subprogram, each actual the call may write
-  (every name in it), every record component of whatever object, and the
-  value of every object that is not a scalar.
+  (every name in it), every record component and every array element of
+  whatever object, and the value of every object that is not a scalar.
 
 Tasking is outside this model: an object shared between tasks is expected
 to be volatile, atomic or protected.

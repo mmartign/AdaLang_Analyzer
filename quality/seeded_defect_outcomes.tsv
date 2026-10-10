@@ -97,7 +97,7 @@ h03_arith.adb	51	BAD	integer-overflow	unproved
 h03_arith.adb	52	BAD	integer-overflow	unproved
 h03_arith.adb	53	BAD	integer-overflow	no-obligation
 h03_arith.adb	54	BAD	integer-overflow	no-obligation
-h03_arith.adb	55	BAD	integer-overflow	unproved
+h03_arith.adb	55	BAD	integer-overflow	definite-error
 h03_arith.adb	58	BAD	integer-overflow	unproved
 h03_arith.adb	59	BAD	integer-overflow	definite-error
 h03_arith.adb	62	BAD	range-check	definite-error,unproved
@@ -207,8 +207,8 @@ h07.adb	128	BAD	assertion	unproved
 h07.adb	131	OK	assertion	proved-safe
 h07.adb	134	OK	assertion	proved-safe
 h07.adb	137	BAD	assertion	unproved
-h07.adb	140	OK	assertion	unproved
-h07.adb	143	BAD	assertion	unproved
+h07.adb	140	OK	assertion	proved-safe
+h07.adb	143	OK	assertion	proved-safe
 h07.adb	146	OK	assertion	proved-safe
 h07.adb	149	BAD	assertion	unproved
 h07.adb	152	OK	assertion	proved-safe
@@ -234,7 +234,7 @@ h07.adb	224	BAD	range-check	unproved
 h07.adb	234	BAD	division-by-zero	unproved
 h07.adb	242	BAD	division-by-zero	unproved
 h07.adb	243	BAD	division-by-zero	unproved
-h07.adb	244	OK	division-by-zero	unproved
+h07.adb	244	OK	division-by-zero	proved-safe
 h07.adb	246	BAD	division-by-zero	unproved
 h07.adb	257	BAD	division-by-zero	unproved
 h07.adb	262	BAD	division-by-zero	unproved
@@ -266,7 +266,7 @@ h08.adb	73	BAD	division-by-zero	unproved
 h08.adb	81	OK	division-by-zero	proved-safe
 h08.adb	82	BAD	division-by-zero	unproved
 h08.adb	87	BAD	division-by-zero	unproved
-h08.adb	88	OK	division-by-zero	unproved
+h08.adb	88	OK	division-by-zero	proved-safe
 h08.adb	89	OK	division-by-zero	proved-safe
 h08.adb	90	BAD	division-by-zero	definite-error
 h08.adb	98	OK	division-by-zero	unproved
@@ -294,7 +294,7 @@ h08.adb	198	BAD	division-by-zero	unproved
 h08.adb	210	BAD	division-by-zero	unproved
 h08.adb	211	BAD	division-by-zero	unproved
 h08.adb	212	OK	division-by-zero	proved-safe
-h08.adb	221	OK	division-by-zero	unproved
+h08.adb	221	OK	division-by-zero	proved-safe
 h08.adb	222	BAD	division-by-zero	unproved
 h08.adb	226	OK	division-by-zero	unproved
 h08.adb	227	BAD	division-by-zero	unproved

@@ -240,3 +240,40 @@ actual-bounds-unconstrained-formal	tests/verification_mutation_array_bounds.adb	
 array-last-plus-one	tests/verification_mutation_array_bounds.adb	integer-overflow	Data'Last + 1	unproved	the last bound of an array may be the last value of its index type
 null-array-first	tests/verification_mutation_array_bounds.adb	assertion	Data'First >= 0	unproved	the bounds of a null array are values of the index type, not of the index subtype
 guaranteed-base-range-passed	tests/verification_mutation_array_bounds.adb	integer-overflow	Left + Right	unproved	a result outside the guaranteed part of a base range is neither safe nor a failure
+if-expression-lower-bound	tests/verification_mutation_expression_forms.adb	precondition	Need_If (Flag, Low_Amount)	unproved	a conditional precondition holds only where each dependent expression its conditions can select does
+if-expression-one-branch	tests/verification_mutation_expression_forms.adb	assertion	Signed (Down, Fallen)	unproved	a conditional expression that holds on one side of its condition does not hold whatever the condition
+if-expression-first-value	tests/verification_mutation_expression_forms.adb	assertion	Sign (Signless) = 1	unproved	a conditional expression has the value of one of its dependent expressions, not of the first
+if-expression-no-else	tests/verification_mutation_expression_forms.adb	assertion	Left_Alone > 5	unproved	a conditional expression without an else part is True where its condition is not, and says nothing then of what follows it
+case-expression-lower-bound	tests/verification_mutation_expression_forms.adb	precondition	Need_Case (Which, Narrow)	unproved	a case precondition holds only where every alternative that can be chosen does
+case-expression-one-alternative	tests/verification_mutation_expression_forms.adb	assertion	Fits (Shape, Tight)	unproved	a case expression that holds in some alternatives does not hold whatever selects
+case-expression-chosen-alternative	tests/verification_mutation_expression_forms.adb	assertion	Fits (Medium, Ten)	definite-error	where what selects is known the alternative chosen is that of its value and no other
+case-expression-first-value	tests/verification_mutation_expression_forms.adb	assertion	Rank (Given) = 1	unproved	a case expression has the value of the alternative chosen, not of the first
+case-expression-range-choice	tests/verification_mutation_expression_forms.adb	assertion	Tenth (Digit) = 1	unproved	a value within two ranges of choices is in either alternative
+component-other-component	tests/verification_mutation_expression_forms.adb	precondition	Need_Open (Shut)	unproved	what is known of one component of a record says nothing of another
+component-other-record	tests/verification_mutation_expression_forms.adb	precondition	Need_Open (Right)	unproved	a Boolean component of one record is not that of another
+discriminant-relation-weaker	tests/verification_mutation_expression_forms.adb	precondition	Need_Span (Thin)	unproved	a relation between two discriminants is not a stronger one
+discriminant-other-record	tests/verification_mutation_expression_forms.adb	precondition	Need_Span (Second)	unproved	the discriminants of one record are not those of another
+constrained-not-known	tests/verification_mutation_expression_forms.adb	precondition	Refill (Unknown)	unproved	nothing says whether the actual of an in out parameter is constrained
+constrained-declared-constraint	tests/verification_mutation_expression_forms.adb	precondition	Refill (Fixed)	unproved	a variable declared with a discriminant constraint is constrained
+constrained-declared-subtype	tests/verification_mutation_expression_forms.adb	precondition	Refill (Narrowed)	unproved	a variable declared with a constrained subtype is constrained
+constrained-other-parameter	tests/verification_mutation_expression_forms.adb	precondition	Refill (Bound)	unproved	that one parameter is not constrained says nothing of another
+null-not-known	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Maybe)	unproved	nothing says an access parameter is not null
+null-assigned	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Dropped)	unproved	an access object that has been assigned null is no longer known not to be null
+null-other-object	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Empty)	unproved	that one access value is not null says nothing of another
+known-divisor-other-modulus	tests/verification_mutation_expression_forms.adb	precondition	Aligned (Rough)	unproved	a multiple of 4 is not known to be a multiple of 8
+part-other-element	tests/verification_mutation_object_parts.adb	assertion	Apart (2).Count = 5	unproved	what is known of one element of an array says nothing of another (FP-119)
+part-component-written	tests/verification_mutation_object_parts.adb	assertion	Edited (1).Count = 5	unproved	a component of an element that has been assigned holds another value
+part-element-written	tests/verification_mutation_object_parts.adb	assertion	Replaced (1).Count = 5	unproved	an element that has been assigned holds another value in each component (FP-119)
+part-slice-written	tests/verification_mutation_object_parts.adb	assertion	Shifted (1).Count = 5	unproved	an element inside a slice that has been assigned holds another value (FP-119)
+part-object-written	tests/verification_mutation_object_parts.adb	assertion	Renewed (1).Count = 5	unproved	an array that has been assigned holds other elements
+part-passed-to-call	tests/verification_mutation_object_parts.adb	assertion	Handed (1).Count = 5	unproved	an array given to a call that can write it holds elements nothing is known of
+part-formal-other-element	tests/verification_mutation_object_parts.adb	assertion	Short (2).Count = 5	unproved	a record formal stands for the element it was given, not for another
+part-formal-other-index	tests/verification_mutation_object_parts.adb	assertion	Set (First).Count = 5	unproved	an index formal bound to one literal does not select another element
+part-nested-other-side	tests/verification_mutation_object_parts.adb	assertion	Split.Right.Count = 5	unproved	a component of one component of a record is not that of another
+part-private-other-side	tests/verification_mutation_object_parts.adb	assertion	Box.Inner.Right.Count = 5	unproved	what the full declaration of a private type shows of one part says nothing of another
+part-index-moved	tests/verification_mutation_object_parts.adb	assertion	Walk (Position).Count = 5	unproved	an index that has changed selects another element (FP-119)
+part-index-unknown	tests/verification_mutation_object_parts.adb	assertion	Any (Where).Count = 5	unproved	an index that is not known selects an element nothing is known of (FP-119)
+part-scalar-other-element	tests/verification_mutation_object_parts.adb	assertion	Grade (2) = 5	unproved	what is known of one scalar element says nothing of another
+part-scalar-written	tests/verification_mutation_object_parts.adb	assertion	Regraded (1) = 5	unproved	a scalar element that has been assigned holds another value
+part-scalar-subtype-edge	tests/verification_mutation_object_parts.adb	assertion	Score (2) > 0	unproved	an element is within the subtype of the components and may be its first value
+part-boolean-other-element	tests/verification_mutation_object_parts.adb	assertion	Bits (1)	unproved	one Boolean element says nothing of another

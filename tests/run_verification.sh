@@ -113,6 +113,9 @@ fp117=$(mktemp "${TMPDIR:-/tmp}/adalang-fp117.XXXXXX")
 fp118=$(mktemp "${TMPDIR:-/tmp}/adalang-fp118.XXXXXX")
 call_actuals=$(mktemp "${TMPDIR:-/tmp}/adalang-call-actuals.XXXXXX")
 array_bounds=$(mktemp "${TMPDIR:-/tmp}/adalang-array-bounds.XXXXXX")
+expression_forms=$(mktemp "${TMPDIR:-/tmp}/adalang-expression-forms.XXXXXX")
+object_parts=$(mktemp "${TMPDIR:-/tmp}/adalang-object-parts.XXXXXX")
+fp119=$(mktemp "${TMPDIR:-/tmp}/adalang-fp119.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -143,7 +146,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -1715,14 +1718,21 @@ run_json_pair()
 run_json_pair "$function_terms" tests/verification_function_terms
 for operation in 'Step (Whole)' 'Fill (Both, Need)' \
   'Fill (Need => Need, Ctx => Named)' 'Step (Kept)' 'Left (Kept)' \
-  'Step (Again)'
+  'Step (Again)' 'Trust (Passed)'
 do
    must_prove "$function_terms" precondition "$operation" external-prover \
      "a function of its arguments as a term"
 done
+# Ready is an expression function whose body, read through the private
+# type, names the component Used alone: an element of Data that is written
+# leaves it as it was.
+for operation in 'Step (Written)' 'Step (Joined)'; do
+   must_prove "$function_terms" precondition "$operation" external-prover \
+     "a component another part of the record's writing leaves alone"
+done
 for operation in 'Step (Ctx => Again)' 'Step (Other)' 'Fill (Sized, More)' \
-  'Step (Written)' 'Step (Changed)' 'Step (Replaced)' 'Step (Repeated)' \
-  'Step (Joined)' 'Left (Loose)' 'Fire (Aimed)'
+  'Trust (Marked)' 'Step (Changed)' 'Step (Replaced)' 'Step (Repeated)' \
+  'Trust (Merged)' 'Left (Loose)' 'Fire (Aimed)'
 do
    must_not_prove "$function_terms" precondition "$operation" \
      "a function term about another value"
@@ -2303,5 +2313,100 @@ must_prove "$array_bounds" integer-overflow "Data'Last - Data'First" \
   external-prover "the bounds of an array within its index type"
 must_prove "$array_bounds" integer-overflow 'Left + Right' \
   abstract-interpretation "the guaranteed part of a base range"
+
+# Expression forms of the scalar VC language. A conditional expression has
+# the value of the dependent expression its conditions select, and a case
+# expression that of the alternative what selects is in: the alternative
+# itself where that value is known. A component and a discriminant of a
+# record are read alike, Boolean ones too, and in SPARK code a discriminant
+# is within its subtype. A parameter of mode in out is constrained where
+# its actual is, whatever is written to it meanwhile, and a variable
+# declared with the name alone of a type whose discriminants all have
+# defaults is not. An access value is compared with null. A divisor whose
+# value is known is not zero. The claims that do not hold are in the
+# mutation manifest.
+run_json_pair "$expression_forms" tests/verification_expression_forms
+for operation in 'Need_If (Flag, Chosen)' 'Need_Case (Small, Sized)' \
+  'Need_Case (Which, Wide)'
+do
+   must_prove "$expression_forms" precondition "$operation" external-prover \
+     "a conditional or case expression in a precondition"
+done
+for operation in 'Signed (True, Risen)' 'not Signed (False, Sunk)' \
+  'Sign (Any) in -1 .. 1' 'Sign (Product) * Product >= 0' \
+  'Fits (Shape, Roomy)' 'Fits (Medium, Eleven)' 'Rank (Given) in 1 .. 2'
+do
+   must_prove "$expression_forms" assertion "$operation" external-prover \
+     "a conditional or case expression as the body of a function"
+done
+for operation in 'Need_Open (Frame)' 'Need_Span (Span)'; do
+   must_prove "$expression_forms" precondition "$operation" external-prover \
+     "a component or a discriminant of a record"
+done
+must_prove "$expression_forms" assertion 'Based.Low >= 0' external-prover \
+  "a discriminant within its subtype in SPARK code"
+for operation in 'Refill (Loose)' 'Refill (Twice)' 'Refill (Fresh)'; do
+   must_prove "$expression_forms" precondition "$operation" external-prover \
+     "whether an object is constrained"
+done
+if grep -F '"kind": "precondition"' "$expression_forms" |
+  grep -F '"operation": "Refill (Twice)"' |
+  grep -v -F '"status": "proved-safe"' >/dev/null
+then
+   echo "whether an object is constrained: not known after the object" \
+     "has been written" >&2
+   exit 1
+fi
+for operation in 'Need_Cell (Held)' 'Need_Cell (Packed.Inside)'; do
+   must_prove "$expression_forms" precondition "$operation" external-prover \
+     "an access value compared with null"
+done
+must_prove "$expression_forms" precondition 'Aligned (Whole)' \
+  external-prover "a divisor whose value is known"
+if grep -F '"status": "definite-error"' "$expression_forms" >/dev/null; then
+   echo "expression forms: a definite error where nothing is wrong" >&2
+   exit 1
+fi
+
+# The parts of an object that its name settles. A component of a record
+# that is itself a component, and the element of an array at an index
+# whose value is known -- a literal, a constant, what the state holds, the
+# position of an enumeration literal -- have symbols of their own, scalar
+# elements too. A record or array formal of an expression function stands
+# for the part of the caller's object that is its actual, through a
+# private type to its full declaration. The claims that do not hold are in
+# the mutation manifest.
+run_json_pair "$object_parts" tests/verification_object_parts
+for operation in 'Same (1).Count = Same (1).Count' 'Kept (1).Count = 5' \
+  'Line (Start).Count = 5' 'Run (Position).Count = 5' 'Deep.Left.Count = 5'
+do
+   must_prove "$object_parts" assertion "$operation" external-prover \
+     "a part of an object"
+done
+for operation in 'Tall (1).Count = 5' 'Both (2).Count = 5' \
+  'Is_Five (Whole (1))' 'Set (Second).Count = 5' 'Is_Five (Inner.Left)' \
+  'Box.Inner.Left.Count = 5'
+do
+   must_prove "$object_parts" assertion "$operation" external-prover \
+     "a formal that stands for a part of an object"
+done
+for operation in 'Grade (3) > 0' 'Score (2) >= 0' 'Bits (2)'; do
+   must_prove "$object_parts" assertion "$operation" external-prover \
+     "a scalar element of an array"
+done
+if grep -F '"status": "definite-error"' "$object_parts" >/dev/null; then
+   echo "parts of an object: a definite error where nothing is wrong" >&2
+   exit 1
+fi
+
+# FP-119: a component read in an element of an array was one symbol for
+# every element of the array. Two elements were proved to hold the same
+# value, and a condition on two of them that no array contradicts was taken
+# for one that cannot hold: a division it guards was called safe.
+run_json_pair "$fp119" tests/verification_fp119_element_component
+must_not_prove "$fp119" assertion 'Row (1).Count = Row (2).Count' FP-119
+must_not_prove "$fp119" division-by-zero 'Mixed (2).Limit' FP-119
+must_prove "$fp119" assertion 'Same (1).Count = Same (1).Count' \
+  external-prover FP-119
 
 echo "bounded verification tests passed"

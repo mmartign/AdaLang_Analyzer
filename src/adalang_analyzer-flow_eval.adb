@@ -3678,6 +3678,8 @@ package body Adalang_Analyzer.Flow_Eval is
          Type_Expr := Decl.As_Param_Spec.F_Type_Expr;
       elsif Decl.Kind = Libadalang.Common.Ada_Component_Decl then
          Type_Expr := Decl.As_Component_Decl.F_Component_Def.F_Type_Expr;
+      elsif Decl.Kind = Libadalang.Common.Ada_Discriminant_Spec then
+         Type_Expr := Decl.As_Discriminant_Spec.F_Type_Expr;
       elsif Decl.Kind = Libadalang.Common.Ada_Object_Decl
         and then Libadalang.Analysis.Is_Null
           (Decl.As_Object_Decl.F_Renaming_Clause)

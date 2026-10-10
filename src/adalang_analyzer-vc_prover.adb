@@ -85,9 +85,12 @@ package body Adalang_Analyzer.VC_Prover is
    --  need a different kind of substitution: record-component symbols are
    --  keyed by the enclosing object's defining name, so retain the actual
    --  object's identity for dotted-name translation in an inlined callee.
+   --  Path is the part of Actual the formal stands for, as in a
+   --  Symbol_Key, where it is not the whole of it.
    type Object_Binding is record
       Formal : Libadalang.Analysis.Ada_Node;
       Actual : Libadalang.Analysis.Ada_Node;
+      Path   : Unbounded_String;
    end record;
 
    package Object_Binding_Vectors is new Ada.Containers.Vectors
@@ -314,9 +317,11 @@ package body Adalang_Analyzer.VC_Prover is
            Natural_Image (Natural (Key.Object.Sloc_Range.Start_Column));
       begin
          if Libadalang.Analysis.Is_Null (Key.Component) then
-            return Object_Name;
+            return Object_Name & To_String (Key.Path);
          end if;
-         return Object_Name & "_" &
+         --  Neither "." nor "@" can be part of an Ada name, so that a
+         --  path is never taken for one.
+         return Object_Name & To_String (Key.Path) & "_" &
            Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
              (Adalang_Analyzer.Ada_Text.Node_Text (Key.Component));
       end;
@@ -346,7 +351,8 @@ package body Adalang_Analyzer.VC_Prover is
          Target : constant Symbol_Key :=
            (Object    => To,
             Component => (if Key.Component = From then To
-                          else Key.Component));
+                          else Key.Component),
+            Path      => Key.Path);
          Index  : constant Natural := Binding_Index (Result, Target);
          Item   : constant Symbolic_Binding :=
            (Key => Target, Sort => Sort, Term => To_Unbounded_String (Term));
@@ -405,13 +411,41 @@ package body Adalang_Analyzer.VC_Prover is
    --  where Assume_Component_Subtypes says so, those of the subtype the
    --  component is declared with, as far as they are fixed whatever the
    --  state. A root for the value of a whole object (Value_Key) has none.
+   --
+   --  The range a declaration gives does not change, and working it out
+   --  costs a resolution of the component's type: it is kept.
+   package Declared_Range_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Domain.Abstract_Range,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=",
+      "="             => Domain."=");
+   Declared_Ranges : Declared_Range_Maps.Map;
+
+   procedure Find_Declared_Range
+     (Component : Libadalang.Analysis.Ada_Node;
+      Bounds    : out Domain.Abstract_Range)
+   is
+      Position : constant Declared_Range_Maps.Cursor :=
+        Declared_Ranges.Find (Component);
+   begin
+      if Declared_Range_Maps.Has_Element (Position) then
+         Bounds := Declared_Range_Maps.Element (Position);
+         return;
+      end if;
+      Bounds := Eval.Declared_Range (Component);
+      Declared_Ranges.Include (Component, Bounds);
+   end Find_Declared_Range;
+
    function Component_Bounds (Key : Symbol_Key) return Domain.Abstract_Range
    is
+      Bounds : Domain.Abstract_Range;
    begin
       if not Component_Subtypes_Hold or else Key.Component = Key.Object then
          return Domain.Unknown_Range;
       end if;
-      return Eval.Declared_Range (Key.Component);
+      Find_Declared_Range (Key.Component, Bounds);
+      return Bounds;
    end Component_Bounds;
 
    procedure Add_Root
@@ -537,12 +571,14 @@ package body Adalang_Analyzer.VC_Prover is
    function Plain_Key
      (Node : Libadalang.Analysis.Ada_Node) return Symbol_Key
    is
-     (Object => Node, Component => Libadalang.Analysis.No_Ada_Node);
+     (Object => Node, Component => Libadalang.Analysis.No_Ada_Node,
+      Path => Null_Unbounded_String);
 
    --  True only when Node can be shown, from this expression alone, never
-   --  to be zero: a nonzero integer literal, or an identifier whose known
-   --  flow range excludes zero. Anything else (an unconstrained variable,
-   --  a range straddling zero, an arbitrary subexpression) returns False,
+   --  to be zero: a nonzero integer literal, an identifier whose known
+   --  flow range excludes zero, or any expression whose value or interval
+   --  in State excludes it ("Byte'Size", "2 * Width + 1"). Anything else
+   --  (an unconstrained variable, a range straddling zero) returns False,
    --  the same conservative answer Context.Supported := False already
    --  gives for every other unhandled shape in this file -- division/mod/
    --  rem are only translated to SMT when this holds, so a wrong guess
@@ -572,6 +608,20 @@ package body Adalang_Analyzer.VC_Prover is
                  Eval.Integer_Value (Node);
             begin
                return Value.Known and then Value.Value /= 0;
+            end;
+
+         when Libadalang.Common.Ada_Attribute_Ref
+            | Libadalang.Common.Ada_Bin_Op_Range
+            | Libadalang.Common.Ada_Un_Op =>
+            declare
+               Value  : constant Domain.Abstract_Int :=
+                 Eval.Integer_Value (Node, State);
+               Bounds : constant Domain.Abstract_Range :=
+                 Eval.Range_Value (Node, State);
+            begin
+               return (Value.Known and then Value.Value /= 0)
+                 or else (Bounds.Has_Low and then Bounds.Low > 0)
+                 or else (Bounds.Has_High and then Bounds.High < 0);
             end;
 
          when Libadalang.Common.Ada_Identifier =>
@@ -664,22 +714,56 @@ package body Adalang_Analyzer.VC_Prover is
       Sort      : Scalar_Sort := Integer_Sort;
    end record;
 
+   --  The sort of a type does not change, and finding it asks for the
+   --  full name of the type: it is kept for each declaration.
+   package Type_Sort_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Sort_Resolution,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=");
+   Type_Sorts : Type_Sort_Maps.Map;
+
+   procedure Find_Type_Sort
+     (Typ    : Libadalang.Analysis.Base_Type_Decl'Class;
+      Answer : out Sort_Resolution)
+   is
+      Key      : constant Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Typ);
+      Position : constant Type_Sort_Maps.Cursor := Type_Sorts.Find (Key);
+   begin
+      if Type_Sort_Maps.Has_Element (Position) then
+         Answer := Type_Sort_Maps.Element (Position);
+         return;
+      end if;
+
+      Answer := (Supported => False, Sort => Integer_Sort);
+      begin
+         if Langkit_Support.Text.To_UTF8
+              (Typ.P_Canonical_Fully_Qualified_Name) = "standard.boolean"
+         then
+            Answer := (Supported => True, Sort => Boolean_Sort);
+         elsif Typ.P_Is_Int_Type then
+            Answer := (Supported => True, Sort => Integer_Sort);
+         elsif Typ.P_Is_Enum_Type then
+            Answer := (Supported => True, Sort => Enum_Sort);
+         end if;
+      exception
+         when others =>
+            Answer := (Supported => False, Sort => Integer_Sort);
+      end;
+      Type_Sorts.Include (Key, Answer);
+   end Find_Type_Sort;
+
    function Type_Sort
      (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Sort_Resolution
    is
+      Answer : Sort_Resolution;
    begin
       if Libadalang.Analysis.Is_Null (Typ) then
          return (Supported => False, Sort => Integer_Sort);
-      elsif Langkit_Support.Text.To_UTF8
-        (Typ.P_Canonical_Fully_Qualified_Name) = "standard.boolean"
-      then
-         return (Supported => True, Sort => Boolean_Sort);
-      elsif Typ.P_Is_Int_Type then
-         return (Supported => True, Sort => Integer_Sort);
-      elsif Typ.P_Is_Enum_Type then
-         return (Supported => True, Sort => Enum_Sort);
       end if;
-      return (Supported => False, Sort => Integer_Sort);
+      Find_Type_Sort (Typ, Answer);
+      return Answer;
    exception
       when others =>
          return (Supported => False, Sort => Integer_Sort);
@@ -732,7 +816,10 @@ package body Adalang_Analyzer.VC_Prover is
             | Libadalang.Common.Ada_Mode_In_Out;
    end Formal_Is_Writable;
 
-   function Formal_Is_Record
+   --  True for a formal of a record or an array type, seen through a
+   --  private type to its full declaration: one whose parts are read in
+   --  the object that is the actual.
+   function Formal_Is_Composite
      (Formal : Libadalang.Analysis.Defining_Name'Class) return Boolean
    is
       Spec : constant Libadalang.Analysis.Param_Spec :=
@@ -745,57 +832,100 @@ package body Adalang_Analyzer.VC_Prover is
       end if;
 
       declare
-         Typ  : constant Libadalang.Analysis.Base_Type_Decl :=
+         Root : Libadalang.Analysis.Base_Type_Decl :=
            Spec.F_Type_Expr.P_Designated_Type_Decl;
-         Root : Libadalang.Analysis.Base_Type_Decl;
       begin
-         if Libadalang.Analysis.Is_Null (Typ) then
-            return False;
-         end if;
-         Root := Typ.P_Root_Type;
-         return Root.Kind in Libadalang.Common.Ada_Type_Decl
-           and then Root.As_Type_Decl.F_Type_Def.Kind =
-             Libadalang.Common.Ada_Record_Type_Def;
+         --  A private type, then what it is derived from, and so on.
+         for Step in 1 .. 4 loop
+            exit when Libadalang.Analysis.Is_Null (Root);
+            Root := Root.P_Root_Type;
+            exit when Libadalang.Analysis.Is_Null (Root)
+              or else Root.Kind not in Libadalang.Common.Ada_Type_Decl
+              or else Root.As_Type_Decl.F_Type_Def.Kind /=
+                Libadalang.Common.Ada_Private_Type_Def;
+            Root := Root.P_Full_View;
+         end loop;
+         return not Libadalang.Analysis.Is_Null (Root)
+           and then Root.Kind in Libadalang.Common.Ada_Type_Decl
+           and then Root.As_Type_Decl.F_Type_Def.Kind in
+             Libadalang.Common.Ada_Record_Type_Def
+               | Libadalang.Common.Ada_Array_Type_Def;
       end;
    exception
       when others =>
          return False;
-   end Formal_Is_Record;
+   end Formal_Is_Composite;
+
+   --  An object, or the part of it that Path leads to.
+   type Located_Object is record
+      Object : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Path   : Unbounded_String;
+   end record;
+
+   Nowhere : constant Located_Object :=
+     (Object => Libadalang.Analysis.No_Ada_Node,
+      Path   => Null_Unbounded_String);
 
    procedure Set_Object_Binding
      (Context : in out Translation_Context;
       Formal  : Libadalang.Analysis.Ada_Node;
-      Actual  : Libadalang.Analysis.Ada_Node)
+      Actual  : Located_Object)
    is
+      Item : constant Object_Binding :=
+        (Formal => Formal, Actual => Actual.Object, Path => Actual.Path);
    begin
       for Index in 1 .. Natural (Context.Object_Bindings.Length) loop
          if Context.Object_Bindings.Element (Index).Formal = Formal then
-            Context.Object_Bindings.Replace_Element
-              (Index, (Formal => Formal, Actual => Actual));
+            Context.Object_Bindings.Replace_Element (Index, Item);
             return;
          end if;
       end loop;
-      Context.Object_Bindings.Append ((Formal => Formal, Actual => Actual));
+      Context.Object_Bindings.Append (Item);
    end Set_Object_Binding;
 
-   function Object_Identity
+   --  What Object stands for: itself, or what the formal it is has been
+   --  bound to, a part of an object of the caller when that was the
+   --  actual.
+   function Resolved
      (Context : Translation_Context;
-      Object  : Libadalang.Analysis.Ada_Node)
-      return Libadalang.Analysis.Ada_Node
+      Object  : Libadalang.Analysis.Ada_Node) return Located_Object
    is
-      Result : Libadalang.Analysis.Ada_Node := Object;
+      Result : Located_Object :=
+        (Object => Object, Path => Null_Unbounded_String);
    begin
       --  Following the chain matters for F (R) calling G (R): G's formal
       --  must still resolve to the original caller object, not F's formal.
       for Step in 1 .. Natural (Context.Object_Bindings.Length) loop
          for Binding of Context.Object_Bindings loop
-            if Binding.Formal = Result then
-               Result := Binding.Actual;
+            if Binding.Formal = Result.Object then
+               Result :=
+                 (Object => Binding.Actual,
+                  Path   => Binding.Path & Result.Path);
                exit;
             end if;
          end loop;
       end loop;
       return Result;
+   end Resolved;
+
+   --  The key under which the value of the part of an object at Place is
+   --  kept: that of the value of the whole object (Value_Key) where Place
+   --  is one.
+   function Part_Key (Place : Located_Object) return Symbol_Key is
+     (Object => Place.Object, Component => Place.Object, Path => Place.Path);
+
+   --  As Resolved, for what has to be a whole object: nothing where Object
+   --  stands for a part of one.
+   function Object_Identity
+     (Context : Translation_Context;
+      Object  : Libadalang.Analysis.Ada_Node)
+      return Libadalang.Analysis.Ada_Node
+   is
+      Place : constant Located_Object := Resolved (Context, Object);
+   begin
+      return (if Length (Place.Path) = 0 then Place.Object
+              else Libadalang.Analysis.No_Ada_Node);
    end Object_Identity;
 
    --  Resolve a formal's declared scalar type through its Param_Spec. A
@@ -944,6 +1074,10 @@ package body Adalang_Analyzer.VC_Prover is
       Context : in out Translation_Context) return Unbounded_String;
 
    function Boolean_Term
+     (Node    : Libadalang.Analysis.Ada_Node'Class;
+      Context : in out Translation_Context) return Unbounded_String;
+
+   function Opaque_Term
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String;
 
@@ -1295,6 +1429,842 @@ package body Adalang_Analyzer.VC_Prover is
       end;
    end Array_Attribute_Term;
 
+   --  Text with the two characters a quoted SMT symbol cannot hold
+   --  replaced, so that it can be part of the name of one.
+   function Unquoted (Text : String) return String is
+      Result : String := Text;
+   begin
+      for Item of Result loop
+         if Item in '|' | '\' then
+            Item := '!';
+         end if;
+      end loop;
+      return Result;
+   end Unquoted;
+
+   --  The term for Node as a value of Sort, Integer_Sort standing for an
+   --  enumeration too.
+   function Sorted_Term
+     (Node    : Libadalang.Analysis.Ada_Node'Class;
+      Context : in out Translation_Context;
+      Sort    : Scalar_Sort) return Unbounded_String
+   is
+     (if Sort = Boolean_Sort then Boolean_Term (Node, Context)
+      else Integer_Term (Node, Context));
+
+   --  False where the type of Node is known and is not of Sort. A
+   --  conditional expression has the type its context expects, which is
+   --  not always resolved: its dependent expressions answer for it then.
+   function Sort_Agrees
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Sort : Scalar_Sort) return Boolean
+   is
+      Info : constant Sort_Resolution := Expression_Sort (Node);
+   begin
+      return not Info.Supported
+        or else (Info.Sort = Boolean_Sort) = (Sort = Boolean_Sort);
+   end Sort_Agrees;
+
+   --  True for the term of a value that is known and not negative.
+   function Is_Numeral (Text : String) return Boolean is
+     (Text'Length in 1 .. 18
+      and then (for all Item of Text => Item in '0' .. '9'));
+
+   --  The value of Index where it is known and not negative -- for an
+   --  enumeration, the position -- as Integer_Term would give it: a
+   --  literal, what the state holds, or the term a formal of an inlined
+   --  function was bound to. "" for any other index.
+   function Known_Index
+     (Index   : Libadalang.Analysis.Expr'Class;
+      Context : Translation_Context) return String
+   is
+      Position : constant Domain.Abstract_Int := Enum_Literal_Position (Index);
+      Value    : Domain.Abstract_Int;
+      Id       : Libadalang.Analysis.Ada_Node;
+      Bound    : Natural;
+   begin
+      if Libadalang.Analysis.Is_Null (Index) then
+         return "";
+      elsif Position.Known then
+         return SMT_Integer (Position.Value);
+      end if;
+
+      Value := Eval.Integer_Value (Index, Context.State);
+      if Value.Known then
+         return (if Value.Value >= 0 then SMT_Integer (Value.Value) else "");
+      end if;
+
+      Id :=
+        (if Index.Kind = Libadalang.Common.Ada_Identifier
+           then Libadalang.Analysis.Ada_Node (Index)
+         else Eval.Expanded_Name_Target (Index));
+      if Libadalang.Analysis.Is_Null (Id) then
+         --  Anything else is asked of Integer_Term itself -- a bound an
+         --  array's declaration fixes ("A (A'First)") -- on a copy, so
+         --  that what the translation adds is not kept.
+         declare
+            Trial : Translation_Context := Context;
+            Term  : constant String :=
+              To_String (Integer_Term (Index, Trial));
+         begin
+            return (if Trial.Supported and then Is_Numeral (Term) then Term
+                    else "");
+         end;
+      end if;
+      Bound := Binding_Index (Context.Symbols, Plain_Key (Referenced_Key (Id)));
+      if Bound /= 0
+        and then Is_Numeral
+          (To_String (Context.Symbols.Bindings.Element (Bound).Term))
+      then
+         return To_String (Context.Symbols.Bindings.Element (Bound).Term);
+      end if;
+      return "";
+   exception
+      when others =>
+         return "";
+   end Known_Index;
+
+   --  Where Name is: the object it names, or the part of an object -- a
+   --  component of a record, the element of an array at an index whose
+   --  value is known where Name stands, and so on inwards. Nowhere for
+   --  any other name: one that goes through an access value, a call, a
+   --  conversion, or an index that is not known, where which object is
+   --  meant is not settled by the name.
+   function Location
+     (Name    : Libadalang.Analysis.Ada_Node'Class;
+      Context : Translation_Context) return Located_Object
+   is
+      Id : Libadalang.Analysis.Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Name) then
+         return Nowhere;
+      end if;
+
+      Id :=
+        (if Name.Kind = Libadalang.Common.Ada_Identifier
+           then Libadalang.Analysis.Ada_Node (Name)
+         else Eval.Expanded_Name_Target (Name));
+      if not Libadalang.Analysis.Is_Null (Id) then
+         return Resolved (Context, Referenced_Key (Id));
+      elsif Name.Kind = Libadalang.Common.Ada_Dotted_Name then
+         declare
+            Dotted      : constant Libadalang.Analysis.Dotted_Name :=
+              Name.As_Dotted_Name;
+            Field       : constant Libadalang.Analysis.Ada_Node :=
+              (if Dotted.F_Suffix.Kind = Libadalang.Common.Ada_Identifier
+               then Referenced_Key (Dotted.F_Suffix)
+               else Libadalang.Analysis.No_Ada_Node);
+            Prefix_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+              Dotted.F_Prefix.P_Expression_Type;
+            Base        : Located_Object;
+         begin
+            if Libadalang.Analysis.Is_Null (Field)
+              or else Field.Kind /= Libadalang.Common.Ada_Defining_Name
+              or else Field.As_Defining_Name.P_Basic_Decl.Kind not in
+                Libadalang.Common.Ada_Component_Decl
+                  | Libadalang.Common.Ada_Discriminant_Spec
+              or else Libadalang.Analysis.Is_Null (Prefix_Type)
+              or else Prefix_Type.P_Is_Access_Type
+            then
+               return Nowhere;
+            end if;
+            Base := Location (Dotted.F_Prefix, Context);
+            if Libadalang.Analysis.Is_Null (Base.Object) then
+               return Nowhere;
+            end if;
+            return
+              (Object => Base.Object,
+               Path   =>
+                 Base.Path & "." &
+                 Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                   (Adalang_Analyzer.Ada_Text.Node_Text (Field)));
+         end;
+      elsif Name.Kind = Libadalang.Common.Ada_Call_Expr then
+         declare
+            Call        : constant Libadalang.Analysis.Call_Expr :=
+              Name.As_Call_Expr;
+            Prefix_Type : Libadalang.Analysis.Base_Type_Decl;
+            Base        : Located_Object;
+         begin
+            if Call.P_Kind /= Libadalang.Common.Array_Index
+              or else Call.F_Suffix.Kind /= Libadalang.Common.Ada_Assoc_List
+              or else Call.F_Suffix.Children_Count /= 1
+            then
+               return Nowhere;
+            end if;
+            Prefix_Type := Call.F_Name.P_Expression_Type;
+            if Libadalang.Analysis.Is_Null (Prefix_Type)
+              or else Prefix_Type.P_Is_Access_Type
+            then
+               return Nowhere;
+            end if;
+
+            declare
+               Index : constant String :=
+                 Known_Index (Single_Actual_Expr (Call.F_Suffix), Context);
+            begin
+               if not Is_Numeral (Index) then
+                  return Nowhere;
+               end if;
+               Base := Location (Call.F_Name, Context);
+               if Libadalang.Analysis.Is_Null (Base.Object) then
+                  return Nowhere;
+               end if;
+               return
+                 (Object => Base.Object, Path => Base.Path & "@" & Index);
+            end;
+         end;
+      end if;
+      return Nowhere;
+   exception
+      when others =>
+         return Nowhere;
+   end Location;
+
+   --  The symbol for Call, the scalar element of an array at an index
+   --  whose value is known, as a value of Sort, Integer_Sort standing for
+   --  an enumeration too. It is keyed by where the element is, as the
+   --  value of a part of the array, and a write to any element of any
+   --  array renews it. Where component subtypes hold it is within the
+   --  subtype of the array's components.
+   function Element_Term
+     (Call    : Libadalang.Analysis.Call_Expr;
+      Context : in out Translation_Context;
+      Sort    : Scalar_Sort) return Unbounded_String
+   is
+      Place     : constant Located_Object := Location (Call, Context);
+      Sort_Info : constant Sort_Resolution := Expression_Sort (Call);
+   begin
+      if Libadalang.Analysis.Is_Null (Place.Object) then
+         Mark_Unsupported (Context, Call, Unsupported_Call);
+         return Null_Unbounded_String;
+      elsif Domain.Flow_Initialization (Context.State, Place.Object) /=
+        Domain.Bool_True
+      then
+         Mark_Unsupported (Context, Call, Uninitialized_Object);
+         return Null_Unbounded_String;
+      elsif not Sort_Info.Supported
+        or else (Sort_Info.Sort = Boolean_Sort) /= (Sort = Boolean_Sort)
+      then
+         Mark_Unsupported (Context, Call, Sort_Mismatch);
+         return Null_Unbounded_String;
+      elsif Sort_Info.Sort = Enum_Sort then
+         return To_Unbounded_String
+           (Symbol_For
+              (Context, Part_Key (Place), Enum_Sort,
+               Enum_Variable_Bounds (Call)));
+      end if;
+      return To_Unbounded_String
+        (Symbol_For
+           (Context, Part_Key (Place), Sort_Info.Sort,
+            Explicit_Bounds =>
+              (if Component_Subtypes_Hold and then Sort_Info.Sort = Integer_Sort
+               then Eval.Type_Range (Call.P_Expression_Type, Context.State)
+               else Domain.Unknown_Range)));
+   end Element_Term;
+
+   --  The symbol for Dotted, a component or a discriminant of a record
+   --  object read by name ("TheAdmin.RolePresent"), as a value of Sort,
+   --  Integer_Sort standing for an enumeration too. Never GNAT's own RM
+   --  8.3 own-name-qualification shape ("Subp_Name.Param" inside
+   --  "procedure Subp_Name (Param : ...)", Flow_Assigned_Name's own special
+   --  case in Flow_Interp), nor a package-qualified name
+   --  ("Some_Package.Some_Constant"): both are excluded by the checks below
+   --  (the resolved declaration must be a component or a discriminant, and
+   --  the prefix must be a flow-initialized object -- a subprogram's or
+   --  package's own defining name is neither).
+   --
+   --  The symbol is keyed by where the record is (Location) and by the
+   --  component. The object an indexed component resolves to is the
+   --  array, and keyed by that alone "A (1).V" and "A (2).V" were one
+   --  symbol, equal whatever the two elements hold (FP-119): the element
+   --  is part of the key, and a record that is nowhere a name settles has
+   --  no symbol for its components.
+   function Component_Term
+     (Dotted  : Libadalang.Analysis.Dotted_Name;
+      Context : in out Translation_Context;
+      Sort    : Scalar_Sort) return Unbounded_String
+   is
+      Place      : constant Located_Object :=
+        Location (Dotted.F_Prefix, Context);
+      Object_Key : constant Libadalang.Analysis.Ada_Node := Place.Object;
+      Field_Name : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Is_Field   : Boolean;
+   begin
+      if Dotted.F_Suffix.Kind = Libadalang.Common.Ada_Identifier then
+         Field_Name := Referenced_Key (Dotted.F_Suffix);
+      end if;
+      Is_Field :=
+        not Libadalang.Analysis.Is_Null (Field_Name)
+        and then Field_Name.Kind = Libadalang.Common.Ada_Defining_Name
+        and then Field_Name.As_Defining_Name.P_Basic_Decl.Kind in
+          Libadalang.Common.Ada_Component_Decl
+            | Libadalang.Common.Ada_Discriminant_Spec;
+
+      if Libadalang.Analysis.Is_Null (Object_Key)
+        or else not Is_Field
+        or else Domain.Flow_Initialization (Context.State, Object_Key) /=
+          Domain.Bool_True
+      then
+         Mark_Unsupported
+           (Context, Dotted,
+            (if not Libadalang.Analysis.Is_Null (Object_Key) and then Is_Field
+             then Uninitialized_Object
+             else Unsupported_Expression_Kind));
+         return Null_Unbounded_String;
+      end if;
+
+      declare
+         --  No per-component tracking exists anywhere in this codebase's
+         --  abstract interpreter (Flow_Domain never models
+         --  "Object.Component" writes at all -- only the RM 8.3 shape
+         --  excluded above), so there is no way to verify this specific
+         --  field was itself written, only that its enclosing object was.
+         --  This is the same level of trust the interpreter already places
+         --  at every subprogram boundary (an "in"/"in out" parameter's own
+         --  Flow_Initialization is asserted, not proven, from Ada's
+         --  calling-convention discipline), not a new category of risk
+         --  this addition introduces.
+         Key       : constant Symbol_Key :=
+           (Object => Object_Key, Component => Field_Name,
+            Path   => Place.Path);
+         Sort_Info : constant Sort_Resolution := Expression_Sort (Dotted);
+      begin
+         if not Sort_Info.Supported
+           or else (Sort_Info.Sort = Boolean_Sort) /= (Sort = Boolean_Sort)
+         then
+            Mark_Unsupported (Context, Dotted, Sort_Mismatch);
+            return Null_Unbounded_String;
+         elsif Sort_Info.Sort = Enum_Sort then
+            return To_Unbounded_String
+              (Symbol_For
+                 (Context, Key, Enum_Sort, Enum_Variable_Bounds (Dotted)));
+         end if;
+         return To_Unbounded_String
+           (Symbol_For (Context, Key, Sort_Info.Sort));
+      end;
+   end Component_Term;
+
+   --  The key of what is known of Object'Constrained when Object is a
+   --  parameter bound to an actual: no component of Object, nor Object
+   --  itself, which is the key of its value.
+   function Constrained_Key
+     (Object : Libadalang.Analysis.Ada_Node) return Symbol_Key
+   is (Object => Object, Component => Object.Parent,
+       Path => Null_Unbounded_String);
+
+   --  The term for Prefix'Constrained (RM 3.7.2), Prefix naming an object
+   --  directly or by an expanded name. It is True of a constant and of a
+   --  parameter of mode in. Of a parameter of another mode it is what it
+   --  is of the actual (RM 6.4.1), which nothing the subprogram does can
+   --  change: the term the call bound it to, or a symbol of its own that,
+   --  named as the bounds of an array are, no write to the object renews.
+   --  Of a variable it is False where the declaration gives the name of a
+   --  type alone and every discriminant of that type has a default, the
+   --  type being neither tagged nor limited: such an object is constrained
+   --  by nothing. Any other variable is left alone.
+   function Constrained_Term
+     (Prefix  : Libadalang.Analysis.Ada_Node'Class;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Context : in out Translation_Context) return Unbounded_String
+   is
+      Id   : constant Libadalang.Analysis.Ada_Node :=
+        (if Libadalang.Analysis.Is_Null (Prefix)
+           then Libadalang.Analysis.No_Ada_Node
+         elsif Prefix.Kind = Libadalang.Common.Ada_Identifier
+           then Libadalang.Analysis.Ada_Node (Prefix)
+         else Eval.Expanded_Name_Target (Prefix));
+      Decl : Libadalang.Analysis.Basic_Decl;
+      Key  : Libadalang.Analysis.Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Id) then
+         Mark_Unsupported (Context, Node, Unsupported_Attribute);
+         return Null_Unbounded_String;
+      end if;
+
+      Decl := Id.As_Name.P_Referenced_Decl;
+      if Libadalang.Analysis.Is_Null (Decl) then
+         Mark_Unsupported (Context, Node, Unsupported_Attribute);
+         return Null_Unbounded_String;
+      elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec
+        and then Decl.As_Param_Spec.F_Mode in
+          Libadalang.Common.Ada_Mode_Default | Libadalang.Common.Ada_Mode_In
+      then
+         return To_Unbounded_String ("true");
+      end if;
+
+      --  A formal that stands for an object in the caller is that object.
+      Key := Object_Identity (Context, Declaration_Formal (Referenced_Key (Id)));
+      if Libadalang.Analysis.Is_Null (Key)
+        or else Key.Kind /= Libadalang.Common.Ada_Defining_Name
+        or else Domain.Classify (Key) /= Domain.Tracked
+      then
+         Mark_Unsupported (Context, Node, Unsupported_Attribute);
+         return Null_Unbounded_String;
+      end if;
+
+      declare
+         Bound : constant Natural :=
+           Binding_Index (Context.Symbols, Constrained_Key (Key));
+      begin
+         if Bound /= 0 then
+            if Context.Symbols.Bindings.Element (Bound).Sort /= Boolean_Sort
+            then
+               Mark_Unsupported (Context, Node, Sort_Mismatch);
+               return Null_Unbounded_String;
+            end if;
+            return Context.Symbols.Bindings.Element (Bound).Term;
+         end if;
+      end;
+
+      Decl := Key.As_Defining_Name.P_Basic_Decl;
+      if Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+         if Decl.As_Param_Spec.F_Mode in
+           Libadalang.Common.Ada_Mode_Default | Libadalang.Common.Ada_Mode_In
+         then
+            return To_Unbounded_String ("true");
+         end if;
+         declare
+            Name : constant String := Root_Name (Plain_Key (Key), "ac");
+         begin
+            Add_Root
+              (Context.Symbols, Name, Constrained_Key (Key), Boolean_Sort,
+               Context.State);
+            return To_Unbounded_String (Name);
+         end;
+      elsif Decl.Kind /= Libadalang.Common.Ada_Object_Decl
+        or else not Libadalang.Analysis.Is_Null
+          (Decl.As_Object_Decl.F_Renaming_Clause)
+      then
+         Mark_Unsupported (Context, Node, Unsupported_Attribute);
+         return Null_Unbounded_String;
+      elsif Decl.As_Object_Decl.F_Has_Constant then
+         return To_Unbounded_String ("true");
+      end if;
+
+      declare
+         Type_Expr : constant Libadalang.Analysis.Type_Expr :=
+           Decl.As_Object_Decl.F_Type_Expr;
+         Typ       : Libadalang.Analysis.Base_Type_Decl;
+         Defaulted : Boolean := False;
+      begin
+         if Type_Expr.Kind = Libadalang.Common.Ada_Subtype_Indication
+           and then Libadalang.Analysis.Is_Null
+             (Type_Expr.As_Subtype_Indication.F_Constraint)
+         then
+            Typ := Type_Expr.P_Designated_Type_Decl;
+         end if;
+         if not Libadalang.Analysis.Is_Null (Typ)
+           and then Typ.Kind = Libadalang.Common.Ada_Concrete_Type_Decl
+           and then not Typ.P_Is_Tagged_Type
+           and then not Typ.P_Is_Limited_Type
+           and then not Libadalang.Analysis.Is_Null
+             (Typ.As_Concrete_Type_Decl.F_Discriminants)
+           and then Typ.As_Concrete_Type_Decl.F_Discriminants.Kind =
+             Libadalang.Common.Ada_Known_Discriminant_Part
+         then
+            Defaulted := True;
+            for Spec of Typ.As_Concrete_Type_Decl.F_Discriminants
+                          .As_Known_Discriminant_Part.F_Discr_Specs
+            loop
+               Defaulted := Defaulted
+                 and then not Libadalang.Analysis.Is_Null
+                   (Spec.As_Discriminant_Spec.F_Default_Expr);
+            end loop;
+         end if;
+         if Defaulted then
+            return To_Unbounded_String ("false");
+         end if;
+      end;
+      Mark_Unsupported (Context, Node, Unsupported_Attribute);
+      return Null_Unbounded_String;
+   end Constrained_Term;
+
+   --  The condition under which Subject is one of the values Choice
+   --  stands for, Choice being an alternative of a membership test or a
+   --  choice of a case expression: a range (Low .. High), the range of an
+   --  array's index, a subtype without a predicate, or a single value. A
+   --  choice that cannot be translated fails the whole expression, the
+   --  set being under-approximated by leaving it out.
+   function Choice_Term
+     (Choice  : Libadalang.Analysis.Ada_Node'Class;
+      Subject : Unbounded_String;
+      Context : in out Translation_Context) return Unbounded_String
+   is
+      function Within (Low, High : String) return Unbounded_String is
+        (To_Unbounded_String
+           ("(and (<= " & Low & " " & To_String (Subject) & ") (<= " &
+            To_String (Subject) & " " & High & "))"));
+   begin
+      if Choice.Kind in Libadalang.Common.Ada_Bin_Op_Range
+        and then Choice.As_Bin_Op.F_Op = Libadalang.Common.Ada_Op_Double_Dot
+      then
+         declare
+            Low  : constant Unbounded_String :=
+              Integer_Term (Choice.As_Bin_Op.F_Left, Context);
+            High : constant Unbounded_String :=
+              Integer_Term (Choice.As_Bin_Op.F_Right, Context);
+         begin
+            if not Context.Supported then
+               return Null_Unbounded_String;
+            end if;
+            return Within (To_String (Low), To_String (High));
+         end;
+      elsif Choice.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+          (Adalang_Analyzer.Ada_Text.Node_Text
+             (Choice.As_Attribute_Ref.F_Attribute)) = "range"
+        and then Attribute_Dimension (Choice.As_Attribute_Ref) /= 0
+      then
+         --  "X in A'Range" is "X in A'First .. A'Last".
+         declare
+            Dimension : constant Positive :=
+              Attribute_Dimension (Choice.As_Attribute_Ref);
+            Low  : constant Unbounded_String :=
+              Array_Attribute_Term
+                (Choice.As_Attribute_Ref.F_Prefix, "first", Choice, Context,
+                 Dimension);
+            High : constant Unbounded_String :=
+              Array_Attribute_Term
+                (Choice.As_Attribute_Ref.F_Prefix, "last", Choice, Context,
+                 Dimension);
+         begin
+            if not Context.Supported then
+               return Null_Unbounded_String;
+            end if;
+            return Within (To_String (Low), To_String (High));
+         end;
+      end if;
+
+      declare
+         --  A subtype-mark choice (e.g. "X in Some_Subtype") is
+         --  syntactically a Name but isn't a value-yielding expression;
+         --  resolve it to its own static range instead of trying to
+         --  translate it as one, mirroring the range shape above.
+         Type_Decl : Libadalang.Analysis.Basic_Decl :=
+           Libadalang.Analysis.No_Basic_Decl;
+      begin
+         if Choice.Kind in Libadalang.Common.Ada_Name then
+            Type_Decl := Choice.As_Name.P_Referenced_Decl;
+         end if;
+
+         if not Libadalang.Analysis.Is_Null (Type_Decl)
+           and then Type_Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+           and then Eval.Has_Subtype_Predicate (Type_Decl.As_Base_Type_Decl)
+         then
+            --  The members of a predicated subtype are a subset of its
+            --  range, so the range shape below would wrongly admit every
+            --  in-range value: its negation ("not in") then proves a
+            --  non-member out of range (FP-086).
+            Mark_Unsupported (Context, Choice, Unsupported_Expression_Kind);
+            return Null_Unbounded_String;
+         elsif not Libadalang.Analysis.Is_Null (Type_Decl)
+           and then Type_Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+         then
+            declare
+               Int_Bounds : constant Domain.Abstract_Range :=
+                 Eval.Type_Range
+                   (Type_Decl.As_Base_Type_Decl, Context.State);
+               --  Eval.Type_Range only resolves integer subtypes; when the
+               --  choice is an enum subtype mark instead (Type_Range
+               --  leaves both bounds unset), fall back to its
+               --  literal-position range.
+               Bounds     : constant Domain.Abstract_Range :=
+                 (if Int_Bounds.Has_Low or else Int_Bounds.Has_High
+                  then Int_Bounds
+                  else Enum_Type_Position_Range
+                    (Type_Decl.As_Base_Type_Decl));
+            begin
+               if not Bounds.Has_Low or else not Bounds.Has_High then
+                  Mark_Unsupported (Context, Choice, Missing_Static_Bounds);
+                  return Null_Unbounded_String;
+               end if;
+               return Within
+                 (SMT_Integer (Bounds.Low), SMT_Integer (Bounds.High));
+            end;
+         end if;
+      end;
+
+      declare
+         Value : constant Unbounded_String := Integer_Term (Choice, Context);
+      begin
+         if not Context.Supported then
+            return Null_Unbounded_String;
+         end if;
+         return Binary ("=", Subject, Value);
+      end;
+   end Choice_Term;
+
+   --  The term for a conditional expression as a value of Sort: that of
+   --  the first dependent expression whose condition holds, and True for
+   --  a Boolean one that has no else part and no condition holding. Each
+   --  dependent expression is translated with what is known where the
+   --  whole expression stands, not with what its condition adds: one that
+   --  needs its condition to be translated at all -- a divisor it shows to
+   --  be other than zero -- is not translated.
+   function If_Term
+     (Expr    : Libadalang.Analysis.If_Expr;
+      Context : in out Translation_Context;
+      Sort    : Scalar_Sort) return Unbounded_String
+   is
+      Result : Unbounded_String;
+
+      procedure Guard
+        (Condition : Libadalang.Analysis.Expr'Class;
+         Value     : Libadalang.Analysis.Expr'Class)
+      is
+         Holds : constant Unbounded_String :=
+           Boolean_Term (Condition, Context);
+         Term  : constant Unbounded_String :=
+           Sorted_Term (Value, Context, Sort);
+      begin
+         Result := "(ite " & Holds & " " & Term & " " & Result & ")";
+      end Guard;
+   begin
+      if not Sort_Agrees (Expr, Sort) then
+         Mark_Unsupported (Context, Expr, Sort_Mismatch);
+         return Null_Unbounded_String;
+      elsif not Libadalang.Analysis.Is_Null (Expr.F_Else_Expr) then
+         Result := Sorted_Term (Expr.F_Else_Expr, Context, Sort);
+      elsif Sort = Boolean_Sort then
+         Result := To_Unbounded_String ("true");
+      else
+         Mark_Unsupported (Context, Expr, Unsupported_Expression_Kind);
+         return Null_Unbounded_String;
+      end if;
+
+      for Index in reverse 1 .. Expr.F_Alternatives.Children_Count loop
+         declare
+            Part : constant Libadalang.Analysis.Elsif_Expr_Part :=
+              Expr.F_Alternatives.Child (Index).As_Elsif_Expr_Part;
+         begin
+            Guard (Part.F_Cond_Expr, Part.F_Then_Expr);
+         end;
+      end loop;
+      Guard (Expr.F_Cond_Expr, Expr.F_Then_Expr);
+
+      if not Context.Supported then
+         return Null_Unbounded_String;
+      end if;
+      return Result;
+   end If_Term;
+
+   --  Whether Choice, a choice of a case expression, covers Value, the
+   --  position for an enumeration: told from literals, named numbers,
+   --  ranges of them, a subtype without a predicate whose range is fixed,
+   --  and "others". Undecided for any other choice.
+   type Choice_Answer is (Chosen, Not_Chosen, Undecided);
+
+   function Chooses
+     (Choice : Libadalang.Analysis.Ada_Node'Class;
+      Value  : Long_Long_Integer;
+      State  : Domain.Flow_State) return Choice_Answer
+   is
+      function Fixed
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Domain.Abstract_Int
+      is
+         Position : constant Domain.Abstract_Int :=
+           Enum_Literal_Position (Node);
+      begin
+         return (if Position.Known then Position
+                 else Eval.Integer_Value (Node));
+      end Fixed;
+
+      function Within (Low, High : Long_Long_Integer) return Choice_Answer is
+        (if Value in Low .. High then Chosen else Not_Chosen);
+   begin
+      if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
+         return Chosen;
+      elsif Choice.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+         if Choice.As_Bin_Op.F_Op /= Libadalang.Common.Ada_Op_Double_Dot then
+            return Undecided;
+         end if;
+         declare
+            Low  : constant Domain.Abstract_Int :=
+              Fixed (Choice.As_Bin_Op.F_Left);
+            High : constant Domain.Abstract_Int :=
+              Fixed (Choice.As_Bin_Op.F_Right);
+         begin
+            return (if Low.Known and then High.Known
+                    then Within (Low.Value, High.Value) else Undecided);
+         end;
+      elsif Choice.Kind not in Libadalang.Common.Ada_Name then
+         declare
+            Single : constant Domain.Abstract_Int := Fixed (Choice);
+         begin
+            return (if Single.Known then Within (Single.Value, Single.Value)
+                    else Undecided);
+         end;
+      end if;
+
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Choice.As_Name.P_Referenced_Decl;
+      begin
+         if not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+         then
+            if Eval.Has_Subtype_Predicate (Decl.As_Base_Type_Decl) then
+               return Undecided;
+            end if;
+            declare
+               Int_Bounds : constant Domain.Abstract_Range :=
+                 Eval.Type_Range (Decl.As_Base_Type_Decl, State);
+               Bounds     : constant Domain.Abstract_Range :=
+                 (if Int_Bounds.Has_Low or else Int_Bounds.Has_High
+                  then Int_Bounds
+                  else Enum_Type_Position_Range (Decl.As_Base_Type_Decl));
+            begin
+               return (if Bounds.Has_Low and then Bounds.Has_High
+                       then Within (Bounds.Low, Bounds.High) else Undecided);
+            end;
+         end if;
+      end;
+
+      declare
+         Single : constant Domain.Abstract_Int := Fixed (Choice);
+      begin
+         return (if Single.Known then Within (Single.Value, Single.Value)
+                 else Undecided);
+      end;
+   exception
+      when others =>
+         return Undecided;
+   end Chooses;
+
+   --  The term for a case expression as a value of Sort: that of the
+   --  alternative one of whose choices the selecting expression is. Where
+   --  no alternative is "others", the value when none is chosen is a
+   --  symbol of which nothing is known, named after the expression and
+   --  what selects: the choices cover every value of the selecting
+   --  expression's subtype, which is not every value the term for it can
+   --  take, and nothing may follow from a value it cannot hold.
+   function Case_Term
+     (Expr    : Libadalang.Analysis.Case_Expr;
+      Context : in out Translation_Context;
+      Sort    : Scalar_Sort) return Unbounded_String
+   is
+      Selector_Sort : constant Sort_Resolution :=
+        Expression_Sort (Expr.F_Expr);
+      Count         : constant Natural := Expr.F_Cases.Children_Count;
+      Selector      : Unbounded_String;
+      Result        : Unbounded_String;
+   begin
+      if not Sort_Agrees (Expr, Sort) then
+         Mark_Unsupported (Context, Expr, Sort_Mismatch);
+         return Null_Unbounded_String;
+      elsif Count = 0
+        or else not Selector_Sort.Supported
+        or else Selector_Sort.Sort not in Integer_Sort | Enum_Sort
+      then
+         Mark_Unsupported (Context, Expr, Unsupported_Expression_Kind);
+         return Null_Unbounded_String;
+      end if;
+
+      Selector := Integer_Term (Expr.F_Expr, Context);
+      if not Context.Supported or else Length (Selector) = 0 then
+         return Null_Unbounded_String;
+      end if;
+
+      --  Where what selects is a known value -- a formal of an inlined
+      --  function bound to a literal, most of all -- the alternative is
+      --  chosen here and the others are not translated at all, as long as
+      --  each choice met on the way can be told from that value.
+      if Is_Numeral (To_String (Selector)) then
+         declare
+            Value : constant Long_Long_Integer :=
+              Long_Long_Integer'Value (To_String (Selector));
+         begin
+            Alternatives :
+            for Index in 1 .. Count loop
+               declare
+                  Alternative : constant
+                    Libadalang.Analysis.Case_Expr_Alternative :=
+                      Expr.F_Cases.Child (Index).As_Case_Expr_Alternative;
+               begin
+                  for Choice of Alternative.F_Choices loop
+                     declare
+                        Answer : constant Choice_Answer :=
+                          Chooses (Choice, Value, Context.State);
+                     begin
+                        if Answer = Chosen then
+                           return Sorted_Term
+                             (Alternative.F_Expr, Context, Sort);
+                        end if;
+                        exit Alternatives when Answer = Undecided;
+                     end;
+                  end loop;
+               end;
+            end loop Alternatives;
+         end;
+      end if;
+
+      for Index in reverse 1 .. Count loop
+         declare
+            Alternative : constant Libadalang.Analysis.Case_Expr_Alternative :=
+              Expr.F_Cases.Child (Index).As_Case_Expr_Alternative;
+            Choices     : constant Libadalang.Analysis.Alternatives_List :=
+              Alternative.F_Choices;
+            Is_Others   : constant Boolean :=
+              Choices.Children_Count = 1
+              and then Choices.Child (1).Kind =
+                Libadalang.Common.Ada_Others_Designator;
+            Value       : constant Unbounded_String :=
+              Sorted_Term (Alternative.F_Expr, Context, Sort);
+            Chosen      : Unbounded_String;
+         begin
+            if not Context.Supported or else Length (Value) = 0 then
+               return Null_Unbounded_String;
+            elsif Is_Others then
+               if Index /= Count then
+                  Mark_Unsupported
+                    (Context, Alternative, Unsupported_Expression_Kind);
+                  return Null_Unbounded_String;
+               end if;
+               Result := Value;
+            else
+               if Index = Count then
+                  declare
+                     Key  : constant Symbol_Key :=
+                       Plain_Key (Libadalang.Analysis.Ada_Node (Expr));
+                     Name : constant String :=
+                       "|" & Root_Name (Key, "cv") & " " &
+                       Unquoted (To_String (Selector)) & "|";
+                  begin
+                     Add_Root
+                       (Context.Symbols, Name, Key,
+                        (if Sort = Boolean_Sort then Boolean_Sort
+                         else Integer_Sort),
+                        Domain.Empty_Flow_State);
+                     Result := To_Unbounded_String (Name);
+                  end;
+               end if;
+
+               for Choice of Choices loop
+                  declare
+                     Term : constant Unbounded_String :=
+                       Choice_Term (Choice, Selector, Context);
+                  begin
+                     if not Context.Supported or else Length (Term) = 0 then
+                        if Context.Supported then
+                           Mark_Unsupported
+                             (Context, Choice, Unsupported_Expression_Kind);
+                        end if;
+                        return Null_Unbounded_String;
+                     end if;
+                     Chosen :=
+                       (if Length (Chosen) = 0 then Term
+                        else "(or " & Chosen & " " & Term & ")");
+                  end;
+               end loop;
+               Result := "(ite " & Chosen & " " & Value & " " & Result & ")";
+            end if;
+         end;
+      end loop;
+      return Result;
+   end Case_Term;
+
    function Integer_Term_Unwrapped
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String
@@ -1477,6 +2447,9 @@ package body Adalang_Analyzer.VC_Prover is
                   when Libadalang.Common.Call =>
                      return Call_Term (Call, Context, Integer_Sort);
 
+                  when Libadalang.Common.Array_Index =>
+                     return Element_Term (Call, Context, Integer_Sort);
+
                   when others =>
                      Mark_Unsupported (Context, Node, Unsupported_Call);
                      return Null_Unbounded_String;
@@ -1639,82 +2612,13 @@ package body Adalang_Analyzer.VC_Prover is
             end;
 
          when Libadalang.Common.Ada_Dotted_Name =>
-            --  An ordinary record-component read, e.g.
-            --  "TheAdmin.RolePresent" -- never GNAT's own RM 8.3
-            --  own-name-qualification shape ("Subp_Name.Param" inside
-            --  "procedure Subp_Name (Param : ...)", Flow_Assigned_Name's
-            --  own special case in Flow_Interp), nor a package-qualified
-            --  name ("Some_Package.Some_Constant"): both are excluded by
-            --  the same two checks below (the resolved declaration must
-            --  be a genuine Ada_Component_Decl, and the prefix must be a
-            --  flow-initialized object -- a subprogram's or package's own
-            --  defining name is neither).
-            declare
-               Dotted     : constant Libadalang.Analysis.Dotted_Name :=
-                 Node.As_Dotted_Name;
-               Object_Key : constant Libadalang.Analysis.Ada_Node :=
-                 Object_Identity
-                   (Context, Referenced_Key (Dotted.F_Prefix));
-               Field_Name : Libadalang.Analysis.Ada_Node :=
-                 Libadalang.Analysis.No_Ada_Node;
-            begin
-               if Dotted.F_Suffix.Kind = Libadalang.Common.Ada_Identifier then
-                  Field_Name := Referenced_Key (Dotted.F_Suffix);
-               end if;
+            return Component_Term (Node.As_Dotted_Name, Context, Integer_Sort);
 
-               if Libadalang.Analysis.Is_Null (Object_Key)
-                 or else Libadalang.Analysis.Is_Null (Field_Name)
-                 or else Field_Name.Kind /= Libadalang.Common.Ada_Defining_Name
-                 or else Field_Name.As_Defining_Name.P_Basic_Decl.Kind /=
-                   Libadalang.Common.Ada_Component_Decl
-                 or else Domain.Flow_Initialization
-                   (Context.State, Object_Key) /= Domain.Bool_True
-               then
-                  Mark_Unsupported
-                    (Context, Node,
-                     (if not Libadalang.Analysis.Is_Null (Object_Key)
-                        and then not Libadalang.Analysis.Is_Null (Field_Name)
-                        and then Field_Name.Kind =
-                          Libadalang.Common.Ada_Defining_Name
-                        and then Field_Name.As_Defining_Name.P_Basic_Decl.Kind =
-                          Libadalang.Common.Ada_Component_Decl
-                      then Uninitialized_Object
-                      else Unsupported_Expression_Kind));
-                  return Null_Unbounded_String;
-               end if;
+         when Libadalang.Common.Ada_If_Expr =>
+            return If_Term (Node.As_If_Expr, Context, Integer_Sort);
 
-               declare
-                  --  No per-component tracking exists anywhere in this
-                  --  codebase's abstract interpreter (Flow_Domain never
-                  --  models "Object.Component" writes at all -- only the
-                  --  RM 8.3 shape excluded above), so there is no way to
-                  --  verify this specific field was itself written, only
-                  --  that its enclosing object was. This is the same
-                  --  level of trust the interpreter already places at
-                  --  every subprogram boundary (an "in"/"in out"
-                  --  parameter's own Flow_Initialization is asserted, not
-                  --  proven, from Ada's calling-convention discipline),
-                  --  not a new category of risk this addition introduces.
-                  Key         : constant Symbol_Key :=
-                    (Object => Object_Key, Component => Field_Name);
-                  Enum_Bounds : constant Domain.Abstract_Range :=
-                    Enum_Variable_Bounds (Node);
-                  Sort_Info   : constant Sort_Resolution :=
-                    Expression_Sort (Node);
-               begin
-                  if not Sort_Info.Supported
-                    or else Sort_Info.Sort not in Integer_Sort | Enum_Sort
-                  then
-                     Mark_Unsupported (Context, Node, Sort_Mismatch);
-                     return Null_Unbounded_String;
-                  elsif Sort_Info.Sort = Enum_Sort then
-                     return To_Unbounded_String
-                       (Symbol_For (Context, Key, Enum_Sort, Enum_Bounds));
-                  end if;
-                  return To_Unbounded_String
-                    (Symbol_For (Context, Key, Integer_Sort));
-               end;
-            end;
+         when Libadalang.Common.Ada_Case_Expr =>
+            return Case_Term (Node.As_Case_Expr, Context, Integer_Sort);
 
          when others =>
             Mark_Unsupported
@@ -1808,17 +2712,6 @@ package body Adalang_Analyzer.VC_Prover is
                 (Node.As_Bin_Op.F_Right, Context.State).Known
             then
                declare
-                  function Unquoted (Text : String) return String is
-                     Result : String := Text;
-                  begin
-                     for Item of Result loop
-                        if Item in '|' | '\' then
-                           Item := '!';
-                        end if;
-                     end loop;
-                     return Result;
-                  end Unquoted;
-
                   Key   : constant Symbol_Key :=
                     Plain_Key (Libadalang.Analysis.Ada_Node (Node));
                   Left  : constant String :=
@@ -1913,6 +2806,8 @@ package body Adalang_Analyzer.VC_Prover is
          begin
             if Call.P_Kind = Libadalang.Common.Call then
                return Call_Term (Call, Context, Boolean_Sort);
+            elsif Call.P_Kind = Libadalang.Common.Array_Index then
+               return Element_Term (Call, Context, Boolean_Sort);
             end if;
             Mark_Unsupported (Context, Node, Unsupported_Call);
             return Null_Unbounded_String;
@@ -2029,6 +2924,44 @@ package body Adalang_Analyzer.VC_Prover is
                      Integer_Term (Expr.F_Right, Context));
                when Libadalang.Common.Ada_Op_Eq
                   | Libadalang.Common.Ada_Op_Neq =>
+                  --  An access value is a token, and null the one token
+                  --  that is the same wherever it is written.
+                  if Expr.F_Left.Kind = Libadalang.Common.Ada_Null_Literal
+                    or else Expr.F_Right.Kind =
+                      Libadalang.Common.Ada_Null_Literal
+                  then
+                     declare
+                        Other : constant Libadalang.Analysis.Expr :=
+                          (if Expr.F_Left.Kind =
+                             Libadalang.Common.Ada_Null_Literal
+                           then Expr.F_Right else Expr.F_Left);
+                        Typ   : constant Libadalang.Analysis.Base_Type_Decl :=
+                          Other.P_Expression_Type;
+                        Token : Unbounded_String;
+                     begin
+                        if Other.Kind = Libadalang.Common.Ada_Null_Literal then
+                           return To_Unbounded_String
+                             (if Op = Libadalang.Common.Ada_Op_Eq
+                              then "true" else "false");
+                        elsif Libadalang.Analysis.Is_Null (Typ)
+                          or else not Typ.P_Is_Access_Type
+                        then
+                           Mark_Unsupported
+                             (Context, Node, Unsupported_Expression_Kind);
+                           return Null_Unbounded_String;
+                        end if;
+                        Token := Opaque_Term (Other, Context);
+                        if not Context.Supported or else Length (Token) = 0
+                        then
+                           return Null_Unbounded_String;
+                        end if;
+                        return To_Unbounded_String
+                          ((if Op = Libadalang.Common.Ada_Op_Eq
+                            then "(= " else "(distinct ") &
+                           To_String (Token) & " 0)");
+                     end;
+                  end if;
+
                   declare
                      Trial : Translation_Context := Context;
                      Left_Bool : constant Unbounded_String :=
@@ -2082,139 +3015,13 @@ package body Adalang_Analyzer.VC_Prover is
 
             for I in 1 .. Expr.F_Membership_Exprs.Children_Count loop
                declare
-                  Alternative : constant Libadalang.Analysis.Ada_Node :=
-                    Expr.F_Membership_Exprs.Child (I);
-                  Term        : Unbounded_String;
+                  Term : constant Unbounded_String :=
+                    Choice_Term
+                      (Expr.F_Membership_Exprs.Child (I), Subject, Context);
                begin
-                  if Alternative.Kind in Libadalang.Common.Ada_Bin_Op_Range
-                    and then Alternative.As_Bin_Op.F_Op =
-                      Libadalang.Common.Ada_Op_Double_Dot
-                  then
-                     declare
-                        Low  : constant Unbounded_String :=
-                          Integer_Term
-                            (Alternative.As_Bin_Op.F_Left, Context);
-                        High : constant Unbounded_String :=
-                          Integer_Term
-                            (Alternative.As_Bin_Op.F_Right, Context);
-                     begin
-                        if not Context.Supported then
-                           return Null_Unbounded_String;
-                        end if;
-                        Term := To_Unbounded_String
-                          ("(and (<= " & To_String (Low) & " " &
-                             To_String (Subject) & ") (<= " &
-                             To_String (Subject) & " " & To_String (High) &
-                             "))");
-                     end;
-                  elsif Alternative.Kind = Libadalang.Common.Ada_Attribute_Ref
-                    and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
-                      (Adalang_Analyzer.Ada_Text.Node_Text
-                         (Alternative.As_Attribute_Ref.F_Attribute)) = "range"
-                    and then Attribute_Dimension
-                      (Alternative.As_Attribute_Ref) /= 0
-                  then
-                     --  "X in A'Range" is "X in A'First .. A'Last".
-                     declare
-                        Dimension : constant Positive :=
-                          Attribute_Dimension (Alternative.As_Attribute_Ref);
-                        Low  : constant Unbounded_String :=
-                          Array_Attribute_Term
-                            (Alternative.As_Attribute_Ref.F_Prefix, "first",
-                             Alternative, Context, Dimension);
-                        High : constant Unbounded_String :=
-                          Array_Attribute_Term
-                            (Alternative.As_Attribute_Ref.F_Prefix, "last",
-                             Alternative, Context, Dimension);
-                     begin
-                        if not Context.Supported then
-                           return Null_Unbounded_String;
-                        end if;
-                        Term := To_Unbounded_String
-                          ("(and (<= " & To_String (Low) & " " &
-                             To_String (Subject) & ") (<= " &
-                             To_String (Subject) & " " & To_String (High) &
-                             "))");
-                     end;
-                  else
-                     declare
-                        --  A subtype-mark choice (e.g. "X in Some_Subtype")
-                        --  is syntactically a Name but isn't a value-
-                        --  yielding expression; resolve it to its own
-                        --  static range instead of trying to translate it
-                        --  as one, mirroring the "and (<= Low Subject)
-                        --  (<= Subject High)" range shape above.
-                        Type_Decl : Libadalang.Analysis.Basic_Decl :=
-                          Libadalang.Analysis.No_Basic_Decl;
-                     begin
-                        if Alternative.Kind in Libadalang.Common.Ada_Name then
-                           Type_Decl := Alternative.As_Name.P_Referenced_Decl;
-                        end if;
-
-                        if not Libadalang.Analysis.Is_Null (Type_Decl)
-                          and then Type_Decl.Kind in
-                            Libadalang.Common.Ada_Base_Type_Decl
-                          and then Eval.Has_Subtype_Predicate
-                            (Type_Decl.As_Base_Type_Decl)
-                        then
-                           --  The members of a predicated subtype are a
-                           --  subset of its range, so the range shape below
-                           --  would wrongly admit every in-range value: its
-                           --  negation ("not in") then proves a non-member
-                           --  out of range (FP-086).
-                           Mark_Unsupported
-                             (Context, Alternative,
-                              Unsupported_Expression_Kind);
-                           return Null_Unbounded_String;
-                        elsif not Libadalang.Analysis.Is_Null (Type_Decl)
-                          and then Type_Decl.Kind in
-                            Libadalang.Common.Ada_Base_Type_Decl
-                        then
-                           declare
-                              Int_Bounds : constant Domain.Abstract_Range :=
-                                Eval.Type_Range
-                                  (Type_Decl.As_Base_Type_Decl,
-                                   Context.State);
-                              --  Eval.Type_Range only resolves integer
-                              --  subtypes; when the choice is an enum
-                              --  subtype mark instead (Type_Range leaves
-                              --  both bounds unset), fall back to its
-                              --  literal-position range.
-                              Bounds     : constant Domain.Abstract_Range :=
-                                (if Int_Bounds.Has_Low
-                                   or else Int_Bounds.Has_High
-                                 then Int_Bounds
-                                 else Enum_Type_Position_Range
-                                   (Type_Decl.As_Base_Type_Decl));
-                           begin
-                              if not Bounds.Has_Low
-                                or else not Bounds.Has_High
-                              then
-                                 Mark_Unsupported
-                                   (Context, Alternative,
-                                    Missing_Static_Bounds);
-                                 return Null_Unbounded_String;
-                              end if;
-                              Term := To_Unbounded_String
-                                ("(and (<= " & SMT_Integer (Bounds.Low) &
-                                   " " & To_String (Subject) & ") (<= " &
-                                   To_String (Subject) & " " &
-                                   SMT_Integer (Bounds.High) & "))");
-                           end;
-                        else
-                           declare
-                              Value : constant Unbounded_String :=
-                                Integer_Term (Alternative, Context);
-                           begin
-                              if not Context.Supported then
-                                 return Null_Unbounded_String;
-                              end if;
-                              Term := Binary ("=", Subject, Value);
-                           end;
-                        end if;
-                     end;
+                  if not Context.Supported then
+                     return Null_Unbounded_String;
                   end if;
-
                   Goal :=
                     (if Length (Goal) = 0 then Term
                      else To_Unbounded_String
@@ -2233,6 +3040,20 @@ package body Adalang_Analyzer.VC_Prover is
                return To_Unbounded_String ("(not " & To_String (Goal) & ")");
             end if;
          end;
+      elsif Node.Kind = Libadalang.Common.Ada_If_Expr then
+         return If_Term (Node.As_If_Expr, Context, Boolean_Sort);
+      elsif Node.Kind = Libadalang.Common.Ada_Case_Expr then
+         return Case_Term (Node.As_Case_Expr, Context, Boolean_Sort);
+      elsif Node.Kind = Libadalang.Common.Ada_Dotted_Name then
+         return Component_Term (Node.As_Dotted_Name, Context, Boolean_Sort);
+      elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+          (Adalang_Analyzer.Ada_Text.Node_Text
+             (Node.As_Attribute_Ref.F_Attribute)) = "constrained"
+        and then Node.As_Attribute_Ref.F_Args.Children_Count = 0
+      then
+         return Constrained_Term
+           (Node.As_Attribute_Ref.F_Prefix, Node, Context);
       end if;
 
       Mark_Unsupported (Context, Node, Unsupported_Expression_Kind);
@@ -2339,31 +3160,30 @@ package body Adalang_Analyzer.VC_Prover is
                end if;
                Bound := Bound + 1;
 
-               if Formal_Is_Record (Formal) then
-                  --  A record has no scalar SMT term of its own. For the
-                  --  deliberately narrow supported shape, retain the plain
-                  --  actual object's identity so Formal.Field builds the
-                  --  same Symbol_Key as Actual.Field in the caller.
-                  if Actual.Kind /= Libadalang.Common.Ada_Identifier then
-                     Mark_Unsupported
-                       (Callee, Actual, Record_Actual_Not_Object);
-                     Copy_Failure (Context, Callee);
-                     return Null_Unbounded_String;
-                  end if;
+               if Formal_Is_Composite (Formal) then
+                  --  A record or an array has no scalar SMT term of its
+                  --  own. The formal stands for where the actual is -- an
+                  --  object, or a part of one that its name settles -- so
+                  --  that Formal.Field builds the same Symbol_Key as
+                  --  Actual.Field in the caller.
                   declare
-                     Actual_Key : constant Libadalang.Analysis.Ada_Node :=
-                       Object_Identity (Context, Referenced_Key (Actual));
+                     Place : constant Located_Object :=
+                       Location (Actual, Context);
                   begin
-                     if Libadalang.Analysis.Is_Null (Actual_Key)
-                       or else Domain.Flow_Initialization
-                         (Context.State, Actual_Key) /= Domain.Bool_True
+                     if Libadalang.Analysis.Is_Null (Place.Object) then
+                        Mark_Unsupported
+                          (Callee, Actual, Record_Actual_Not_Object);
+                        Copy_Failure (Context, Callee);
+                        return Null_Unbounded_String;
+                     elsif Domain.Flow_Initialization
+                       (Context.State, Place.Object) /= Domain.Bool_True
                      then
                         Mark_Unsupported
                           (Callee, Actual, Uninitialized_Object);
                         Copy_Failure (Context, Callee);
                         return Null_Unbounded_String;
                      end if;
-                     Set_Object_Binding (Callee, Named, Actual_Key);
+                     Set_Object_Binding (Callee, Named, Place);
                   end;
                else
                   declare
@@ -2470,7 +3290,7 @@ package body Adalang_Analyzer.VC_Prover is
    --  object.
    function Value_Key
      (Object : Libadalang.Analysis.Ada_Node) return Symbol_Key
-   is (Object => Object, Component => Object);
+   is (Object => Object, Component => Object, Path => Null_Unbounded_String);
 
    --  True for the type of a value that can stand as a token: not one of
    --  the scalar sorts, which have terms of their own, not a task or a
@@ -2572,8 +3392,7 @@ package body Adalang_Analyzer.VC_Prover is
                return To_Unbounded_String
                  (Symbol_For
                     (Context,
-                     Value_Key
-                       (Object_Identity (Context, Referenced_Key (Node))),
+                     Part_Key (Resolved (Context, Referenced_Key (Node))),
                      Opaque_Sort));
             end;
 
@@ -3305,7 +4124,9 @@ package body Adalang_Analyzer.VC_Prover is
          if Libadalang.Analysis.Is_Null (Item.Actual) then
             Domain.Flow_Havoc (Frame_Flow, Item.Formal);
          end if;
-         Objects.Append ((Formal => Item.Formal, Actual => Item.Actual));
+         Objects.Append
+           ((Formal => Item.Formal, Actual => Item.Actual,
+             Path   => Null_Unbounded_String));
       end loop;
 
       Take (Condition);
@@ -3324,16 +4145,23 @@ package body Adalang_Analyzer.VC_Prover is
       --  The key gets a symbol of its own, named after the writer: what
       --  earlier facts say of the old value they still say of the old
       --  symbol.
-      procedure Renew (Key : Symbol_Key; Prefix : String) is
+      procedure Renew (Key : Symbol_Key; Sort : Scalar_Sort; Prefix : String)
+      is
          Name : constant String := Root_Name (Key, Prefix);
       begin
-         Add_Root (Result, Name, Key, Opaque_Sort, Domain.Empty_Flow_State);
+         Add_Root (Result, Name, Key, Sort, Domain.Empty_Flow_State);
          Set_Binding
            (Result,
             (Key  => Key,
-             Sort => Opaque_Sort,
+             Sort => Sort,
              Term => To_Unbounded_String (Name)));
       end Renew;
+
+      --  True for what a write to elements of an array can change: a
+      --  value that is not a scalar, and a scalar read in an element.
+      function Stale (Key : Symbol_Key; Sort : Scalar_Sort) return Boolean is
+        (Sort = Opaque_Sort
+         or else Ada.Strings.Unbounded.Index (Key.Path, "@") /= 0);
    begin
       if not State.Supported or else Libadalang.Analysis.Is_Null (Writer) then
          return Havoc;
@@ -3343,13 +4171,13 @@ package body Adalang_Analyzer.VC_Prover is
          Prefix : constant String := Writer_Prefix (Writer);
       begin
          for Root of State.Roots loop
-            if Root.Sort = Opaque_Sort then
-               Renew (Root.Key, Prefix);
+            if Stale (Root.Key, Root.Sort) then
+               Renew (Root.Key, Root.Sort, Prefix);
             end if;
          end loop;
          for Binding of State.Bindings loop
-            if Binding.Sort = Opaque_Sort then
-               Renew (Binding.Key, Prefix);
+            if Stale (Binding.Key, Binding.Sort) then
+               Renew (Binding.Key, Binding.Sort, Prefix);
             end if;
          end loop;
       end;
@@ -3642,6 +4470,43 @@ package body Adalang_Analyzer.VC_Prover is
          Context.Symbols := Before;
    end Bind_Array_Bounds;
 
+   --  Context with what is known of whether Formal is constrained. A
+   --  formal of mode in out or out, of a type with discriminants, is
+   --  constrained where its actual is (RM 6.4.1): what Actual'Constrained
+   --  is, is said of Formal's. Nothing is said for an actual that is not
+   --  the name of an object -- a component, an element, a conversion --
+   --  nor for one whose own answer is not known.
+   function With_Constrained
+     (Context : Translation_Context;
+      Formal  : Libadalang.Analysis.Ada_Node;
+      Actual  : Libadalang.Analysis.Expr'Class) return Translation_Context
+   is
+      Result : Translation_Context := Context;
+      Term   : Unbounded_String;
+   begin
+      if Formal.Kind /= Libadalang.Common.Ada_Defining_Name
+        or else not Formal_Is_Writable (Formal.As_Defining_Name)
+        or else Enclosing_Param_Spec (Formal.As_Defining_Name).F_Type_Expr
+                  .P_Designated_Type_Decl.P_Discriminants_List'Length = 0
+      then
+         return Context;
+      end if;
+
+      Term := Constrained_Term (Actual, Actual, Result);
+      if not Result.Supported or else Length (Term) = 0 then
+         return Context;
+      end if;
+      Set_Binding
+        (Result.Symbols,
+         (Key  => Constrained_Key (Formal),
+          Sort => Boolean_Sort,
+          Term => Term));
+      return Result;
+   exception
+      when others =>
+         return Context;
+   end With_Constrained;
+
    function Bind_Actual
      (State  : Symbolic_State;
       Formal : Libadalang.Analysis.Ada_Node;
@@ -3692,7 +4557,7 @@ package body Adalang_Analyzer.VC_Prover is
                   Inlining_Path => Null_Unbounded_String, Depth => 0);
             begin
                Bind_Array_Bounds (Bounds_Only, Formal, Actual);
-               return Bounds_Only.Symbols;
+               return With_Constrained (Bounds_Only, Formal, Actual).Symbols;
             end;
          end if;
          Bind_Array_Bounds (Context, Formal, Actual);
@@ -3703,10 +4568,10 @@ package body Adalang_Analyzer.VC_Prover is
          --  Where the actual is an object, what is known of its scalar
          --  components is known of the formal's.
          if Actual.Kind = Libadalang.Common.Ada_Identifier then
-            return Alias_Object
-              (Context.Symbols, Referenced_Key (Actual), Formal);
+            Context.Symbols :=
+              Alias_Object (Context.Symbols, Referenced_Key (Actual), Formal);
          end if;
-         return Context.Symbols;
+         return With_Constrained (Context, Formal, Actual).Symbols;
       end;
    exception
       when others =>
@@ -4710,12 +5575,13 @@ package body Adalang_Analyzer.VC_Prover is
    function Array_Bound_Facts (State : Symbolic_State) return Symbolic_State
    is
       --  True for the name Array_Attribute_Term gives a bound or length
-      --  symbol: "af", "al" or "an", then the object's file, line and
-      --  column.
+      --  symbol, "af", "al" or "an", or Constrained_Term the symbol for
+      --  whether a parameter is constrained, "ac": then the object's
+      --  file, line and column.
       function Is_Bound_Symbol (Token : String) return Boolean is
         (Token'Length > 4
          and then Token (Token'First) = 'a'
-         and then Token (Token'First + 1) in 'f' | 'l' | 'n'
+         and then Token (Token'First + 1) in 'f' | 'l' | 'n' | 'c'
          and then
            (for all Item of Token (Token'First + 2 .. Token'Last) =>
               Item in '0' .. '9' | '_' | File_Mark_Character));
