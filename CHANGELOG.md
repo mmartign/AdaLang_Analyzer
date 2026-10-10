@@ -5,7 +5,11 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.6] - 2026-10-10
+
+A `--verify` release that corrects a false-safe and decides more of what
+GNATprove proves, with the obligations 1.8.5 had: no kind of obligation is
+new, none is added and none is gone on the ten corpora.
 
 Who `FP-119` concerns: every release with `--verify` up to 1.8.5. A
 `Proved_Safe` assertion, precondition, postcondition, loop invariant or
@@ -17,8 +21,32 @@ precondition said of one element was known of all, and of an element that
 had been assigned since. A condition on two elements that no array
 contradicts was taken for one that cannot hold, and everything it guards
 was proved, a division by a component that can be zero among it. Eleven
-checks of the coap_spark corpus were proved that way; the code is correct
-and GNATprove proves them, so no comparison showed it.
+obligations of the coap_spark corpus were proved that way, on code that is
+correct; GNATprove reports no check at those places, so no comparison
+showed it.
+
+What the release decides that 1.8.5 did not is mostly a matter of form.
+Much of what 1.8.5 left `Unproved` was not hard arithmetic but an
+expression it could not hand to the solvers: an `if` or a `case`
+expression, a component of a component, a discriminant, the element of an
+array, `X'Constrained`. Those are now part of what `--verify` translates,
+and the scalar parts of an object have symbols of their own, each keyed by
+the object and the way from it to the part.
+`docs/src/supported-verification-subset.md` says what each rests on.
+
+Of the 15,043 checks GNATprove proves on the five fully proved corpora,
+`--verify` proves 6,100 (5,980 in 1.8.5) and has an obligation for 12,551,
+as before, with no check it proves that GNATprove does not and no definite
+error on a check GNATprove proves
+(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). Given GNATprove's logs
+it accounts for all 15,043: the 6,100 it proves itself, 6,451 that carry
+GNATprove's verdict on an obligation AdaLang has and did not decide, and
+2,492 that carry it with no AdaLang obligation. Every preset reports, on
+each of the ten corpora, exactly the findings of 1.8.5.
+
+What to expect of a report: more `Proved_Safe`, fewer `Unproved`; an
+obligation that was `Proved_Safe` through `FP-119` is `Unproved`; a
+`--verify` run takes less processor time.
 
 ### Added
 
@@ -46,6 +74,10 @@ and GNATprove proves them, so no comparison showed it.
   a type, the declared range of a component -- the `--verify` lanes of the
   five fully proved corpora take between 2% and 33% less processor time
   than in 1.8.5, with more decided.
+- The results documents of the benchmarks are named
+  `benchmarks/<corpus>/RESULTS_2026-10-10.md`; they were
+  `RESULTS_2026-10-09.md`, which is the name earlier entries of this file
+  give them.
 
 ### Fixed
 
