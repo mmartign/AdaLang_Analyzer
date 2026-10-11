@@ -2,80 +2,10 @@
 
 Recorded 2026-10-10 with AdaLang Analyzer 1.8.6, against the GNATprove
 output saved by the 2026-10-02 runs of the five fully proved corpora
-(`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`).
-
-1.8.6 has the obligations of 1.8.5, every one, and decides more of them:
-it proves 6,100 of the checks below where 1.8.5 proved 5,980. A conditional
-expression and a case expression are part of what it translates for the
-solvers. The scalar parts of an object that its name settles have symbols
-of their own -- a component of a component, a discriminant, the element of
-an array at an index whose value is known -- and a record or array
-parameter of an inlined expression function stands for the part of the
-caller's object that is its actual. `X'Constrained` is known where the
-declarations say it, an access value can be compared with `null`, and a
-divisor whose value excludes zero is not zero whatever its form. Of
-GNATprove's 2,938 preconditions 1,076 are proved (1,013 by 1.8.5), of its
-2,372 range checks 766 (733), of its 589 assertions 51 (36). One false-safe
-is fixed, `FP-119`: a component read in an element of an array was one
-symbol for every element, so that two elements were equal and a condition
-on two of them could pass for one that cannot hold. Eleven obligations of
-`coap_spark` had been proved through it, on code that is correct; they are
-unproved again, and none of the checks below that 1.8.5 proved is lost.
-1.8.5 proved 5,980 of the checks, left 5,174 unproved and 1,397
-unsupported, and had no obligation for 2,492.
-
-1.8.5 had kept the obligations of 1.8.4 and decided more of them. A
-constant, an `in` parameter and the parameter of a loop hold a value of
-their subtype wherever they are read. A call leaves an `in out` actual
-initialized, and an `out` actual where the callee writes it on every path
-or is SPARK code; after a call of SPARK code a scalar actual is within the
-subtype of the parameter, in SPARK code so is a scalar component of a
-record, and a generic unit is SPARK code where its instantiations are. A
-call whose effects are not known leaves what is known of the objects it
-cannot reach. The bounds of an array are values of its index type, a formal
-has the bounds of its actual in a precondition, and an operation of a type
-declared with a range is checked against the part of its base range that
-the language guarantees. It fixed two false-safes, `FP-117` (an `out`
-actual taken to be initialized after a callee that can return without
-writing it) and `FP-118` (an expression function that completes an earlier
-declaration, read with its formals unbound). 1.8.4 had proved 4,757 of the
-checks, left 6,397 unproved and 1,397 unsupported, and had no obligation
-for 2,492.
-
-1.8.4 had added obligations to those of 1.8.3, and proved most of what it
-added. An array given to a target has a length check, a kind of obligation
-AdaLang did not have: 308 of GNATprove's 311 have one, and 1.8.4 proved 129
-of them. The length of an array is checked where it is converted to an
-integer type, and is known to be no more than the number of values of its
-index subtype. The precondition of an operator that a declaration defines
-is an obligation at the operator. It fixed `FP-116`, a false-safe that
-shows in no corpus: such an operator was read as the predefined operation.
-1.8.3 had proved 4,299 of the checks, left 6,317 unproved and 1,306
-unsupported, and had no obligation for 3,121.
-
-1.8.3 had kept the obligations of 1.8.2, but for three range checks on an
-actual that is a static value, and decided more of them. A name written
-with its package in front of it is the entity it names, a named number is
-its value, and `T'Size` of a static discrete subtype is a number. A loop
-with a name, a `goto` to a label further down and a quantified loop
-invariant no longer put a subprogram outside the subset. It fixed two
-false-safes in the checks that were there (`FP-112`, `FP-113`), a false
-positive (`FP-114`) and a false-safe that no corpus exercises (`FP-115`).
-1.8.2 had proved 3,536 of the checks, left 6,062 unproved and 2,324
-unsupported.
-
-1.8.2 had added to 1.8.1 the calls: a call to a function of its arguments
-is a term the provers can match, a procedure call with known effects leaves
-what is known of the caller's own scalars, and a callee's postcondition is
-assumed after the call; with the fixes `FP-109` to `FP-111`. 1.8.1 had
-proved 3,018 of the checks.
-
-1.8.1 had added to 1.8.0 the initialization of an `out` parameter and of
-an `Output` global at its subprogram's exit, the bounds of a slice, the
-range check on an actual parameter, the termination, data-dependencies and
-flow-dependencies obligations, the verification of expression functions and
-of the checks inside preconditions and postconditions, and the fixes
-`FP-106` to `FP-108`.
+(`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`). The file
+keeps the name it was given when the ledger was started, on 2026-10-05.
+What each release has added since is in `CHANGELOG.md`, and earlier states
+of the ledger are in the Git history.
 
 The per-corpus comparisons (`<corpus>/RESULTS_2026-10-10.md`) answer one
 question: where both tools have exactly one obligation of a kind on a line,
@@ -84,7 +14,37 @@ GNATprove proves, how much does AdaLang prove, and what happens to the rest?
 Every check GNATprove reports is a row; none is left out for being hard to
 pair.
 
-How to read it:
+## Where it stands
+
+Of the 15,043 checks GNATprove proves on the five corpora, AdaLang proves
+6,100. It has an obligation that it does not decide for 6,451 more (5,054
+unproved, 1,397 unsupported) and no obligation for 2,492. In the other
+direction it proves none of the 22 checks GNATprove leaves unproved, and
+reports no definite error on a check GNATprove proves.
+
+By kind, summed over the per-corpus tables below, AdaLang proves:
+
+- 1,076 of GNATprove's 2,938 preconditions;
+- 766 of its 2,372 range checks;
+- 1,139 of its 1,703 initializations of an object;
+- 990 of its 1,169 termination checks;
+- 595 of its 696 data-dependency (`Global`) checks, and none of its 357
+  flow-dependency (`Depends`) checks, for which `--verify` has an
+  obligation and no route to prove it yet.
+
+What is left:
+
+- **Unproved (5,054).** AdaLang has the obligation and does not decide it.
+  The per-corpus tables below give the reason it reports for each.
+- **Unsupported (1,397).** The obligation is in a subprogram that
+  `--verify` gives up for an explicit dereference, an allocator or a
+  generic instantiation; 1,273 of them are in `coap_spark`.
+- **No obligation (2,492).** Predicate, pointer-dereference and
+  discriminant checks and memory leaks, which AdaLang does not have; and
+  range, index and precondition checks at places it does not yet look.
+  "Where the missing obligations are", below, says where.
+
+## How to read it
 
 - A **check** is a GNATprove message about one thing it verified at one
   place. A check of a generic unit, which GNATprove repeats for every
@@ -240,7 +200,9 @@ By GNATprove check, with the constructs it is most often in:
 | length check | 1 | conditional-expression 1 |
 
 Produced by `benchmarks/gnatprove_gap_contexts.py` from the ledger's rows.
-The construct is read from the syntax alone, from the inside out. What is
+It has 2,490 of the 2,492 checks without an obligation: the script leaves
+out a check whose source file it does not find under the corpus roots it is
+given. The construct is read from the syntax alone, from the inside out. What is
 left under a `Global` aspect is the initialization of state abstractions
 and of globals in sources outside the analyzed project; under a subprogram
 declaration, the termination and contract checks of the SPARK library

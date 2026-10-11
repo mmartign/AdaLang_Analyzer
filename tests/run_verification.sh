@@ -539,7 +539,7 @@ fi
 #  A loop body containing exactly one non-nested if/else, both arms
 #  reconverging on the loop back edge, is a supported subset of loop
 #  invariant preservation / variant progress (see the branch-merge design in
-#  SUPPORTED_VERIFICATION_SUBSET.md). Extra is touched only inside the
+#  docs/src/supported-verification-subset.md). Extra is touched only inside the
 #  branch and no obligation depends on it, so both arms' merged symbolic
 #  state should still let the invariant/variant/postcondition discharge.
 run_json "$loop_branch_clean" tests/verification_loop_branch_clean.adb
@@ -570,7 +570,8 @@ fi
 #  An elsif/else chain folds into the same fork-and-join machinery as a
 #  single if/else: each Condition_Node in the chain is its own binary
 #  Join_On_Condition, right-folded into nested ite terms exactly matching
-#  Ada's own elsif desugaring (see SUPPORTED_VERIFICATION_SUBSET.md).
+#  Ada's own elsif desugaring (see
+#  docs/src/supported-verification-subset.md).
 #  Extra is untouched by the invariant, so every arm's merged symbolic
 #  state still lets the invariant/variant/postcondition discharge.
 run_json "$loop_branch_elsif_clean" \

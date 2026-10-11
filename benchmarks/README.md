@@ -17,7 +17,8 @@ authored Ada/SPARK codebases — not the hand-constructed fixtures in
   (a large real project) or specific checks (concurrency-prohibition rules
   against real tasking code) that synthetic fixtures don't reach.
 - **GNATcheck oracle comparison**: for the AdaLang rules with a
-  direct/close GNATcheck counterpart (`GNATCHECK_RULE_COMPARISON.md`),
+  direct/close GNATcheck counterpart
+  (`docs/src/gnatcheck-rule-comparison.md`),
   GNATcheck's own findings on the same corpus become ground truth — an
   AdaLang finding with no matching GNATcheck finding at the same
   `(file, line)` is a potential false positive, and vice versa a potential
@@ -31,23 +32,29 @@ only — see `git log` for prior snapshots).
 
 ## Independent-oracle comparisons (GNATprove as ground truth)
 
-| Corpus | Author | Domain | Matched pairs | Unsoundness | False positives |
-| --- | --- | --- | ---: | ---: | ---: |
-| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 924 | 0 | 0 |
-| [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 112 | 0 | 0 |
-| [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 227 | 0 | 0 |
-| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 1324 | 0 | 0 |
-| [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 284 | 0 | 0 |
-| [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 8 | 0 | 0 |
-| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 427 | 0 | 0 |
+| Corpus | Author | Domain | Matched pairs | Both safe | Unsoundness | False positives |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 1,066 | 492 | 0 | 0 |
+| [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 157 | 64 | 0 | 0 |
+| [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 250 | 149 | 0 | 0 |
+| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 1,448 | 407 | 0 | 0 |
+| [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 218 | 68 | 0 | 0 |
+| [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 6 | 0 | 0 | 0 |
+| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 427 | 41 | 0 | 0 |
+
+These are the figures of release 1.8.6 (run of 2026-10-10 against the
+GNATprove output of 2026-10-02), except for `spark_testsuite`, whose last
+recorded run is that of 2026-10-02. A matched pair is a
+`(file, line, check kind)` at which each tool has exactly one obligation;
+"both safe" is the number of pairs AdaLang proves too.
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark, Tokeneer) — 2,871 proof obligations both
+Saatana, libkeccak, coap_spark, Tokeneer) — 3,139 proof obligations both
 tools could independently evaluate at the same location, spanning five
 different authors/origins and five structurally different domains —
 AdaLang has never once called something safe that GNATprove could not
 prove, and never once called something a definite error that GNATprove
-proved safe.** CubedOS's 8 matched pairs (not a fully-proved corpus, so a
+proved safe.** CubedOS's 6 matched pairs (not a fully-proved corpus, so a
 weaker oracle) show the same zero-disagreement pattern on a much smaller
 sample.
 
@@ -60,39 +67,23 @@ span nine scalar obligation kinds across far more distinct code shapes than
 the six real projects reach; its value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-10-10.md`. The first run
-of this corpus found two analyzer defects (`FP-064`, `FP-065`), both fixed
-with regression tests before it landed; the 2026-10-02 run found a third
-(`FP-100`).
+`proved-safe`. See `spark_testsuite/RESULTS_2026-10-10.md`.
 
-What this table doesn't show: AdaLang answers "I don't know"
-(`Unproved`/`Unsupported`) far more often than GNATprove does on all six —
-consistent with `POSITIONING.md`'s framing of `--verify` as "a much
-narrower scalar subset," not a competitor to full SMT-backed proof. The
-"both safe" share of each corpus's matched pairs varies a lot by code
-style: sparknacl 79/924 (~9%), tokeneer 30/284 (~11%), libkeccak 76/227
-(~33%), coap_spark 8/1324 (~0.6%) — coap_spark's RecordFlux-generated
-protocol contracts and session-state logic remain the hardest code shape
-for AdaLang's bounded verifier to independently prove, even though it
-never gets one *wrong* there.
+What the two zero columns don't show:
 
-The 2026-10-02 refresh followed release 1.6.1, which fixed eleven
-false-safe results that these comparisons could not show: on code that is
-proved correct, a bogus proof agrees with the oracle. Its effect on the
-`Proved_Safe` counts goes both ways. Results that rested on unsound
-reasoning are withdrawn (the bounds of an array that no declaration fixes,
-facts about objects across calls and loops), and what 1.6.1 added proves
-more elsewhere: SPARKNaCl 3,913 to 4,584, coap_spark 3,257 to 3,755,
-libkeccak 3,026 to 3,318, Saatana 178 to 319, and Tokeneer 2,030 to 2,010,
-the one corpus that loses on balance (118 preconditions are no longer
-proved). coap_spark's matched pairs rise from 853 to
-942 because calls to subprograms completed by expression functions now
-have precondition obligations (`FP-096`). The refresh was also the first
-run of 1.6.1 on the non-SPARK corpora and on the SPARK testsuite, and found
-three defects that release introduced: a `--verify` run time of 39 minutes
-on AWS (159 s before, 69 s now) and two false `Definite_Error` results,
-`FP-099` and `FP-100`. Each corpus's `RESULTS_2026-10-10.md` has the
-details.
+- **AdaLang answers "I don't know" (`Unproved`/`Unsupported`) far more
+  often than GNATprove does**, on every corpus — consistent with
+  `docs/src/positioning.md`'s framing of `--verify` as "a much narrower
+  scalar subset," not a competitor to full SMT-backed proof. On the five
+  fully proved corpora the "both safe" share of the matched pairs runs from
+  28% on coap_spark, whose RecordFlux-generated protocol contracts and
+  session-state logic remain the hardest code shape for the bounded
+  verifier, to 60% on libkeccak. The next section measures that distance on
+  every check, not only the paired ones.
+- **A false-safe on code that is proved correct**: there a bogus proof
+  agrees with the oracle. The seeded-defect probes and the deliberately
+  broken differential corpus exist for that (`quality/README.md`,
+  "Verification mutation campaign").
 
 ### How much of what GNATprove proves does `--verify` prove?
 
@@ -121,156 +112,23 @@ GNATprove's verdict alone on an obligation AdaLang has, 2,492 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
 
-The ledger has already paid for itself several times. Its first run led to
-`FP-104`: obligations written in a specification were reported under the
-body's file name, so 949 of them could not be paired with GNATprove's
-checks. It then showed that the largest group without an AdaLang obligation
-was initialization, which GNATprove reports once per object: `--verify` now
-checks each `out` parameter at its subprogram's exit, and the ledger sets
-GNATprove's one check against all of AdaLang's obligations about the same
-object. The next largest group AdaLang could reach was the bounds of a
-slice, for which `--verify` now raises a range check where GNATprove does,
-and after it the actual parameters, checked against the subtype of their
-formal. Preparing that last one turned up three faults in the checks that
-were already there (`FP-106` to `FP-108`), two of them false-safes that a
-comparison on proved code cannot show: a check AdaLang wrongly proves
-agrees with GNATprove there.
+What is left, and why:
 
-The ledger then showed that two fifths of what was still missing was not a
-run-time check at all: termination, and the `Global` and `Depends` aspects.
-`--verify` now has an obligation for each. Termination is proved from the
-body (bounded loops, no recursion, callees that terminate): 990 of
-GNATprove's 1,169. A `Global` aspect is proved from an over-approximation
-of what the body touches: 595 of 696. A `Depends` aspect has its obligation
-and no route to prove it yet. Last, expression functions are verified as
-subprograms, and the checks inside preconditions and postconditions are
-obligations of their own, which brought in most of what was missing in
-specifications.
-
-Before all of this AdaLang proved 433 of the 15,043 checks and had an
-obligation for 5,954; with those additions it proved 3,018 and had one for
-11,922. What was left without one then, 3,121 checks, was mostly kinds
-AdaLang did not have (predicate, length, pointer-dereference and
-discriminant checks, memory leaks) and range, index and precondition checks
-at places it did not yet look.
-
-With an obligation for four checks in five, the question became how many
-of them are proved. The largest group that was not was the precondition of
-a call, 2,938 checks of which AdaLang proved 24: contracts speak through
-functions of records and private objects (`Has_Buffer (Ctx)`), which the
-scalar language of the provers could not express. A call to a function of
-its arguments is now a term; a procedure call with known effects leaves
-what is known of the caller's own scalars; and a callee's postcondition is
-assumed after the call. With that AdaLang proved 479 of those
-preconditions and 3,536 of the 15,043 checks, 518 more, with the same
-obligations. Reading the checks that were there before building on them
-turned up three more false-safes (`FP-109` to `FP-111`): a guard that
-survived a state-changing call in its own condition, solver symbols named
-without their file, and a loop-invariant proof that stepped over the calls
-in the loop body.
-
-The next 763 came from asking, check by check, what stood in the way, and
-finding it was seldom the proof. Generated code writes every name with its
-package in front of it, and such a name was outside the language of the
-provers: once `RFLX.CoAP.CoAP_Message.F_Ver` is the literal it names, the
-largest corpus has 599 of its 2,294 preconditions proved where it had 391.
-A named number was an object with no value, and `Byte'Size` an attribute
-nobody knew: with the first its value and the second the eight bits RM
-13.3(55) gives it, the divisions by them are proved, 643 of GNATprove's 809
-where there were 259.
-And a subprogram was given up whole for a loop with a name, for a `goto`
-to a label further down or for a quantified loop invariant, none of which
-needs more than an edge in the graph: 1,306 checks are unsupported where
-2,324 were, none of them in Saatana and two in libkeccak. AdaLang then
-proved 4,299 of the 15,043 checks and 687 of the 2,938 preconditions. The
-checks read on the way had four more faults: `FP-112`, the prefix of `'Old`
-checked in the state at the exit; `FP-113`, modular arithmetic in a bound
-that did not wrap; `FP-114`, a definite error recorded from a state that
-had not settled; and `FP-115`, an object named `True` taken for the
-literal. What kept the remaining 1,306 outside was an explicit dereference,
-an allocator or a generic instantiation in the subprogram; what the
-remaining preconditions need is still the definition of the functions
-their contracts call and the predicate of the type they are about.
-
-The 458 after that came with obligations AdaLang did not have, 629 of
-them, which is the other half of the distance. The largest kind it lacked
-and could reach was the length check of an array given to a target. It is
-now a kind of its own, raised where a compiler keeps the check and placed
-as GNATprove places it -- at the value that is converted to a constrained
-subtype, and at the `:=` when the bounds of the target are not static: 308
-of GNATprove's 311 have an obligation and 129 are proved, by an aggregate
-that takes the bounds of its target or by the two lengths being equal as
-terms. The length of an array, a universal integer, is checked where it
-is converted to an integer type; and since an array has no more
-components than its index subtype has values, 313 of those checks are
-proved with it, and the arithmetic written with a length after them. The
-precondition of an operator that a declaration defines is an obligation at
-the operator. Asking what such an operator had been taken for until then
-turned up `FP-116`: the operation its symbol stands for, whatever the
-function computes. AdaLang then proved 4,757 of the 15,043 checks and had
-an obligation for 12,551.
-
-The 1,223 after that came with no new obligation at all: 1.8.5 has those
-of 1.8.4 and decides more of them. Most of what it could not decide was not
-hard arithmetic but something it did not know and the language says. An
-object was not known to be initialized: a constant declared in a package,
-the parameter of a quantified expression, and above all whatever a call
-had been given or could have reached -- an actual of a parameter the callee
-can write lost its initialization with its value, and a call of effects
-that are not known dropped every fact about every object, the caller's own
-local variables with the rest. A constant, an `in` parameter and a loop
-parameter now hold a value of their subtype wherever they are read; an
-`in out` actual stays initialized, an `out` actual is initialized where
-the callee writes it on every path, and a callee declared outside a
-subprogram leaves alone what that subprogram declares and gives no access
-to. 1,139 of GNATprove's 1,703 initialization checks are proved, where
-1.8.4 proved 754. For code under `SPARK_Mode` the rules of SPARK say more:
-a scalar actual comes back within the subtype of the parameter, and a
-scalar component of a record is within its own. The bounds of an array
-that no declaration fixes were symbols of which nothing was known; each is
-a value of the index type, and a formal has the bounds of its actual where
-a precondition speaks of them -- `Description'First = 1`, the precondition
-of one procedure of Tokeneer, is proved at 62 of its 72 calls. An operation
-of a type declared with a range is checked against the part of its base
-range that the language guarantees. Reading the code that decides what a
-call leaves known turned up two false-safes, `FP-117` and `FP-118`: an
-`out` actual taken to be initialized after a callee that can return
-without writing it, and an expression function that completes an earlier
-declaration read with its formals bound to nothing, so that what a contract
-said of one object held of every object. Neither shows in a corpus as a
-proof that is lost. AdaLang then proved 5,980 of the 15,043 checks and had
-an obligation for 12,551.
-
-The 120 after that are again decided on the obligations that were there.
-What stopped the solvers in much of what 1.8.5 left was the form of an
-expression, not its difficulty. The code RecordFlux generates for
-`coap_spark` reads a field of a message as `Ctx.Cursors (F_Token).State`,
-a component of an element of an array that is itself a component, and
-writes its contracts with `if` and `case` expressions; none of that was in
-what AdaLang translates for the solvers. Conditional and case expressions
-now are. The scalar parts of an object that its name settles have symbols
-of their own -- a component of a component, a discriminant, the element of
-an array at an index whose value is known -- and a record or array
-parameter of an inlined expression function stands for the part of the
-caller's object that is its actual. 1,076 of GNATprove's 2,938
-preconditions are proved, where 1.8.5 proved 1,013. Giving each element of
-an array its own symbols is also what turned up `FP-119`: a component read
-in an element had one symbol for every element, so that two elements were
-equal and a condition on two of them could pass for one that cannot hold.
-Eleven obligations of `coap_spark` had been proved through it, on code
-that is correct; they are unproved again, and no check of the ledger that
-1.8.5 proved is lost. AdaLang now proves 6,100 of the 15,043 checks and has
-an obligation for 12,551. What is left without one, 2,492 checks, is
-predicate, pointer-dereference and discriminant checks and memory leaks,
-which AdaLang does not have, and range, index and precondition checks at
-places it does not yet look. Another 1,397 have their obligation in a
-subprogram it gives up for an explicit dereference, an allocator or a
-generic instantiation.
+- **Unproved (5,054).** AdaLang has the obligation and does not decide it.
+  The ledger gives the reason it reports for each, per corpus.
+- **Unsupported (1,397).** The obligation is in a subprogram `--verify`
+  gives up for an explicit dereference, an allocator or a generic
+  instantiation; 1,273 of them are in coap_spark.
+- **No obligation (2,492).** Predicate, pointer-dereference and
+  discriminant checks and memory leaks, which AdaLang does not have, and
+  range, index and precondition checks at places it does not yet look.
 
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a
 check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
-the ledger from the lanes' results.
+the ledger from the lanes' results. How the figure got to 6,100, release
+by release, is in `CHANGELOG.md` (1.8.1 to 1.8.6), with the analyzer faults
+that the work turned up on the way (`FP-104`, and `FP-106` to `FP-119`).
 
 ## Real-code validation (no GNATprove oracle)
 
@@ -279,7 +137,7 @@ the ledger from the lanes' results.
 | [aws](aws/) | AdaCore | Ada Web Server, ordinary (non-SPARK) Ada | Breadth on a large real project; GNATprove never gets past a pre-existing legality error; also the corpus with genuine unrestricted `select`/`requeue`/`abort` for the `--automotive` concurrency-prohibition checks |
 | [ada_drivers_library](ada_drivers_library/) | AdaCore | STM32 bare-metal hardware drivers | Real Ravenscar `protected`-object code for the `--automotive` concurrency-prohibition checks (no `select`/`requeue`/`abort` — see aws) |
 | [gnatcoll](gnatcoll/) | AdaCore | GNAT Components Collection core (JSON, VFS, strings, email, OS/process), ordinary (non-SPARK) Ada | A third breadth corpus in a new domain (general-purpose utility library); GNATprove hard-stops on a SPARK-illegal aspect 41 units in |
-| [project_bias](project_bias/) | EliAvila10 | Bias-free cryptographic random streams | Small SPARK corpus emphasizing floating-point contracts, quantified array predicates, OS/C bindings, and entropy-buffer clearing; GNATprove reports one flow error, so it is not a fully-proved oracle (31 matched pairs, 0 unsoundness, 0 false positives — corroborates without counting toward the table above) |
+| [project_bias](project_bias/) | EliAvila10 | Bias-free cryptographic random streams | Small SPARK corpus emphasizing floating-point contracts, quantified array predicates, OS/C bindings, and entropy-buffer clearing; GNATprove reports one flow error, so it is not a fully-proved oracle (43 matched pairs, 0 unsoundness, 0 false positives — corroborates without counting toward the table above) |
 
 ## GNATcheck oracle comparison
 
@@ -362,13 +220,9 @@ them. It also changes the pairs compared earlier on those corpora, in both
 directions: more calls resolve, so checks such as `Dead_Store`,
 `Exception_Propagation` and `Missing_Global_Contract` report more, and
 `Floating_Equality` now matches GNATcheck where it used to miss. The
-analyzer side of the GNATprove comparisons above was re-run after the fix
-against the saved 2026-10-02 GNATprove output: still zero possible
-unsoundness and zero false positives on every corpus. The single-project
-corpora are unchanged; coap_spark gains nine matched pairs (942 to 951)
-and CubedOS one (7 to 8), and CubedOS, gnatcoll-core and AWS get verdicts
-for obligations that were `Unsupported` before (CubedOS 667 to 32). Each
-of those corpora's `RESULTS_2026-10-10.md` has a 2026-10-04 section.
+same fix gave CubedOS, gnatcoll-core and AWS verdicts for obligations that
+were `Unsupported` while names went unresolved; the GNATprove comparisons
+in the first section are of runs made with it.
 
 The 2026-10-05 refresh closed a second gap, `FP-103`: a source that uses
 the GNAT preprocessor did not parse, so nothing was reported for it. All
@@ -390,7 +244,7 @@ without a crash, and the plain rules were run in batches of at most 25
 (split further when a batch kept crashing); no rule had to be left out.
 The runner scripts in this directory do not do this themselves yet.
 
-Each corpus keeps one current results file, `RESULTS_gnatcheck_2026-10-04.md`
+Each corpus keeps one current results file, `RESULTS_gnatcheck_2026-10-05.md`
 (earlier runs are in the Git history), with per-rule tables for both
 tools and the known, explained differences. The 2026-09-24 refresh
 corrected two harness defects: the Ada_Drivers_Library runner had split
@@ -546,11 +400,12 @@ detection nearby. No benchmark run since has reopened any of them.
 ## Bottom line: does this evidence support using AdaLang Analyzer?
 
 Yes, within a specific scope — not as a GNATprove replacement, but as what
-it's actually positioned as (`POSITIONING.md`): a fast, no-setup-required
+it's actually positioned as (`docs/src/positioning.md`): a fast,
+no-setup-required
 first pass.
 
 **Where the evidence is strong.** Zero false positives and zero possible
-unsoundness across 2,871 matched proof obligations spanning five
+unsoundness across 3,139 matched proof obligations spanning five
 independently-authored, fully-proved SPARK corpora — a hash family, two
 crypto primitives, a protocol parser, a security-critical access-control
 system — is the property that matters most for trusting a tool's output,
@@ -563,14 +418,13 @@ third, unrelated domain (a general-purpose utility library, not a web
 server or crypto primitive): GNATprove hard-stops on a SPARK-illegal
 aspect 41 units into the project, while AdaLang completes a full pass.
 
-**Where the tradeoff bites.** AdaLang rarely proves anything independently
-on harder code shapes — on coap_spark it leaves 1,311 of 1,324 comparable
-obligations `Unproved`/`Unsupported` and matches GNATprove's own proof on
-only 8, so its `Proved_Safe` verdicts are a bonus on top of GNATprove
-where both are available, not a substitute, and its
-`Unproved`/`Unsupported` results mean "no information," not "probably
-fine." Two of the five oracle corpora (saatana: 101 matched pairs;
-cubedos: 7) are small enough samples to corroborate the pattern rather
+**Where the tradeoff bites.** AdaLang proves two fifths of what GNATprove
+proves on those corpora (6,100 of 15,043 checks) and a third on the
+hardest code shape (coap_spark, 2,258 of 6,795), so its `Proved_Safe`
+verdicts are a bonus on top of GNATprove where both are available, not a
+substitute, and its `Unproved`/`Unsupported` results mean "no information,"
+not "probably fine." Saatana (157 matched pairs) and CubedOS (6, and not
+fully proved) are small enough samples to corroborate the pattern rather
 than establish it independently.
 
 **Net:** use it for what static analysis on ordinary Ada is for — catching

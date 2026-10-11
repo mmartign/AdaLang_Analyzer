@@ -272,170 +272,92 @@ tasking, dispatching, exceptional control flow, or target-specific behavior.
 An unsupported obligation must never be silently converted to
 `Proved_Safe`.
 
-## Implemented verification boundary
+## Verification boundary
 
-The `--verify` boundary is deliberately narrow:
+The exact boundary of `--verify` -- the obligations it raises, what each is
+proved from, the expressions and control flow it follows, and what is
+outside it -- is specified in one place, the
+[supported verification subset](supported-verification-subset.md). It is
+not repeated here, so that the two documents cannot drift apart.
 
-- Scalar integer and Boolean objects.
-- Structured sequential control flow.
-- Integer division, overflow, subtype range, and array index obligations.
-- Scalar initialization obligations.
-- Assertions and simple preconditions and postconditions.
-- Statically modeled arrays and subtype bounds.
-- Loops analyzed by work-list fixed-point iteration with interval widening,
-  plus inductive initialization/preservation VCs and invariant summaries for
-  leading invariants over straight-line scalar loop bodies.
-- Calls whose analyzed bodies have complete conservative state-effect
-  summaries, plus resolved SPARK calls with explicit global effects and
-  structurally non-aliased simple writable actuals for relational contract
-  transfer.
-- Side-effect-free scalar obligations over initialized integer and Boolean
-  objects, including assertions, contracts, selected run-time checks, and
-  leading loop invariants, with `+`, `-`, `*`, comparisons, equality, and
-  Boolean connectives.
-- Relational entry preconditions, branch-local predicates, straight-line
-  scalar assignments, simple actual-to-formal precondition substitution, and
-  identical symbolic values that reach a join from every predecessor.
-- Relational facts carried across a loop and into its exit when every leading
-  invariant is proved initially and after one generic iteration.
+Three properties of that boundary decide what a result may be taken to
+mean:
 
-### Control-flow and abstract interpretation
-
-`Adalang_Analyzer.Control_Flow_Graph` now builds a reusable control-flow graph
-for the sequential statement subset. It represents entry, normal exit, and
-exceptional exit separately, and includes:
-
-- Sequential statement and declaration elaboration order.
-- `if`/`elsif`/`else` and `case` alternatives.
-- `while`, `for`, and unconditional loops, including back and exit edges.
-- Unnamed `exit` and `exit when`, return, explicit raise, and re-raise.
-- Nested begin/declare blocks and conservative exception-handler dispatch.
-- Conservative implicit exceptional edges for executable expressions and
-  declaration elaboration that may perform an Ada run-time check.
-
-The exceptional graph is intentionally an over-approximation. A handler
-dispatcher connects to every handler that could conservatively apply; a
-catch-all handler prevents direct propagation from that dispatcher, while
-exceptions raised inside a handler propagate to the enclosing scope.
-
-Unsupported transfers such as a `goto` back up to a label, extended return,
-tasking statements, and an exit that names no enclosing loop are represented
-by `Unsupported_Node` and make the graph incomplete. No `Proved_Safe` status may be derived from an incomplete graph.
-The verifier consumes a complete graph with a terminating work list. After
-repeated growth at a loop header, moving interval bounds widen to infinity;
-a final iteration guard conservatively havocs the state rather than assuming
-convergence. For a supported leading invariant, preservation is checked in a
-separate generic one-iteration VC. A second pass uses the invariant as a loop
-summary only after initialization and preservation both discharge.
-
-The excluded or explicitly unsupported set includes:
-
-- General access types and points-to reasoning.
-- Tasking, protected objects, and concurrent interference.
-- Dispatching and class-wide behavior.
-- Floating-point proof.
-- Unchecked conversion and target-dependent representation.
-- Unmodeled exception paths.
-- Calls without sound effect summaries or with unsupported writable aliasing.
-- VC translations for exponentiation, aggregates, modular conversions,
-  statement-bodied, impure, or dispatching calls, division/remainder without
-  a provably nonzero divisor, and expressions whose Ada semantics are not yet
-  encoded exactly.
-- Conflicting symbolic values at joins, exceptional edges, and calls without
-  relational postconditions.
-- Loop invariants or variants placed after executable statements, multiple
-  variants on one loop, and preservation/progress paths with branches, nested
-  loops, calls, or unsupported transfers.
+- **An incomplete graph proves nothing.** The verifier works on a
+  control-flow graph that represents entry, normal exit, and exceptional
+  exit separately. A transfer the graph cannot represent is an
+  `Unsupported_Node` and makes the graph incomplete, and no `Proved_Safe`
+  status may be derived from an incomplete graph.
+- **Exceptional flow is over-approximated.** Executable expressions and
+  declaration elaboration that may perform an Ada run-time check have
+  conservative implicit exceptional edges. A handler dispatcher connects to
+  every handler that could conservatively apply; a catch-all handler
+  prevents direct propagation from that dispatcher, while exceptions raised
+  inside a handler propagate to the enclosing scope.
+- **A loop is never assumed to converge.** The verifier consumes a complete
+  graph with a terminating work list. A bound that a loop keeps moving is
+  widened and then given up, and a final iteration guard conservatively
+  havocs the state rather than assuming convergence. For a supported
+  leading invariant, preservation is checked in a separate generic
+  one-iteration VC, and a second pass uses the invariant as a loop summary
+  only after initialization and preservation both discharge.
 
 The supported subset must be defined semantically and tested by construct. A
 source-level profile name alone is not enough.
 
-## Verification evidence and remaining work
+## Verification evidence
 
-The regression corpus includes positive, definite-error, inconclusive,
-unreachable, unsupported, loop, modular-call, initialization, more-than-64
-binding, solver-unavailable, solver-proved, solver-refuted, and
-VC-unsupported cases, plus assignment-chain, branch-predicate, merge,
-call-havoc, relational pre/postcondition, and loop-cutoff symbolic cases.
-The loop corpus also includes a relational invariant that proves a
-subprogram postcondition and a deliberately unpreserved invariant that must
-leave the postcondition unproved.
-`tests/run_gnatprove_differential.sh` also runs a compatible corpus through
-GNATprove when GNATprove is installed and explicitly reports a skip when it is
-not. The clean differential corpus currently contains 18 units, including
-dedicated arithmetic, conditional, modular-call, array, loop, and relational
-run-time-check cases. A nine-unit broken corpus provides the opposite oracle:
-GNATprove must retain at least one failed check and may not skip any unit. The
-differential gate requires GNATprove to analyze every clean-corpus unit and
-prove every generated check, and rejects an AdaLang `Definite_Error` or
-`Unsupported` result on that clean corpus. It deliberately allows AdaLang to
-remain `Unproved` where GNATprove's stronger VC generation and automated
-provers succeed. `tests/run_verification_mutations.sh` independently guards
-all 12 enumerated obligation families with seeded defects or conservative
-boundary cases; none may become `Proved_Safe` unexpectedly.
-`tests/run_seeded_defects.sh` does the same for whole probe programs under
-`tests/seeded_defects/`, in which every marked check fails or holds by
-construction; it rejects a `Proved_Safe` or `Unreachable` result on a marked
-defect and pins the outcome of every marked line.
-`tests/run_proof_path_evidence.sh` separately inventories every source-level
-`Record_Proved_Safe` producer and checks 85 method-specific routes. The first
-23 are organised by obligation kind and method; a further 25 exercise the
-scalar VC sub-boundaries within them -- individual operators (`*`, unary and
-Boolean connectives, relational comparison, non-zero `/`/`mod`/`rem`, and the
-unsupported `**` edge), scalar types (statically bounded subtype,
-enumeration, modular, and the `'Length`-on-unconstrained-formal attribute
-symbol with its unsupported named-dimension edge), branch and case joins
-(a pre-branch fact that must survive a merge, versus a conflicting binding
-that must be dropped), and the exception-handler edge (an obligation before a
-`raise`, and one on the non-exceptional path through a handler-bearing block,
-both prove while the handler-edge obligation stays `Unproved`; with several
-named handlers, the normal path past the raise chain keeps its branch facts
-and none of them leaks into a handler). A second tranche covers the
-remaining named sub-boundaries: discriminant checks (a static integer or
-enumeration-literal constraint, including an `others` variant, proves the
-access, a statically excluded component is a definite error, and a constant
-or dynamic constraint stays `Unproved`), joins beyond the first conditional
-(a second sequential or nested conditional in a loop body folds into
-invariant preservation, and a third is reported `Unproved` with
-`branch-budget-exceeded` provenance), and composite and access values
-(array-of-record indexing and record-component range checks prove, record
-aggregates stay outside the scalar VC subset, and a write through one access
-value leaves no stale fact about a read through another), and contracts on
-a separate spec (a spec precondition narrows the conforming body's
-parameters but never a same-name overload's, and a spec postcondition is
-decided against the body's exit state). A third group covers bounds and
-membership: an index proves against the object's own declared bounds or as
-the parameter of a loop over that object's own range, and never against the
-index subtype of an unconstrained formal, each dimension against bounds of
-its own; a subtype bound that reads a
-variable is unknown once the variable may have changed; a membership test
-narrows an interval on both outcomes, except that a non-member of a
-predicated subtype is not placed outside its range. A fourth covers the
-objects that always hold a value: a read of a constant is safe where one
-of a variable declared outside the subprogram is not known to be; a
-divisor within `Positive` is not zero where one within `Natural` may be;
-the parameter of a quantified expression, or of a loop over `T range
-L .. H`, is an index within its range, and one past it or of a wider type
-is not; a named number is its value in a product. Each
-route has positive and adversarial evidence, while solver-dependent routes
-also exercise unsupported translation and unavailable solvers. The gate
-compares the manifest with stable `proof-path` source tags, so a new
-unreviewed proof producer fails the repository gate.
+The statuses above rest on gates that run as part of the repository gate
+(`sh tests/run_all.sh`):
 
-The exact current proof boundary is specified in the
-[supported verification subset](supported-verification-subset.md). Confirmed
-false-safe results are governed by the release-blocking response process in
-the [false-safe response policy](false-safe-response.md).
+- **Regression corpus** (`tests/run_verification.sh`). Positive,
+  definite-error, inconclusive, unreachable, unsupported, loop,
+  initialization, solver-unavailable, solver-proved, solver-refuted and
+  VC-unsupported cases, with the outcome and provenance of each obligation
+  pinned.
+- **GNATprove differential** (`tests/run_gnatprove_differential.sh`). On a
+  clean corpus, GNATprove must analyze every unit and prove every generated
+  check, and an AdaLang `Definite_Error` or `Unsupported` result is
+  rejected. AdaLang may remain `Unproved` there, where GNATprove's stronger
+  VC generation and automated provers succeed. A broken corpus provides the
+  opposite oracle: GNATprove must retain at least one failed check and may
+  not skip any unit. The gate reports an explicit skip when GNATprove is
+  not installed.
+- **Verification mutations** (`tests/run_verification_mutations.sh`).
+  Seeded defects or conservative boundary cases guard every enumerated
+  obligation family; none may become `Proved_Safe` unexpectedly.
+- **Seeded defects** (`tests/run_seeded_defects.sh`). Whole probe programs
+  under `tests/seeded_defects/`, in which every marked check fails or holds
+  by construction. A `Proved_Safe` or `Unreachable` result on a marked
+  defect is rejected, and the outcome of every marked line is pinned.
+- **Proof-path evidence** (`tests/run_proof_path_evidence.sh`). Every
+  source-level `Record_Proved_Safe` producer is inventoried and mapped to
+  method-specific routes. The routes are organised by obligation kind and
+  method, and go on to the sub-boundaries within them: individual
+  operators and scalar types, branch and case joins, exception-handler
+  edges, discriminant checks, joins beyond the first conditional, composite
+  and access values, contracts on a separate spec, bounds and membership,
+  and the objects that always hold a value. Each route has positive and
+  adversarial evidence, while solver-dependent routes also exercise
+  unsupported translation and unavailable solvers. The gate compares the
+  manifest with stable `proof-path` source tags, so a new unreviewed proof
+  producer fails the repository gate.
+
+The manifests behind these gates are in `quality/`, and
+[`quality/README.md`](https://github.com/mmartign/AdaLang_Analyzer/blob/main/quality/README.md)
+describes each. The current size of each corpus is stated once, in the
+"Build" section of the
+[project README](https://github.com/mmartign/AdaLang_Analyzer#build).
+Confirmed false-safe results are governed by the release-blocking response
+process in the [false-safe response policy](false-safe-response.md).
 
 Before broadening the supported subset or making a stronger product claim,
 the project still needs:
 
-1. Proof paths that make the composite and access sub-boundaries more than
-   conservative: record-component and access-designated values are checked
-   against their subtypes but never carried as facts, and handler entry
-   drops even precondition facts. Array bounds are symbolic for the first
-   dimension of a declared object or a parameter only; other dimensions,
-   components and array elements themselves are not represented.
+1. Proof paths for what the supported subset still leaves `Unproved` or
+   `Unsupported` by construction; the
+   [supported verification subset](supported-verification-subset.md) names
+   each of them.
 2. A larger routinely executed differential corpus beyond the current clean
    and broken units.
 3. Broader unsupported-provenance coverage for the remaining expression and

@@ -47,7 +47,8 @@ fi
 
 #  gnatcheck has no Alire package and no prebuilt download; it must be built
 #  from source (see project_gnatcheck_acquisition.md in this session's
-#  memory, or GNATCHECK_RULE_COMPARISON.md's intro, for the full bootstrap).
+#  memory, or docs/src/gnatcheck-rule-comparison.md's intro, for the full
+#  bootstrap).
 #  GNATCHECK_ENV, if set, is sourced to bring the built binary's runtime
 #  dependencies (PATH, GPR_PROJECT_PATH, JAVA_HOME, a raised `ulimit -s` --
 #  the Ada driver stack-overflows on -P project mode without it -- etc.)

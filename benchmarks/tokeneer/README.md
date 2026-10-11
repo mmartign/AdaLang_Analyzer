@@ -26,7 +26,7 @@ positives found and fixed there, and stays put.
 As with every benchmark here, this is not an equivalence claim: AdaLang's
 bounded mode uses CFG fixed-point abstract interpretation over a narrower
 scalar subset, not GNATprove's verification-condition/prover pipeline (see
-`POSITIONING.md`).
+`docs/src/positioning.md`).
 
 ## Pinned source
 

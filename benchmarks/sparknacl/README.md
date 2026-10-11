@@ -16,7 +16,7 @@ two questions that matter are (1) does AdaLang ever call something
 not-proved verdict (a precision question). It is still not an equivalence
 claim: AdaLang's bounded mode uses CFG fixed-point abstract interpretation
 over a narrower scalar subset, not GNATprove's verification-condition/prover
-pipeline (see `POSITIONING.md`).
+pipeline (see `docs/src/positioning.md`).
 
 ## Pinned source
 
