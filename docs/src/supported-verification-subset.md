@@ -5,6 +5,26 @@ source constructs and proof claims that AdaLang Analyzer currently supports.
 The implementation and regression corpus take precedence over aspirational
 examples elsewhere in the documentation.
 
+It goes from what a result means to what it rests on:
+
+- [Meaning of a result](#meaning-of-a-result) and the
+  [enumerated obligations](#enumerated-obligations): what `--verify`
+  raises, where, and what each obligation is proved from.
+- The [scalar VC language](#scalar-vc-language): the expressions the
+  provers are given.
+- What is known of an object and what a call does to it:
+  [parts of an object](#parts-of-an-object),
+  [objects that always hold a value](#objects-that-always-hold-a-value),
+  [what a call leaves known of its actuals](#what-a-call-leaves-known-of-its-actuals),
+  [objects and effects the analysis does not follow](#objects-and-effects-the-analysis-does-not-follow),
+  [calls as terms](#calls-as-terms) and
+  [the postcondition of a callee](#the-postcondition-of-a-callee).
+- [Assertions as assumptions](#assertions-as-assumptions) and the
+  [supported control flow](#supported-control-flow).
+- What is [outside the subset](#outside-the-subset), and the
+  [evidence and change control](#evidence-and-change-control) behind this
+  document.
+
 ## Meaning of a result
 
 The unit of verification is one enumerated proof obligation at one source
@@ -26,24 +46,414 @@ interpreted as proof of safety.
 
 ## Enumerated obligations
 
+The table names every obligation. A row whose name is a link is a summary:
+the section it links to has the whole of its proof basis and boundary.
+
 | Obligation | Supported proof basis | Current boundary |
 |---|---|---|
 | Division by zero | Exact/range exclusion of zero; otherwise scalar `divisor /= 0` VC | Integer scalar divisor only |
-| Integer overflow | Operation base-type range; otherwise scalar bounds VC. For a type declared `range L .. H`, whose base range the compiler chooses, the part of it that the language guarantees (RM 3.5.4 (9)): a result within it does not overflow, provided each operand that is itself an operation is within it too; a result outside it is `Unproved`, never a `Definite_Error` | Integer `+`, `-`, `*`, `/`, and selected power checks |
-| Range | Both bounds of the target subtype, resolved as of its elaboration; otherwise scalar bounds VC against those same two bounds | Integer scalar initialization, assignment, and conversion into a signed or modular subtype whose two bounds are both known; a subtype with a bound that is not (`range 1 .. N` for a variable or unconstrained `N`) is `Unproved`. Also the two bounds of a slice written `A (L .. H)`, against the bounds of `A` as an index check takes them: proved when both bounds are within them, or when the slice is known to be null, which Ada does not check. A slice given by a subtype name or a `'Range` is `Unproved`. Also an actual parameter against the subtype of its integer formal, and what an `out` or `in out` formal gives back against the subtype of the actual: raised only where the check is needed, that is not when the receiving subtype has every value of its type nor when the form of the actual alone says it fits (a name of that subtype or of one declared from it, a static value, arithmetic whose interval over the operands' subtypes fits). The way in is decided as an assignment is; the way back is `Unproved` whenever it is raised, nothing being known of the value the callee leaves beyond the formal's subtype. Also the conversion of `X'Length`, a universal integer, to the integer type its context expects, at the attribute: against the base range of the type where the length is an operand of one of the type's own operators, a comparison, a membership test or a range among them, and against the subtype anywhere else -- a qualified expression, or the operand of an operator that a declaration defines, whose formal gives the subtype. None where nothing is converted (both operands universal, or a length that is a static value), and none beside the check of an assignment, an actual parameter or a conversion, which is the one raised there. Where the type is declared with a range of its own its base range is the implementation's to choose: the check is proved when the length is within the declared range and its opposites, which every base range has (RM 3.5.4 (9)), and is `Unproved` otherwise |
-| Index | The indexed object's own bounds per dimension -- the index constraint on its declaration, or its constrained array type or subtype -- otherwise scalar bounds VC against those bounds; or, with no bounds a declaration fixes, either the index is the parameter of a `for` loop over that same dimension of that same object (`for I in A'Range`, `A'Range (N)`, or `A'First .. A'Last`), or a scalar VC places it between the object's own `'First` and `'Last` taken as symbols, one pair per dimension | Array objects whose bounds a declaration fixes, and scalar indices. An object of an unconstrained array type that takes its bounds from a string literal, or from another object whose bounds are known, has those bounds. One with no bounds anything fixes (a formal parameter, or an object initialized from one, from a call or from an aggregate) proves only in the own-range loop form or against those symbols: its index subtype says what its bounds may be, not what they are |
-| Length | The value is an aggregate with an `others` choice, which has the bounds of what it is given to, in every dimension where the two lengths are not static and the same; otherwise a scalar VC that the two lengths are equal in each dimension. The length of an object or a component is a number where a declaration fixes its bounds and a symbol of its own otherwise, that of a slice is worked out from its two bounds, or is that of `Y` for a slice over `Y'Range`, and that of a call or a conversion is the number its subtype gives; a length that is a number on one side is asked of the other | An array given to a target, where a compiler keeps the check, which is where GNATprove reports one. In an assignment the value is converted to the subtype of the target when the target has a constrained one -- a slice, a component, an object or a formal declared with one: checked at the value. The same for the initial value of an object declared with a constrained subtype, the value a function with a constrained result subtype returns, an actual parameter for a formal of a constrained subtype, the operand of a conversion to one, and a component given by name in a record aggregate. And where the bounds of the target of an assignment are not static the assignment has a check of its own, reported at the `:=`. None where both lengths are static and the same, or where the two are of one and the same constrained subtype; a bound is static when it is written with static values or with `X'First`, `X'Last` or `X'Length` of an object or a subtype named outright whose bounds are, as a compiler folds it; an object declared with an unconstrained subtype has the bounds of its initial value, which are not static whatever that is; a slice has the length of its range, not that of what it is a slice of; a conditional expression has a static length when its dependent expressions all have the same. Also the operands of `and`, `or` and `xor` on arrays, at the operator, static lengths or not. Never a `Definite_Error`: lengths known to differ are `Unproved`. `Unproved` for a value that is a call of a function with an unconstrained result or a concatenation, for a conditional expression whose dependent expressions are not all of one static length, and where a length depends on a record component the analysis does not follow. A generic unit is analyzed as it is written: a length that is static only in its instances has its check, which GNATprove, analyzing the instances, does not have |
+| [Integer overflow](#integer-overflow) | Operation base-type range; otherwise scalar bounds VC | Integer `+`, `-`, `*`, `/`, and selected power checks |
+| [Range](#range) | Both bounds of the target subtype, resolved as of its elaboration; otherwise scalar bounds VC against those same two bounds | Integer scalar initialization, assignment, and conversion; the bounds of a slice; an actual parameter and what an `out` or `in out` formal gives back; the conversion of `X'Length` |
+| [Index](#index) | The indexed object's own bounds per dimension; otherwise scalar bounds VC against those bounds, an own-range `for` loop, or the object's own `'First` and `'Last` taken as symbols | Array objects and scalar indices |
+| [Length](#length) | An aggregate with an `others` choice; otherwise a scalar VC that the two lengths are equal in each dimension | An array given to a target, where a compiler keeps the check; the operands of `and`, `or` and `xor` on arrays |
 | Discriminant | The prefix object's own static discriminant constraint (an integer expression or an enumeration literal) selects the variant declaring the component; a constrained object's discriminants never change | A component of a top-level variant part, selected directly from an object declared with an explicit discriminant constraint; a constant, variable, or subtype-name constraint or choice is never resolved by spelling and stays `Unproved` |
-| Initialization | Flow-sensitive definite-initialization state; an object that always holds a value (see below) is `Proved_Safe` whatever the state | Tracked scalar objects and documented composite write summaries, at each read; and each `out` parameter at the subprogram's normal exit, proved when every path that returns has assigned the whole parameter or passed it to a callee that always writes it. An `out` parameter assigned component by component is `Unproved`. A global of mode `Output` in a `Global` or `Refined_Global` aspect has the same obligation as an `out` parameter, at its name in the aspect: proved when the state at the normal exit has the whole object initialized, `Unproved` for a state abstraction and when the object is written by a callee only |
+| [Initialization](#initialization) | Flow-sensitive definite-initialization state | Each read of a tracked scalar object; each `out` parameter and `Output` global at the subprogram's normal exit |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
-| Precondition | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts. An operation whose operator a declaration defines is such a call, and its obligation is at the operator: decided where the precondition says nothing of the operands, `Unproved` where it does, the operands not being substituted for the formals yet |
-| Postcondition | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions |
-| Loop invariant initialization | Entry-edge abstract/symbolic state | Leading invariants on supported loops |
-| Loop invariant preservation | Generic one-iteration abstract/symbolic VC | Straight-line scalar body, or a straight-line scalar body containing a non-nested `if`/`elsif`/`else` chain (the `else`, and any number of `elsif` parts, may be omitted) whose arms each independently reach the loop's back edge, joined with the same merge machinery used at ordinary CFG merge points -- one `Join_On_Condition` call per `Condition_Node` in the chain, right-folded so an N-arm chain yields N-1 nested `ite` terms, exactly matching Ada's own `elsif` desugaring; a scalar binding on which two arms disagree is represented at each fold as an SMT `(ite <selector> <true-term> <false-term>)` term, letting facts already established before the branch (such as the loop guard) carry through the disjunction regardless of which arm actually ran -- the selector is the branch's own condition when that condition translates to the scalar VC language (correlating it with any of the condition's own free variables appearing elsewhere in the obligation), or otherwise an anonymous, totally unconstrained boolean symbol standing in for it (sound for any selector value, but unable to correlate with anything else in the obligation); a fresh, unconstrained symbol is used instead of an `ite` only when a binding's own sort disagrees between arms, an unreachable defensive case; array-element and pointer-dereference writes are tolerated (never symbolically tracked, so skipping them leaves no stale binding), but a record-component write is not, since that *is* symbolically tracked and could otherwise resolve to a stale pre-write value; an `elsif`/`else` part is folded only when it continues the *same* `If_Stmt` as the branch that reached it, distinguished by walking the branch condition's AST ancestry back to its owning `If_Stmt` -- a lexically distinct, genuinely nested `If_Stmt`/`Case_Stmt` inside any arm's own body (as opposed to that arm's own `elsif`/`else` continuation), or an independent, sequential `if`/`elsif`/`else`/`case` construct reached after the first one's own arms rejoin, draws on the same per-path `Branch_Budget` (initially 2, spent once per independent chain or case statement entered, never for a chain's own `elsif`/`else` continuations or a case's own sibling alternatives) that the first, outermost conditional itself spent one unit of -- so exactly one such nested-or-sequential second conditional is folded the same way the first is, by the same one-level soundness argument applied recursively (each arm's own recursive walk must still independently reach the loop's back edge before anything is joined); a third independent conditional along any single path exhausts the budget and conservatively bails to `Unproved` with `branch-budget-exceeded` provenance naming the blocking condition, the same as every genuinely nested or sequential conditional did before this budget existed; or a straight-line scalar body containing a single non-nested `case` statement whose alternatives each independently reach the loop's back edge, joined via one `VC.Join_On_Range` call per alternative (bar a trailing, explicit `others`, the fold's base case needing no selector, exactly mirroring `elsif`'s own bare trailing `else`), right-folded the same way the `elsif` chain is -- every alternative but `others` must have exactly one choice in its `F_Choices` (a single expression or a single `..` range, never a `\|`-separated or discontiguous set: unioning multiple choices into one covering range would unsoundly admit selector values that belong to a different, or no, alternative, so a multi-choice alternative is rejected outright rather than range-unioned) and that choice's bounds must be statically known (`Choice_Interval.Known`); the selector for each alternative's `ite` is a range-membership predicate over the case selector's own translated term (`Integer_Term`) rather than a boolean condition, falling back to the same anonymous, totally unconstrained boolean symbol `Join_On_Condition` uses when a selector or bound doesn't translate; a lexically nested `If_Stmt`/`Case_Stmt` inside any one alternative's own body draws on the remaining `Branch_Budget` the same way as for `elsif`, up to the same two-independent-conditionals-per-path limit. A missing or non-final `others`, a multi-choice or discontiguous case alternative, a third independent conditional along any single path (nested or sequential), nested loops, calls, or unsupported transfers remain outside this subset |
-| Loop variant progress | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant on the same iteration subset as invariant preservation (straight-line, or with a non-nested `if`/`elsif`/`else` chain or single-choice-per-alternative `case`); usable leading invariants must first discharge |
-| Termination | The body is seen to return: no loop but a `for` loop over a discrete range or an array (the same for a quantified expression), no `goto`, tasking or `delay`, no call through an access value or by dispatching, no recursion, direct or through what it calls, and every subprogram it calls seen to return in the same way from its own body. A predefined operation, an intrinsic, an instance of `Unchecked_Conversion` or `Unchecked_Deallocation` and a function of a language-defined or GNAT library unit are taken to return | Raised for each function, and for each procedure that has the aspect `Always_Terminates` or is declared in a package that has it, at the name in its first declaration, unless `SPARK_Mode` is `Off` there. `Unproved` for a `while` or plain loop, even one with a loop variant; for iteration through a user-defined iterator; for a call to a generic formal subprogram, a library procedure, an imported subprogram or one whose body is not among the sources; and for a caller of any subprogram that is not itself shown to return, which GNATprove proves on the assumption that the callee does. Calls the source does not show (a subtype predicate, a default initialization, a finalization) are not followed. Never a `Definite_Error` |
-| Data dependencies | An over-approximation of what the body touches is within what its `Global` aspect allows: every name in the body that denotes an object declared outside it, through renamings and dereferences, and the effects of every subprogram it calls, taken from that subprogram's `Global` aspect (its `Refined_Global` where the body is visible) or, when it has none, worked out from its body in the same way. An object that is read must be listed with a mode other than `Proof_In`, unless it is read in assertions only; one that may be written, or whose `'Access` or `'Address` is taken, must be listed as `Output` or `In_Out`. A constituent is accepted under the state abstraction that the `Refined_State` of an enclosing package body, or its own `Part_Of`, puts it in. A constant whose value depends on no variable is not a global | Raised for each subprogram body and expression function that has a `Global` aspect, at the aspect, unless `SPARK_Mode` is `Off` there. It is GNATprove's check: an entry of the aspect that the body does not use, or uses less than its mode allows, does not fail it. `Unproved` when something the body touches is not allowed, and whenever the effects of a callee are not known: no aspect and no body among the sources, a generic formal or imported or library subprogram without an aspect, an instance of a generic subprogram, a call that dispatches or goes through an access value, recursion without an aspect, tasking. Aliasing through access values and reads the source does not show (a default initialization) are not followed. Never a `Definite_Error`: `Global_Contract_Mismatch` reports a violation |
-| Flow dependencies | None yet | Raised for each subprogram body and expression function that has a `Depends` aspect, at the aspect, and `Unproved` wherever it is raised. `Depends_Contract_Mismatch` and `Incomplete_Depends_Contract` report what the dependency analysis finds wrong |
+| [Precondition](#preconditions-and-postconditions) | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts, an operator that a declaration defines among them |
+| [Postcondition](#preconditions-and-postconditions) | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions |
+| [Loop invariant initialization](#loop-invariants-and-loop-variants) | Entry-edge abstract/symbolic state | Leading invariants on supported loops |
+| [Loop invariant preservation](#loop-invariants-and-loop-variants) | Generic one-iteration abstract/symbolic VC | A straight-line scalar loop body, with at most two independent conditionals along a path |
+| [Loop variant progress](#loop-invariants-and-loop-variants) | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant, on the loop bodies invariant preservation covers |
+| [Termination](#termination) | The body is seen to return | Each function, and each procedure under `Always_Terminates` |
+| [Data dependencies](#data-and-flow-dependencies) | An over-approximation of what the body touches is within what its `Global` aspect allows | Each subprogram body and expression function that has a `Global` aspect |
+| [Flow dependencies](#data-and-flow-dependencies) | None yet | Each subprogram body and expression function that has a `Depends` aspect; `Unproved` wherever it is raised |
+
+### Integer overflow
+
+**Proof basis.** Operation base-type range; otherwise scalar bounds VC. For
+a type declared `range L .. H`, whose base range the compiler chooses, the
+part of it that the language guarantees (RM 3.5.4 (9)): a result within it
+does not overflow, provided each operand that is itself an operation is
+within it too; a result outside it is `Unproved`, never a `Definite_Error`.
+
+**Boundary.** Integer `+`, `-`, `*`, `/`, and selected power checks.
+
+Machine-width safety is a separate overflow obligation. A solver refutation
+of an assertion containing potentially overflowing arithmetic is not promoted
+to `Definite_Error` merely from mathematical-integer semantics. The base
+range an overflow check tests against is resolved to the full derivation
+root, not one immediate-parent hop: a twice-derived type (RecordFlux's
+`Index is new Length range 1 .. Length'Last`, itself `Length is new
+Natural`, for instance) would otherwise be checked against an intermediate
+ancestor's own narrower first-subtype constraint rather than the true
+machine range every derivation ultimately inherits. The same base-range
+fallback also applies when an ordinary (non-derived) subtype's own declared
+constraint isn't statically known — e.g. `N : Natural range 0 ..
+Arr'Length`, where `Arr` is an unconstrained array parameter — by widening
+to the named type's own fully-unwound base subtype; Ada scalar subtyping
+only ever narrows, so this is always a sound, if looser, envelope. This
+resolves the *base-range gate* that loop-variant progress and overflow
+checks require before attempting a proof; it does not by itself guarantee
+the proof succeeds, and does not affect loop-variant obligations already
+blocked upstream by an undischarged leading invariant.
+
+### Range
+
+**Proof basis.** Both bounds of the target subtype, resolved as of its
+elaboration; otherwise scalar bounds VC against those same two bounds.
+
+**Boundary.** The check is raised in four places:
+
+- **Initialization, assignment and conversion.** Integer scalar
+  initialization, assignment, and conversion into a signed or modular
+  subtype whose two bounds are both known; a subtype with a bound that is
+  not (`range 1 .. N` for a variable or unconstrained `N`) is `Unproved`.
+- **The bounds of a slice.** The two bounds of a slice written
+  `A (L .. H)`, against the bounds of `A` as an index check takes them:
+  proved when both bounds are within them, or when the slice is known to be
+  null, which Ada does not check. A slice given by a subtype name or a
+  `'Range` is `Unproved`.
+- **Actual parameters.** An actual parameter against the subtype of its
+  integer formal, and what an `out` or `in out` formal gives back against
+  the subtype of the actual: raised only where the check is needed, that is
+  not when the receiving subtype has every value of its type nor when the
+  form of the actual alone says it fits (a name of that subtype or of one
+  declared from it, a static value, arithmetic whose interval over the
+  operands' subtypes fits). The way in is decided as an assignment is; the
+  way back is `Unproved` whenever it is raised, nothing being known of the
+  value the callee leaves beyond the formal's subtype.
+- **The conversion of `X'Length`.** The conversion of `X'Length`, a
+  universal integer, to the integer type its context expects, at the
+  attribute: against the base range of the type where the length is an
+  operand of one of the type's own operators, a comparison, a membership
+  test or a range among them, and against the subtype anywhere else -- a
+  qualified expression, or the operand of an operator that a declaration
+  defines, whose formal gives the subtype. None where nothing is converted
+  (both operands universal, or a length that is a static value), and none
+  beside the check of an assignment, an actual parameter or a conversion,
+  which is the one raised there. Where the type is declared with a range of
+  its own its base range is the implementation's to choose: the check is
+  proved when the length is within the declared range and its opposites,
+  which every base range has (RM 3.5.4 (9)), and is `Unproved` otherwise.
+
+The range a stored value is checked against is the one the declaration of
+the target gives: the constraint of `Held : Integer range 1 .. 5`, of a
+record component or of an array type's components declared that way, of an
+access type's designated subtype, and, through a renaming, that of the
+renamed object. The check is `Unproved` when the two bounds of that range
+are not both known as of its elaboration, and for a target of any other
+form.
+
+### Index
+
+**Proof basis.** The indexed object's own bounds per dimension -- the index
+constraint on its declaration, or its constrained array type or subtype --
+otherwise scalar bounds VC against those bounds; or, with no bounds a
+declaration fixes, either the index is the parameter of a `for` loop over
+that same dimension of that same object (`for I in A'Range`, `A'Range (N)`,
+or `A'First .. A'Last`), or a scalar VC places it between the object's own
+`'First` and `'Last` taken as symbols, one pair per dimension.
+
+**Boundary.** Array objects whose bounds a declaration fixes, and scalar
+indices. An object of an unconstrained array type that takes its bounds
+from a string literal, or from another object whose bounds are known, has
+those bounds. One with no bounds anything fixes (a formal parameter, or an
+object initialized from one, from a call or from an aggregate) proves only
+in the own-range loop form or against those symbols: its index subtype says
+what its bounds may be, not what they are.
+
+### Length
+
+**Proof basis.** The value is an aggregate with an `others` choice, which
+has the bounds of what it is given to, in every dimension where the two
+lengths are not static and the same; otherwise a scalar VC that the two
+lengths are equal in each dimension. The length of an object or a component
+is a number where a declaration fixes its bounds and a symbol of its own
+otherwise, that of a slice is worked out from its two bounds, or is that of
+`Y` for a slice over `Y'Range`, and that of a call or a conversion is the
+number its subtype gives; a length that is a number on one side is asked of
+the other.
+
+**Boundary.** An array given to a target, where a compiler keeps the check,
+which is where GNATprove reports one.
+
+Where it is raised:
+
+- In an assignment the value is converted to the subtype of the target when
+  the target has a constrained one -- a slice, a component, an object or a
+  formal declared with one: checked at the value.
+- The same for the initial value of an object declared with a constrained
+  subtype, the value a function with a constrained result subtype returns,
+  an actual parameter for a formal of a constrained subtype, the operand of
+  a conversion to one, and a component given by name in a record aggregate.
+- Where the bounds of the target of an assignment are not static the
+  assignment has a check of its own, reported at the `:=`.
+- The operands of `and`, `or` and `xor` on arrays, at the operator, static
+  lengths or not.
+
+None where both lengths are static and the same, or where the two are of
+one and the same constrained subtype. A bound is static when it is written
+with static values or with `X'First`, `X'Last` or `X'Length` of an object or
+a subtype named outright whose bounds are, as a compiler folds it; an object
+declared with an unconstrained subtype has the bounds of its initial value,
+which are not static whatever that is; a slice has the length of its range,
+not that of what it is a slice of; a conditional expression has a static
+length when its dependent expressions all have the same.
+
+Its verdicts:
+
+- Never a `Definite_Error`: lengths known to differ are `Unproved`.
+- `Unproved` for a value that is a call of a function with an unconstrained
+  result or a concatenation, for a conditional expression whose dependent
+  expressions are not all of one static length, and where a length depends
+  on a record component the analysis does not follow.
+- A generic unit is analyzed as it is written: a length that is static only
+  in its instances has its check, which GNATprove, analyzing the instances,
+  does not have.
+
+### Initialization
+
+**Proof basis.** Flow-sensitive definite-initialization state; an object
+that always holds a value (see "Objects that always hold a value") is
+`Proved_Safe` whatever the state.
+
+**Boundary.**
+
+- Tracked scalar objects and documented composite write summaries, at each
+  read.
+- Each `out` parameter at the subprogram's normal exit, proved when every
+  path that returns has assigned the whole parameter or passed it to a
+  callee that always writes it. An `out` parameter assigned component by
+  component is `Unproved`.
+- A global of mode `Output` in a `Global` or `Refined_Global` aspect has the
+  same obligation as an `out` parameter, at its name in the aspect: proved
+  when the state at the normal exit has the whole object initialized,
+  `Unproved` for a state abstraction and when the object is written by a
+  callee only.
+
+### Preconditions and postconditions
+
+**Precondition.** Proved from formal-to-actual substitution and scalar
+Boolean VC, for resolved calls with supported scalar contracts. An operation
+whose operator a declaration defines is such a call, and its obligation is
+at the operator: decided where the precondition says nothing of the
+operands, `Unproved` where it does, the operands not being substituted for
+the formals yet.
+
+**Postcondition.** Proved from the joined normal-exit state and scalar
+Boolean VC, for supported scalar exits and contract expressions.
+
+The checks inside the precondition and the postcondition of a verified
+subprogram are obligations too. The precondition is evaluated on entry,
+before it is assumed: nothing is known there but the subtypes of the
+parameters, and what the precondition itself establishes operand by
+operand. The postcondition is evaluated in the state at the normal exit.
+Where the subprogram is outside the verified subset these obligations are
+`Unsupported`.
+
+A precondition or postcondition written on a separate spec applies to the
+body only when the spec resolves precisely and conforms to the body
+parameter by parameter (same names, modes, and type text, in order); each
+spec parameter then denotes the same value as its body counterpart, at entry
+and at the normal exit. Otherwise the spec contract contributes no facts.
+
+### Loop invariants and loop variants
+
+**Loop invariant initialization.** Proved from the entry-edge
+abstract/symbolic state, for leading invariants on supported loops.
+
+**Loop invariant preservation.** Proved by a generic one-iteration
+abstract/symbolic VC, for these loop bodies:
+
+- a straight-line scalar body;
+- a straight-line scalar body containing a non-nested `if`/`elsif`/`else`
+  chain (the `else`, and any number of `elsif` parts, may be omitted) whose
+  arms each independently reach the loop's back edge;
+- a straight-line scalar body containing a single non-nested `case`
+  statement whose alternatives each independently reach the loop's back
+  edge;
+- one further conditional, nested in an arm or sequential after the first,
+  within the branch budget described below.
+
+A missing or non-final `others`, a multi-choice or discontiguous case
+alternative, a third independent conditional along any single path (nested
+or sequential), nested loops, calls, or unsupported transfers remain outside
+this subset.
+
+**Loop variant progress.** Proved by a strict two-state scalar progress VC
+plus static base-type bounds, for one leading, single-component `Increases`
+or `Decreases` variant on the same iteration subset as invariant
+preservation (straight-line, or with a non-nested `if`/`elsif`/`else` chain
+or single-choice-per-alternative `case`); usable leading invariants must
+first discharge.
+
+A leading `Loop_Invariant` or `Loop_Variant` pragma is one preceded, within
+the loop body, only by other leading loop-invariant/loop-variant pragmas --
+either may come first. `Loop_Variant (Increases => I); Loop_Invariant (I <=
+N);` and the reverse order both leave the invariant leading, since Ada/SPARK
+attaches no meaning to their relative order.
+
+When a loop carries more than one leading invariant, each is assumed
+independently before the loop body is walked: one invariant's condition
+failing to translate to the scalar VC language contributes nothing on its
+own (that invariant's own obligations stay `Unproved`), but never discards
+the facts already assumed from the loop's *other*, independently
+translatable leading invariants -- a loop guard or sibling invariant
+outside the scalar subset does not, by itself, block preservation or
+variant progress for an otherwise-provable one.
+
+The walk that proves a leading loop invariant preserved goes through the
+loop body with the same effects as the analysis of the subprogram: a
+procedure call, and a function call that may change state, change what they
+may change (see "Objects and effects the analysis does not follow") before
+the invariant is checked again.
+
+For a supported loop variant, the expression is translated in both the state
+before the generic iteration and the state after its back edge. `Decreases`
+requires a nonnegative entry value and a strictly smaller exit value;
+`Increases` requires a strictly larger exit value. Both values must remain
+within the expression base type's static bounds, which supplies the finite
+lower or upper bound needed for the corresponding termination argument.
+
+#### How an `if` chain is joined
+
+The arms are joined with the same merge machinery used at ordinary CFG
+merge points -- one `Join_On_Condition` call per `Condition_Node` in the
+chain, right-folded so an N-arm chain yields N-1 nested `ite` terms, exactly
+matching Ada's own `elsif` desugaring.
+
+- A scalar binding on which two arms disagree is represented at each fold
+  as an SMT `(ite <selector> <true-term> <false-term>)` term, letting facts
+  already established before the branch (such as the loop guard) carry
+  through the disjunction regardless of which arm actually ran.
+- The selector is the branch's own condition when that condition translates
+  to the scalar VC language (correlating it with any of the condition's own
+  free variables appearing elsewhere in the obligation), or otherwise an
+  anonymous, totally unconstrained boolean symbol standing in for it (sound
+  for any selector value, but unable to correlate with anything else in the
+  obligation).
+- A fresh, unconstrained symbol is used instead of an `ite` only when a
+  binding's own sort disagrees between arms, an unreachable defensive case.
+- Array-element and pointer-dereference writes are tolerated (never
+  symbolically tracked, so skipping them leaves no stale binding), but a
+  record-component write is not, since that *is* symbolically tracked and
+  could otherwise resolve to a stale pre-write value.
+- An `elsif`/`else` part is folded only when it continues the *same*
+  `If_Stmt` as the branch that reached it, distinguished by walking the
+  branch condition's AST ancestry back to its owning `If_Stmt`.
+
+#### The branch budget
+
+A lexically distinct, genuinely nested `If_Stmt`/`Case_Stmt` inside any
+arm's own body (as opposed to that arm's own `elsif`/`else` continuation),
+or an independent, sequential `if`/`elsif`/`else`/`case` construct reached
+after the first one's own arms rejoin, draws on the same per-path
+`Branch_Budget` (initially 2, spent once per independent chain or case
+statement entered, never for a chain's own `elsif`/`else` continuations or a
+case's own sibling alternatives) that the first, outermost conditional
+itself spent one unit of.
+
+So exactly one such nested-or-sequential second conditional is folded the
+same way the first is, by the same one-level soundness argument applied
+recursively (each arm's own recursive walk must still independently reach
+the loop's back edge before anything is joined). A third independent
+conditional along any single path exhausts the budget and conservatively
+bails to `Unproved` with `branch-budget-exceeded` provenance naming the
+blocking condition, the same as every genuinely nested or sequential
+conditional did before this budget existed.
+
+#### How a `case` statement is joined
+
+The alternatives are joined via one `VC.Join_On_Range` call per alternative
+(bar a trailing, explicit `others`, the fold's base case needing no
+selector, exactly mirroring `elsif`'s own bare trailing `else`),
+right-folded the same way the `elsif` chain is.
+
+- Every alternative but `others` must have exactly one choice in its
+  `F_Choices` (a single expression or a single `..` range, never a
+  `|`-separated or discontiguous set: unioning multiple choices into one
+  covering range would unsoundly admit selector values that belong to a
+  different, or no, alternative, so a multi-choice alternative is rejected
+  outright rather than range-unioned) and that choice's bounds must be
+  statically known (`Choice_Interval.Known`).
+- The selector for each alternative's `ite` is a range-membership predicate
+  over the case selector's own translated term (`Integer_Term`) rather than
+  a boolean condition, falling back to the same anonymous, totally
+  unconstrained boolean symbol `Join_On_Condition` uses when a selector or
+  bound doesn't translate.
+- A lexically nested `If_Stmt`/`Case_Stmt` inside any one alternative's own
+  body draws on the remaining `Branch_Budget` the same way as for `elsif`,
+  up to the same two-independent-conditionals-per-path limit.
+
+### Termination
+
+**Proof basis.** The body is seen to return:
+
+- no loop but a `for` loop over a discrete range or an array (the same for
+  a quantified expression);
+- no `goto`, tasking or `delay`;
+- no call through an access value or by dispatching;
+- no recursion, direct or through what it calls;
+- and every subprogram it calls seen to return in the same way from its own
+  body.
+
+A predefined operation, an intrinsic, an instance of `Unchecked_Conversion`
+or `Unchecked_Deallocation` and a function of a language-defined or GNAT
+library unit are taken to return.
+
+**Boundary.** Raised for each function, and for each procedure that has the
+aspect `Always_Terminates` or is declared in a package that has it, at the
+name in its first declaration, unless `SPARK_Mode` is `Off` there.
+
+`Unproved`:
+
+- for a `while` or plain loop, even one with a loop variant;
+- for iteration through a user-defined iterator;
+- for a call to a generic formal subprogram, a library procedure, an
+  imported subprogram or one whose body is not among the sources;
+- and for a caller of any subprogram that is not itself shown to return,
+  which GNATprove proves on the assumption that the callee does.
+
+Calls the source does not show (a subtype predicate, a default
+initialization, a finalization) are not followed. Never a `Definite_Error`.
+
+### Data and flow dependencies
+
+**Data dependencies, proof basis.** An over-approximation of what the body
+touches is within what its `Global` aspect allows: every name in the body
+that denotes an object declared outside it, through renamings and
+dereferences, and the effects of every subprogram it calls, taken from that
+subprogram's `Global` aspect (its `Refined_Global` where the body is
+visible) or, when it has none, worked out from its body in the same way.
+
+- An object that is read must be listed with a mode other than `Proof_In`,
+  unless it is read in assertions only; one that may be written, or whose
+  `'Access` or `'Address` is taken, must be listed as `Output` or `In_Out`.
+- A constituent is accepted under the state abstraction that the
+  `Refined_State` of an enclosing package body, or its own `Part_Of`, puts
+  it in.
+- A constant whose value depends on no variable is not a global.
+
+**Data dependencies, boundary.** Raised for each subprogram body and
+expression function that has a `Global` aspect, at the aspect, unless
+`SPARK_Mode` is `Off` there. It is GNATprove's check: an entry of the aspect
+that the body does not use, or uses less than its mode allows, does not fail
+it.
+
+`Unproved` when something the body touches is not allowed, and whenever the
+effects of a callee are not known: no aspect and no body among the sources,
+a generic formal or imported or library subprogram without an aspect, an
+instance of a generic subprogram, a call that dispatches or goes through an
+access value, recursion without an aspect, tasking. Aliasing through access
+values and reads the source does not show (a default initialization) are not
+followed. Never a `Definite_Error`: `Global_Contract_Mismatch` reports a
+violation.
+
+**Flow dependencies.** No proof basis yet. Raised for each subprogram body
+and expression function that has a `Depends` aspect, at the aspect, and
+`Unproved` wherever it is raised. `Depends_Contract_Mismatch` and
+`Incomplete_Depends_Contract` report what the dependency analysis finds
+wrong.
 
 ## Scalar VC language
 
@@ -59,6 +469,8 @@ is provably nonzero and their Ada sign semantics are encoded: a nonzero
 literal, a name whose interval excludes zero, or an attribute or an
 arithmetic expression whose value or interval does -- `Byte'Size`, or
 `2 * Width + 1` with `Width` in `0 .. 10`.
+
+### Conditional and case expressions
 
 A conditional expression is the value of the dependent expression its
 conditions select, and `True` where it is a Boolean one without an `else`
@@ -76,11 +488,15 @@ whole expression stands, not with what its condition adds, so that one
 which needs its condition to be translated at all -- the division in
 `(if N /= 0 then Total / N > 1)` -- is not, and the expression with it.
 
+### Access values
+
 An access value is compared with `null` by `=` and `/=`. It is the token
 that the value of an object that is not a scalar has (see "Calls as
 terms"), and `null` is one token wherever it is written. What is known
 lasts as long as that token does: an assignment to the object ends it, and
 so does a call.
+
+### Operators that a declaration defines
 
 An operator is the operation its symbol stands for only where it denotes
 that operation. Where a declaration defines a function for it -- for a type
@@ -95,6 +511,8 @@ checks of the predefined operation. The short-circuit forms, ranges and
 membership tests are always what they read as, no declaration being able
 to define them.
 
+### Names and named numbers
+
 A name written with its package in front of it -- an expanded name -- is
 the entity it names: an object, an enumeration literal or a named number.
 A named number is its value, where its declaration is written with integer
@@ -105,6 +523,8 @@ named number, and one declared with any other attribute, a conversion, a
 call or a conditional expression, has no value the analysis knows. In the
 interval analysis a name whose value is known is that value as an operand
 too: the product of a named number and a sum has the range that follows.
+
+### `T'Size`
 
 `T'Size` is a number where `T` is a static integer or enumeration subtype
 named outright. It is the `Size` the first subtype is given by an aspect or
@@ -121,12 +541,16 @@ with a representation clause, a range of an enumeration type, bounds that
 are not static, `T'Base` and `T'Class`, a type that is not discrete, and
 for an object: the size of an object is the target's affair.
 
+### Scalar sorts
+
 Symbolic assignments resolve their scalar sort from Ada semantic type
 identity: signed integers use mathematical-integer terms, `Standard.Boolean`
 uses SMT Boolean terms, and enumeration values use their declaration-order
 positions. Unsupported scalar types and inconsistent bindings stop translation
 with explicit `sort-mismatch` provenance rather than being inferred from the
 absence of interval facts.
+
+### Bounds and lengths
 
 Whatever the state, `X'Length` is from zero to the number of values of the
 index subtype of that dimension, where that subtype is an integer one with
@@ -179,6 +603,8 @@ range 1 .. Size` has no known upper bound when `Size` is a variable, whatever
 against a target with both bounds known; one known bound alone proves
 nothing.
 
+### Membership tests
+
 `X in S` and `X not in S`, where `S` is a subtype mark, are range tests only
 when neither `S` nor any subtype or type it is declared from carries a
 `Predicate`, `Static_Predicate` or `Dynamic_Predicate`. For a predicated
@@ -193,6 +619,8 @@ it covers an end of the interval already known -- `X not in 0 .. 3` turns
 `0 .. 10` into `4 .. 10`, but tells an interval nothing about `X not in 3 ..
 5` -- and never when it is a predicated subtype.
 
+### Character and modular types
+
 Values of `Character`, `Wide_Character` and `Wide_Wide_Character` are not
 given a position range, so nothing is proved about them from their type
 alone.
@@ -203,6 +631,19 @@ private type, a type that does not resolve), the result is unknown. In the
 scalar VC language a modular sum, difference or product by a constant is the
 term reduced with `mod`; the product of two unknown modular values is only
 known to be some value of the type, the same one for the same two operands.
+
+### Solvers and the names of symbols
+
+An external result is accepted only when both configured CVC5 and Z3 runs
+agree by returning `unsat` for the negated goal. Solver absence or disagreement
+cannot produce `Proved_Safe` or `Definite_Error`.
+
+The symbols of a query are named after the declarations they stand for:
+the file, the line and the column. The file is a number, and a query has
+numbers of its own, given in the order it names its files. A solver's
+answer to a formula at the edge of what it decides can change with the
+names in it; with numbers taken from the whole run, the verdict on a
+subprogram could depend on which other files were analyzed with it.
 
 ## Parts of an object
 
@@ -525,9 +966,6 @@ the formal stands for the actual's value. On a recursive call, where the
 caller's state already speaks of that very formal, the symbolic state is
 dropped instead.
 
-The symbols handed to the solvers are named after the file, the line and
-the column of the object they stand for.
-
 ## The postcondition of a callee
 
 After a procedure call returns, what the callee's postcondition says is
@@ -575,31 +1013,6 @@ condition. A leading loop invariant is carried past the loop only when it is
 proved both initially and at the end of an arbitrary iteration, the last one
 included.
 
-Machine-width safety is a separate overflow obligation. A solver refutation
-of an assertion containing potentially overflowing arithmetic is not promoted
-to `Definite_Error` merely from mathematical-integer semantics. The base
-range an overflow check tests against is resolved to the full derivation
-root, not one immediate-parent hop: a twice-derived type (RecordFlux's
-`Index is new Length range 1 .. Length'Last`, itself `Length is new
-Natural`, for instance) would otherwise be checked against an intermediate
-ancestor's own narrower first-subtype constraint rather than the true
-machine range every derivation ultimately inherits. The same base-range
-fallback also applies when an ordinary (non-derived) subtype's own declared
-constraint isn't statically known — e.g. `N : Natural range 0 ..
-Arr'Length`, where `Arr` is an unconstrained array parameter — by widening
-to the named type's own fully-unwound base subtype; Ada scalar subtyping
-only ever narrows, so this is always a sound, if looser, envelope. This
-resolves the *base-range gate* that loop-variant progress and overflow
-checks require before attempting a proof; it does not by itself guarantee
-the proof succeeds, and does not affect loop-variant obligations already
-blocked upstream by an undischarged leading invariant.
-
-A precondition or postcondition written on a separate spec applies to the
-body only when the spec resolves precisely and conforms to the body
-parameter by parameter (same names, modes, and type text, in order); each
-spec parameter then denotes the same value as its body counterpart, at entry
-and at the normal exit. Otherwise the spec contract contributes no facts.
-
 The path context may contain entry preconditions, branch predicates,
 straight-line scalar substitutions, sound relational postcondition transfer,
 and identical symbolic facts preserved at every incoming join. Conflicting
@@ -612,44 +1025,6 @@ through `not` and parentheses. An operand the scalar VC language cannot
 express contributes nothing and does not cost the others: of `Ready (Ctx)
 and then Count > 0` with `Ready` outside the language, `Count > 0` is still
 known.
-
-The walk that proves a leading loop invariant preserved goes through the
-loop body with the same effects as the analysis of the subprogram: a
-procedure call, and a function call that may change state, change what they
-may change (see above) before the invariant is checked again.
-
-For a supported loop variant, the expression is translated in both the state
-before the generic iteration and the state after its back edge. `Decreases`
-requires a nonnegative entry value and a strictly smaller exit value;
-`Increases` requires a strictly larger exit value. Both values must remain
-within the expression base type's static bounds, which supplies the finite
-lower or upper bound needed for the corresponding termination argument.
-
-A leading `Loop_Invariant` or `Loop_Variant` pragma is one preceded, within
-the loop body, only by other leading loop-invariant/loop-variant pragmas --
-either may come first. `Loop_Variant (Increases => I); Loop_Invariant (I <=
-N);` and the reverse order both leave the invariant leading, since Ada/SPARK
-attaches no meaning to their relative order.
-
-When a loop carries more than one leading invariant, each is assumed
-independently before the loop body is walked: one invariant's condition
-failing to translate to the scalar VC language contributes nothing on its
-own (that invariant's own obligations stay `Unproved`), but never discards
-the facts already assumed from the loop's *other*, independently
-translatable leading invariants -- a loop guard or sibling invariant
-outside the scalar subset does not, by itself, block preservation or
-variant progress for an otherwise-provable one.
-
-An external result is accepted only when both configured CVC5 and Z3 runs
-agree by returning `unsat` for the negated goal. Solver absence or disagreement
-cannot produce `Proved_Safe` or `Definite_Error`.
-
-The symbols of a query are named after the declarations they stand for:
-the file, the line and the column. The file is a number, and a query has
-numbers of its own, given in the order it names its files. A solver's
-answer to a formula at the edge of what it decides can change with the
-names in it; with numbers taken from the whole run, the verdict on a
-subprogram could depend on which other files were analyzed with it.
 
 ## Supported control flow
 
@@ -674,6 +1049,8 @@ that boundary. If the fixed-point run itself fails (for example on a
 Libadalang property error), every obligation of that subprogram is
 `Unsupported`: a node the run did not reach is not thereby `Unreachable`.
 
+### Evaluation within an expression
+
 Within an expression, an operand that is evaluated only under a condition
 is checked in the state that condition leaves: the right operand of
 `and then` where the left one is true and of `or else` where it is false,
@@ -687,6 +1064,8 @@ expression over a range known to be empty. The same holds for statements:
 the body of a `for` loop over a range known to be empty and a `case`
 alternative that the selector does not select are not reached.
 
+### Definite errors
+
 A `Definite_Error` is reported on the showing of a converged state only.
 While a loop is iterated to its fixed point a state is one that some path
 reaches, not yet the join of all of them, and what fails in it need not
@@ -697,6 +1076,8 @@ a condition the analysis cannot evaluate, such as a call, the state does not
 say whether the operation ever executes; a definite error reported there
 holds if it does.
 
+### Expression functions and nested subprograms
+
 An expression function is verified as a subprogram, wherever it is
 declared: its graph is the one evaluation of its expression, entered with
 the subtypes of its parameters and what its precondition says. A nested
@@ -704,13 +1085,7 @@ subprogram body or expression function is verified on its own, from its own
 entry state, and what it reads of the enclosing subprogram's objects is
 unknown to it.
 
-The checks inside the precondition and the postcondition of a verified
-subprogram are obligations too. The precondition is evaluated on entry,
-before it is assumed: nothing is known there but the subtypes of the
-parameters, and what the precondition itself establishes operand by
-operand. The postcondition is evaluated in the state at the normal exit.
-Where the subprogram is outside the verified subset these obligations are
-`Unsupported`.
+### `'Old` and `'Loop_Entry`
 
 The prefix of `'Old` and that of `'Loop_Entry` are evaluated earlier than
 where the attribute is written, and their checks are decided in the state
@@ -723,6 +1098,8 @@ other such prefix -- a `'Loop_Entry` that names a loop, an `'Old` in a
 prefix is evaluated whether or not the place where the attribute is
 written is reached, so none of its obligations is `Unreachable` because
 that place is.
+
+### Quantified expressions and loop parameters
 
 A quantified expression is decided where it is evaluated as a condition:
 in a `Pre` or a `Post`, and in an `Assert`, an `Assert_And_Cut` or a
@@ -741,6 +1118,8 @@ has both its bounds in the subtype it constrains. So `X (K)` under `for all
 K in Index range 0 .. Last` is an index within an array over `Index`,
 whatever `Last` is, and `X (K + 1)` is not.
 
+### Code that is evaluated later
+
 Other code that is declared inside the subprogram and evaluated later is
 not checked in the state at its declaration: the default expression of a
 record component or of a nested subprogram's parameter, a task or entry
@@ -748,13 +1127,7 @@ body. What an enclosing object holds where such code is declared says
 nothing about what it holds where the code runs, so its obligations are
 decided with no state at all.
 
-The range a stored value is checked against is the one the declaration of
-the target gives: the constraint of `Held : Integer range 1 .. 5`, of a
-record component or of an array type's components declared that way, of an
-access type's designated subtype, and, through a renaming, that of the
-renamed object. The check is `Unproved` when the two bounds of that range
-are not both known as of its elaboration, and for a target of any other
-form.
+## Outside the subset
 
 Explicit access dereference, general alias/points-to reasoning, tasking,
 protected operations, dispatching/class-wide calls, floating-point proof,
