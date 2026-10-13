@@ -5,7 +5,59 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.7] - 2026-10-13
+
+A `--verify` release that decides more of what GNATprove proves, with the
+obligations 1.8.6 had: no kind of obligation is new, none is added and none
+is gone on the ten corpora, and no verdict of 1.8.6 is withdrawn.
+
+What it adds is what a name stands for where a contract is read, and what
+a condition that holds says. A record given to a callee is the caller's
+object in the callee's precondition, whatever part of an object it is, and
+in the callee's postcondition where it is a component of a record. A
+condition that holds is taken apart through conditional expressions,
+quantified expressions over a few values and the bodies of expression
+functions, so that the part the solvers cannot be handed no longer costs
+the parts they can. And the predicate of a subtype is known of a record
+parameter where SPARK code is entered and of an object a callee that is
+SPARK code has written.
+
+That last one changes what a verdict rests on. SPARK keeps the predicate of
+an object at every assignment to it or to a part of it and at every call
+that passes it, and GNATprove raises a check at each of those places.
+`--verify` raises no predicate check. A `Proved_Safe` that uses a predicate
+therefore holds for the executions in which those checks did not fail: on
+code GNATprove has proved, or under Ada's own predicate checks at the
+places Ada has them. A project that gives `SPARK_Mode` to code that does
+not keep its predicates has to discount what is proved from them.
+`--verify` does not take a predicate to hold after an assignment to a
+component or to the object, of an `out` parameter on entry, of an object
+declared in the subprogram, of a scalar, outside SPARK code, or of a
+parameter of a subprogram that evaluating the predicate can run;
+`docs/src/supported-verification-subset.md` ("Predicates of subtypes in
+SPARK code") is the statement of it.
+
+Of the 15,043 checks GNATprove proves on the five fully proved corpora,
+`--verify` proves 6,403 (6,100 in 1.8.6) and has an obligation for 12,551,
+as before, with no check it proves that GNATprove does not and no definite
+error on a check GNATprove proves
+(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`): 1,346 of the 2,938
+preconditions (1,076), 70 of the 589 assertions (51), 779 of the 2,372
+range checks (766). Given GNATprove's logs it accounts for all 15,043: the
+6,403 it proves itself, 6,148 that carry GNATprove's verdict on an
+obligation AdaLang has and did not decide, and 2,492 that carry it with no
+AdaLang obligation. Every preset reports, on each of the ten corpora,
+exactly the findings of 1.8.6; in the `--verify` lanes 685 obligations go
+from `Unproved` to `Proved_Safe`, none the other way. The SPARK testsuite
+corpus was run again for this release, against GNATprove's saved output:
+no check it flags in the deliberately broken units is proved, and nothing
+1.8.6 proved there is lost.
+
+What to expect of a report: more `Proved_Safe`, fewer `Unproved`, most of
+them preconditions of calls on records that carry a predicate. A `--verify`
+run of such code takes more processor time, the facts of each predicate
+being part of every query about the object: 74 s against 47 s on the
+coap_spark corpus, and what it took on the others.
 
 ### Added
 
