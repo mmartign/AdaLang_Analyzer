@@ -116,6 +116,9 @@ array_bounds=$(mktemp "${TMPDIR:-/tmp}/adalang-array-bounds.XXXXXX")
 expression_forms=$(mktemp "${TMPDIR:-/tmp}/adalang-expression-forms.XXXXXX")
 object_parts=$(mktemp "${TMPDIR:-/tmp}/adalang-object-parts.XXXXXX")
 fp119=$(mktemp "${TMPDIR:-/tmp}/adalang-fp119.XXXXXX")
+record_actuals=$(mktemp "${TMPDIR:-/tmp}/adalang-record-actuals.XXXXXX")
+condition_parts=$(mktemp "${TMPDIR:-/tmp}/adalang-condition-parts.XXXXXX")
+predicates=$(mktemp "${TMPDIR:-/tmp}/adalang-predicates.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -146,7 +149,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$record_actuals" "$condition_parts" "$predicates"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2409,5 +2412,78 @@ must_not_prove "$fp119" assertion 'Row (1).Count = Row (2).Count' FP-119
 must_not_prove "$fp119" division-by-zero 'Mixed (2).Limit' FP-119
 must_prove "$fp119" assertion 'Same (1).Count = Same (1).Count' \
   external-prover FP-119
+
+# A record given to a callee is the caller's object where the callee's
+# contract is read: a component the precondition reads is that of the
+# object given -- a whole one, a component of another, an element of an
+# array -- and what the postcondition says of a parameter the callee writes
+# is said of the component of a record given for it. The calls and claims
+# that do not hold are in the mutation manifest.
+run_json_pair "$record_actuals" tests/verification_record_actuals
+for operation in 'Wants (Given)' 'Wants (Outer.Left)' \
+  'Wants_Ready (Nest.Right)' 'Wants (Line (2))' 'Wants_Ready (Tried)'
+do
+   must_prove "$record_actuals" precondition "$operation" external-prover \
+     "a record formal read as the object given"
+done
+for operation in 'Kept.Left.Count = 7' 'Held.Right.Count = 7'; do
+   must_prove "$record_actuals" assertion "$operation" external-prover \
+     "a postcondition about a component given to write"
+done
+must_prove "$record_actuals" precondition 'Wants_Ready (Sent.Right)' \
+  external-prover "a postcondition about a component given to write"
+if grep -F '"status": "definite-error"' "$record_actuals" >/dev/null; then
+   echo "record actuals: a definite error where nothing is wrong" >&2
+   exit 1
+fi
+
+# A condition that holds is taken part by part: what a conditional
+# expression selects under its condition, a quantified expression over a
+# few values of each of them, the body of an expression function that
+# returned True of its actuals. A part that has no term does not cost the
+# others. The claims that do not hold are in the mutation manifest.
+run_json_pair "$condition_parts" tests/verification_condition_parts
+for operation in 'Chosen > 0' 'Right > 0'; do
+   must_prove "$condition_parts" assertion "$operation" external-prover \
+     "a conditional expression taken part by part"
+done
+for operation in 'Graded (Second) > 0' 'Scored (Third) > 0' 'Filled (3) >= 0'
+do
+   must_prove "$condition_parts" assertion "$operation" external-prover \
+     "a quantified expression taken value by value"
+done
+for operation in 'Kept > 0' 'Ranked (Third) > 0' 'Sorted (Second) > 0'; do
+   must_prove "$condition_parts" assertion "$operation" external-prover \
+     "the body of an expression function taken part by part"
+done
+if grep -F '"status": "definite-error"' "$condition_parts" >/dev/null; then
+   echo "condition parts: a definite error where nothing is wrong" >&2
+   exit 1
+fi
+
+# The predicate of a subtype is known of a parameter of SPARK code where
+# the subprogram is entered, and of an object a callee that is SPARK code
+# was given to write where the call returns. The claims that do not hold,
+# and the places where no predicate is known, are in the mutation
+# manifest.
+run_json_pair "$predicates" tests/verification_predicates
+for operation in 'Get_A (Entered)' 'Get_A (Called)' 'Get_A (Box.Inner)' \
+  'Get_A (Posted)'
+do
+   must_prove "$predicates" precondition "$operation" external-prover \
+     "the predicate of a subtype"
+done
+for operation in 'Sized.Cur (F_B).First <= Sized.Cur (F_B).Last' \
+  'Sized.Cur (F_B).Last <= 1000' 'Brief.Limit <= 10' 'Brief.Limit <= 1000'
+do
+   must_prove "$predicates" assertion "$operation" external-prover \
+     "the predicate of a subtype"
+done
+must_prove "$predicates" integer-overflow 'Wide.Cur (F_B).Last + 1' \
+  external-prover "the predicate of a subtype"
+if grep -F '"status": "definite-error"' "$predicates" >/dev/null; then
+   echo "predicates: a definite error where nothing is wrong" >&2
+   exit 1
+fi
 
 echo "bounded verification tests passed"

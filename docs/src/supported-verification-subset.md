@@ -240,14 +240,26 @@ at the operator: decided where the precondition says nothing of the
 operands, `Unproved` where it does, the operands not being substituted for
 the formals yet.
 
+A parameter of a record type is, in the precondition, the object that is
+its actual: a whole object, or a part of one that its name settles (see
+"Parts of an object"), that is initialized where the call is made. What
+`Valid (Ctx, F)` reads of `Ctx` in the precondition of `Get (Box.Inner)`
+are the components of `Box.Inner`, those the caller's state says something
+of and those it does not. Any other actual of a record type -- a call, an
+aggregate, an element at an index that is not known -- leaves the
+parameter with what is known of the actual as a whole. On a call a
+subprogram makes of itself no parameter is read as an object of the
+caller: those are the parameters themselves.
+
 **Postcondition.** Proved from the joined normal-exit state and scalar
 Boolean VC, for supported scalar exits and contract expressions.
 
 The checks inside the precondition and the postcondition of a verified
 subprogram are obligations too. The precondition is evaluated on entry,
 before it is assumed: nothing is known there but the subtypes of the
-parameters, and what the precondition itself establishes operand by
-operand. The postcondition is evaluated in the state at the normal exit.
+parameters -- in SPARK code their predicates too (see "Predicates of
+subtypes in SPARK code") -- and what the precondition itself establishes
+operand by operand. The postcondition is evaluated in the state at the normal exit.
 Where the subprogram is outside the verified subset these obligations are
 `Unsupported`.
 
@@ -825,6 +837,54 @@ does not check those rules where the body is not part of the run; a
 project that gives SPARK_Mode to code that does not keep them has to
 discount what is proved from them.
 
+### Predicates of subtypes in SPARK code
+
+A predicate -- `Dynamic_Predicate`, `Static_Predicate`, GNAT's `Predicate`
+-- is part of the subtype it is given for, and of every subtype of that
+one and every type derived from it. It is taken as holding of a record
+object at two places:
+
+- of a parameter of mode `in` or `in out` where a subprogram that is SPARK
+  code is entered;
+- of an object, or of a part of one that its name settles, that was the
+  actual of an `in out` or `out` parameter, where a call of a callee that
+  is SPARK code returns. The predicate is that of the subtype of the
+  parameter. A dispatching call says nothing.
+
+SPARK keeps the predicate of an object at every assignment to it or to a
+part of it, and at every call that passes it: GNATprove raises a predicate
+check at each of those places. The first is therefore the caller's
+obligation and the second the callee's. `--verify` does not raise
+predicate checks, so nothing here is its own obligation anywhere: a
+verdict that uses a predicate holds for the executions in which those
+checks did not fail, and a project that gives `SPARK_Mode` to code that
+does not keep its predicates has to discount what is proved from them.
+
+The predicate is taken part by part (see "Assertions as assumptions"),
+the name of the type standing for the object: of `Dynamic_Predicate =>
+Valid_Context (Context.First, Context.Last, Context.Cursors)` each part of
+the body of `Valid_Context` that the scalar VC language expresses is known
+of the components of the object, and a part that reads what it does not
+express -- the designated object of an access value, most often -- is
+left out. What is known is known of the values the object had at that
+place. An assignment to a component afterwards, or to an element at an
+index that is not known, leaves the predicate saying what it said of the
+values that were replaced, which is nothing of the new ones; `--verify`
+does not take the predicate to hold again after such an assignment, nor of
+an object assigned as a whole, nor of an `out` parameter on entry, nor of
+an object declared in the subprogram, nor of an object of a scalar type.
+
+A predicate is not taken to hold of a parameter of a subprogram that
+evaluating the predicate can run: one its expression calls, or one that a
+body it calls calls in turn. That subprogram is entered to find out
+whether the predicate holds, with a value that may not satisfy it. Where
+what the predicate runs cannot be told -- a call that does not resolve, a
+body that is not in sight and is given an object that is not a scalar,
+more than six bodies one inside the other -- it is taken to hold of no
+parameter on entry.
+
+Outside SPARK code no predicate is taken to hold.
+
 ## Objects and effects the analysis does not follow
 
 A fact about an object is kept only while nothing but the object's own name
@@ -974,16 +1034,21 @@ callee's own verification. It is assumed operand by operand, of the caller's
 own objects, each formal standing for what the caller sees after the call:
 
 - a formal the call writes stands for the object that is its actual, when
-  that is a whole object declared in the subprogram under analysis;
+  that is a whole object declared in the subprogram under analysis, or a
+  component of such an object that is a record, and so on inwards;
 - any other formal stands for its actual as it is after the call, when the
   call cannot have changed what the actual reads: a literal, a constant, a
   loop parameter, an object of the subprogram under analysis that the call
   does not write, and predefined operations on those.
 
 An operand that names a formal with neither is not assumed -- one left to
-its default, one whose actual is a call or a component, one whose actual
-is declared outside the subprogram under analysis -- and so is an operand
-with `'Old`, which the scalar VC language does not express. The first of
+its default, one whose actual is a call, one whose actual is declared
+outside the subprogram under analysis, one the call writes whose actual
+is an element of an array -- and so is an operand with `'Old`, which the
+scalar VC language does not express. The element of an array a call was
+given to write was picked by its index as it was when the call was made,
+and the postcondition is assumed in the state the call left: `Fill (Row
+(K), K)` says nothing of `Row (K)` afterwards. The first of
 two calls on an object thus gives the second its precondition where the
 postcondition states it outright, not where it states that something is
 unchanged.
@@ -1025,6 +1090,39 @@ through `not` and parentheses. An operand the scalar VC language cannot
 express contributes nothing and does not cost the others: of `Ready (Ctx)
 and then Count > 0` with `Ready` outside the language, `Count > 0` is still
 known.
+
+Three forms that hold are taken part by part in the same way, a part
+being anything the rules of this section take in its turn.
+
+- A conditional expression `(if C then A else B)` with no `elsif`: the
+  parts of `A` under `C`, and those of `B` under `not C`, where `C` has a
+  term. `A` is read with what is known where the expression stands, not
+  with what `C` adds: a part that needs `C` to be translated at all is
+  not taken.
+- A quantified expression `(for all P in D => E)` where `D` is a subtype
+  or a range of at most 64 values that a declaration fixes -- an
+  enumeration type, a subtype of one written with two literals, an integer
+  range with static bounds: the parts of `E` for each value of `P`. A
+  subtype that has a predicate is no such domain, the expression ranging
+  over the values that satisfy it and not over all its range. One such
+  expression inside two others, and any other domain, is one term or
+  none.
+- A call of an expression function that returned `True`: the parts of its
+  body, each parameter standing for its actual -- a scalar for the term of
+  the actual, a record or an array for the object or the part of one that
+  the actual names. This is done where the body cannot be put in the
+  place of the call down to the last call in it; where it can, the term
+  for the call is all of it. A parameter whose actual has neither a term
+  nor a place stands for nothing, and nothing is taken from a part that
+  reads it: of `Fine (T (I), Kept)` with `I` not known, what the body says
+  of `Kept` alone is known, and what it says of its first parameter is
+  known of no element of `T`. The call is not looked into where it
+  dispatches, where the function writes a parameter, where a parameter is
+  left to its default, or four bodies deep.
+
+Nothing of this is done for a form that does not hold: a conditional
+expression, a quantified expression or a call that is `False` says
+nothing of any one of its parts.
 
 ## Supported control flow
 

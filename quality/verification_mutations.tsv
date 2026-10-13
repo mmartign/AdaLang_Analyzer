@@ -277,3 +277,38 @@ part-scalar-other-element	tests/verification_mutation_object_parts.adb	assertion
 part-scalar-written	tests/verification_mutation_object_parts.adb	assertion	Regraded (1) = 5	unproved	a scalar element that has been assigned holds another value
 part-scalar-subtype-edge	tests/verification_mutation_object_parts.adb	assertion	Score (2) > 0	unproved	an element is within the subtype of the components and may be its first value
 part-boolean-other-element	tests/verification_mutation_object_parts.adb	assertion	Bits (1)	unproved	one Boolean element says nothing of another
+record-recursive-swap	tests/verification_mutation_record_actuals.adb	precondition	Swap_Wants (B, A)	unproved	the callee is the caller with its parameters the other way round: a formal is not read as the object of the other
+record-other-object	tests/verification_mutation_record_actuals.adb	precondition	Wants (Other)	unproved	what is known of one record object says nothing of another given to the callee
+record-other-component	tests/verification_mutation_record_actuals.adb	precondition	Wants (Split.Right)	unproved	what is known of one component of a record says nothing of the other given to the callee
+record-other-element	tests/verification_mutation_record_actuals.adb	precondition	Wants (Line (1))	unproved	what is known of one element of an array says nothing of the other given to the callee
+record-index-unknown	tests/verification_mutation_record_actuals.adb	precondition	Wants (Any (Where))	unproved	an element at an index that is not known is no object the callee's formal stands for
+record-written	tests/verification_mutation_record_actuals.adb	precondition	Wants (Spent)	unproved	a component assigned since holds another value where the object is given
+record-half-known	tests/verification_mutation_record_actuals.adb	precondition	Wants_Ready (Bare)	unproved	one component the precondition reads is not known in the object given
+record-swapped	tests/verification_mutation_record_actuals.adb	precondition	Swap_Wants (Second, First)	unproved	the objects are given the other way round than what is known of them
+record-other-filled	tests/verification_mutation_record_actuals.adb	assertion	Apart.Right.Count = 7	unproved	the callee's postcondition speaks of the component it was given, not of the other
+record-other-set	tests/verification_mutation_record_actuals.adb	assertion	Aside.Right.Count = 7	unproved	the callee's postcondition speaks of the scalar component it was given, not of the other
+record-filled-then-written	tests/verification_mutation_record_actuals.adb	assertion	Redone.Left.Count = 7	unproved	a component assigned after the callee wrote it holds another value
+record-index-moved	tests/verification_mutation_record_actuals.adb	assertion	Shelf (Position).Count = 7	unproved	the element the callee wrote was picked by the index as it was when the call was made
+parts-not-selected	tests/verification_mutation_condition_parts.adb	assertion	Loose > 0	unproved	what a conditional expression selects holds only under its condition
+parts-other-branch	tests/verification_mutation_condition_parts.adb	assertion	Stray > 0	unproved	the else part of a conditional expression says nothing where the condition holds
+parts-outside-subtype	tests/verification_mutation_condition_parts.adb	assertion	Scored (First) > 0	unproved	a quantified expression says nothing of a value outside the subtype it ranges over
+parts-outside-range	tests/verification_mutation_condition_parts.adb	assertion	Filled (5) >= 0	unproved	a quantified expression says nothing of an index outside its range
+parts-stronger	tests/verification_mutation_condition_parts.adb	assertion	Graded (Second) > 1	unproved	a quantified expression says of each value what its predicate says and no more
+parts-not-all	tests/verification_mutation_condition_parts.adb	assertion	Mixed (First) <= 0	unproved	a quantified expression that does not hold says nothing of any one value
+parts-other-actual	tests/verification_mutation_condition_parts.adb	assertion	T (J) > 0	unproved	what the body of a function says of a formal is said of its actual, not of another element
+parts-formal-no-object	tests/verification_mutation_condition_parts.adb	assertion	Low (T (J))	unproved	a formal whose actual has no term stands for nothing: nothing the body says of it is kept
+parts-not-returned-true	tests/verification_mutation_condition_parts.adb	assertion	Ranked (First) <= 0	unproved	a call that returned False is not its body failing part by part
+predicate-wrong-way	tests/verification_mutation_predicates.adb	assertion	Valid (Lower, F_C)	unproved	a predicate that leads from one field to those before it does not lead on
+predicate-stronger	tests/verification_mutation_predicates.adb	assertion	Strict.Limit <= 999	unproved	no more is known of a parameter than its predicate says
+predicate-stronger-subtype	tests/verification_mutation_predicates.adb	assertion	Brief.Limit <= 9	unproved	no more is known than the predicate of the subtype says
+predicate-other-object	tests/verification_mutation_predicates.adb	assertion	Valid (Other, F_A)	unproved	what a predicate and a precondition say of one object says nothing of another
+predicate-out-parameter	tests/verification_mutation_predicates.adb	assertion	Made.Limit <= 1000	unproved	an out parameter is not given a value, and a value assigned to it is not taken to satisfy the predicate
+predicate-component-written	tests/verification_mutation_predicates.adb	assertion	Edited.Limit <= 1000	unproved	a component assigned since entry is no longer what the predicate spoke of
+predicate-other-component-written	tests/verification_mutation_predicates.adb	assertion	Tied.Cur (F_A).Last <= 5	unproved	the predicate related two components as they were on entry, not after one was assigned
+predicate-element-written	tests/verification_mutation_predicates.adb	assertion	Valid (Moved, F_A)	unproved	an element assigned at an unknown index leaves nothing known of any element
+predicate-object-written	tests/verification_mutation_predicates.adb	assertion	Valid (Replaced, F_A)	unproved	an object assigned as a whole is not what the precondition spoke of
+predicate-after-callee	tests/verification_mutation_predicates.adb	assertion	Valid (Passed, F_A)	unproved	after a callee wrote the object its predicate holds, and says nothing of which fields are valid
+predicate-after-other-code	tests/verification_mutation_predicates.adb	assertion	Loose.Limit <= 1000	unproved	a callee that is not SPARK code is not taken to return an object satisfying its predicate
+predicate-in-other-code	tests/verification_mutation_predicates.adb	assertion	Free.Limit <= 1000	unproved	a subprogram that is not SPARK code is not taken to be given parameters satisfying their predicates
+parts-outside-predicate	tests/verification_mutation_condition_parts.adb	assertion	Sparse (Second) > 0	unproved	a quantified expression over a subtype with a predicate ranges over the values that satisfy it, not over its whole range
+predicate-inside-its-own-test	tests/verification_mutation_predicates.adb	division-by-zero	M.Step	unproved	a function the predicate calls is run to find out whether the predicate holds: its parameter is not taken to satisfy it

@@ -90,6 +90,20 @@ package Adalang_Analyzer.VC_Prover is
       Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
       return Symbolic_State;
 
+   function Assume_Predicate
+     (State     : Symbolic_State;
+      Object    : Libadalang.Analysis.Ada_Node'Class;
+      Predicate : Libadalang.Analysis.Expr;
+      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State with Predicate assumed of a record object: the one whose
+   --  defining name Object is, or the one, or the part of one, that Object
+   --  names. Predicate is the predicate aspect of a type or subtype
+   --  declaration, written in terms of the current instance. It is taken
+   --  part by part, as Assume takes a condition. State as it is where the
+   --  object is not initialized in Flow or nothing could be taken. It is
+   --  for the caller to say this only where the predicate holds.
+
    function Join
      (Left, Right : Symbolic_State;
       Flow        : Adalang_Analyzer.Flow_Domain.Flow_State;
@@ -137,8 +151,9 @@ package Adalang_Analyzer.VC_Prover is
       Actual : Libadalang.Analysis.Expr'Class;
       Flow   : Adalang_Analyzer.Flow_Domain.Flow_State);
    --  Formal stands for the value Actual has in State: its term when the
-   --  formal is a scalar, the object it names otherwise. Blocked when
-   --  Actual has neither. It is for the caller to bind a formal only where
+   --  formal is a scalar, the object it names otherwise, or the component
+   --  of a record object, and so on inwards. Blocked when Actual has
+   --  neither. It is for the caller to bind a formal only where
    --  the value of Actual in State is the value the formal has where the
    --  condition is evaluated.
 
@@ -150,6 +165,20 @@ package Adalang_Analyzer.VC_Prover is
       return Symbolic_State;
    --  As Assume, Truth being True, for a condition written in terms of the
    --  formals Frame speaks of. Havoc when nothing of it could be assumed.
+
+   procedure Bind_Record
+     (Frame  : in out Contract_Frame;
+      Formal : Libadalang.Analysis.Ada_Node;
+      Actual : Libadalang.Analysis.Expr'Class;
+      State  : Symbolic_State;
+      Flow   : Adalang_Analyzer.Flow_Domain.Flow_State);
+   --  Formal, a parameter of a record type, stands for the object Actual
+   --  names, or for the part of one that the name settles, where that
+   --  object is initialized in Flow: a component read through Formal is
+   --  then the component of that object, known or not when the call is
+   --  made. Frame is left as it is for any other formal or actual. It is
+   --  for the caller to bind a formal only where the condition is evaluated
+   --  with Actual holding the value it has in State.
 
    --  A call the translation cannot look into is still a term when it is
    --  to a function of its arguments: one with no side effect whose result
@@ -238,6 +267,16 @@ package Adalang_Analyzer.VC_Prover is
      (Condition : Libadalang.Analysis.Expr;
       State     : Adalang_Analyzer.Flow_Domain.Flow_State;
       Symbols   : Symbolic_State) return VC_Outcome;
+
+   function Decide
+     (Condition : Libadalang.Analysis.Expr;
+      State     : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols   : Symbolic_State;
+      Frame     : Contract_Frame) return VC_Outcome;
+   --  As Decide, for a condition written in terms of formals: each record
+   --  formal Frame binds (Bind_Record) is read as the object it stands for.
+   --  What Frame says of scalars is not used: those have their terms in
+   --  Symbols.
 
    function Decide_Bounds
      (Value   : Libadalang.Analysis.Expr'Class;
@@ -403,11 +442,14 @@ private
       Element_Type => Ada.Strings.Unbounded.Unbounded_String,
       "=" => Ada.Strings.Unbounded."=");
 
+   --  Path is the part of Actual the formal stands for, as in a
+   --  Symbol_Key, where it is not the whole of it.
    type Frame_Object is record
       Formal : Libadalang.Analysis.Ada_Node :=
         Libadalang.Analysis.No_Ada_Node;
       Actual : Libadalang.Analysis.Ada_Node :=
         Libadalang.Analysis.No_Ada_Node;
+      Path   : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
    package Frame_Object_Vectors is new Ada.Containers.Vectors

@@ -2313,6 +2313,12 @@ package body Adalang_Analyzer.Flow_Interp is
       begin
          if Libadalang.Analysis.Is_Null (Node) then
             return True;
+         elsif Node.Kind = Libadalang.Common.Ada_Dotted_Name
+           and then Libadalang.Analysis.Is_Null (Expanded_Name_Target (Node))
+         then
+            --  A component of an object: the object is what is written,
+            --  and the name of the component names no object.
+            return Note_Written (Node.As_Dotted_Name.F_Prefix);
          elsif Node.Kind = Libadalang.Common.Ada_Identifier then
             declare
                Key : constant Libadalang.Analysis.Ada_Node :=
@@ -2521,9 +2527,12 @@ package body Adalang_Analyzer.Flow_Interp is
               (if Libadalang.Analysis.Is_Null (Part)
                then Libadalang.Analysis.No_Ada_Node
                else Formal_Named (Part, Normalized_Text (Formal)));
+            --  What the callee wrote is found again where the actual
+            --  names an object, or a component of a record object.
             Usable : constant Boolean :=
               (if Formal_Is_Writable (Libadalang.Analysis.Param (Pair))
-               then Actual.Kind = Libadalang.Common.Ada_Identifier
+               then Actual.Kind in Libadalang.Common.Ada_Identifier
+                                 | Libadalang.Common.Ada_Dotted_Name
                else Unchanged (Actual));
          begin
             if Usable then
@@ -2613,6 +2622,9 @@ package body Adalang_Analyzer.Flow_Interp is
            Contract_Expression (Decl, "Pre");
          Contract_State : Flow_State := State;
          Contract_Symbols : VC.Symbolic_State := Symbols;
+         --  What each record formal stands for: the object the caller
+         --  gives, whose components are those the precondition reads.
+         Contract_Frame : VC.Contract_Frame := VC.Empty_Contract_Frame;
       begin
          if Libadalang.Analysis.Is_Null (Pre) then
             return;
@@ -2647,6 +2659,11 @@ package body Adalang_Analyzer.Flow_Interp is
                  Libadalang.Analysis.Ada_Node
                    (Libadalang.Analysis.Param (Pair)),
                  Libadalang.Analysis.Actual (Pair), State);
+            VC.Bind_Record
+              (Contract_Frame,
+               Libadalang.Analysis.Ada_Node
+                 (Libadalang.Analysis.Param (Pair)),
+               Libadalang.Analysis.Actual (Pair), Symbols, State);
          end loop;
 
          --  When the call resolves to a completion (a body, a null
@@ -2675,6 +2692,9 @@ package body Adalang_Analyzer.Flow_Interp is
                           VC.Bind_Actual
                             (Contract_Symbols, Twin,
                              Libadalang.Analysis.Actual (Pair), State);
+                        VC.Bind_Record
+                          (Contract_Frame, Twin,
+                           Libadalang.Analysis.Actual (Pair), Symbols, State);
                      end if;
                   end;
                end loop;
@@ -2687,7 +2707,7 @@ package body Adalang_Analyzer.Flow_Interp is
             VC_Outcome : constant VC.VC_Outcome :=
               (if Config.Verification_Mode and then Value = Bool_Unknown
                then VC.Decide
-                 (Pre, Contract_State, Contract_Symbols)
+                 (Pre, Contract_State, Contract_Symbols, Contract_Frame)
                else VC.Unknown_Outcome);
             VC_Result : constant VC.VC_Result := VC_Outcome.Result;
          begin
@@ -2878,6 +2898,288 @@ package body Adalang_Analyzer.Flow_Interp is
       when others =>
          return False;
    end Callee_Keeps_SPARK_Rules;
+
+   package Predicate_Vectors is new Ada.Containers.Vectors
+     (Index_Type   => Positive,
+      Element_Type => Libadalang.Analysis.Expr,
+      "="          => Libadalang.Analysis."=");
+
+   --  The predicates of the subtype Typ declares: what its declaration
+   --  gives as Dynamic_Predicate, Static_Predicate or Predicate, on
+   --  whichever of its parts, and the predicates of the subtype it is a
+   --  subtype of or of the type it is derived from, which its values
+   --  satisfy too.
+   --
+   --  A declaration does not change, and finding its aspects costs a
+   --  resolution of each of its parts: the answer is kept.
+   package Predicate_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Predicate_Vectors.Vector,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=",
+      "="             => Predicate_Vectors."=");
+   Known_Predicates : Predicate_Maps.Map;
+
+   function Declared_Predicates
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class)
+      return Predicate_Vectors.Vector
+   is
+      Result  : Predicate_Vectors.Vector;
+      Current : Libadalang.Analysis.Base_Type_Decl;
+
+      procedure Add
+        (Decl   : Libadalang.Analysis.Basic_Decl'Class;
+         Aspect : String)
+      is
+         Found : constant Libadalang.Analysis.Expr :=
+           Decl.P_Get_Aspect_Spec_Expr
+             (Langkit_Support.Text.To_Unbounded_Text
+                (Langkit_Support.Text.To_Text (Aspect)));
+      begin
+         if not Libadalang.Analysis.Is_Null (Found)
+           and then not Result.Contains (Found)
+         then
+            Result.Append (Found);
+         end if;
+      end Add;
+
+      --  The subtype or the type Decl takes its values from.
+      function Parent_Of
+        (Decl : Libadalang.Analysis.Base_Type_Decl)
+         return Libadalang.Analysis.Base_Type_Decl
+      is
+      begin
+         if Decl.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            return Decl.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         end if;
+         for Part of Decl.P_All_Parts loop
+            if Part.Kind in Libadalang.Common.Ada_Type_Decl
+              and then Part.As_Type_Decl.F_Type_Def.Kind =
+                Libadalang.Common.Ada_Derived_Type_Def
+            then
+               return Part.As_Type_Decl.F_Type_Def.As_Derived_Type_Def
+                 .F_Subtype_Indication.P_Designated_Type_Decl;
+            end if;
+         end loop;
+         return Libadalang.Analysis.No_Base_Type_Decl;
+      end Parent_Of;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return Result;
+      end if;
+
+      Current := Typ.As_Base_Type_Decl;
+      for Step in 1 .. 8 loop
+         exit when Libadalang.Analysis.Is_Null (Current);
+         for Part of Current.P_All_Parts loop
+            Add (Part, "Dynamic_Predicate");
+            Add (Part, "Static_Predicate");
+            Add (Part, "Predicate");
+         end loop;
+         Current := Parent_Of (Current);
+      end loop;
+      return Result;
+   exception
+      when others =>
+         return Predicate_Vectors.Empty_Vector;
+   end Declared_Predicates;
+
+   function Subtype_Predicates
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class)
+      return Predicate_Vectors.Vector
+   is
+      Key      : constant Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Typ);
+      Position : Predicate_Maps.Cursor;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return Predicate_Vectors.Empty_Vector;
+      end if;
+      Position := Known_Predicates.Find (Key);
+      if not Predicate_Maps.Has_Element (Position) then
+         Known_Predicates.Include (Key, Declared_Predicates (Typ));
+         Position := Known_Predicates.Find (Key);
+      end if;
+      return Predicate_Maps.Element (Position);
+   end Subtype_Predicates;
+
+   --  The subprograms that evaluating a predicate runs: those its
+   --  expression calls, and those their bodies call in turn. Opaque when
+   --  that cannot be told -- a call that does not resolve, one that gives
+   --  an object that is not a scalar to a body that is not in sight, one
+   --  more than a few bodies deep: any subprogram may then be among them.
+   type Predicate_Reach is record
+      Callees : Call_Sets.Set;
+      Opaque  : Boolean := False;
+   end record;
+
+   package Predicate_Reach_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Predicate_Reach,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=");
+   Known_Reach : Predicate_Reach_Maps.Map;
+
+   function Reach_Of
+     (Predicate : Libadalang.Analysis.Expr) return Predicate_Reach
+   is
+      Max_Bodies : constant := 6;
+      Result     : Predicate_Reach;
+
+      procedure Follow
+        (Node  : Libadalang.Analysis.Ada_Node'Class;
+         Depth : Natural);
+
+      --  True when the call Name is part of gives its callee an object
+      --  that is not known to be a scalar.
+      function Gives_An_Object
+        (Name : Libadalang.Analysis.Name) return Boolean
+      is
+      begin
+         for Pair of Name.P_Call_Params loop
+            declare
+               Typ : constant Libadalang.Analysis.Base_Type_Decl :=
+                 Libadalang.Analysis.Actual (Pair).P_Expression_Type;
+            begin
+               if Libadalang.Analysis.Is_Null (Typ)
+                 or else not Typ.P_Is_Scalar_Type
+               then
+                  return True;
+               end if;
+            end;
+         end loop;
+         return False;
+      exception
+         when others =>
+            return True;
+      end Gives_An_Object;
+
+      procedure Enter
+        (Name  : Libadalang.Analysis.Name;
+         Depth : Natural)
+      is
+         Callee : constant Libadalang.Analysis.Basic_Decl :=
+           Call_Declaration (Name);
+         Code   : Libadalang.Analysis.Basic_Decl := Callee;
+      begin
+         if Libadalang.Analysis.Is_Null (Callee) then
+            Result.Opaque := True;
+            return;
+         elsif Callee.Kind in Libadalang.Common.Ada_Enum_Literal_Decl
+                            | Libadalang.Common.Ada_Synthetic_Char_Enum_Lit
+                            | Libadalang.Common.Ada_Synthetic_Subp_Decl
+         then
+            return;
+         end if;
+
+         if Callee.Kind = Libadalang.Common.Ada_Subp_Decl then
+            Code := Libadalang.Analysis.Basic_Decl
+              (Callee.As_Subp_Decl.P_Body_Part (Imprecise_Fallback => False));
+         end if;
+         if Result.Callees.Contains (Libadalang.Analysis.Ada_Node (Callee))
+         then
+            return;
+         end if;
+         Result.Callees.Include (Libadalang.Analysis.Ada_Node (Callee));
+
+         if Libadalang.Analysis.Is_Null (Code)
+           or else Code.Kind not in Libadalang.Common.Ada_Base_Subp_Body
+         then
+            --  A body that is not in sight can run anything it is handed
+            --  the means to: the object the predicate is about.
+            if Gives_An_Object (Name) then
+               Result.Opaque := True;
+            end if;
+         elsif Depth >= Max_Bodies then
+            Result.Opaque := True;
+         else
+            Result.Callees.Include (Libadalang.Analysis.Ada_Node (Code));
+            Follow (Code, Depth + 1);
+         end if;
+      exception
+         when others =>
+            Result.Opaque := True;
+      end Enter;
+
+      procedure Follow
+        (Node  : Libadalang.Analysis.Ada_Node'Class;
+         Depth : Natural)
+      is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) or else Result.Opaque then
+            return;
+         elsif Node.Kind in Libadalang.Common.Ada_Identifier
+                          | Libadalang.Common.Ada_Dotted_Name
+           and then Node.As_Name.P_Is_Call
+         then
+            Enter (Node.As_Name, Depth);
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            Follow (Node.Child (Index), Depth);
+         end loop;
+      exception
+         when others =>
+            Result.Opaque := True;
+      end Follow;
+
+      Key      : constant Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Predicate);
+      Position : constant Predicate_Reach_Maps.Cursor := Known_Reach.Find (Key);
+   begin
+      if Predicate_Reach_Maps.Has_Element (Position) then
+         return Predicate_Reach_Maps.Element (Position);
+      end if;
+      Follow (Predicate, 0);
+      Known_Reach.Include (Key, Result);
+      return Result;
+   end Reach_Of;
+
+   --  Symbols with what a call of SPARK code leaves true of the objects it
+   --  was given to write: each satisfies the predicates of the subtype of
+   --  its parameter. SPARK keeps a predicate at every assignment to an
+   --  object or to a part of one, so that the callee returns its "out" and
+   --  "in out" parameters satisfying theirs; Ada checks the same when the
+   --  call returns. That is the callee's obligation, which --verify does
+   --  not raise.
+   function With_Call_Predicates
+     (Symbols : VC.Symbolic_State;
+      Stmt    : Libadalang.Analysis.Call_Stmt;
+      After   : Flow_State) return VC.Symbolic_State
+   is
+      Call   : constant Libadalang.Analysis.Name := Stmt.F_Call;
+      Result : VC.Symbolic_State := Symbols;
+   begin
+      if not Config.Verification_Mode
+        or else Call.P_Is_Dispatching_Call
+        or else not Callee_Keeps_SPARK_Rules (Call)
+      then
+         return Symbols;
+      end if;
+
+      for Pair of Call.P_Call_Params loop
+         declare
+            Formal : constant Libadalang.Analysis.Basic_Decl :=
+              Libadalang.Analysis.Param (Pair).P_Basic_Decl;
+         begin
+            if Formal_Is_Writable (Libadalang.Analysis.Param (Pair))
+              and then Formal.Kind = Libadalang.Common.Ada_Param_Spec
+            then
+               for Predicate of Subtype_Predicates
+                 (Formal.As_Param_Spec.F_Type_Expr.P_Designated_Type_Decl)
+               loop
+                  Result :=
+                    VC.Assume_Predicate
+                      (Result, Libadalang.Analysis.Actual (Pair), Predicate,
+                       After);
+               end loop;
+            end if;
+         end;
+      end loop;
+      return Result;
+   exception
+      when others =>
+         return Symbols;
+   end With_Call_Predicates;
 
    --  As Havoc_Identifiers_In, for an object that the write leaves
    --  initialized if it was: nothing is known of its value any more, and
@@ -8997,9 +9299,11 @@ package body Adalang_Analyzer.Flow_Interp is
                   Output :=
                     Interpret_Statement (Unit, Source, Input).State;
                   Output_Symbols :=
-                    With_Call_Postcondition
-                      (Symbols_After_Call
-                         (Input_Symbols, Source.As_Call_Stmt, Output),
+                    With_Call_Predicates
+                      (With_Call_Postcondition
+                         (Symbols_After_Call
+                            (Input_Symbols, Source.As_Call_Stmt, Output),
+                          Source.As_Call_Stmt, Output),
                        Source.As_Call_Stmt, Output);
                elsif Source.Kind = Libadalang.Common.Ada_Pragma_Node then
                   Output :=
@@ -11903,10 +12207,91 @@ package body Adalang_Analyzer.Flow_Interp is
                Occurrence => E);
       end Finalize_Contract;
 
+      --  Symbols with the predicates of its subtype assumed of each
+      --  parameter the subprogram is given a value of, where the
+      --  subprogram is SPARK code: a parameter is of its subtype, which a
+      --  predicate is part of. That is the caller's obligation, which
+      --  --verify does not raise. A parameter is named as the contract
+      --  names it.
+      procedure Assume_Parameter_Predicates
+        (Symbols : in out VC.Symbolic_State;
+         Flow    : Flow_State;
+         Pairs   : Parameter_Pair_Vectors.Vector)
+      is
+         function Contract_Name
+           (Body_Name : Libadalang.Analysis.Ada_Node)
+            return Libadalang.Analysis.Ada_Node
+         is
+         begin
+            for Pair of Pairs loop
+               if Pair.Body_Name = Body_Name then
+                  return Pair.Spec_Name;
+               end if;
+            end loop;
+            return Body_Name;
+         end Contract_Name;
+
+         --  True when evaluating Predicate can run this subprogram: it is
+         --  then entered to find out whether the predicate holds, with a
+         --  parameter that may not satisfy it.
+         function Runs_This
+           (Predicate : Libadalang.Analysis.Expr) return Boolean
+         is
+            Reach : constant Predicate_Reach := Reach_Of (Predicate);
+            Part  : constant Libadalang.Analysis.Basic_Decl :=
+              Contract_Part (Subprogram);
+         begin
+            return Reach.Opaque
+              or else Reach.Callees.Contains
+                        (Libadalang.Analysis.Ada_Node (Subprogram))
+              or else
+                (not Libadalang.Analysis.Is_Null (Part)
+                 and then Reach.Callees.Contains
+                            (Libadalang.Analysis.Ada_Node (Part)));
+         end Runs_This;
+      begin
+         if not Config.Verification_Mode or else not In_SPARK_Code (Subprogram)
+         then
+            return;
+         end if;
+
+         for Param of Subprogram.F_Subp_Spec.P_Params loop
+            if Param.F_Mode.Kind not in Libadalang.Common.Ada_Mode_Out then
+               declare
+                  Predicates : constant Predicate_Vectors.Vector :=
+                    Subtype_Predicates
+                      (Param.F_Type_Expr.P_Designated_Type_Decl);
+               begin
+                  for Id of Param.F_Ids loop
+                     for Predicate of Predicates loop
+                        if not Runs_This (Predicate) then
+                           Symbols :=
+                             VC.Assume_Predicate
+                               (Symbols,
+                                Contract_Name
+                                  (Libadalang.Analysis.Ada_Node (Id)),
+                                Predicate, Flow);
+                        end if;
+                     end loop;
+                  end loop;
+               end;
+            end if;
+         end loop;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "assume the predicates of the parameters",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Assume_Parameter_Predicates;
+
       Initial : Flow_State := Empty_Flow_State;
       Initial_Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
-      --  Initial before the precondition is assumed.
+      --  Initial before the precondition is assumed, and what is known of
+      --  the parameters there: the predicates of their subtypes.
       Entry_State : Flow_State := Empty_Flow_State;
+      Entry_Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
       Pairs   : constant Parameter_Pair_Vectors.Vector := Parameter_Pairs;
       Pre     : constant Libadalang.Analysis.Expr :=
         Contract_Expression (Subprogram, "Pre");
@@ -11922,6 +12307,8 @@ package body Adalang_Analyzer.Flow_Interp is
          Flow_Copy_Key (Initial, Pair.Body_Name, Pair.Spec_Name);
       end loop;
       Entry_State := Initial;
+      Assume_Parameter_Predicates (Entry_Symbols, Initial, Pairs);
+      Initial_Symbols := Entry_Symbols;
       if not Libadalang.Analysis.Is_Null (Pre) then
          declare
             True_State, False_State : Flow_State;
@@ -11929,10 +12316,15 @@ package body Adalang_Analyzer.Flow_Interp is
             Scan_Expression_For_Flow_Bugs (Unit, Pre, Initial);
             Narrow_By_Condition (Pre, Initial, True_State, False_State);
             Initial := True_State;
-            Initial_Symbols :=
-              Assume_Condition
-                (VC.Empty_Symbolic_State, Pre, Truth => True,
-                 Flow => Initial);
+            if VC.Equal (Entry_Symbols, VC.Empty_Symbolic_State) then
+               Initial_Symbols :=
+                 Assume_Condition
+                   (VC.Empty_Symbolic_State, Pre, Truth => True,
+                    Flow => Initial);
+            else
+               Assume_Into
+                 (Initial_Symbols, Pre, Truth => True, Flow => Initial);
+            end if;
             for Pair of Pairs loop
                Flow_Copy_Key (Initial, Pair.Spec_Name, Pair.Body_Name);
                Initial_Symbols :=
@@ -11940,6 +12332,12 @@ package body Adalang_Analyzer.Flow_Interp is
                    (Initial_Symbols, Pair.Spec_Name, Pair.Body_Name);
             end loop;
          end;
+      elsif not VC.Equal (Entry_Symbols, VC.Empty_Symbolic_State) then
+         for Pair of Pairs loop
+            Initial_Symbols :=
+              VC.Alias_Object
+                (Initial_Symbols, Pair.Spec_Name, Pair.Body_Name);
+         end loop;
       end if;
 
       for Edge_Index in 1 .. CFG.Edge_Count (Graph) loop
@@ -12013,8 +12411,7 @@ package body Adalang_Analyzer.Flow_Interp is
       Finalize_Node (Subprogram);
       Finalize_Output_Parameters;
       Finalize_Output_Globals;
-      Finalize_Contract
-        (Pre, Entry_State, VC.Empty_Symbolic_State, On_Entry);
+      Finalize_Contract (Pre, Entry_State, Entry_Symbols, On_Entry);
       declare
          --  A spec postcondition names the spec's parameters: give them
          --  the body parameters' exit facts (FP-085).

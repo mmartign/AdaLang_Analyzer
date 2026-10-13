@@ -5,6 +5,45 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--verify`: in the precondition of a call, a parameter of a record type
+  is the object that is its actual -- a whole object, a component of
+  another, an element of an array at an index that is known -- so that a
+  component the precondition reads is the component of that object,
+  whether or not the caller's state already spoke of it. What was known of
+  an actual that is a part of an object did not reach the precondition
+  before.
+- `--verify`: the postcondition of a callee is assumed of a component of a
+  record object that was given for a parameter the callee writes, as it
+  was of a whole object. An element of an array is left out: the index
+  that picked it was read when the call was made.
+- `--verify`: a condition that holds is taken part by part through a
+  conditional expression (each part of what it selects, under the
+  condition that selects it), through a quantified expression over at most
+  64 values that a declaration fixes (its predicate of each value), and
+  through a call of an expression function whose body cannot be used
+  whole (the parts of the body, of the actuals). A part the scalar VC
+  language cannot express no longer costs the others.
+- `--verify`: the predicate of a subtype is known of a record parameter of
+  mode `in` or `in out` where a subprogram that is SPARK code is entered,
+  and of an object a callee that is SPARK code was given to write where
+  the call returns. SPARK keeps a predicate at every assignment and every
+  call, and GNATprove raises the check there; `--verify` raises none, and
+  a verdict that uses a predicate holds for the executions in which those
+  checks did not fail. `docs/src/supported-verification-subset.md`
+  ("Predicates of subtypes in SPARK code") says where a predicate is not
+  taken to hold.
+
+### Changed
+
+- `--verify`: an array parameter of an inlined expression function, and
+  `X'Constrained` of a parameter bound to an actual, are keyed as the
+  caller keys the object when it is a parameter of the caller named by its
+  body.
+
 ## [1.8.6] - 2026-10-10
 
 A `--verify` release that corrects a false-safe and decides more of what
