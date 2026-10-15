@@ -5,7 +5,12 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.8] - 2026-10-15
+
+A `--verify` release that corrects a false-safe. It decides what 1.8.7
+decides: on the ten corpora every preset reports the findings and the
+obligations of 1.8.7, verdict for verdict, and the gap ledger and the
+GNATprove comparisons are those of 1.8.7.
 
 Who `FP-120` concerns: every release with `--verify` from 1.8.2 to 1.8.7.
 A `Proved_Safe` assertion, precondition, postcondition, loop invariant or

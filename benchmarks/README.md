@@ -43,9 +43,10 @@ only — see `git log` for prior snapshots).
 | [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 581 | 141 | 0 | 0 |
 
 These are the figures of release 1.8.7 (run of 2026-10-13 against the
-GNATprove output of 2026-10-02). A matched pair is a
-`(file, line, check kind)` at which each tool has exactly one obligation;
-"both safe" is the number of pairs AdaLang proves too.
+GNATprove output of 2026-10-02), which release 1.8.8 gives too: on the ten
+corpora it reports what 1.8.7 reports (run of 2026-10-15). A matched pair
+is a `(file, line, check kind)` at which each tool has exactly one
+obligation; "both safe" is the number of pairs AdaLang proves too.
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
 Saatana, libkeccak, coap_spark, Tokeneer) — 3,139 proof obligations both
