@@ -64,6 +64,23 @@ jobs:
       - name: Install SPARK solvers
         run: alr -n install gnatprove
 
+      # The macOS image of 2026-10-13 has the Command Line Tools of Xcode 27.
+      # GCC links against their SDK, /Library/Developer/CommandLineTools/SDKs/
+      # MacOSX.sdk, a path built into the compiler (SDKROOT does not change
+      # it), and the linker of the selected Xcode 26 cannot read that SDK's
+      # libSystem.tbd ("unknown architecture"): every C library symbol went
+      # missing while libgpr2 was built. The same directory still holds the
+      # macOS 26 SDK, which that linker reads, and the name is pointed at it.
+      - name: Link against the macOS 26 SDK (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sdks=/Library/Developer/CommandLineTools/SDKs
+          ls -l "$sdks"
+          if [ -L "$sdks/MacOSX.sdk" ] && [ -d "$sdks/MacOSX26.sdk" ]; then
+            sudo ln -sfn MacOSX26.sdk "$sdks/MacOSX.sdk"
+          fi
+          ls -l "$sdks/MacOSX.sdk"
+
       - name: Build
         run: alr build
 
