@@ -5,6 +5,24 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Who `FP-120` concerns: every release with `--verify` from 1.8.2 to 1.8.7.
+A `Proved_Safe` assertion, precondition, postcondition, loop invariant or
+runtime check is not to be relied on where it is written with a record
+object that has the name of one of its own components -- an object `X` of
+a type with a component `X` -- given to a function, or, in 1.8.7, with a
+part of such an object given for a record parameter of a callee whose
+precondition is checked. The value of the record and its component `X` were
+one symbol: two records that agree in `X` were one value, and a function
+of each gave one result.
+
+### Fixed
+
+- `FP-120` (`quality/known_analysis_issues.tsv`): the value of a whole
+  object, or of a part of one, and `X'Constrained` have symbols named apart
+  from any component of the object. See above for whom it concerns.
+
 ## [1.8.7] - 2026-10-13
 
 A `--verify` release that decides more of what GNATprove proves, with the

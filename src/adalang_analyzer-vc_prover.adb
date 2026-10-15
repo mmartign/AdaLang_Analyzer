@@ -320,7 +320,17 @@ package body Adalang_Analyzer.VC_Prover is
             return Object_Name & To_String (Key.Path);
          end if;
          --  Neither "." nor "@" can be part of an Ada name, so that a
-         --  path is never taken for one.
+         --  path is never taken for one, nor can "!": the value of the
+         --  object or of the part Path leads to (Value_Key, Part_Key), and
+         --  Object'Constrained (Constrained_Key), whose components are the
+         --  object and the list of its names, are not named by the text of
+         --  those, which is that of a component of the same name (FP-120).
+         if Key.Component = Key.Object then
+            return Object_Name & To_String (Key.Path) & "!value";
+         elsif Key.Component.Kind = Libadalang.Common.Ada_Defining_Name_List
+         then
+            return Object_Name & To_String (Key.Path) & "!constrained";
+         end if;
          return Object_Name & To_String (Key.Path) & "_" &
            Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
              (Adalang_Analyzer.Ada_Text.Node_Text (Key.Component));

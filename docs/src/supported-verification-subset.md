@@ -988,8 +988,12 @@ An argument that is not a scalar is the value of a whole object (a
 variable, a constant or a parameter that is not volatile, not a task and not
 a protected object), of a record component of one reached without a
 dereference, or the result of another such call whose type is not an access
-type. An object keeps its value until something may have changed it, and
-then no fact about the old value says anything of the new one:
+type. The value of an object is a symbol of its own, apart from the symbols
+of its components whatever their names: for an object `X` of a record type
+with a component `X`, `X` and `X.X` are two values, and two such records that
+agree in `X` are not one value (FP-120). An object keeps its value until
+something may have changed it, and then no fact about the old value says
+anything of the new one:
 
 - an assignment to the object, to a component of it, or through a
   dereference drops the symbolic state;
