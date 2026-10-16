@@ -486,8 +486,8 @@ writes, definite initialization on every normal return, and transitive
 nonlocal writes. A summary is trusted only when its complete transitive call
 boundary resolves; otherwise unknown effects retain the existing conservative
 invalidation. Relational contract transfer still requires SPARK mode, an
-explicit `Global` aspect, and non-aliased simple writable actuals. Access types
-and explicit dereference, dispatching/class-wide behavior, tasking and
+explicit `Global` aspect, and non-aliased simple writable actuals. What an
+access value designates, dispatching/class-wide behavior, tasking and
 protected operations, floating-point proof, generic subprogram instantiations,
 and unsupported transfers such as a `goto` back up to a label are outside the
 proof boundary.

@@ -87,7 +87,16 @@ package body Adalang_Analyzer.Flow_Domain is
       end if;
 
       Decl := Key.As_Defining_Name.P_Basic_Decl;
-      if Libadalang.Analysis.Is_Null (Decl)
+      if not Libadalang.Analysis.Is_Null (Decl)
+        and then Decl.Kind = Libadalang.Common.Ada_Param_Spec
+        and then Decl.As_Param_Spec.F_Has_Aliased.P_As_Bool
+      then
+         --  An aliased parameter is passed by reference, and its actual
+         --  is an aliased object or part of one: a write through an
+         --  access value, or a call that writes the object it is part
+         --  of, changes the parameter without naming it (FP-121).
+         return Untracked;
+      elsif Libadalang.Analysis.Is_Null (Decl)
         or else Decl.Kind not in Libadalang.Common.Ada_Object_Decl_Range
       then
          return Tracked;

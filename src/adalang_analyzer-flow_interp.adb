@@ -192,6 +192,46 @@ package body Adalang_Analyzer.Flow_Interp is
       end loop;
    end Havoc_Outside_Objects;
 
+   --  Removes from State the value of every object a write through an
+   --  access value may change, Name being where it is written: a
+   --  dereference "P.all". The object designated is one that holds no
+   --  fact in the first place (an aliased object, an aliased parameter:
+   --  Classify), one in the heap, or one reached by an address: of the
+   --  subprogram being verified only when it gives away an access value
+   --  to, or the address of, one of its own objects, and otherwise one
+   --  declared outside it. A component written through an access value
+   --  ("P.F", "P.all (I)") is no scalar object the state holds a value
+   --  for, so nothing is removed for it.
+   procedure Forget_Designated_Values
+     (Name  : Libadalang.Analysis.Ada_Node'Class;
+      State : in out Flow_State) is
+   begin
+      if Libadalang.Analysis.Is_Null (Name)
+        or else Name.Kind /= Libadalang.Common.Ada_Explicit_Deref
+      then
+         return;
+      elsif not Verified_Keeps_To_Itself
+        or else Libadalang.Analysis.Is_Null (Verified_Subprogram)
+      then
+         Flow_Forget_All_Values (State);
+         return;
+      end if;
+
+      declare
+         Keys : array (1 .. Binding_Count (State)) of
+           Libadalang.Analysis.Ada_Node;
+      begin
+         for Index in Keys'Range loop
+            Keys (Index) := Binding_At (State, Index).Decl;
+         end loop;
+         for Key of Keys loop
+            if not Inside_Verified_Subprogram (Key) then
+               Flow_Forget_Value (State, Key);
+            end if;
+         end loop;
+      end;
+   end Forget_Designated_Values;
+
    --  Found when Node evaluates one of those calls, with the farthest
    --  reach of those it does.
    procedure Find_Evaluated_Effects
@@ -843,6 +883,38 @@ package body Adalang_Analyzer.Flow_Interp is
          when others =>
             return False;
       end Is_Nonvalue_Attribute;
+
+      --  True when Item is the second argument of "T'Read (Stream, Item)",
+      --  the attribute's out parameter (RM 13.13.2): it is written. The
+      --  arguments are those of the attribute reference, or of a call
+      --  whose name it is.
+      function Is_Read_Item
+        (Item : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+         Assoc : constant Libadalang.Analysis.Ada_Node := Item.Parent;
+         Owner : Libadalang.Analysis.Ada_Node;
+      begin
+         if Assoc.Kind /= Libadalang.Common.Ada_Param_Assoc
+           or else Libadalang.Analysis.Ada_Node (Assoc.As_Param_Assoc.F_R_Expr)
+             /= Item
+           or else Assoc.Parent.Kind /= Libadalang.Common.Ada_Assoc_List
+           or else Assoc.Parent.Children_Count /= 2
+           or else Assoc.Parent.Child (2) /= Assoc
+         then
+            return False;
+         end if;
+         Owner := Assoc.Parent.Parent;
+         if Owner.Kind = Libadalang.Common.Ada_Call_Expr then
+            Owner := Libadalang.Analysis.Ada_Node (Owner.As_Call_Expr.F_Name);
+         end if;
+         return Owner.Kind = Libadalang.Common.Ada_Attribute_Ref
+           and then Text_Utils.Normalize_Rule_Name
+             (Ada_Text.Node_Text (Owner.As_Attribute_Ref.F_Attribute))
+               = "read";
+      exception
+         when others =>
+            return False;
+      end Is_Read_Item;
    begin
       if Libadalang.Analysis.Is_Null (Current)
         or else Current.Kind /= Libadalang.Common.Ada_Identifier
@@ -886,7 +958,7 @@ package body Adalang_Analyzer.Flow_Interp is
       end if;
 
       loop
-         if Is_Nonvalue_Attribute (Current) then
+         if Is_Nonvalue_Attribute (Current) or else Is_Read_Item (Current) then
             return False;
          end if;
 
@@ -1125,7 +1197,16 @@ package body Adalang_Analyzer.Flow_Interp is
      (Call : Libadalang.Analysis.Name'Class)
       return Libadalang.Analysis.Basic_Decl is
    begin
-      if Call.Kind = Libadalang.Common.Ada_Call_Expr then
+      --  "P.all" and "P.all (...)" call through an access value a
+      --  subprogram that is not known here.
+      if Call.Kind = Libadalang.Common.Ada_Explicit_Deref
+        or else
+          (Call.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Call.As_Call_Expr.F_Name.Kind =
+             Libadalang.Common.Ada_Explicit_Deref)
+      then
+         return Libadalang.Analysis.No_Basic_Decl;
+      elsif Call.Kind = Libadalang.Common.Ada_Call_Expr then
          return Call.As_Call_Expr.F_Name.P_Referenced_Decl;
       else
          return Call.P_Referenced_Decl;
@@ -2051,6 +2132,16 @@ package body Adalang_Analyzer.Flow_Interp is
         VC.Forget_Unowned_Values (Symbols, Stmt, Verified_Subprogram, After);
       for Pair of Call.P_Call_Params loop
          if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
+            --  An actual "P.all" is an object outside the subprogram,
+            --  which the values renewed above include, unless the
+            --  subprogram gives away an access value to one of its own
+            --  (Forget_Designated_Values).
+            if Libadalang.Analysis.Actual (Pair).Kind =
+                 Libadalang.Common.Ada_Explicit_Deref
+              and then not Verified_Keeps_To_Itself
+            then
+               return VC.Havoc;
+            end if;
             Forget_Identifiers_In (Libadalang.Analysis.Actual (Pair));
          end if;
       end loop;
@@ -2109,7 +2200,8 @@ package body Adalang_Analyzer.Flow_Interp is
                return True;
             end if;
          when Libadalang.Common.Ada_Identifier
-            | Libadalang.Common.Ada_Dotted_Name =>
+            | Libadalang.Common.Ada_Dotted_Name
+            | Libadalang.Common.Ada_Explicit_Deref =>
             if Node.Parent.Kind /= Libadalang.Common.Ada_Call_Expr
               and then Node.As_Name.P_Is_Call
               and then May_Change (Node.As_Name)
@@ -3297,6 +3389,9 @@ package body Adalang_Analyzer.Flow_Interp is
                then
                   Flow_Set_Initialized
                     (State, Flow_Referenced_Name (Actual), Bool_True);
+               end if;
+               if May_Write or else Written then
+                  Forget_Designated_Values (Actual, State);
                end if;
             end;
          end if;
@@ -7046,6 +7141,7 @@ package body Adalang_Analyzer.Flow_Interp is
                end;
                Havoc_Effects_In (Assign.F_Dest, Next);
                Havoc_Effects_In (Assign.F_Expr, Next);
+               Forget_Designated_Values (Assign.F_Dest, Next);
 
                declare
                   Target     : constant Libadalang.Analysis.Ada_Node :=
@@ -7346,6 +7442,13 @@ package body Adalang_Analyzer.Flow_Interp is
       --  to leave everything as it is (see Untrusted_Calls).
       Calls_Untrusted : Boolean_Array (States'Range) := (others => False);
 
+      --  For every CFG node, whether it evaluates an allocator, and how far
+      --  the user code an allocator runs can reach (Note_Allocators).
+      type Reach_Array is array (Positive range <>) of Effect_Reach;
+      Allocates        : Boolean_Array (States'Range) := (others => False);
+      Allocation_Reach : Reach_Array (States'Range) :=
+        (others => Outside_Subprogram);
+
       --  Set when the subprogram declares or assigns an object whose type
       --  may run user code implicitly: a controlled type's Initialize,
       --  Adjust and Finalize, or a component default that calls a function
@@ -7417,13 +7520,10 @@ package body Adalang_Analyzer.Flow_Interp is
             return False;
          elsif
            (Node.Kind in
-              Libadalang.Common.Ada_Allocator
-                | Libadalang.Common.Ada_Explicit_Deref
-                | Libadalang.Common.Ada_Real_Literal
+              Libadalang.Common.Ada_Real_Literal
                 | Libadalang.Common.Ada_Floating_Point_Def
                 | Libadalang.Common.Ada_Delta_Aggregate
-                | Libadalang.Common.Ada_Generic_Subp_Instantiation
-                | Libadalang.Common.Ada_Access_Def)
+                | Libadalang.Common.Ada_Generic_Subp_Instantiation)
            or else
              (Node.Kind = Libadalang.Common.Ada_Quantified_Expr
               and then not In_Assertion_Position (Node))
@@ -8443,6 +8543,8 @@ package body Adalang_Analyzer.Flow_Interp is
             for Pair of Call.P_Call_Params loop
                if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
                   Forget_Identifiers_In (Libadalang.Analysis.Actual (Pair));
+                  Forget_Designated_Values
+                    (Libadalang.Analysis.Actual (Pair), State);
                   if Formal_Mode (Libadalang.Analysis.Param (Pair)) in
                        Libadalang.Common.Ada_Mode_Out
                     and then Libadalang.Analysis.Actual (Pair).Kind =
@@ -8497,6 +8599,19 @@ package body Adalang_Analyzer.Flow_Interp is
             Flow_Forget_All_Values (State);
       end Apply_Function_Call_Effects;
 
+      --  Removes from State what the user code the allocators evaluated
+      --  by Target run may write.
+      procedure Apply_Allocator_Effects
+        (Target : CFG.Node_Id;
+         State  : in out Flow_State) is
+      begin
+         if Allocation_Reach (Target) = Anywhere then
+            Flow_Forget_All_Values (State);
+         else
+            Havoc_Nonlocal (State);
+         end if;
+      end Apply_Allocator_Effects;
+
       procedure Merge_Into
         (Target : CFG.Node_Id;
          State  : Flow_State;
@@ -8510,6 +8625,10 @@ package body Adalang_Analyzer.Flow_Interp is
       begin
          if not Effectful_Calls (Target).Is_Empty then
             Apply_Function_Call_Effects (Target, Incoming_State);
+            Incoming_Symbols := VC.Havoc;
+         end if;
+         if Allocates (Target) then
+            Apply_Allocator_Effects (Target, Incoming_State);
             Incoming_Symbols := VC.Havoc;
          end if;
          if Implicit_Code_Sees_Locals then
@@ -8959,6 +9078,14 @@ package body Adalang_Analyzer.Flow_Interp is
                      Collect_Defaults (Node.As_Name);
                   end if;
 
+               when Libadalang.Common.Ada_Explicit_Deref =>
+                  --  "F.all", a call without parameters through an
+                  --  access value.
+                  if Node.As_Name.P_Is_Call then
+                     Note (Node.As_Name);
+                  end if;
+                  Collect_In (Node.As_Explicit_Deref.F_Prefix);
+
                when Libadalang.Common.Ada_Attribute_Ref =>
                   Collect_In (Node.As_Attribute_Ref.F_Prefix);
                   Collect_In (Node.As_Attribute_Ref.F_Args);
@@ -9118,6 +9245,54 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
          end Note_Implicit_Code;
 
+         --  An allocator runs user code: the Initialize or Adjust of a
+         --  controlled part, the default expressions of the components,
+         --  the activation of a task, the Allocate of a storage pool. Each
+         --  one Node evaluates is taken as a call of effects that are not
+         --  known, entered into Effectful_Call_Reach like one: what it
+         --  writes reaches the objects of this subprogram when the type
+         --  is declared in it or the subprogram gives an access value to,
+         --  or the address of, one of them away.
+         procedure Note_Allocators
+           (Node : Libadalang.Analysis.Ada_Node'Class;
+            Id   : CFG.Node_Id)
+         is
+            function Reach_Of_Allocator return Effect_Reach is
+            begin
+               if Verified_Keeps_To_Itself
+                 and then not Inside_Subprogram
+                   (Node.As_Allocator.P_Get_Allocated_Type)
+               then
+                  return Outside_Subprogram;
+               end if;
+               return Anywhere;
+            exception
+               when others =>
+                  --  A type that does not resolve may be declared here.
+                  return Anywhere;
+            end Reach_Of_Allocator;
+         begin
+            if Libadalang.Analysis.Is_Null (Node)
+              or else Node.Kind in Libadalang.Common.Ada_Body_Node
+                                 | Libadalang.Common.Ada_Generic_Decl
+            then
+               return;
+            elsif Node.Kind = Libadalang.Common.Ada_Allocator then
+               declare
+                  Reach : constant Effect_Reach := Reach_Of_Allocator;
+               begin
+                  Allocates (Id) := True;
+                  Allocation_Reach (Id) :=
+                    Effect_Reach'Max (Allocation_Reach (Id), Reach);
+                  Effectful_Call_Reach.Include
+                    (Libadalang.Analysis.Ada_Node (Node), Reach);
+               end;
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               Note_Allocators (Node.Child (Index), Id);
+            end loop;
+         end Note_Allocators;
+
          --  Enters Calls into Effectful_Call_Reach. A callee declared in
          --  this subprogram, and one that writes an actual, can reach this
          --  subprogram's own objects.
@@ -9192,6 +9367,7 @@ package body Adalang_Analyzer.Flow_Interp is
                Collect
                  (Own, Effectful_Calls (Id), Root => True, Depth => 0);
                Register (Effectful_Calls (Id));
+               Note_Allocators (Own, Id);
                Calls_Untrusted (Id) := Evaluates_Untrusted_Call (Own);
             end;
          end loop;
@@ -9898,6 +10074,10 @@ package body Adalang_Analyzer.Flow_Interp is
                         --  (FP-111).
                         if not Effectful_Calls (Current).Is_Empty then
                            Apply_Function_Call_Effects (Current, State);
+                           Symbols := VC.Havoc;
+                        end if;
+                        if Allocates (Current) then
+                           Apply_Allocator_Effects (Current, State);
                            Symbols := VC.Havoc;
                         end if;
                         if Implicit_Code_Sees_Locals then

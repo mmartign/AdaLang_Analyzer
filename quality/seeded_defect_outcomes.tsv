@@ -332,7 +332,7 @@ h09.adb	158	BAD	division-by-zero	unproved
 h09.adb	164	BAD	division-by-zero	unproved
 h09.adb	174	BAD	division-by-zero	unproved
 h09.adb	182	BAD	division-by-zero	unproved
-h09.adb	195	BAD	division-by-zero	unsupported
+h09.adb	195	BAD	division-by-zero	unproved
 h10.adb	29	BAD	division-by-zero	unproved
 h10.adb	37	BAD	division-by-zero	unproved
 h10.adb	45	BAD	division-by-zero	unproved

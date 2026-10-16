@@ -896,7 +896,33 @@ the direct name, for reads and writes alike.
   object hold no fact, and a write through one discards every value fact:
   the name may denote storage another name also denotes.
 - A volatile, atomic, exported or aliased object holds no fact: it can
-  change with no name at all.
+  change with no name at all. Nor does an aliased parameter: it is passed
+  by reference, and its actual is an aliased object or a part of one, which
+  a write through an access value, or a call that writes the object it is
+  part of, changes without naming the parameter (FP-121).
+- A dereference `P.all` read as a value is a value of the designated
+  subtype of which nothing else is known. A write through one -- an
+  assignment to `P.all`, or `P.all` as the actual of a parameter the callee
+  may write -- may change whatever the access value designates: an object
+  that holds no fact anyway (aliased), one in the heap, or one reached by
+  its address. It keeps no value fact about the objects declared outside
+  the subprogram under analysis, and none at all when that subprogram takes
+  an access value to something or the address of something anywhere in it
+  (as for a procedure call, below); the symbolic state is dropped. A
+  component written through an access value (`P.F`, `P.all (I)`) is no
+  object the analysis holds a value for, and only the symbolic state is
+  dropped.
+- An allocator runs user code: the `Initialize` or `Adjust` of a
+  controlled part, the default expressions of the components, the
+  activation of a task, the `Allocate` of a storage pool. The expression
+  that evaluates one is evaluated in a state that keeps no value fact about
+  the objects declared outside the subprogram under analysis, and none at
+  all when the allocated type is declared in it or that subprogram takes
+  an access value to something or the address of something; the symbolic
+  state is dropped. The access value it returns is one of which nothing is
+  known.
+- A call through an access value written with a dereference, `P.all` or
+  `P.all (...)`, is the call of a subprogram that is not known.
 - A function called in an expression may write whatever it can see, unless
   it is known not to: its effect summary has no global write, its `Global`
   contract names no output, its unit is declared `Pure`, it is under an
@@ -1231,7 +1257,8 @@ decided with no state at all.
 
 ## Outside the subset
 
-Explicit access dereference, general alias/points-to reasoning, tasking,
+General alias/points-to reasoning (what an access value designates is
+never worked out), tasking,
 protected operations, dispatching/class-wide calls, floating-point proof,
 unchecked conversion, target-dependent representation other than the
 `Size` of a static discrete subtype, and unmodeled exception semantics are

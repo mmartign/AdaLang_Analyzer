@@ -120,6 +120,9 @@ fp120=$(mktemp "${TMPDIR:-/tmp}/adalang-fp120.XXXXXX")
 record_actuals=$(mktemp "${TMPDIR:-/tmp}/adalang-record-actuals.XXXXXX")
 condition_parts=$(mktemp "${TMPDIR:-/tmp}/adalang-condition-parts.XXXXXX")
 predicates=$(mktemp "${TMPDIR:-/tmp}/adalang-predicates.XXXXXX")
+fp121=$(mktemp "${TMPDIR:-/tmp}/adalang-fp121.XXXXXX")
+access_values=$(mktemp "${TMPDIR:-/tmp}/adalang-access-values.XXXXXX")
+fp122=$(mktemp "${TMPDIR:-/tmp}/adalang-fp122.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -150,7 +153,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2494,6 +2497,48 @@ must_prove "$predicates" integer-overflow 'Wide.Cur (F_B).Last + 1' \
   external-prover "the predicate of a subtype"
 if grep -F '"status": "definite-error"' "$predicates" >/dev/null; then
    echo "predicates: a definite error where nothing is wrong" >&2
+   exit 1
+fi
+
+#  FP-121: an aliased parameter changes through an access value, or by a
+#  call that writes the object it is part of, without being named.
+run_json_pair "$fp121" tests/verification_fp121_aliased_parameter
+must_not_prove "$fp121" assertion 'Seen = 1' FP-121
+must_not_prove "$fp121" assertion 'Read = 1' FP-121
+must_prove "$fp121" assertion 'Kept = 1' abstract-interpretation FP-121
+
+#  Dereferences, allocators and anonymous access types are in the subset:
+#  a write through "P.all", an allocator and a call through an access value
+#  leave no fact standing that they may have changed.
+run_json_pair "$access_values" tests/verification_access_values
+for operation in 'Was = 1' 'Own = 1' 'Counter = 0' 'Counter + 0 = 0' \
+  'Counter - 0 = 0' '0 = Counter' 'Global = 1'
+do
+   must_not_prove "$access_values" assertion "$operation" "access values"
+done
+must_prove "$access_values" assertion 'Mine = 1' abstract-interpretation \
+  "access values"
+must_prove "$access_values" assertion 'V = 1' abstract-interpretation \
+  "access values"
+must_prove "$access_values" assertion 'C.Last = First' external-prover \
+  "access values"
+if grep -F '"status": "unsupported"' "$access_values" >/dev/null; then
+   echo "access values: an obligation outside the subset" >&2
+   exit 1
+fi
+
+#  FP-122: the item of 'Read is written by it, not read.
+run_json "$fp122" tests/verification_fp122_read_item.adb
+if grep -F '"kind": "initialization-check", "status": "definite-error"' \
+     "$fp122" | grep -F '"line": 11,' >/dev/null
+then
+   echo "FP-122: the item of 'Read taken for a read" >&2
+   exit 1
+fi
+if ! grep -F '"kind": "initialization-check", "status": "definite-error"' \
+     "$fp122" | grep -F '"line": 12,' >/dev/null
+then
+   echo "FP-122: the argument of 'Write is no longer a read" >&2
    exit 1
 fi
 

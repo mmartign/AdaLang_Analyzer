@@ -103,8 +103,9 @@ package Adalang_Analyzer.Flow_Domain is
 
    function Classify
      (Key : Libadalang.Analysis.Ada_Node) return Object_Class;
-   --  The class of the object whose defining name is Key. Anything that is
-   --  not an object declaration (a parameter, a loop parameter) is Tracked.
+   --  The class of the object whose defining name is Key. An aliased
+   --  parameter is Untracked; anything else that is not an object
+   --  declaration (a parameter, a loop parameter) is Tracked.
 
    type Flow_State is private;
 

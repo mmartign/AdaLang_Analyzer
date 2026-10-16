@@ -5,6 +5,48 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+`--verify` takes in subprograms that use access types. An explicit
+dereference `P.all`, an allocator, an anonymous access type (`X : access
+T`, `not null access procedure`) and an access type declared in the
+subprogram no longer put a subprogram outside the verified subset. What an
+access value designates is still never worked out: a write through one, an
+allocator and a call through one are taken to change whatever they may.
+
+It also corrects a false-safe (`FP-121`) and a false positive (`FP-122`).
+
+Who `FP-121` concerns: every release with `--verify` from 1.6.0 to 1.8.8. A `Proved_Safe` obligation is
+not to be relied on where it reads an explicitly aliased parameter
+(`V : aliased in out T`) after a write through an access value, or after a
+call that may write the object the parameter's actual is part of: the
+parameter was taken to change only by its own name.
+
+Who `FP-122` concerns: every release with `--verify`. A definite
+initialization error on the second argument of `T'Read (Stream, Item)` is
+not one: that argument is written by `'Read`, not read.
+
+### Added
+
+- Dereferences, allocators, anonymous access types and access types
+  declared in the subprogram are inside the verified subset
+  (`docs/src/supported-verification-subset.md`, "Objects and effects the
+  analysis does not follow"). A write through `P.all`, or `P.all` given for
+  a parameter the callee may write, keeps no value fact about the objects
+  declared outside the subprogram, and none at all when the subprogram
+  takes an access value to something or the address of something. An
+  allocator is taken as a call of effects that are not known: it runs the
+  `Initialize` or `Adjust` of a controlled part, default expressions, a
+  task's activation and a storage pool's `Allocate`. A call through
+  `P.all` is the call of a subprogram that is not known.
+
+### Fixed
+
+- `FP-121` (`quality/known_analysis_issues.tsv`): an aliased parameter
+  holds no fact, like an aliased object. See above for whom it concerns.
+- `FP-122` (`quality/known_analysis_issues.tsv`): the second argument of
+  `T'Read` is written by the attribute, not read.
+
 ## [1.8.8] - 2026-10-15
 
 A `--verify` release that corrects a false-safe. It decides what 1.8.7
