@@ -5,7 +5,10 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.9] - 2026-10-16
+
+A `--verify` release that takes in subprograms that use access types, and
+corrects a false-safe and two false positives.
 
 `--verify` takes in subprograms that use access types. An explicit
 dereference `P.all`, an allocator, an anonymous access type (`X : access
@@ -14,17 +17,34 @@ subprogram no longer put a subprogram outside the verified subset. What an
 access value designates is still never worked out: a write through one, an
 allocator and a call through one are taken to change whatever they may.
 
-It also corrects a false-safe (`FP-121`) and a false positive (`FP-122`).
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+6,690 of the 15,043 checks GNATprove proves (was 6,403), and 629 of them
+are in a subprogram outside the verified subset (was 1,397); it proves none
+that GNATprove does not. On AWS and gnatcoll-core, which GNATprove does not
+analyze, the obligations proved go from 10,841 to 13,782 and from 7,371 to
+9,322, and those outside the subset fall by half. Obligations are added
+where code is now analyzed, and the initialization checks on the item of
+`'Read` are gone (`FP-122`); no verdict of 1.8.8 is withdrawn and no
+definite error is new. The `--verify` lane of the corpora that gain takes
+15 to 20% more CPU time. On the ten corpora every preset reports the findings of 1.8.8.
 
-Who `FP-121` concerns: every release with `--verify` from 1.6.0 to 1.8.8. A `Proved_Safe` obligation is
-not to be relied on where it reads an explicitly aliased parameter
-(`V : aliased in out T`) after a write through an access value, or after a
-call that may write the object the parameter's actual is part of: the
-parameter was taken to change only by its own name.
+It also corrects a false-safe (`FP-121`) and two false positives
+(`FP-122`, `FP-123`).
+
+Who `FP-121` concerns: every release with `--verify` from 1.6.0 to 1.8.8.
+A `Proved_Safe` obligation is not to be relied on where it reads an
+explicitly aliased parameter (`V : aliased in out T`) after a write through
+an access value, or after a call that may write the object the parameter's
+actual is part of: the parameter was taken to change only by its own name.
 
 Who `FP-122` concerns: every release with `--verify`. A definite
 initialization error on the second argument of `T'Read (Stream, Item)` is
 not one: that argument is written by `'Read`, not read.
+
+Who `FP-123` concerns: 1.8.8, where it was reproduced; earlier releases
+were not tested. An `Uninitialized_Output` finding (`--recommended`,
+`--spark`) on an `out` parameter given to `T'Read` as its second argument
+is not one.
 
 ### Added
 
@@ -46,6 +66,8 @@ not one: that argument is written by `'Read`, not read.
   holds no fact, like an aliased object. See above for whom it concerns.
 - `FP-122` (`quality/known_analysis_issues.tsv`): the second argument of
   `T'Read` is written by the attribute, not read.
+- `FP-123` (`quality/known_analysis_issues.tsv`): `Uninitialized_Output`
+  counts `T'Read (Stream, Item)` as a write of `Item`.
 
 ## [1.8.8] - 2026-10-15
 

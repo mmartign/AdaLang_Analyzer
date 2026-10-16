@@ -9,7 +9,7 @@ codebases. Find defects, enforce engineering policy, and expose proof-readiness
 gaps while they are still inexpensive to fix.**
 
 [![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.8.8-5b4ee5.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.8.9-5b4ee5.svg)](CHANGELOG.md)
 [![Checks](https://img.shields.io/badge/checks-302-0f766e.svg)](https://mmartign.github.io/AdaLang_Analyzer/checks.html)
 [![Docs](https://img.shields.io/badge/docs-site-1f6feb.svg)](https://mmartign.github.io/AdaLang_Analyzer/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
@@ -149,7 +149,7 @@ Its regression and quality gates include a growing boundary-case corpus,
 adversarial verification mutations, proof-path evidence, self-analysis, and
 comparisons on independently authored Ada/SPARK projects.
 
-Across **3,139 proof obligations** that AdaLang Analyzer and GNATprove could
+Across **3,140 proof obligations** that AdaLang Analyzer and GNATprove could
 both evaluate at the same location in five independently authored,
 fully-proved corpora, the recorded comparisons contain:
 

@@ -1058,6 +1058,14 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Defining_Name;
    end Callee_Formal_By_Name;
 
+   --  True when Name is the attribute Read ("T'Read"), whose second
+   --  argument is its out parameter (RM 13.13.2).
+   function Is_Read_Attribute
+     (Name : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+     (Name.Kind = Libadalang.Common.Ada_Attribute_Ref
+      and then Normalize_Rule_Name
+        (Node_Text (Name.As_Attribute_Ref.F_Attribute)) = "read");
+
    function Statement_Writes_Parameter
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Param : Libadalang.Analysis.Param_Spec;
@@ -1090,6 +1098,15 @@ package body Adalang_Analyzer.SPARK_Readiness is
                                   Child.As_Param_Assoc;
                            begin
                               if Same_Parameter
+                                (Assoc.F_R_Expr, Param, Name)
+                                and then Position = 2
+                                and then Is_Read_Attribute
+                                  (Call.As_Call_Expr.F_Name)
+                              then
+                                 --  "T'Read (Stream, Item)" writes Item
+                                 --  (FP-123).
+                                 return True;
+                              elsif Same_Parameter
                                 (Assoc.F_R_Expr, Param, Name)
                               then
                                  --  P_Get_Params demands a single, fully
@@ -1166,9 +1183,22 @@ package body Adalang_Analyzer.SPARK_Readiness is
                      end;
                   end loop;
                end;
-            elsif Call.Kind = Libadalang.Common.Ada_Dotted_Name
-              and then Same_Parameter (Call, Param, Name)
+            elsif (Call.Kind = Libadalang.Common.Ada_Dotted_Name
+                   and then Same_Parameter (Call, Param, Name))
+              or else
+                (Is_Read_Attribute (Call)
+                 and then not Libadalang.Analysis.Is_Null
+                   (Call.As_Attribute_Ref.F_Args)
+                 and then Call.As_Attribute_Ref.F_Args.Children_Count = 2
+                 and then Call.As_Attribute_Ref.F_Args.Child (2).Kind =
+                   Libadalang.Common.Ada_Param_Assoc
+                 and then Same_Parameter
+                   (Call.As_Attribute_Ref.F_Args.Child (2).As_Param_Assoc
+                      .F_R_Expr,
+                    Param, Name))
             then
+               --  "T'Read (Stream, Item)" with its arguments on the
+               --  attribute reference writes Item (FP-123).
                --  A parameterless prefixed procedure call has no Call_Expr
                --  node: Libadalang represents "Queue.Clear;" as a bare
                --  Dotted_Name, consistently with the same shape already

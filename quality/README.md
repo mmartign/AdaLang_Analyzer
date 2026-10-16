@@ -135,7 +135,7 @@ as `precision_corpus_cases` in `release_metrics.csv`, the same way the other
 evidence categories in this directory are tracked, so it can only grow, never
 silently shrink, across releases.
 
-The corpus has 617 cases, for 266 of the 302 checks, and 229 of those
+The corpus has 618 cases, for 266 of the 302 checks, and 229 of those
 checks have both a clean and a finding case. The 36 checks without a case
 include those a single-fixture row cannot express or that another gate
 covers:
