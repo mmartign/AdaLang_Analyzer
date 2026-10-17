@@ -5,7 +5,11 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.10] - 2026-10-17
+
+A `--verify` release that takes in subprograms that declare an instance of a
+generic subprogram or use a quantified expression as a value, and corrects
+two false-safes.
 
 `--verify` takes in subprograms that declare an instance of a generic
 subprogram, and subprograms that use a quantified expression as a value (the
@@ -16,23 +20,33 @@ a quantified expression over a discrete range is its formula.
 What to expect: on the five corpora of the gap ledger, `--verify` proves
 6,845 of the 15,043 checks GNATprove proves (was 6,690), and 26 of them are
 in a subprogram outside the verified subset (was 629); it proves none that
-GNATprove does not. On AWS and gnatcoll-core the obligations proved go from
-13,782 to 13,990 and from 9,322 to 9,487.
+GNATprove does not. On AWS and gnatcoll-core, which GNATprove does not
+analyze, the obligations proved go from 13,782 to 13,990 and from 9,322 to
+9,487. Obligations are added where code is now analyzed and none is gone; no
+verdict of 1.8.9 is withdrawn and no definite error is new. The `--verify`
+lane of coap_spark takes about 7% more CPU time, the others what they took.
+On the ten corpora every preset reports the findings of 1.8.9.
+
+The benchmark comparisons (`benchmarks/*/compare.awk`) count an `Unreachable`
+verdict as a claim that the check never fails, as `Proved_Safe` is: with a
+check GNATprove proves it is "both safe", and with one GNATprove does not
+prove it would be "possible unsoundness". Before, it fell into "both flag a
+problem", where coap_spark's first one appeared in this release's run.
 
 It also corrects two false-safes (`FP-124`, `FP-125`).
 
-Who `FP-124` concerns: every release with `--verify`. A `Proved_Safe`
-obligation is not to be relied on after an iteration that is not over a
-discrete range or an array -- `for E of Container`, `for C in Iterator`, in
-a loop or in a quantified expression -- where the iterator's operations or
-the `Iterable` type's `First`, `Next`, `Has_Element` or `Element` change
-state: they were taken to run no code.
+Who `FP-124` concerns: every release with `--verify`, 1.0.0 to 1.8.9. A
+`Proved_Safe` obligation is not to be relied on after an iteration that is
+not over a discrete range or an array -- `for E of Container`, `for C in
+Iterator`, in a loop or in a quantified expression -- where the iterator's
+operations or the `Iterable` type's `First`, `Next`, `Has_Element` or
+`Element` change state: they were taken to run no code.
 
-Who `FP-125` concerns: every release with `--verify`. A `Proved_Safe`
-obligation is not to be relied on in a subprogram that declares a package
-whose elaboration changes state: an initial value that calls a function
-with side effects, a package body with statements, an instance of a generic
-package. Its elaboration was not seen.
+Who `FP-125` concerns: every release with `--verify`, 1.0.0 to 1.8.9. A
+`Proved_Safe` obligation is not to be relied on in a subprogram that
+declares a package whose elaboration changes state: an initial value that
+calls a function with side effects, a package body with statements, an
+instance of a generic package. Its elaboration was not seen.
 
 ### Added
 
@@ -43,6 +57,12 @@ package. Its elaboration was not seen.
   parameters"). What an instance does is not followed: it may call the
   subprograms, and write the objects, given for its formals. The checks
   inside a quantified expression are decided with its parameter's range.
+
+### Changed
+
+- `benchmarks/*/compare.awk`: an `Unreachable` verdict counts as
+  `proved-safe` does, in bucket 1 ("both safe") with a check GNATprove
+  proves and in bucket 3 ("possible unsoundness") with one it does not.
 
 ### Fixed
 
