@@ -34,21 +34,21 @@ only — see `git log` for prior snapshots).
 
 | Corpus | Author | Domain | Matched pairs | Both safe | Unsoundness | False positives |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 1,066 | 492 | 0 | 0 |
+| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 1,066 | 500 | 0 | 0 |
 | [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 157 | 64 | 0 | 0 |
 | [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 250 | 149 | 0 | 0 |
-| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 1,449 | 495 | 0 | 0 |
+| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 1,451 | 536 | 0 | 0 |
 | [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 218 | 69 | 0 | 0 |
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 6 | 0 | 0 | 0 |
-| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 581 | 146 | 0 | 0 |
+| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 581 | 151 | 0 | 0 |
 
-These are the figures of release 1.8.9 (run of 2026-10-16 against the
+These are the figures of release 1.8.10 (run of 2026-10-17 against the
 GNATprove output of 2026-10-02). A matched pair is a
 `(file, line, check kind)` at which each tool has exactly one obligation;
 "both safe" is the number of pairs AdaLang proves too.
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark, Tokeneer) — 3,140 proof obligations both
+Saatana, libkeccak, coap_spark, Tokeneer) — 3,142 proof obligations both
 tools could independently evaluate at the same location, spanning five
 different authors/origins and five structurally different domains —
 AdaLang has never once called something safe that GNATprove could not
@@ -66,7 +66,7 @@ span far more distinct code shapes than the six real projects reach; its
 value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-10-16.md`.
+`proved-safe`. See `spark_testsuite/RESULTS_2026-10-17.md`.
 
 What the two zero columns don't show:
 
@@ -75,7 +75,7 @@ What the two zero columns don't show:
   `docs/src/positioning.md`'s framing of `--verify` as "a much narrower
   scalar subset," not a competitor to full SMT-backed proof. On the five
   fully proved corpora the "both safe" share of the matched pairs runs from
-  34% on coap_spark, whose RecordFlux-generated protocol contracts and
+  37% on coap_spark, whose RecordFlux-generated protocol contracts and
   session-state logic remain the hardest code shape for the bounded
   verifier, to 60% on libkeccak. The next section measures that distance on
   every check, not only the paired ones.
@@ -96,39 +96,40 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 6,690 | 44.5% |
-| Has the obligation, leaves it unproved | 5,241 | 34.8% |
-| Has the obligation, calls it unsupported | 629 | 4.2% |
-| Has no obligation of that kind at that place | 1,169 | 7.8% |
+| Proves it | 6,845 | 45.5% |
+| Has the obligation, leaves it unproved | 5,690 | 37.8% |
+| Has the obligation, calls it unsupported | 26 | 0.2% |
+| Has the obligation, finds the code never reached | 1 | 0.0% |
+| Has no obligation of that kind at that place | 1,167 | 7.8% |
 | Has no obligation of that kind at all | 1,105 | 7.3% |
 | Raises nothing in that file | 209 | 1.4% |
 
 Since 1.8.3 the analyzer does this accounting itself when it is given the
 log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
 on each check beside its own result, and on these corpora that leaves none
-of the 15,043 unaccounted for -- 6,690 proved by AdaLang too, 5,870 with
-GNATprove's verdict alone on an obligation AdaLang has, 2,483 with
+of the 15,043 unaccounted for -- 6,845 proved by AdaLang too, 5,717 with
+GNATprove's verdict alone on an obligation AdaLang has, 2,481 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
 
 What is left, and why:
 
-- **Unproved (5,241).** AdaLang has the obligation and does not decide it.
+- **Unproved (5,690).** AdaLang has the obligation and does not decide it.
   The ledger gives the reason it reports for each, per corpus.
-- **Unsupported (629).** The obligation is in a subprogram `--verify`
-  leaves outside the verified subset, mostly for an instance of a generic
-  subprogram declared in it or a quantified expression used as a value;
-  505 of them are in coap_spark.
-- **No obligation (2,483).** Predicate, pointer-dereference and
+- **Unsupported (26).** The obligation is in a subprogram `--verify`
+  leaves outside the verified subset, almost all for a dispatching call;
+  24 of them are in coap_spark.
+- **No obligation (2,481).** Predicate, pointer-dereference and
   discriminant checks and memory leaks, which AdaLang does not have, and
   range, index and precondition checks at places it does not yet look.
 
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a
 check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
-the ledger from the lanes' results. How the figure got to 6,690, release
-by release, is in `CHANGELOG.md` (1.8.1 to 1.8.9), with the analyzer faults
-that the work turned up on the way (`FP-104`, and `FP-106` to `FP-122`).
+the ledger from the lanes' results. How the figure got to 6,845, release
+by release, is in `CHANGELOG.md` (1.8.1 to 1.8.10), with the analyzer faults
+that the work turned up on the way (`FP-104`, `FP-106` to `FP-122`,
+`FP-124` and `FP-125`).
 
 ## Real-code validation (no GNATprove oracle)
 
@@ -405,7 +406,7 @@ no-setup-required
 first pass.
 
 **Where the evidence is strong.** Zero false positives and zero possible
-unsoundness across 3,140 matched proof obligations spanning five
+unsoundness across 3,142 matched proof obligations spanning five
 independently-authored, fully-proved SPARK corpora — a hash family, two
 crypto primitives, a protocol parser, a security-critical access-control
 system — is the property that matters most for trusting a tool's output,
@@ -418,8 +419,8 @@ third, unrelated domain (a general-purpose utility library, not a web
 server or crypto primitive): GNATprove hard-stops on a SPARK-illegal
 aspect 41 units into the project, while AdaLang completes a full pass.
 
-**Where the tradeoff bites.** AdaLang proves 44% of what GNATprove proves
-on those corpora (6,690 of 15,043 checks), from 37% on libkeccak (1,225 of
+**Where the tradeoff bites.** AdaLang proves 45% of what GNATprove proves
+on those corpora (6,845 of 15,043 checks), from 37% on libkeccak (1,225 of
 3,321) to 55% on Tokeneer (1,160 of 2,114), so its `Proved_Safe`
 verdicts are a bonus on top of GNATprove where both are available, not a
 substitute, and its `Unproved`/`Unsupported` results mean "no information,"

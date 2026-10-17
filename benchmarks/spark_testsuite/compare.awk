@@ -149,7 +149,7 @@ END {
 
       astat = a_status[key]
       gverd = g_verdict[key]
-      safe_ada = (astat == "proved-safe")
+      safe_ada = (astat == "proved-safe" || astat == "unreachable")
       proved_gp = (gverd == "proved")
 
       if (safe_ada && proved_gp) {
@@ -179,9 +179,9 @@ END {
       printf "  %-8s %d\n", sev, g_sev_count[sev]
    print ""
    printf "Matched 1:1 pairs (file, line, kind):  %d\n", (both + conservative + unsound + false_positive + both_flag)
-   printf "  1. Both safe (AdaLang proved-safe, GNATprove proved):            %d\n", both
+   printf "  1. Both safe (AdaLang proved-safe or unreachable, GNATprove proved):            %d\n", both
    printf "  2. AdaLang conservative (unproved/unsupported, GNATprove proved): %d\n", conservative
-   printf "  3. POSSIBLE ADALANG UNSOUNDNESS (proved-safe, GNATprove NOT proved): %d\n", unsound
+   printf "  3. POSSIBLE ADALANG UNSOUNDNESS (proved-safe or unreachable, GNATprove NOT proved): %d\n", unsound
    printf "  4. AdaLang false positive (definite-error, GNATprove proved):    %d\n", false_positive
    printf "  5. Both flag a problem (non-safe, GNATprove NOT proved):         %d\n", both_flag
    print ""

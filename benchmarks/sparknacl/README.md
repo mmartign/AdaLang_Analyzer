@@ -87,6 +87,8 @@ precision-over-convenience posture (see the `FP-xxx` catalog in
 `compare.awk`'s output has five per-pair buckets:
 
 1. Both safe — AdaLang `proved-safe` + GNATprove proved. Headline agreement.
+   An `unreachable` verdict counts as `proved-safe` here and in bucket 3:
+   it claims the check can never fail.
 2. AdaLang conservative — AdaLang `unproved`/`unsupported` + GNATprove
    proved. An expected scope gap, not a defect.
 3. **Possible AdaLang unsoundness** — AdaLang `proved-safe` + GNATprove NOT
