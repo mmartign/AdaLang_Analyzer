@@ -123,6 +123,10 @@ predicates=$(mktemp "${TMPDIR:-/tmp}/adalang-predicates.XXXXXX")
 fp121=$(mktemp "${TMPDIR:-/tmp}/adalang-fp121.XXXXXX")
 access_values=$(mktemp "${TMPDIR:-/tmp}/adalang-access-values.XXXXXX")
 fp122=$(mktemp "${TMPDIR:-/tmp}/adalang-fp122.XXXXXX")
+generic_instances=$(mktemp "${TMPDIR:-/tmp}/adalang-generic-instances.XXXXXX")
+quantified_values=$(mktemp "${TMPDIR:-/tmp}/adalang-quantified-values.XXXXXX")
+fp124=$(mktemp "${TMPDIR:-/tmp}/adalang-fp124.XXXXXX")
+fp125=$(mktemp "${TMPDIR:-/tmp}/adalang-fp125.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -153,7 +157,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -430,15 +434,17 @@ grep -F '"operation": "for all I in 1 .. 10 => I >= 1"' "$vc_quantified" |
 grep -F '"operation": "for some I in 1 .. 10 => I = 7"' "$vc_quantified" |
   grep -F '"status": "proved-safe", "method": "external-prover"' >/dev/null
 
+#  A quantified expression used as a value, here an if condition, keeps
+#  its subprogram inside the verified subset.
 run_json "$vc_quantified_outside" \
   tests/verification_vc_quantified_outside_assertion.adb
-grep -F '"kind": "assertion", "status": "unsupported"' \
-  "$vc_quantified_outside" >/dev/null
-if grep -F '"kind": "assertion", "status": "proved-safe"' \
-  "$vc_quantified_outside" >/dev/null; then
-   echo "a quantified expression outside Pre/Post/Assert widened the Contains_Unsupported_Semantics carve-out" >&2
+if grep -F '"status": "unsupported"' "$vc_quantified_outside" >/dev/null
+then
+   echo "a quantified expression used as a value put its subprogram outside the verified subset" >&2
    exit 1
 fi
+grep -F '"kind": "assertion", "status": "proved-safe"' \
+  "$vc_quantified_outside" >/dev/null
 
 run_json "$vc_enum_assignment" tests/verification_vc_enum_assignment.adb
 for operation in \
@@ -2541,5 +2547,56 @@ then
    echo "FP-122: the argument of 'Write is no longer a read" >&2
    exit 1
 fi
+
+#  Instances of generic subprograms are in the subset: a call to one is the
+#  call of a subprogram whose effects are not known, which reaches the
+#  objects of the subprogram that declares it through its actuals.
+run_json_pair "$generic_instances" tests/verification_generic_instances
+for operation in 'Counter = 0' 'Other = 0' 'A = 7' 'Local = 0' 'A = B' \
+  'Calls = 0'
+do
+   must_not_prove "$generic_instances" assertion "$operation" \
+     "generic instances"
+done
+must_prove "$generic_instances" assertion 'X > 0' abstract-interpretation \
+  "generic instances"
+if grep -F '"status": "unsupported"' "$generic_instances" >/dev/null; then
+   echo "generic instances: an obligation outside the subset" >&2
+   exit 1
+fi
+
+#  Quantified expressions used as values are in the subset.
+run_json_pair "$quantified_values" tests/verification_quantified_values
+for operation in 'Calls = 0' 'A (10) > 0' 'not B' 'B'
+do
+   must_not_prove "$quantified_values" assertion "$operation" \
+     "quantified values"
+done
+must_prove "$quantified_values" assertion 'Last <= 10' \
+  abstract-interpretation "quantified values"
+if grep -F '"status": "unsupported"' "$quantified_values" >/dev/null; then
+   echo "quantified values: an obligation outside the subset" >&2
+   exit 1
+fi
+
+#  FP-124: an iteration with an iterator, or over an Iterable type, calls
+#  user code that the source shows no call to.
+run_json_pair "$fp124" tests/verification_fp124_iteration
+for operation in 'Calls = 0' 'Calls + 0 = 0' '0 = Calls'
+do
+   must_not_prove "$fp124" assertion "$operation" FP-124
+done
+must_prove "$fp124" assertion 'Calls - 0 = 0' abstract-interpretation FP-124
+must_prove "$fp124" assertion 'Calls * 1 = 0' abstract-interpretation FP-124
+
+#  FP-125: elaborating a package declared in a subprogram evaluates the
+#  initial values of its declarations and runs the statements of its body,
+#  or those of a generic package's instance, where it is declared.
+run_json_pair "$fp125" tests/verification_fp125_package_elaboration
+for operation in 'Calls = 0' 'Calls + 0 = 0' 'Calls * 1 = 0' '0 + Calls = 0'
+do
+   must_not_prove "$fp125" assertion "$operation" FP-125
+done
+must_prove "$fp125" assertion 'Calls - 0 = 0' abstract-interpretation FP-125
 
 echo "bounded verification tests passed"

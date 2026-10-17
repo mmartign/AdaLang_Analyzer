@@ -923,6 +923,22 @@ the direct name, for reads and writes alike.
   known.
 - A call through an access value written with a dereference, `P.all` or
   `P.all (...)`, is the call of a subprogram that is not known.
+- An iteration that is not over a discrete range or subtype, nor over an
+  array -- that of a `for` loop, of a quantified expression or of an
+  aggregate -- runs user code that the source shows no call to: the
+  `First`, `Next`, `Has_Element` and `Element` of a type with the
+  `Iterable` aspect, the operations of an iterator, the indexing functions
+  of a container. The loop or the expression that iterates is evaluated in
+  a state that keeps no value fact about the objects declared outside the
+  subprogram under analysis, and none at all when the iterated type is
+  declared in it, when the iteration names one of its objects, or when
+  that subprogram takes an access value to something or the address of
+  something; the symbolic state is dropped (FP-124).
+- A call to an instance of a generic subprogram other than
+  `Unchecked_Conversion` and `Unchecked_Deallocation` is a call whose
+  effects are not known: what the instance does is not followed, and it
+  may call the subprograms, and write the objects, given for its formals.
+  The actuals of an instance are evaluated where it is declared.
 - A function called in an expression may write whatever it can see, unless
   it is known not to: its effect summary has no global write, its `Global`
   contract names no output, its unit is declared `Pure`, it is under an
@@ -940,6 +956,14 @@ the direct name, for reads and writes alike.
   with side effects -- keeps no value fact about objects declared outside
   it, and none at all when that type is declared inside it. This is what
   covers `Initialize`, `Adjust` and `Finalize` of controlled types.
+- A package declared in the subprogram under analysis is elaborated where
+  it is declared: the calls in the initial values, bounds and actuals of its
+  declarations are calls of that declaration, and the statements of its
+  body, like the declarations and statements of an instance of a generic
+  package, are code of effects that are not known, which can reach the
+  objects of that subprogram (FP-125). An instance whose generic declares
+  an object of a type that may run code where it is finalized is taken as
+  such an object is, above.
 
 - A condition that evaluates a function call which may change state --
   the same test as above -- establishes nothing about what the call may
@@ -1232,8 +1256,13 @@ that place is.
 A quantified expression is decided where it is evaluated as a condition:
 in a `Pre` or a `Post`, and in an `Assert`, an `Assert_And_Cut` or a
 `Loop_Invariant`. One that is used as a value anywhere else in a body --
-the condition of an `if`, the right side of an assignment -- puts the
-subprogram outside the verified subset.
+the condition of an `if`, the right side of an assignment, the initial
+value of an object -- is part of the verified subset as well: over `L .. H`
+its value is the quantified formula, and over any other domain a value of
+which nothing is known. The checks inside its predicate are decided as for
+a loop body, below, and a call in it is evaluated where the expression is.
+An iteration that is not over a discrete range or an array runs user code
+(see "Objects and effects the analysis does not follow").
 
 The parameter of a `for` loop and that of a quantified expression have the
 same range, and the checks inside the body or the predicate are decided

@@ -37,6 +37,7 @@ with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;
 with Adalang_Analyzer.SPARK_Readiness;
 with Adalang_Analyzer.Subprogram_Summaries;
+with Adalang_Analyzer.Termination;
 with Adalang_Analyzer.Text_Utils;
 with Adalang_Analyzer.VC_Prover;
 
@@ -7442,21 +7443,25 @@ package body Adalang_Analyzer.Flow_Interp is
       --  to leave everything as it is (see Untrusted_Calls).
       Calls_Untrusted : Boolean_Array (States'Range) := (others => False);
 
-      --  For every CFG node, whether it evaluates an allocator, and how far
-      --  the user code an allocator runs can reach (Note_Allocators).
+      --  For every CFG node, whether it evaluates an allocator or iterates
+      --  with an iterator, and how far the user code they run can reach
+      --  (Note_Hidden_Code).
       type Reach_Array is array (Positive range <>) of Effect_Reach;
-      Allocates        : Boolean_Array (States'Range) := (others => False);
-      Allocation_Reach : Reach_Array (States'Range) :=
+      Runs_Hidden_Code  : Boolean_Array (States'Range) := (others => False);
+      Hidden_Code_Reach : Reach_Array (States'Range) :=
         (others => Outside_Subprogram);
 
       --  Set when the subprogram declares or assigns an object whose type
       --  may run user code implicitly: a controlled type's Initialize,
       --  Adjust and Finalize, or a component default that calls a function
-      --  with side effects. That code runs at points no CFG node stands
-      --  for (a scope exit, most of all), so facts about objects declared
-      --  outside the subprogram are not kept at all (FP-094). When the type
-      --  is itself declared inside the subprogram, its operations can see
-      --  the subprogram's own objects too, and no value fact is kept.
+      --  with side effects; or when it declares an instance of a generic
+      --  package with an object of such a type. That code runs at points
+      --  no CFG node stands for (a scope exit, most of all), so facts about
+      --  objects declared outside the subprogram are not kept at all
+      --  (FP-094). When the type is itself declared inside the subprogram,
+      --  its operations can see the subprogram's own objects too, and no
+      --  value fact is kept; so can those of an instance, through its
+      --  actuals.
       Implicit_Code_May_Run     : Boolean := False;
       Implicit_Code_Sees_Locals : Boolean := False;
       Loop_Invariants : Loop_Invariant_Vectors.Vector;
@@ -7467,45 +7472,6 @@ package body Adalang_Analyzer.Flow_Interp is
         (Index_Type => Positive, Element_Type => CFG.Node_Id);
       Work : Work_Vectors.Vector;
       Head : Positive := 1;
-
-      --  True when Node (a quantified expression) is reachable from its
-      --  nearest enclosing Pre/Post aspect or Assert/Assert_And_Cut/
-      --  Loop_Invariant pragma without first passing through an ordinary
-      --  statement -- the only positions a quantified expression is ever
-      --  evaluated directly (Boolean_Value/VC.Decide), bypassing the
-      --  general CFG-based flow-tracking machinery that genuinely cannot
-      --  model a quantifier's effect on program state. Used only to
-      --  narrow Contains_Unsupported_Semantics's own blacklist entry for
-      --  Ada_Quantified_Expr below; a quantified expression used as an
-      --  ordinary value elsewhere (an if-condition, an assignment RHS)
-      --  must keep disqualifying the whole subprogram, so this is an
-      --  explicit allowlist, not a blanket relaxation.
-      function In_Assertion_Position
-        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
-      is
-         Current : Libadalang.Analysis.Ada_Node := Node.Parent;
-      begin
-         while not Libadalang.Analysis.Is_Null (Current) loop
-            if Current.Kind = Libadalang.Common.Ada_Aspect_Assoc
-              and then Normalized_Text (Current.As_Aspect_Assoc.F_Id) in
-                "pre" | "post"
-            then
-               return True;
-            elsif Current.Kind = Libadalang.Common.Ada_Pragma_Node
-              and then Normalized_Text (Current.As_Pragma_Node.F_Id) in
-                "assert" | "assert-and-cut" | "loop-invariant"
-            then
-               return True;
-            elsif Current.Kind in Libadalang.Common.Ada_Stmt then
-               return False;
-            end if;
-            Current := Current.Parent;
-         end loop;
-         return False;
-      exception
-         when others =>
-            return False;
-      end In_Assertion_Position;
 
       function Contains_Unsupported_Semantics
         (Node : Libadalang.Analysis.Ada_Node'Class;
@@ -7518,15 +7484,9 @@ package body Adalang_Analyzer.Flow_Interp is
            and then Node.Kind = Libadalang.Common.Ada_Subp_Body
          then
             return False;
-         elsif
-           (Node.Kind in
-              Libadalang.Common.Ada_Real_Literal
-                | Libadalang.Common.Ada_Floating_Point_Def
-                | Libadalang.Common.Ada_Delta_Aggregate
-                | Libadalang.Common.Ada_Generic_Subp_Instantiation)
-           or else
-             (Node.Kind = Libadalang.Common.Ada_Quantified_Expr
-              and then not In_Assertion_Position (Node))
+         elsif Node.Kind in Libadalang.Common.Ada_Real_Literal
+                          | Libadalang.Common.Ada_Floating_Point_Def
+                          | Libadalang.Common.Ada_Delta_Aggregate
          then
             return True;
          elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
@@ -8599,18 +8559,18 @@ package body Adalang_Analyzer.Flow_Interp is
             Flow_Forget_All_Values (State);
       end Apply_Function_Call_Effects;
 
-      --  Removes from State what the user code the allocators evaluated
-      --  by Target run may write.
-      procedure Apply_Allocator_Effects
+      --  Removes from State what the user code the allocators and the
+      --  iterations evaluated by Target run may write.
+      procedure Apply_Hidden_Code_Effects
         (Target : CFG.Node_Id;
          State  : in out Flow_State) is
       begin
-         if Allocation_Reach (Target) = Anywhere then
+         if Hidden_Code_Reach (Target) = Anywhere then
             Flow_Forget_All_Values (State);
          else
             Havoc_Nonlocal (State);
          end if;
-      end Apply_Allocator_Effects;
+      end Apply_Hidden_Code_Effects;
 
       procedure Merge_Into
         (Target : CFG.Node_Id;
@@ -8627,8 +8587,8 @@ package body Adalang_Analyzer.Flow_Interp is
             Apply_Function_Call_Effects (Target, Incoming_State);
             Incoming_Symbols := VC.Havoc;
          end if;
-         if Allocates (Target) then
-            Apply_Allocator_Effects (Target, Incoming_State);
+         if Runs_Hidden_Code (Target) then
+            Apply_Hidden_Code_Effects (Target, Incoming_State);
             Incoming_Symbols := VC.Havoc;
          end if;
          if Implicit_Code_Sees_Locals then
@@ -9214,6 +9174,47 @@ package body Adalang_Analyzer.Flow_Interp is
                   end if;
                end if;
             end Note_Type;
+
+            --  The objects of an instance of a generic package declared
+            --  here are those of the generic, Item, its formal objects of
+            --  mode in among them, of types that may be the actuals of its
+            --  formal types. The instance finalizes them where the scope
+            --  that declares it is left; one of a type that may run code
+            --  there runs code that can see this subprogram's objects
+            --  through those actuals (FP-125). A generic whose body is not
+            --  found may declare any.
+            procedure Note_Instance_Objects
+              (Item : Libadalang.Analysis.Ada_Node'Class) is
+            begin
+               if Libadalang.Analysis.Is_Null (Item) then
+                  Implicit_Code_May_Run := True;
+                  Implicit_Code_Sees_Locals := True;
+                  return;
+               elsif Item.Kind in Libadalang.Common.Ada_Base_Subp_Body then
+                  return;
+               elsif Item.Kind in Libadalang.Common.Ada_Object_Decl_Range
+               then
+                  if Type_May_Run_Code
+                       (Item.As_Object_Decl.F_Type_Expr
+                          .P_Designated_Type_Decl,
+                        Depth => 0)
+                  then
+                     Implicit_Code_May_Run := True;
+                     Implicit_Code_Sees_Locals := True;
+                  end if;
+                  return;
+               end if;
+               for Index in 1 .. Item.Children_Count loop
+                  if not Libadalang.Analysis.Is_Null (Item.Child (Index))
+                  then
+                     Note_Instance_Objects (Item.Child (Index));
+                  end if;
+               end loop;
+            exception
+               when others =>
+                  Implicit_Code_May_Run := True;
+                  Implicit_Code_Sees_Locals := True;
+            end Note_Instance_Objects;
          begin
             if Libadalang.Analysis.Is_Null (Node)
               or else
@@ -9233,6 +9234,22 @@ package body Adalang_Analyzer.Flow_Interp is
                     (Node.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl);
                elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
                   Note_Type (Node.As_Assign_Stmt.F_Dest.P_Expression_Type);
+               elsif Node.Kind =
+                 Libadalang.Common.Ada_Generic_Package_Instantiation
+               then
+                  declare
+                     Template : constant Libadalang.Analysis.Generic_Decl :=
+                       Node.As_Generic_Package_Instantiation
+                         .P_Designated_Generic_Decl;
+                  begin
+                     Note_Instance_Objects (Template);
+                     Note_Instance_Objects (Template.P_Body_Part_For_Decl);
+                  exception
+                     when others =>
+                        --  A generic that does not resolve may declare any.
+                        Implicit_Code_May_Run := True;
+                        Implicit_Code_Sees_Locals := True;
+                  end;
                end if;
             exception
                when others =>
@@ -9245,32 +9262,76 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
          end Note_Implicit_Code;
 
-         --  An allocator runs user code: the Initialize or Adjust of a
-         --  controlled part, the default expressions of the components,
-         --  the activation of a task, the Allocate of a storage pool. Each
-         --  one Node evaluates is taken as a call of effects that are not
-         --  known, entered into Effectful_Call_Reach like one: what it
-         --  writes reaches the objects of this subprogram when the type
-         --  is declared in it or the subprogram gives an access value to,
-         --  or the address of, one of them away.
-         procedure Note_Allocators
+         --  User code that the source does not show as a call. An
+         --  allocator runs the Initialize or Adjust of a controlled part,
+         --  the default expressions of the components, the activation of a
+         --  task, the Allocate of a storage pool. An iteration other than
+         --  over a discrete range or an array -- of a loop, a quantified
+         --  expression or an aggregate -- runs the First, Next,
+         --  Has_Element, Element or indexing functions of an iterator or
+         --  of an Iterable type. Each one Node evaluates is taken as a call
+         --  of effects that are not known, entered into Effectful_Call_Reach
+         --  like one: what it writes reaches the objects of this subprogram
+         --  when the type is declared in it, when the iteration names one
+         --  of them, or when the subprogram gives an access value to, or
+         --  the address of, one of them away.
+         procedure Note_Hidden_Code
            (Node : Libadalang.Analysis.Ada_Node'Class;
             Id   : CFG.Node_Id)
          is
-            function Reach_Of_Allocator return Effect_Reach is
+            --  True when an object Name designates or names a part of is
+            --  declared in this subprogram.
+            function Names_Own_Object
+              (Name : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+            begin
+               if Libadalang.Analysis.Is_Null (Name) then
+                  return False;
+               elsif Name.Kind = Libadalang.Common.Ada_Identifier then
+                  declare
+                     Decl : constant Libadalang.Analysis.Basic_Decl :=
+                       Name.As_Identifier.P_Referenced_Decl;
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Decl)
+                       and then Inside_Subprogram (Decl)
+                     then
+                        return True;
+                     end if;
+                  end;
+               end if;
+               for Index in 1 .. Name.Children_Count loop
+                  if Names_Own_Object (Name.Child (Index)) then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Names_Own_Object;
+
+            function Reach_Of
+              (Typ    : Libadalang.Analysis.Base_Type_Decl;
+               Domain : Libadalang.Analysis.Ada_Node) return Effect_Reach is
             begin
                if Verified_Keeps_To_Itself
-                 and then not Inside_Subprogram
-                   (Node.As_Allocator.P_Get_Allocated_Type)
+                 and then not Libadalang.Analysis.Is_Null (Typ)
+                 and then not Inside_Subprogram (Typ)
+                 and then not Names_Own_Object (Domain)
                then
                   return Outside_Subprogram;
                end if;
                return Anywhere;
             exception
                when others =>
-                  --  A type that does not resolve may be declared here.
+                  --  A name that does not resolve may be declared here.
                   return Anywhere;
-            end Reach_Of_Allocator;
+            end Reach_Of;
+
+            procedure Note (Reach : Effect_Reach) is
+            begin
+               Runs_Hidden_Code (Id) := True;
+               Hidden_Code_Reach (Id) :=
+                 Effect_Reach'Max (Hidden_Code_Reach (Id), Reach);
+               Effectful_Call_Reach.Include
+                 (Libadalang.Analysis.Ada_Node (Node), Reach);
+            end Note;
          begin
             if Libadalang.Analysis.Is_Null (Node)
               or else Node.Kind in Libadalang.Common.Ada_Body_Node
@@ -9278,20 +9339,88 @@ package body Adalang_Analyzer.Flow_Interp is
             then
                return;
             elsif Node.Kind = Libadalang.Common.Ada_Allocator then
-               declare
-                  Reach : constant Effect_Reach := Reach_Of_Allocator;
                begin
-                  Allocates (Id) := True;
-                  Allocation_Reach (Id) :=
-                    Effect_Reach'Max (Allocation_Reach (Id), Reach);
-                  Effectful_Call_Reach.Include
-                    (Libadalang.Analysis.Ada_Node (Node), Reach);
+                  Note
+                    (Reach_Of
+                       (Node.As_Allocator.P_Get_Allocated_Type,
+                        Libadalang.Analysis.No_Ada_Node));
+               exception
+                  when others =>
+                     Note (Anywhere);
+               end;
+            elsif Node.Kind = Libadalang.Common.Ada_For_Loop_Spec
+              and then not Termination.Is_Bounded_Iteration (Node)
+            then
+               declare
+                  Domain : constant Libadalang.Analysis.Ada_Node :=
+                    Node.As_For_Loop_Spec.F_Iter_Expr;
+               begin
+                  Note
+                    (Reach_Of (Domain.As_Expr.P_Expression_Type, Domain));
+               exception
+                  when others =>
+                     Note (Anywhere);
                end;
             end if;
             for Index in 1 .. Node.Children_Count loop
-               Note_Allocators (Node.Child (Index), Id);
+               Note_Hidden_Code (Node.Child (Index), Id);
             end loop;
-         end Note_Allocators;
+         end Note_Hidden_Code;
+
+         --  Elaborating a package declared in this subprogram evaluates the
+         --  initial values, bounds and actuals of its declarations and runs
+         --  the statements of its body, all where the package is declared:
+         --  in the state of Id, the node of that declaration (FP-125). The
+         --  calls in its declarations are calls of that node. The
+         --  statements of a body, and the declarations and statements of
+         --  an instance of a generic package, are code of effects that are
+         --  not known, which can reach the objects of this subprogram.
+         --  What is run only when called or activated is not elaborated
+         --  here.
+         procedure Note_Package_Elaboration
+           (Node : Libadalang.Analysis.Ada_Node'Class;
+            Id   : CFG.Node_Id) is
+         begin
+            if Libadalang.Analysis.Is_Null (Node)
+              or else Node.Kind in Libadalang.Common.Ada_Base_Subp_Body
+                                 | Libadalang.Common.Ada_Basic_Subp_Decl
+                                 | Libadalang.Common.Ada_Body_Stub
+                                 | Libadalang.Common.Ada_Generic_Decl
+                                 | Libadalang.Common.Ada_Task_Body
+                                 | Libadalang.Common.Ada_Protected_Body
+                                 | Libadalang.Common.Ada_Entry_Body
+                                 | Libadalang.Common.Ada_Task_Type_Decl
+                                 | Libadalang.Common.Ada_Single_Task_Decl
+                                 | Libadalang.Common.Ada_Protected_Type_Decl
+                                 | Libadalang.Common.Ada_Single_Protected_Decl
+            then
+               return;
+            elsif Node.Kind =
+              Libadalang.Common.Ada_Generic_Package_Instantiation
+            then
+               Collect
+                 (Node, Effectful_Calls (Id), Root => True, Depth => 0);
+               Runs_Hidden_Code (Id) := True;
+               Hidden_Code_Reach (Id) := Anywhere;
+            elsif Node.Kind = Libadalang.Common.Ada_Package_Body then
+               if not Libadalang.Analysis.Is_Null
+                        (Node.As_Package_Body.F_Stmts)
+               then
+                  Runs_Hidden_Code (Id) := True;
+                  Hidden_Code_Reach (Id) := Anywhere;
+               end if;
+               Note_Package_Elaboration (Node.As_Package_Body.F_Decls, Id);
+            elsif Node.Kind in Libadalang.Common.Ada_Basic_Decl
+              and then Node.Kind /= Libadalang.Common.Ada_Package_Decl
+            then
+               Collect (Node, Effectful_Calls (Id), Root => True, Depth => 0);
+               Note_Hidden_Code (Node, Id);
+            else
+               for Index in 1 .. Node.Children_Count loop
+                  Note_Package_Elaboration (Node.Child (Index), Id);
+               end loop;
+            end if;
+         end Note_Package_Elaboration;
 
          --  Enters Calls into Effectful_Call_Reach. A callee declared in
          --  this subprogram, and one that writes an actual, can reach this
@@ -9366,8 +9495,16 @@ package body Adalang_Analyzer.Flow_Interp is
                end if;
                Collect
                  (Own, Effectful_Calls (Id), Root => True, Depth => 0);
+               if not Libadalang.Analysis.Is_Null (Source)
+                 and then Source.Kind in
+                   Libadalang.Common.Ada_Package_Decl
+                     | Libadalang.Common.Ada_Package_Body
+                     | Libadalang.Common.Ada_Generic_Package_Instantiation
+               then
+                  Note_Package_Elaboration (Source, Id);
+               end if;
                Register (Effectful_Calls (Id));
-               Note_Allocators (Own, Id);
+               Note_Hidden_Code (Own, Id);
                Calls_Untrusted (Id) := Evaluates_Untrusted_Call (Own);
             end;
          end loop;
@@ -10076,8 +10213,8 @@ package body Adalang_Analyzer.Flow_Interp is
                            Apply_Function_Call_Effects (Current, State);
                            Symbols := VC.Havoc;
                         end if;
-                        if Allocates (Current) then
-                           Apply_Allocator_Effects (Current, State);
+                        if Runs_Hidden_Code (Current) then
+                           Apply_Hidden_Code_Effects (Current, State);
                            Symbols := VC.Havoc;
                         end if;
                         if Implicit_Code_Sees_Locals then

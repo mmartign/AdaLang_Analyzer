@@ -488,9 +488,9 @@ boundary resolves; otherwise unknown effects retain the existing conservative
 invalidation. Relational contract transfer still requires SPARK mode, an
 explicit `Global` aspect, and non-aliased simple writable actuals. What an
 access value designates, dispatching/class-wide behavior, tasking and
-protected operations, floating-point proof, generic subprogram instantiations,
-and unsupported transfers such as a `goto` back up to a label are outside the
-proof boundary.
+protected operations, floating-point proof, what an instance of a generic
+subprogram does, and unsupported transfers such as a `goto` back up to a
+label are outside the proof boundary.
 
 For assertions that remain unknown after abstract interpretation, `--verify`
 also has a small scalar verification-condition backend. It translates

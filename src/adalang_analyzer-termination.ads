@@ -37,6 +37,13 @@ package Adalang_Analyzer.Termination is
    --  True when Decl is declared in a unit of the language-defined library
    --  or of the GNAT one, whose bodies are not followed.
 
+   function Is_Bounded_Iteration
+     (Spec : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Spec, a for loop specification, iterates "in" over a
+   --  discrete range or subtype or "of" over an array: an iteration that
+   --  ends by itself and runs no code of its own. Any other iteration
+   --  calls the operations of an iterator.
+
    procedure Verify_Unit (Unit : Libadalang.Analysis.Analysis_Unit);
    --  Raises the termination obligation of each subprogram body and
    --  expression function in Unit that SPARK requires to terminate.
