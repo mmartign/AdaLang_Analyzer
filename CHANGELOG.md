@@ -5,7 +5,28 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.11] - 2026-10-18
+
+A `--verify` release that keeps what it knows of the parts of a record
+object across a write to another part, across a call that is not given
+them, and past a condition it cannot translate, and that reads a function
+called without arguments as a call.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+7,026 of the 15,043 checks GNATprove proves (was 6,845), most of the gain in
+the RecordFlux-generated state machines of coap_spark -- the
+`pragma Assert (X_Invariant)` of each state and the preconditions of the
+calls between them; it proves none that GNATprove does not. On AWS and
+gnatcoll-core, which GNATprove does not analyze, the obligations proved go
+from 13,990 to 14,011 and from 9,487 to 9,526: outside SPARK code a write to
+a part of a parameter is taken to change the parts of every other object,
+two parameters passed by reference being possibly one object. No obligation
+is added and none is gone, no verdict of 1.8.10 is withdrawn and no definite
+error is new. The `--verify` lanes take up to about 7% more CPU time. On the
+ten corpora every preset reports the findings of 1.8.10. The matched pairs
+are the 3,142 of 1.8.10; "both safe" is 611 on coap_spark (was 536) and 162
+on the SPARK testsuite (was 151), with no possible unsoundness and no false
+positive anywhere.
 
 ### Added
 
