@@ -514,7 +514,11 @@ simple actual-to-formal substitutions feed call-precondition VCs. At a CFG
 join, an identical symbolic assignment from every predecessor survives;
 conflicting assignments receive a fresh unconstrained merge symbol. Calls
 without a relational postcondition, exceptional edges, and unsupported writes
-clear symbolic facts.
+clear symbolic facts. A write to a record component whose name settles which
+part is written renews that part and what shares storage with it, and leaves
+the facts about the other parts of the object; a branch condition or an
+assertion that does not translate leaves the symbolic state as it was. The
+supported-subset page gives the details.
 
 Leading `Loop_Invariant` pragmas now form inductive cut points for straight-line
 scalar loop bodies. The verifier separately proves initialization from the

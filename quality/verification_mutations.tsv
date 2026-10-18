@@ -262,7 +262,7 @@ null-assigned	tests/verification_mutation_expression_forms.adb	precondition	Need
 null-other-object	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Empty)	unproved	that one access value is not null says nothing of another
 known-divisor-other-modulus	tests/verification_mutation_expression_forms.adb	precondition	Aligned (Rough)	unproved	a multiple of 4 is not known to be a multiple of 8
 part-other-element	tests/verification_mutation_object_parts.adb	assertion	Apart (2).Count = 5	unproved	what is known of one element of an array says nothing of another (FP-119)
-part-component-written	tests/verification_mutation_object_parts.adb	assertion	Edited (1).Count = 5	unproved	a component of an element that has been assigned holds another value
+part-component-written	tests/verification_mutation_object_parts.adb	assertion	Edited (1).Count = 5	definite-error	a component of an element that has been assigned holds the value assigned
 part-element-written	tests/verification_mutation_object_parts.adb	assertion	Replaced (1).Count = 5	unproved	an element that has been assigned holds another value in each component (FP-119)
 part-slice-written	tests/verification_mutation_object_parts.adb	assertion	Shifted (1).Count = 5	unproved	an element inside a slice that has been assigned holds another value (FP-119)
 part-object-written	tests/verification_mutation_object_parts.adb	assertion	Renewed (1).Count = 5	unproved	an array that has been assigned holds other elements

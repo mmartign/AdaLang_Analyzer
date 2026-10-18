@@ -5,6 +5,37 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--verify` keeps what it knows of the parts of a record object
+  (`docs/src/supported-verification-subset.md`, "Parts of an object" and
+  "Objects and effects the analysis does not follow"):
+  - an assignment to a component whose name settles which part is written
+    (`Ctx.P.Next := 1`) gives that part, and what shares storage with it, a
+    new value, and leaves the other parts as they were; it dropped the
+    symbolic state;
+  - in SPARK code that takes no access value or address of anything and
+    declares no task or protected object, a procedure call leaves the parts
+    of the subprogram's own objects and parameters that it is not given, and
+    an actual made of selections (`Ctx.P.Request`) loses only that part;
+    every component was renewed at every call;
+  - a part that is not a scalar (a record, an access value) has one value
+    whether a dotted name or the parameter of an inlined expression
+    function names it: `Free (Ctx.P.Slots)` and `Ctx.P.Slots.S1 = null` now
+    speak of the same component.
+- A function called without an argument list (`pragma Assert (Inv)`,
+  `Pkg.Ready`) is a call: its body is read where it is called, or it is a
+  term. It was read as an object, never initialized.
+
+### Changed
+
+- A condition the translation takes nothing from -- of an assertion, or of
+  an `if` on either branch -- leaves the symbolic state as it was, with what
+  the interval domain learns from it of the ranges of scalar objects. It
+  dropped the state.
+
 ## [1.8.10] - 2026-10-17
 
 A `--verify` release that takes in subprograms that declare an instance of a

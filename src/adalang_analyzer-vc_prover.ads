@@ -213,10 +213,11 @@ package Adalang_Analyzer.VC_Prover is
    --  array bounds stands.
 
    function Forget_Unowned_Values
-     (State  : Symbolic_State;
-      Writer : Libadalang.Analysis.Ada_Node'Class;
-      Scope  : Libadalang.Analysis.Ada_Node;
-      After  : Adalang_Analyzer.Flow_Domain.Flow_State)
+     (State      : Symbolic_State;
+      Writer     : Libadalang.Analysis.Ada_Node'Class;
+      Scope      : Libadalang.Analysis.Ada_Node;
+      After      : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Keep_Parts : Boolean := False)
       return Symbolic_State;
    --  State after Writer, a call whose effects on objects by name are
    --  known to stay outside Scope, the subprogram being verified. What
@@ -226,7 +227,12 @@ package Adalang_Analyzer.VC_Prover is
    --  every object declared outside Scope, every record component, and
    --  every value that is not a scalar, whatever object it belongs to --
    --  a call may write through an access value. After is the flow state
-   --  once Writer is done.
+   --  once Writer is done. With Keep_Parts, what State says of every part
+   --  of an object declared in Scope, or of a parameter of Scope, stands
+   --  too: for code where no access value can designate such an object,
+   --  nor any part of it, and where a parameter is never the object the
+   --  call writes by another name (SPARK code that takes no 'Access or
+   --  'Address of anything).
 
    function Forget_Object
      (State  : Symbolic_State;
@@ -236,6 +242,58 @@ package Adalang_Analyzer.VC_Prover is
       return Symbolic_State;
    --  State after Writer has given the scalar Object a value of which
    --  nothing is known but what After says.
+
+   function Assign_Component
+     (State       : Symbolic_State;
+      Destination : Libadalang.Analysis.Name'Class;
+      Value       : Libadalang.Analysis.Expr'Class;
+      Writer      : Libadalang.Analysis.Ada_Node'Class;
+      Flow        : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Shared      : Boolean)
+      return Symbolic_State;
+   --  State after Writer has assigned Value to Destination, a component of
+   --  a tracked object that the name settles ("Ctx.P.Next := 1"; no
+   --  dereference, no index whose value is not known), declared as an
+   --  object or a parameter, Flow being the state before: the part written
+   --  and every part that shares storage with it gets a value of its own,
+   --  the component the value's term when it is a scalar, and what State
+   --  says of the other parts of the object stands. Shared when another
+   --  name may denote the object -- two parameters passed by reference, a
+   --  parameter and a global, outside SPARK code: then every part of every
+   --  other object gets a value of its own too. Havoc for any other
+   --  destination.
+
+   function Settled_Object
+     (Part : Libadalang.Analysis.Ada_Node'Class;
+      Flow : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Libadalang.Analysis.Ada_Node;
+   --  The object of which Part is a settled part (Assign_Component); null
+   --  when it is none.
+
+   function With_Flow_Ranges
+     (State : Symbolic_State;
+      Flow  : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State, where it speaks of the value of a scalar object that Flow
+   --  bounds, saying that the value is within those bounds. For a state
+   --  kept past a condition it took nothing from: what the interval domain
+   --  learned from the condition is not lost.
+
+   function Is_Settled_Part
+     (Part : Libadalang.Analysis.Ada_Node'Class;
+      Flow : Adalang_Analyzer.Flow_Domain.Flow_State) return Boolean;
+   --  True when Part names a part of a tracked object that the name
+   --  settles, as Assign_Component asks of its destination.
+
+   function Forget_Part
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class;
+      Part   : Libadalang.Analysis.Ada_Node'Class;
+      After  : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State after Writer has given Part, a settled part (Is_Settled_Part),
+   --  a value of which nothing is known: as Assign_Component, with no
+   --  term for the part. Havoc when Part is not settled.
 
    function Bind_Actual
      (State  : Symbolic_State;

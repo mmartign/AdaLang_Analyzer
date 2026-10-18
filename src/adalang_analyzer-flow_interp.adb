@@ -159,6 +159,90 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end Keeps_To_Itself;
 
+   --  True when the subprogram being verified is SPARK code, gives no
+   --  access value to, and no address of, anything, and declares no task
+   --  or protected object. Then no access value designates its objects or
+   --  a part of one, and no parameter is what a callee writes by another
+   --  name: a call it does not give one of them, or a part of one, as an
+   --  actual leaves each part of it as it was.
+   Verified_Keeps_Parts : Boolean := False;
+
+   --  True when the subprogram being verified is SPARK code: no parameter
+   --  of it shares storage with another, nor with an object it reads or
+   --  writes by its own name.
+   Verified_In_SPARK : Boolean := False;
+
+   --  True when a write to a part of Object may change what another name
+   --  denotes: Object is a parameter of the subprogram being verified, or
+   --  declared outside it, and that subprogram is not SPARK code. Two
+   --  parameters passed by reference may be one object, and a parameter
+   --  may be an object the subprogram also names.
+   function May_Share_Storage
+     (Object : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node := Object;
+   begin
+      if Verified_In_SPARK then
+         return False;
+      elsif Libadalang.Analysis.Is_Null (Object)
+        or else Object.Kind /= Libadalang.Common.Ada_Defining_Name
+        or else Object.As_Defining_Name.P_Basic_Decl.Kind =
+          Libadalang.Common.Ada_Param_Spec
+      then
+         return True;
+      end if;
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current = Verified_Subprogram then
+            return False;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return True;
+   exception
+      when others =>
+         return True;
+   end May_Share_Storage;
+
+   --  True when Subprogram takes no access value to, and no address of,
+   --  anything, and declares no task or protected object
+   --  (Verified_Keeps_Parts).
+   function Takes_No_Access
+     (Subprogram : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      function Gives_Away
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind in Libadalang.Common.Ada_Task_Type_Decl
+                          | Libadalang.Common.Ada_Single_Task_Decl
+                          | Libadalang.Common.Ada_Protected_Type_Decl
+                          | Libadalang.Common.Ada_Single_Protected_Decl
+           or else
+             (Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+              and then Text_Utils.Normalize_Rule_Name
+                         (Ada_Text.Node_Text
+                            (Node.As_Attribute_Ref.F_Attribute))
+                       in "access" | "unchecked-access"
+                        | "unrestricted-access" | "address")
+         then
+            return True;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Gives_Away (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Gives_Away;
+   begin
+      return not Libadalang.Analysis.Is_Null (Subprogram)
+        and then not Gives_Away (Subprogram);
+   exception
+      when others =>
+         return False;
+   end Takes_No_Access;
+
    --  True when the call of a subprogram declared by Decl reaches, of the
    --  objects of the subprogram being verified, only those it is given as
    --  actuals: a callee declared outside that subprogram cannot name what
@@ -407,6 +491,35 @@ package body Adalang_Analyzer.Flow_Interp is
          Symbols := VC.Forget_Composite_Values (Symbols, Condition);
       end if;
    end Assume_Into;
+
+   --  As Assume_Into, After being the flow state once Condition is known to
+   --  have the value Truth. Where the translation takes nothing from
+   --  Condition, what After knows of the ranges of scalar objects is said of
+   --  their values: what the interval domain learned from the condition is
+   --  kept with the rest.
+   procedure Assume_Narrowed
+     (Symbols   : in out VC.Symbolic_State;
+      Condition : Libadalang.Analysis.Expr;
+      Truth     : Boolean;
+      Flow      : Flow_State;
+      After     : Flow_State)  --  adalang-analyzer: ignore Swappable_Parameters
+   is
+      Updated : constant VC.Symbolic_State :=
+        VC.Assume (Symbols, Condition, Truth => Truth, Flow => Flow);
+   begin
+      if Evaluates_Effectful_Call (Condition) then
+         Symbols := VC.Havoc;
+         return;
+      end if;
+      if VC.Equal (Updated, VC.Havoc) then
+         Symbols := VC.With_Flow_Ranges (Symbols, After);
+      else
+         Symbols := Updated;
+      end if;
+      if Evaluates_Untrusted_Call (Condition) then
+         Symbols := VC.Forget_Composite_Values (Symbols, Condition);
+      end if;
+   end Assume_Narrowed;
 
    --  True while Verify_Subprogram's fixed-point run is still iterating. A
    --  state seen then is one some path reaches, not yet the join of all of
@@ -2115,6 +2228,19 @@ package body Adalang_Analyzer.Flow_Interp is
             Forget_Identifiers_In (Node.Child (Index));
          end loop;
       end Forget_Identifiers_In;
+
+      --  True for a name made of selections only ("Ctx.P.Request"): no
+      --  index, whose value the call could change before the state after
+      --  it is read.
+      function Selected_Components_Only
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+        (not Libadalang.Analysis.Is_Null (Node)
+         and then
+           (Node.Kind = Libadalang.Common.Ada_Identifier
+            or else
+              (Node.Kind = Libadalang.Common.Ada_Dotted_Name
+               and then Selected_Components_Only
+                          (Node.As_Dotted_Name.F_Prefix))));
    begin
       if Libadalang.Analysis.Is_Null (Decl)
         or else Libadalang.Analysis.Is_Null (Verified_Subprogram)
@@ -2130,7 +2256,9 @@ package body Adalang_Analyzer.Flow_Interp is
       end if;
 
       Result :=
-        VC.Forget_Unowned_Values (Symbols, Stmt, Verified_Subprogram, After);
+        VC.Forget_Unowned_Values
+          (Symbols, Stmt, Verified_Subprogram, After,
+           Keep_Parts => Verified_Keeps_Parts);
       for Pair of Call.P_Call_Params loop
          if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
             --  An actual "P.all" is an object outside the subprogram,
@@ -2142,8 +2270,20 @@ package body Adalang_Analyzer.Flow_Interp is
               and then not Verified_Keeps_To_Itself
             then
                return VC.Havoc;
+            elsif Verified_Keeps_Parts
+              and then Selected_Components_Only
+                         (Libadalang.Analysis.Actual (Pair))
+              and then VC.Is_Settled_Part
+                         (Libadalang.Analysis.Actual (Pair), After)
+            then
+               --  "Ctx.P.Request": what is known of the other parts of
+               --  Ctx stands.
+               Result :=
+                 VC.Forget_Part
+                   (Result, Stmt, Libadalang.Analysis.Actual (Pair), After);
+            else
+               Forget_Identifiers_In (Libadalang.Analysis.Actual (Pair));
             end if;
-            Forget_Identifiers_In (Libadalang.Analysis.Actual (Pair));
          end if;
       end loop;
       return Result;
@@ -9459,6 +9599,9 @@ package body Adalang_Analyzer.Flow_Interp is
          Untrusted_Calls.Clear;
          Verified_Subprogram := Libadalang.Analysis.Ada_Node (Subprogram);
          Verified_Keeps_To_Itself := Keeps_To_Itself (Subprogram);
+         Verified_In_SPARK := In_SPARK_Code (Subprogram);
+         Verified_Keeps_Parts :=
+           Verified_In_SPARK and then Takes_No_Access (Subprogram);
          VC.Assume_Component_Subtypes (In_SPARK_Code (Subprogram));
          Implicit_Code_May_Run := False;
          Implicit_Code_Sees_Locals := False;
@@ -9596,6 +9739,16 @@ package body Adalang_Analyzer.Flow_Interp is
                         --  out.
                         Output_Symbols :=
                           VC.Forget_Composite_Values (Input_Symbols, Source);
+                     elsif Dest.Kind = Libadalang.Common.Ada_Dotted_Name then
+                        --  A component of an object the name settles: what
+                        --  is known of its other parts stands.
+                        Output_Symbols :=
+                          VC.Assign_Component
+                            (Input_Symbols, Dest,
+                             Source.As_Assign_Stmt.F_Expr, Source, Input,
+                             Shared =>
+                               May_Share_Storage
+                                 (VC.Settled_Object (Dest, Input)));
                      else
                         Output_Symbols := VC.Havoc;
                      end if;
@@ -9627,9 +9780,10 @@ package body Adalang_Analyzer.Flow_Interp is
                        Pragma_Condition (Source.As_Pragma_Node);
                   begin
                      if not Libadalang.Analysis.Is_Null (Cond) then
-                        Output_Symbols :=
-                          Assume_Condition
-                            (Input_Symbols, Cond, Truth => True, Flow => Input);
+                        Output_Symbols := Input_Symbols;
+                        Assume_Narrowed
+                          (Output_Symbols, Cond, Truth => True, Flow => Input,
+                           After => Output);
                      end if;
                   end;
                elsif Source.Kind in
@@ -9715,17 +9869,18 @@ package body Adalang_Analyzer.Flow_Interp is
                   begin
                      Narrow_By_Condition
                        (Cond, Input, True_State, False_State);
+                     Edge_Symbols := Input_Symbols;
                      if Takes_True then
                         Edge_State := True_State;
-                        Edge_Symbols :=
-                          Assume_Condition
-                            (Input_Symbols, Cond, Truth => True, Flow => Input);
+                        Assume_Narrowed
+                          (Edge_Symbols, Cond, Truth => True, Flow => Input,
+                           After => True_State);
                         Propagate := Value /= Bool_False;
                      else
                         Edge_State := False_State;
-                        Edge_Symbols :=
-                          Assume_Condition
-                            (Input_Symbols, Cond, Truth => False, Flow => Input);
+                        Assume_Narrowed
+                          (Edge_Symbols, Cond, Truth => False, Flow => Input,
+                           After => False_State);
                         Propagate := Value /= Bool_True;
                      end if;
                   end;
@@ -10253,11 +10408,13 @@ package body Adalang_Analyzer.Flow_Interp is
                               --  here would let a later reference resolve
                               --  to the pre-write value -- keep bailing
                               --  for that shape, as for any other
-                              --  unresolved destination.
+                              --  unresolved destination, unless the name
+                              --  settles which part is written.
                               if Libadalang.Analysis.Is_Null (Key)
                                 and then Dest.Kind not in
                                   Libadalang.Common.Ada_Call_Expr
                                     | Libadalang.Common.Ada_Explicit_Deref
+                                and then not VC.Is_Settled_Part (Dest, State)
                               then
                                  return False;
                               end if;
@@ -10266,6 +10423,17 @@ package body Adalang_Analyzer.Flow_Interp is
                                    VC.Assign
                                      (Symbols, Key,
                                       Source.As_Assign_Stmt.F_Expr, State);
+                              elsif Dest.Kind =
+                                Libadalang.Common.Ada_Dotted_Name
+                              then
+                                 Symbols :=
+                                   VC.Assign_Component
+                                     (Symbols, Dest,
+                                      Source.As_Assign_Stmt.F_Expr, Source,
+                                      State,
+                                      Shared =>
+                                        May_Share_Storage
+                                          (VC.Settled_Object (Dest, State)));
                               elsif Dest.Kind /= Libadalang.Common.Ada_Call_Expr
                                 or else Dest.As_Call_Expr.P_Kind not in
                                   Libadalang.Common.Array_Index

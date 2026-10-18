@@ -347,9 +347,12 @@ matching Ada's own `elsif` desugaring.
 - A fresh, unconstrained symbol is used instead of an `ite` only when a
   binding's own sort disagrees between arms, an unreachable defensive case.
 - Array-element and pointer-dereference writes are tolerated (never
-  symbolically tracked, so skipping them leaves no stale binding), but a
-  record-component write is not, since that *is* symbolically tracked and
-  could otherwise resolve to a stale pre-write value.
+  symbolically tracked, so skipping them leaves no stale binding), and so
+  is a record-component write whose name settles which part is written,
+  which renews that part as an assignment outside a loop does (see "Parts
+  of an object"); any other record-component write is not, since that
+  *is* symbolically tracked and could otherwise resolve to a stale
+  pre-write value.
 - An `elsif`/`else` part is folded only when it continues the *same*
   `If_Stmt` as the branch that reached it, distinguished by walking the
   branch condition's AST ancestry back to its owning `If_Stmt`.
@@ -476,7 +479,9 @@ comparisons, equality, Boolean connectives, conditional and case
 expressions, supported integer conversions, bounded quantifiers, the scalar
 parts of an object that its name settles (see "Parts of an object"), and
 side-effect-free expression functions that can be inlined within the depth
-limit. Integer `/`, `mod`, and `rem` are translated only when the divisor
+limit -- called with arguments or without an argument list (`Inv`,
+`Pkg.Ready`), the body being read where the call stands, with what is known
+there of the objects it names. Integer `/`, `mod`, and `rem` are translated only when the divisor
 is provably nonzero and their Ada sign semantics are encoded: a nonzero
 literal, a name whose interval excludes zero, or an attribute or an
 arithmetic expression whose value or interval does -- `Byte'Size`, or
@@ -677,7 +682,15 @@ element at an index that is not known. Nothing is proved from
 `Row (I).Count` while `I` is not known, and it is not taken for
 `Row (1).Count` (FP-119).
 
-An assignment to a component of a record drops the symbolic state. An
+An assignment to a component of a record whose name settles which part is
+written -- `Ctx.P.Next := 1`, `Row (1).Count := 0` -- gives that part a new
+value, and so every part that shares storage with it: what it is a part of,
+and its own parts. A scalar component holds the value assigned, within the
+subtype of the component in SPARK code (the assignment checked it). What is
+known of the other parts of the object stands: after `Ctx.P.Next := 1`,
+what was known of `Ctx.P.Slots` still is. An assignment to a component that
+the name does not settle -- behind an access value, at an index that is not
+known -- drops the symbolic state. An
 assignment to an element of an array, or to a slice, leaves what is known
 of scalar objects, of the components of records that are in no array, of
 array bounds and of whether an object is constrained; every symbol read
@@ -690,7 +703,10 @@ analysis does not follow").
 A record or array parameter of an expression function that is inlined
 stands for the part of the caller's object that is its actual, where the
 actual is such a name: in `Well_Formed (Cursors (F_Version))`, the
-function's `Cursor.State` is the component `State` of that element. A
+function's `Cursor.State` is the component `State` of that element. A part
+that is not a scalar -- a record, an access value -- is read the same way:
+in `Free (Ctx.P.Slots)`, the function's `S.S1 = null` is `Ctx.P.Slots.S1 =
+null`, one fact whichever of the two names states it. A
 private type is seen through to its full declaration for this, and for
 the names above: the body of an expression function in the private part
 of a package is read as it is written. Any other actual -- a call, an
@@ -1000,6 +1016,16 @@ the direct name, for reads and writes alike.
   object declared outside the subprogram, each actual the call may write
   (every name in it), every record component and every array element of
   whatever object, and the value of every object that is not a scalar.
+  In SPARK code that takes no access value to anything and no address of
+  anything, and declares no task or protected object, what is known of
+  every part of an object declared in the subprogram under analysis, or of
+  one of its parameters, stands as well -- components, elements, values that
+  are not scalars. No access value can designate such an object or a part
+  of one, and SPARK forbids a parameter to be an object the callee writes
+  by another name. An actual the call may write that is made of selections
+  only (`Ctx.P.Request`) gives that part, and what shares storage with it,
+  a value of which nothing is known, and leaves the other parts of the
+  object as they were; any other such actual, every name in it.
 
 Tasking is outside this model: an object shared between tasks is expected
 to be volatile, atomic or protected.
@@ -1038,15 +1064,18 @@ An argument that is not a scalar is the value of a whole object (a
 variable, a constant or a parameter that is not volatile, not a task and not
 a protected object), of a record component of one reached without a
 dereference, or the result of another such call whose type is not an access
-type. The value of an object is a symbol of its own, apart from the symbols
+type. A component that its name settles is the value of that part of the
+object (see "Parts of an object"); one of the result of a call is a function
+of that result. The value of an object is a symbol of its own, apart from the symbols
 of its components whatever their names: for an object `X` of a record type
 with a component `X`, `X` and `X.X` are two values, and two such records that
 agree in `X` are not one value (FP-120). An object keeps its value until
 something may have changed it, and then no fact about the old value says
 anything of the new one:
 
-- an assignment to the object, to a component of it, or through a
-  dereference drops the symbolic state;
+- an assignment to the object, or through a dereference, drops the
+  symbolic state; one to a component that its name settles gives that part,
+  and what shares storage with it, a new value (see "Parts of an object");
 - an assignment to an element or a slice of *any* array, and a call in an
   expression to a function that is not a literal, a predefined operation or
   under an explicit `SPARK_Mode`, give every object that is not a scalar a
@@ -1177,6 +1206,13 @@ being anything the rules of this section take in its turn.
 Nothing of this is done for a form that does not hold: a conditional
 expression, a quantified expression or a call that is `False` says
 nothing of any one of its parts.
+
+A condition the translation takes nothing from -- that of an assertion, or
+of an `if` on either of its branches -- adds nothing and costs nothing:
+what was known before it still is, unless it evaluates a call that may
+change state (see "Objects and effects the analysis does not follow").
+What the interval domain learns from it of the range of a scalar object is
+said of the value of that object.
 
 ## Supported control flow
 
