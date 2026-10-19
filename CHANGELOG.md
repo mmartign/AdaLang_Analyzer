@@ -5,7 +5,28 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.9.0] - 2026-10-19
+
+A `--verify` release that keeps what it knows across a call whose effects
+are not known, in SPARK code that keeps its objects to itself, reads
+expression functions twice as deep, and keeps at a join what both paths
+state alike of a value they disagree on.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+7,400 of the 15,043 checks GNATprove proves (was 7,026), almost all of the
+gain in coap_spark (3,100 -> 3,429), where the states of the
+RecordFlux-generated state machines and the message packages call
+procedures whose effects the summaries do not know, and in libkeccak
+(1,262 -> 1,307); it proves none that GNATprove does not. The changes act
+in SPARK code only: on AWS and gnatcoll-core, which GNATprove does not
+analyze, every obligation has the verdict it had. No obligation is added
+and none is gone, no verdict of 1.8.11 is withdrawn and no definite error
+is new. The `--verify` lanes of coap_spark and libkeccak take about 23% and
+11% more CPU time, the others the same. On the ten corpora every preset
+reports the findings of 1.8.11. The matched pairs are the 3,142 of 1.8.11;
+"both safe" is 696 on coap_spark (was 611) and 162 on the SPARK testsuite,
+where no verdict moves, with no possible unsoundness and no false positive
+anywhere.
 
 ### Added
 
