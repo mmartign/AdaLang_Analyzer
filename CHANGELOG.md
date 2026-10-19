@@ -5,6 +5,39 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Where two paths meet, at a join that is not the head of a loop, a fact
+  each path states alike of the value it gives an object or a part they
+  disagree on is kept, of the joined value: `Ctx` given a new value by a
+  call on one path and not on the other, with `Initialized (Ctx)` known on
+  both, is known after them. Only identical facts were kept.
+
+### Changed
+
+- `--verify` reads an expression function eight bodies deep; it read four.
+  A fact and a goal about one value reached through generated functions
+  (RecordFlux: `Sufficient_Space`, `Available_Space`, `Field_First`,
+  `Field_First_Internal`, `Field_First_X`) met only if both were read down
+  to it.
+- In SPARK code, a subprogram or an instance of a generic subprogram that
+  the subprogram under analysis declares no longer counts as code a callee
+  could be handed and run -- only that subprogram can name it, and hand it
+  out only by `'Access` or as a primitive operation of a tagged type it
+  declares, which it then does not keep to itself; the call of an instance
+  it declares is a call of its own. A call whose effects are not known
+  there keeps what is known of that subprogram's own objects and
+  parameters, value and initialization. Every state of the RecordFlux
+  state machines declares an invariant function and instances of generic
+  procedures: each such call dropped everything (`docs/src/supported-verification-subset.md`,
+  "Objects and effects the analysis does not follow").
+- In SPARK code that keeps its objects to itself, a call whose effects are
+  not known keeps what the symbolic state says of them too, as the call
+  frame of a call whose effects are known does; it dropped the symbolic
+  state.
+
 ## [1.8.11] - 2026-10-18
 
 A `--verify` release that keeps what it knows of the parts of a record

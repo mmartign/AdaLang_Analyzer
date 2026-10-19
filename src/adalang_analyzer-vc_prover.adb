@@ -113,7 +113,13 @@ package body Adalang_Analyzer.VC_Prover is
       --  used to bound how deep a single recursive translation may go.
    end record;
 
-   Max_Inline_Depth : constant := 4;
+   --  Generated code reaches a scalar through a chain of expression
+   --  functions (RecordFlux: Sufficient_Space, Available_Space,
+   --  Field_First, Field_First_Internal, Field_First_X), and a fact and a
+   --  goal about one such value meet only if both are read down to it: at
+   --  four, one of them was often left a term of its own. Eight leaves
+   --  room; twelve gave nothing more on the benchmark corpora.
+   Max_Inline_Depth : constant := 8;
 
    procedure Mark_Unsupported
      (Context : in out Translation_Context;
@@ -5641,20 +5647,131 @@ package body Adalang_Analyzer.VC_Prover is
       end if;
    end Include_Root;
 
+   --  For one side of a join, the name the join gives each term of that
+   --  side that is one symbol, the value of a key the two sides disagree
+   --  on. Where two such keys have one term on the side (the names of a
+   --  parameter in its declaration and in its body), it is given the
+   --  first one's name: either is that term's value there.
+   package Term_Name_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => String,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   package String_Sets is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Boolean,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   --  A symbol: no operator applied to anything, and no literal.
+   function Is_Symbol (Term : String) return Boolean is
+     (Term'Length > 0
+      and then Term (Term'First) in 'a' .. 'z' | 'A' .. 'Z' | '|'
+      and then Term /= "true" and then Term /= "false"
+      and then (for all Item of Term =>
+                  Item not in ' ' | '(' | ')' | ASCII.LF | ASCII.HT));
+
+   procedure Name_Term
+     (Names : in out Term_Name_Maps.Map;
+      Term  : String;
+      Name  : String)  --  adalang-analyzer: ignore Swappable_Parameters
+   is
+   begin
+      if Is_Symbol (Term) and then not Names.Contains (Term) then
+         Names.Insert (Term, Name);
+      end if;
+   end Name_Term;
+
+   --  Fact with each symbol that Names gives a name replaced by it; empty
+   --  when there is none in it. Stale_Found: a symbol of Stale is in it.
+   function Renamed
+     (Fact        : String;
+      Names       : Term_Name_Maps.Map;
+      Stale       : String_Sets.Map;
+      Stale_Found : out Boolean) return String
+   is
+      function Separator (Item : Character) return Boolean is
+        (Item in ' ' | '(' | ')' | ASCII.LF | ASCII.HT);
+
+      Result  : Unbounded_String;
+      Index   : Natural := Fact'First;
+      Stop    : Natural;
+      Changed : Boolean := False;
+   begin
+      Stale_Found := False;
+      while Index <= Fact'Last loop
+         if Separator (Fact (Index)) then
+            Append (Result, Fact (Index));
+            Index := Index + 1;
+         else
+            Stop := Index;
+            if Fact (Index) = '|' then
+               --  A quoted symbol, up to its closing bar.
+               Stop := Natural'Min (Index + 1, Fact'Last);
+               while Stop < Fact'Last and then Fact (Stop) /= '|' loop
+                  Stop := Stop + 1;
+               end loop;
+            else
+               while Stop < Fact'Last and then not Separator (Fact (Stop + 1))
+               loop
+                  Stop := Stop + 1;
+               end loop;
+            end if;
+            declare
+               Token    : constant String := Fact (Index .. Stop);
+               Position : constant Term_Name_Maps.Cursor :=
+                 Names.Find (Token);
+            begin
+               if Stale.Contains (Token) then
+                  Stale_Found := True;
+               end if;
+               if Term_Name_Maps.Has_Element (Position) then
+                  Append (Result, Term_Name_Maps.Element (Position));
+                  Changed := True;
+               else
+                  Append (Result, Token);
+               end if;
+            end;
+            Index := Stop + 1;
+         end if;
+      end loop;
+      return (if Changed then To_String (Result) else "");
+   end Renamed;
+
+   --  What both sides know is known after the join: a binding they agree
+   --  on stands, and a key they do not agree on gets a value of its own.
+   --  A fact both sides state stands; and so does one each side states of
+   --  the values of such keys alike -- side by side, with each of those
+   --  values that is one symbol named as the join names the key's value.
+   --  That fact holds on each side, the key's value there being the one
+   --  the side states it of (a key with no binding on a side has its root
+   --  there); this with Rename only. A name the join gives is the one an
+   --  earlier pass of the fixpoint gave there: on a side where it is not
+   --  the key's value it is a value of before -- a state that went round
+   --  a cycle the join is on, which no loop head breaks -- and, with
+   --  Rename, nothing said of it is kept.
    function Join
      (Left, Right : Symbolic_State;
       Flow        : Domain.Flow_State;
-      Merge_Tag   : Positive) return Symbolic_State
+      Merge_Tag   : Positive;
+      Rename      : Boolean := False) return Symbolic_State
    is
       Result : Symbolic_State := Empty_Symbolic_State;
+      Left_Names, Right_Names : Term_Name_Maps.Map;
+      Left_Stale, Right_Stale : String_Sets.Map;
+      No_Names                : Term_Name_Maps.Map;
 
       function Right_Binding
         (Key : Symbol_Key) return Natural is
         (Binding_Index (Right, Key));
 
+      --  Item is a binding of Left, or one of Right that Left has none
+      --  for (From_Right).
       procedure Merge_Binding
-        (Item : Symbolic_Binding;
-         Other_Index : Natural)
+        (Item        : Symbolic_Binding;
+         Other_Index : Natural;
+         From_Right  : Boolean := False)
       is
       begin
          if Other_Index /= 0
@@ -5672,6 +5789,16 @@ package body Adalang_Analyzer.VC_Prover is
             declare
                Name : constant String :=
                  Root_Name (Item.Key, "j" & Natural_Image (Merge_Tag) & "_");
+               Left_Term  : constant String :=
+                 (if From_Right then Root_Name (Item.Key)
+                  else To_String (Item.Term));
+               Right_Term : constant String :=
+                 (if From_Right then To_String (Item.Term)
+                  elsif Other_Index = 0 then Root_Name (Item.Key)
+                  else To_String (Right.Bindings.Element (Other_Index).Term));
+               Same_Sort  : constant Boolean :=
+                 Other_Index = 0
+                 or else Right.Bindings.Element (Other_Index).Sort = Item.Sort;
             begin
                Add_Root (Result, Name, Item.Key, Item.Sort, Flow);
                Set_Binding
@@ -5679,9 +5806,36 @@ package body Adalang_Analyzer.VC_Prover is
                   (Key  => Item.Key,
                    Sort => Item.Sort,
                    Term => To_Unbounded_String (Name)));
+               if Same_Sort then
+                  Name_Term (Left_Names, Left_Term, Name);
+                  Name_Term (Right_Names, Right_Term, Name);
+               end if;
+               if Left_Term /= Name then
+                  Left_Stale.Include (Name, True);
+               end if;
+               if Right_Term /= Name then
+                  Right_Stale.Include (Name, True);
+               end if;
             end;
          end if;
       end Merge_Binding;
+
+      --  True when Fact says something of a value of before (Stale).
+      function Of_Before
+        (Fact  : Unbounded_String;
+         Stale : String_Sets.Map) return Boolean
+      is
+         Found : Boolean := False;
+      begin
+         --  With no names nothing is renamed: the scan alone is wanted.
+         return not Stale.Is_Empty
+           and then Renamed (To_String (Fact), No_Names, Stale, Found) = ""
+           and then Found;
+      end Of_Before;
+
+      --  The facts of Right, as they read with its values named as the
+      --  join names them.
+      Right_Renamed : String_Sets.Map;
    begin
       if not Left.Supported or else not Right.Supported then
          if Symbolic_Diagnostics_Enabled then
@@ -5702,18 +5856,59 @@ package body Adalang_Analyzer.VC_Prover is
       end loop;
       for Item of Right.Bindings loop
          if Binding_Index (Left, Item.Key) = 0 then
-            Merge_Binding (Item, 0);
+            Merge_Binding (Item, 0, From_Right => True);
          end if;
       end loop;
 
       for Item of Left.Assumptions loop
          for Other of Right.Assumptions loop
             if Item = Other then
-               Result.Assumptions.Append (Item);
+               if not Rename
+                 or else
+                   (not Of_Before (Item, Left_Stale)
+                    and then not Of_Before (Item, Right_Stale))
+               then
+                  Result.Assumptions.Append (Item);
+               end if;
                exit;
             end if;
          end loop;
       end loop;
+
+      if Rename
+        and then not Left_Names.Is_Empty
+        and then not Right_Names.Is_Empty
+      then
+         for Other of Right.Assumptions loop
+            declare
+               Stale : Boolean;
+               Fact  : constant String :=
+                 Renamed (To_String (Other), Right_Names, Right_Stale, Stale);
+            begin
+               if Fact /= "" and then not Stale then
+                  Right_Renamed.Include (Fact, True);
+               end if;
+            end;
+         end loop;
+         if not Right_Renamed.Is_Empty then
+            for Item of Left.Assumptions loop
+               declare
+                  Stale : Boolean;
+                  Fact  : constant String :=
+                    Renamed (To_String (Item), Left_Names, Left_Stale, Stale);
+                  Kept  : constant Unbounded_String :=
+                    To_Unbounded_String (Fact);
+               begin
+                  if Fact /= "" and then not Stale
+                    and then Right_Renamed.Contains (Fact)
+                    and then not Result.Assumptions.Contains (Kept)
+                  then
+                     Result.Assumptions.Append (Kept);
+                  end if;
+               end;
+            end loop;
+         end if;
+      end if;
       return Result;
    exception
       when others =>

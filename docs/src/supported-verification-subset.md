@@ -479,7 +479,7 @@ comparisons, equality, Boolean connectives, conditional and case
 expressions, supported integer conversions, bounded quantifiers, the scalar
 parts of an object that its name settles (see "Parts of an object"), and
 side-effect-free expression functions that can be inlined within the depth
-limit -- called with arguments or without an argument list (`Inv`,
+limit of eight bodies -- called with arguments or without an argument list (`Inv`,
 `Pkg.Ready`), the body being read where the call stands, with what is known
 there of the objects it names. Integer `/`, `mod`, and `rem` are translated only when the divisor
 is provably nonzero and their Ada sign semantics are encoded: a nonzero
@@ -994,22 +994,31 @@ the direct name, for reads and writes alike.
 - A procedure call drops every fact when what the callee does is not
   known -- no effect summary of its body, no `Global` aspect, a dispatching
   call -- and the callee can reach the objects of the subprogram under
-  analysis: it is declared inside that subprogram; or that subprogram
-  declares code of its own, which the callee could be handed and run -- a
-  nested subprogram, an instance of a generic, a package, a task or a
-  protected object; or that subprogram takes an access value to something
-  or the address of something, anywhere in it (`'Access`,
-  `'Unchecked_Access`, `'Unrestricted_Access`, `'Address`), which a callee
-  that is given it, then or earlier, writes through without naming the
-  object. A callee declared outside a subprogram that does none of this
-  cannot name what is declared in it: the objects of that subprogram
-  stand, value and initialization, except those the call is given as
-  actuals (see "What a call leaves known of its actuals") and those that
-  can change without being named (aliased, volatile, with an address);
-  every object declared elsewhere loses what was known of it. What
-  always holds of an object is no such fact, and stands (see "Objects that
-  always hold a value").
-  When it is known, the *call frame* stands: what the symbolic state says
+  analysis: it is declared inside that subprogram, or by an instance of a
+  generic that subprogram declares; or that subprogram declares code of
+  its own, which the callee could be handed and run -- a package, a task,
+  a protected object, an instance of a generic package, and, outside SPARK
+  code or where that subprogram declares a tagged type, a nested
+  subprogram or an instance of a generic subprogram; or that subprogram
+  takes an access value to something or the address of something,
+  anywhere in it (`'Access`, `'Unchecked_Access`, `'Unrestricted_Access`,
+  `'Address`), which a callee that is given it, then or earlier, writes
+  through without naming the object. In SPARK code a subprogram or an
+  instance of a generic subprogram declared there can be named by that
+  subprogram's own statements only, and handed to a callee only by
+  `'Access` or as a primitive operation of a tagged type it declares: the
+  invariant function and the instances that the RecordFlux state machines
+  declare in each state are no way in. A callee declared outside a
+  subprogram that does none of this cannot name what is declared in it:
+  the objects of that subprogram stand, value and initialization, except
+  those the call is given as actuals (see "What a call leaves known of its
+  actuals") and those that can change without being named (aliased,
+  volatile, with an address); every object declared elsewhere loses what
+  was known of it. What always holds of an object is no such fact, and
+  stands (see "Objects that always hold a value").
+  When it is known -- or, in SPARK code, where the callee cannot reach the
+  objects of the subprogram under analysis as above, whatever else it
+  does -- the *call frame* stands: what the symbolic state says
   of a scalar object declared in the subprogram under analysis that the
   call does not have as an `out` or `in out` actual still holds after the
   call. Everything else gets a value of which nothing is known: each
@@ -1163,9 +1172,14 @@ included.
 
 The path context may contain entry preconditions, branch predicates,
 straight-line scalar substitutions, sound relational postcondition transfer,
-and identical symbolic facts preserved at every incoming join. Conflicting
-join values, exceptional flow, and calls without sound relational summaries
-drop facts rather than assuming them.
+and identical symbolic facts preserved at every incoming join. At a join
+that is not the head of a loop, a fact each incoming path states alike of
+the values it gives an object or a part they disagree on -- the value
+being one symbol on each, a fresh one or the one it had -- is preserved
+too, of the joined value: `Ctx` given a new value by a call on one path
+and not on the other, `Initialized (Ctx)` known on both, is known after
+them. Conflicting join values, exceptional flow, and calls without sound
+relational summaries drop facts rather than assuming them.
 
 A condition that holds is taken operand by operand: each operand of `and`
 and `and then` where it is true, of `or` and `or else` where it is false,
@@ -1201,7 +1215,7 @@ being anything the rules of this section take in its turn.
   of `Kept` alone is known, and what it says of its first parameter is
   known of no element of `T`. The call is not looked into where it
   dispatches, where the function writes a parameter, where a parameter is
-  left to its default, or four bodies deep.
+  left to its default, or eight bodies deep.
 
 Nothing of this is done for a form that does not hold: a conditional
 expression, a quantified expression or a call that is `False` says

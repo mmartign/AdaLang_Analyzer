@@ -107,7 +107,12 @@ package Adalang_Analyzer.VC_Prover is
    function Join
      (Left, Right : Symbolic_State;
       Flow        : Adalang_Analyzer.Flow_Domain.Flow_State;
-      Merge_Tag   : Positive) return Symbolic_State;
+      Merge_Tag   : Positive;
+      Rename      : Boolean := False) return Symbolic_State;
+   --  What both states know. With Rename, also a fact both state alike of
+   --  the values of the keys they disagree on, each named as the join
+   --  names the key's value; not where the state is the head of a loop,
+   --  whose own names a loop body's state also holds.
 
    function Join_On_Condition
      (True_Side, False_Side : Symbolic_State;

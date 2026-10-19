@@ -110,23 +110,69 @@ package body Adalang_Analyzer.Flow_Interp is
    --  takes no access value to, and no address of, anything: a callee that
    --  is given one writes through it without naming the object, then or
    --  later.
+   --
+   --  In SPARK code the subprograms and the instances of generic
+   --  subprograms it declares are no such code, unless it declares a
+   --  tagged type: only its own statements can name them, and none can be
+   --  handed to a callee but by 'Access, which it then takes, or as a
+   --  primitive operation that a dispatching call reaches. A call of one
+   --  is a call of its own (From_Local_Instance for an instance). Outside
+   --  SPARK code they are still taken to be: a parameter passed by
+   --  reference may there be an object that a callee writes by its own
+   --  name (Havoc_Outside_Objects keeps the parameters).
    Verified_Keeps_To_Itself : Boolean := False;
 
    function Keeps_To_Itself
-     (Subprogram : Libadalang.Analysis.Ada_Node'Class) return Boolean
+     (Subprogram : Libadalang.Analysis.Ada_Node'Class;
+      In_SPARK   : Boolean) return Boolean
    is
+      --  A tagged type declared in Subprogram: a primitive operation of it
+      --  is reached by a dispatching call wherever an object of it goes.
+      function Declares_Tagged_Type
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind in Libadalang.Common.Ada_Base_Type_Decl
+           and then Node.As_Base_Type_Decl.P_Is_Tagged_Type
+         then
+            return True;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Declares_Tagged_Type (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Declares_Tagged_Type;
+
+      Own_Code_Named_Only : constant Boolean :=
+        In_SPARK and then not Declares_Tagged_Type (Subprogram);
+
+      --  A subprogram or an instance of a generic subprogram that only
+      --  Subprogram's statements can name: what it holds is looked into
+      --  all the same.
+      function Own_Code
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+        (Own_Code_Named_Only
+         and then Node.Kind in Libadalang.Common.Ada_Expr_Function
+                             | Libadalang.Common.Ada_Null_Subp_Decl
+                             | Libadalang.Common.Ada_Subp_Body
+                             | Libadalang.Common.Ada_Generic_Subp_Instantiation);
+
       function Gives_Away
         (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
       begin
          if Libadalang.Analysis.Is_Null (Node) then
             return False;
-         elsif Node.Kind in Libadalang.Common.Ada_Body_Node
-                          | Libadalang.Common.Ada_Generic_Instantiation
-                          | Libadalang.Common.Ada_Base_Package_Decl
-                          | Libadalang.Common.Ada_Task_Type_Decl
-                          | Libadalang.Common.Ada_Single_Task_Decl
-                          | Libadalang.Common.Ada_Protected_Type_Decl
-                          | Libadalang.Common.Ada_Single_Protected_Decl
+         elsif (Node.Kind in Libadalang.Common.Ada_Body_Node
+                           | Libadalang.Common.Ada_Generic_Instantiation
+                           | Libadalang.Common.Ada_Base_Package_Decl
+                           | Libadalang.Common.Ada_Task_Type_Decl
+                           | Libadalang.Common.Ada_Single_Task_Decl
+                           | Libadalang.Common.Ada_Protected_Type_Decl
+                           | Libadalang.Common.Ada_Single_Protected_Decl
+                and then not Own_Code (Node))
            or else
              (Node.Kind = Libadalang.Common.Ada_Attribute_Ref
               and then Text_Utils.Normalize_Rule_Name
@@ -243,10 +289,28 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end Takes_No_Access;
 
+   --  True when Decl is a declaration of an instance of a generic that the
+   --  subprogram being verified declares: the generic's text lies outside
+   --  it, and the instance runs the subprograms it was given, its own.
+   function From_Local_Instance
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean is
+   begin
+      for Instance of Decl.P_Generic_Instantiations loop
+         if Inside_Verified_Subprogram (Instance) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return True;
+   end From_Local_Instance;
+
    --  True when the call of a subprogram declared by Decl reaches, of the
    --  objects of the subprogram being verified, only those it is given as
-   --  actuals: a callee declared outside that subprogram cannot name what
-   --  is declared in it, and that subprogram keeps to itself.
+   --  actuals: a callee declared outside that subprogram, and not by an
+   --  instance it declares, cannot name what is declared in it, and that
+   --  subprogram keeps to itself.
    function Reaches_Actuals_Only
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean is
    begin
@@ -254,7 +318,8 @@ package body Adalang_Analyzer.Flow_Interp is
         and then Verified_Keeps_To_Itself
         and then not Libadalang.Analysis.Is_Null (Verified_Subprogram)
         and then not Libadalang.Analysis.Is_Null (Decl)
-        and then not Inside_Verified_Subprogram (Decl);
+        and then not Inside_Verified_Subprogram (Decl)
+        and then not From_Local_Instance (Decl);
    end Reaches_Actuals_Only;
 
    --  What such a call, of effects that are not known, leaves State able
@@ -2202,7 +2267,12 @@ package body Adalang_Analyzer.Flow_Interp is
    --  objects by name are known -- from its summary or its Global aspect --
    --  and it is not declared inside the subprogram being verified, whose
    --  own objects it could then reach, the scalars of that subprogram
-   --  which the call does not name keep what is known of them. Otherwise
+   --  which the call does not name keep what is known of them. So they do,
+   --  in SPARK code, where its effects are not known but it reaches of
+   --  those objects only its actuals (Reaches_Actuals_Only), as the flow
+   --  state's do (Havoc_Global_Effects): what it writes besides is not
+   --  theirs -- no parameter is an object it writes by another name -- and
+   --  what is known of other objects is renewed all the same. Otherwise
    --  nothing is kept.
    function Symbols_After_Call
      (Symbols : VC.Symbolic_State;
@@ -2250,7 +2320,8 @@ package body Adalang_Analyzer.Flow_Interp is
           (Adalang_Analyzer.Subprogram_Summaries.Callee_State_Effects_Known
              (Call)
            or else not Libadalang.Analysis.Is_Null
-                         (Contract_Expression (Decl, "Global")))
+                         (Contract_Expression (Decl, "Global"))
+           or else (Verified_In_SPARK and then Reaches_Actuals_Only (Decl)))
       then
          return VC.Havoc;
       end if;
@@ -8790,7 +8861,9 @@ package body Adalang_Analyzer.Flow_Interp is
             Joined_Symbols :=
               VC.Join
                 (Symbolic_States (Target), Incoming_Symbols, Joined,
-                 Merge_Tag => Positive (Target));
+                 Merge_Tag => Positive (Target),
+                 Rename    =>
+                   CFG.Node_At (Graph, Target).Kind /= CFG.Loop_Header_Node);
          end if;
          if CFG.Node_At (Graph, Target).Kind = CFG.Loop_Header_Node
            and then Updates (Target) >= 3
@@ -9598,7 +9671,8 @@ package body Adalang_Analyzer.Flow_Interp is
          Effectful_Call_Reach.Clear;
          Untrusted_Calls.Clear;
          Verified_Subprogram := Libadalang.Analysis.Ada_Node (Subprogram);
-         Verified_Keeps_To_Itself := Keeps_To_Itself (Subprogram);
+         Verified_Keeps_To_Itself :=
+           Keeps_To_Itself (Subprogram, In_SPARK => In_SPARK_Code (Subprogram));
          Verified_In_SPARK := In_SPARK_Code (Subprogram);
          Verified_Keeps_Parts :=
            Verified_In_SPARK and then Takes_No_Access (Subprogram);
