@@ -11,6 +11,7 @@ with Ada.Containers.Vectors;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
+with Langkit_Support.Slocs;
 with Langkit_Support.Text;
 with Libadalang.Common;
 
@@ -58,6 +59,9 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       Unit      : Unbounded_String;
       Explicit  : Boolean := False;
       Enclosing : Unbounded_String;
+      File      : Unbounded_String;
+      Line      : Natural := 0;
+      Column    : Natural := 0;
    end record;
 
    package Instantiation_Vectors is new Ada.Containers.Vectors
@@ -149,13 +153,54 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       Instantiations.Append
         ((Unit      => To_Unbounded_String (Key_Of (Unit)),
           Explicit  => Under_SPARK /= null and then Under_SPARK (Node),
-          Enclosing => To_Unbounded_String (Generic_Unit_Key (Node.Parent))));
+          Enclosing => To_Unbounded_String (Generic_Unit_Key (Node.Parent)),
+          File      => To_Unbounded_String (Node.Unit.Get_Filename),
+          Line      => Natural (Node.Sloc_Range.Start_Line),
+          Column    => Natural (Node.Sloc_Range.Start_Column)));
    exception
       when Exc : others =>
          Log_Verbose_Once
            ("skipping an instantiation: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Register_Instantiation;
+
+   procedure For_Each_Instantiation
+     (Key   : String;
+      From  : Libadalang.Analysis.Ada_Node'Class;
+      Visit : not null access procedure
+        (Node : Libadalang.Analysis.Generic_Instantiation);
+      Lost  : out Boolean) is
+   begin
+      Lost := False;
+      for Item of Instantiations loop
+         if To_String (Item.Unit) = Key then
+            declare
+               Unit : constant Libadalang.Analysis.Analysis_Unit :=
+                 From.Unit.Context.Get_From_File (To_String (Item.File));
+               Node : Libadalang.Analysis.Ada_Node :=
+                 Unit.Root.Lookup
+                   ((Line   => Langkit_Support.Slocs.Line_Number (Item.Line),
+                     Column =>
+                       Langkit_Support.Slocs.Column_Number (Item.Column)));
+            begin
+               while not Libadalang.Analysis.Is_Null (Node)
+                 and then Node.Kind not in
+                   Libadalang.Common.Ada_Generic_Instantiation
+               loop
+                  Node := Node.Parent;
+               end loop;
+               if Libadalang.Analysis.Is_Null (Node) then
+                  Lost := True;
+               else
+                  Visit (Node.As_Generic_Instantiation);
+               end if;
+            end;
+         end if;
+      end loop;
+   exception
+      when others =>
+         Lost := True;
+   end For_Each_Instantiation;
 
    function Instantiated_In_SPARK (Key : String) return Boolean is
       function Decided (Unit : String; Depth : Natural) return Boolean is

@@ -56,6 +56,27 @@ global-unlisted-by-call	tests/verification_mutation_flow_contracts.adb	data-depe
 global-output-some-paths	tests/verification_mutation_flow_contracts.adb	initialization-check	Maybe	unproved	an Output global assigned on one path only
 global-output-one-component	tests/verification_mutation_flow_contracts.adb	initialization-check	Both	unproved	an Output global of which one component is assigned
 depends-missing-input	tests/verification_mutation_flow_contracts.adb	flow-dependencies	Depends of Scaled	unproved	an output that depends on an input its Depends aspect puts under null
+depends-cond	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Cond	unproved	an output assigned under a condition its Depends aspect puts under null
+depends-return	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Return	unproved	an output whose last assignment a conditional return skips
+depends-loop	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Loop	unproved	an output counted by a while loop whose bound its Depends aspect omits
+depends-exit	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Exit	unproved	an output assigned in a loop left under a condition on an omitted input
+depends-part	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Part	unproved	an in out record whose untouched component its Depends aspect omits
+depends-call	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Call	unproved	an output written by a call whose callee contract makes it depend on an omitted input
+depends-bump	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Bump	unproved	a global incremented whose Depends aspect has it depend on nothing
+depends-f	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_F	unproved	a function result under a condition on an omitted parameter
+depends-nested	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Nested	unproved	an output written by a nested procedure that reads an omitted global
+depends-bounds	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Bounds	unproved	an output assigned the length of an out array, whose bounds are an input
+depends-case	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Case	unproved	an output assigned in a case statement on an omitted selector
+depends-state	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_State	unproved	an output under a condition on a constituent of an omitted state abstraction
+depends-for	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_For	unproved	an output assigned the parameter of a for loop whose bound is omitted
+depends-mid	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Mid	unproved	an output whose value at a mid-loop exit depends on an omitted array
+depends-swap	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Swap	unproved	outputs exchanged by a callee whose contract the caller states the other way round
+depends-table	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Table	unproved	an output read from a constant table at an index taken from an omitted global
+depends-extra	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Extra	unproved	a Depends aspect that lists an input the output does not depend on
+depends-view	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_View	unproved	an output read back from a state abstraction the caller does not see into
+depends-entry	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Entry	unproved	an output read from a state abstraction on entry, put under null
+depends-formal	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Formal	unproved	a call of a generic formal procedure an instantiation gives a global-writing actual
+depends-local-bounds	tests/verification_flow_dependencies.adb	flow-dependencies	Depends of Bad_Local_Bounds	unproved	an output a callee works out from the bounds of a local array, which an omitted input gives
 expression-function-division	tests/verification_mutation_expression_functions.adb	division-by-zero	Unchecked	unproved	an expression function whose precondition does not exclude a zero divisor
 expression-function-index	tests/verification_mutation_expression_functions.adb	index-check	Loose	unproved	an expression function whose precondition does not bound the index
 expression-function-actual	tests/verification_mutation_expression_functions.adb	range-check	Wide	unproved	an expression function that passes an unbounded actual to a narrower formal

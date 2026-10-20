@@ -540,13 +540,18 @@ contract checks. The SPARK-readiness pass separately compares semantic global
 reads and writes with `Global` modes, follows the declared global effects of
 resolved callees, checks that every writable formal or declared global output
 has a `Depends` association, and performs branch-sensitive definite
-initialization for scalar `out` parameters. It also infers input-to-output
-information flow for explicit `Depends` contracts. Expression data flow,
+initialization for scalar `out` parameters. It also checks explicit
+`Depends` contracts against the input-to-output information flow that the
+flow-dependencies obligation of `--verify` works out (see "Data and flow
+dependencies" in `supported-verification-subset.md`): expression data flow,
 conditional control flow, loop and exit conditions, normal-return paths,
-exception handlers, global state, and resolved calls with dependency summaries
-all participate. This detects missing and demonstrably extra edges, incorrect
-`null` associations, omitted self-dependencies (`=>+`), incomplete input
-coverage, and output dependencies on `Proof_In` state.
+record components, array bounds, global state and state abstractions, and
+calls through their `Depends` or `Global` contracts or their bodies. Where
+that flow is worked out -- not across an exception handler, a dispatching
+call or tasking -- it detects missing and demonstrably extra edges,
+incorrect `null` associations, omitted self-dependencies (`=>+`) and output
+dependencies on `Proof_In` state; from the contracts alone, incomplete
+input coverage and names listed as inputs that are none.
 
 Missing explicit `Global` and `Depends` contracts are selectable
 maintainability findings: SPARK permits tools to synthesize defaults, but

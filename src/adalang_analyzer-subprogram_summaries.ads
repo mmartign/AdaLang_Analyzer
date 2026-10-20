@@ -87,6 +87,17 @@ package Adalang_Analyzer.Subprogram_Summaries is
    --  explicit SPARK_Mode or part of a generic unit of which the same
    --  holds.
 
+   procedure For_Each_Instantiation
+     (Key   : String;
+      From  : Libadalang.Analysis.Ada_Node'Class;
+      Visit : not null access procedure
+        (Node : Libadalang.Analysis.Generic_Instantiation);
+      Lost  : out Boolean);
+   --  Calls Visit for each instantiation, in the units of this run, of the
+   --  generic unit of that key (see Generic_Unit_Key), found again in the
+   --  analysis context of From: the nodes of an earlier context are gone.
+   --  Lost is True when one was not found.
+
    function Count return Natural;
 
 end Adalang_Analyzer.Subprogram_Summaries;

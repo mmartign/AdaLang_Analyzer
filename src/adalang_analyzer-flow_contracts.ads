@@ -29,9 +29,20 @@ with Libadalang.Analysis;
 --  is when something the body touches is not allowed by the aspect.
 --
 --  Flow dependencies: a subprogram with a Depends aspect has an obligation
---  at that aspect, where GNATprove reports its check. No route proves it
---  yet: it is Unproved wherever it is raised. A dependency that is missing
---  is reported by Depends_Contract_Mismatch as before.
+--  at that aspect, where GNATprove reports its check, and it is the same
+--  check: each output depends on what the aspect lists for it and on
+--  nothing else. What each output may depend on is worked out from the
+--  body, path by path: what is assigned to it, the conditions the
+--  assignment is under, the conditions under which a loop goes round or
+--  is left, under which a return is taken, and what each call makes of its
+--  outputs, taken from the callee's Depends aspect or, when it has none,
+--  from its body or its Global aspect. The components of a record object
+--  are followed one by one, an array as a whole. The value on entry of an
+--  out parameter or of an object the Global aspect lists as Output is no
+--  input: reading it is an initialization error, the business of another
+--  obligation. Proved_Safe when what is worked out is what the aspect
+--  says; Unproved when the dependencies are not worked out, or differ.
+--  Depends_Contract_Mismatch reports the differences.
 package Adalang_Analyzer.Flow_Contracts is
 
    procedure Reset;
@@ -41,6 +52,31 @@ package Adalang_Analyzer.Flow_Contracts is
    --  Raises the data-dependencies obligation of each subprogram body and
    --  expression function in Unit that has a Global aspect, and the
    --  flow-dependencies obligation of each one that has a Depends aspect.
+
+   --  What Check_Depends finds of a Depends aspect.
+   type Mismatch_Kind is
+     (Not_Analyzed,
+      --  The dependencies of the body were not worked out; Input says why.
+      Unlisted_Output,
+      --  Output, outside the body, is written and the aspect does not
+      --  name it as an output.
+      Missing_Flow,
+      --  Output may depend on Input, which the aspect does not list for it.
+      Extra_Flow,
+      --  The aspect lists Input for Output, which does not depend on it.
+      Proof_Flow);
+      --  Output may depend on Input, which the Global aspect lists as
+      --  Proof_In.
+
+   procedure Check_Depends
+     (Subprogram : Libadalang.Analysis.Base_Subp_Body'Class;
+      Depends    : Libadalang.Analysis.Expr'Class;
+      Report     : not null access procedure
+        (Kind : Mismatch_Kind; Output, Input : String));
+   --  Works out what each output of Subprogram, a body or an expression
+   --  function, may depend on and calls Report for each way that differs
+   --  from its Depends aspect, the names given as written. Nothing but
+   --  Not_Analyzed is reported when the dependencies are not worked out.
 
    function Touches_Nothing_Outside
      (Callee : Libadalang.Analysis.Basic_Decl'Class;

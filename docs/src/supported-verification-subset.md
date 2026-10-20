@@ -66,7 +66,7 @@ the section it links to has the whole of its proof basis and boundary.
 | [Loop variant progress](#loop-invariants-and-loop-variants) | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant, on the loop bodies invariant preservation covers |
 | [Termination](#termination) | The body is seen to return | Each function, and each procedure under `Always_Terminates` |
 | [Data dependencies](#data-and-flow-dependencies) | An over-approximation of what the body touches is within what its `Global` aspect allows | Each subprogram body and expression function that has a `Global` aspect |
-| [Flow dependencies](#data-and-flow-dependencies) | None yet | Each subprogram body and expression function that has a `Depends` aspect; `Unproved` wherever it is raised |
+| [Flow dependencies](#data-and-flow-dependencies) | What each output may depend on, worked out from the body path by path, is what its `Depends` aspect lists for it | Each subprogram body and expression function that has a `Depends` aspect |
 
 ### Integer overflow
 
@@ -447,7 +447,15 @@ visible) or, when it has none, worked out from its body in the same way.
 - A constituent is accepted under the state abstraction that the
   `Refined_State` of an enclosing package body, or its own `Part_Of`, puts
   it in.
-- A constant whose value depends on no variable is not a global.
+- A constant whose value depends on no variable is not a global: a deferred
+  constant by the value its completion gives it, a generic formal object of
+  mode `in` seen from an instance by the actual of the instantiation.
+- A generic formal subprogram without a `Global` aspect touches nothing
+  when every instantiation of its generic among the sources gives it a
+  subprogram that touches nothing. An instance of a generic subprogram
+  touches what the generic's `Global` aspect says; an instance of
+  `Unchecked_Conversion` or `Unchecked_Deallocation` touches nothing but
+  its parameters.
 
 **Data dependencies, boundary.** Raised for each subprogram body and
 expression function that has a `Global` aspect, at the aspect, unless
@@ -457,18 +465,74 @@ it.
 
 `Unproved` when something the body touches is not allowed, and whenever the
 effects of a callee are not known: no aspect and no body among the sources,
-a generic formal or imported or library subprogram without an aspect, an
-instance of a generic subprogram, a call that dispatches or goes through an
-access value, recursion without an aspect, tasking. Aliasing through access
+an imported or library subprogram without an aspect, a generic formal
+subprogram without one that some instantiation gives a subprogram touching
+something, an instance of a generic subprogram without one, a call that
+dispatches or goes through an access value, recursion without an aspect,
+tasking. Aliasing through access
 values and reads the source does not show (a default initialization) are not
 followed. Never a `Definite_Error`: `Global_Contract_Mismatch` reports a
 violation.
 
-**Flow dependencies.** No proof basis yet. Raised for each subprogram body
-and expression function that has a `Depends` aspect, at the aspect, and
-`Unproved` wherever it is raised. `Depends_Contract_Mismatch` and
-`Incomplete_Depends_Contract` report what the dependency analysis finds
-wrong.
+**Flow dependencies, proof basis.** What each output may depend on is
+worked out from the body, path by path, as the inputs whose values on entry
+can reach its value on exit:
+
+- An assignment gives its target what its expression and the indexes of
+  the target are made of, and the conditions the assignment is under: those
+  of the enclosing `if` and `case` statements, those a loop goes round and
+  is left under (worked out to a fixed point), and those under which an
+  earlier `return` was taken. A raise ends a path that gives the outputs
+  nothing.
+- The components of a record object are followed one by one, an array as a
+  whole: an assignment to one component replaces that component, one to an
+  element adds to the array. The bounds of an array are worked out apart
+  from its elements, and are a part of the value of the whole array, its
+  attributes `'First`, `'Last`, `'Length` and `'Range` nothing else: those
+  of a parameter or global of an unconstrained type are an input, those of
+  a local what its declaration reads, those of a subtype constrained by an
+  expression that reads no variable none.
+- A call makes of each of its outputs what the callee's `Depends` aspect
+  says (its `Refined_Depends` where the refinement is visible); a callee
+  without one is worked out from its body when that is SPARK code, or from
+  its `Global` aspect, or from what its body touches, each output then
+  depending on every input. A generic formal subprogram is followed as one
+  that touches nothing when every instantiation gives it such a subprogram
+  (see data dependencies). What a callee reads of a state abstraction is
+  what the caller holds of it; a constituent the caller does not see stands
+  for its state.
+- A function's result is what its return expressions are made of, under
+  the conditions they are reached under.
+- The value on entry of an `out` parameter, and of an object the `Global`
+  aspect lists as `Output`, is no input: reading it is an initialization
+  error, the business of the initialization obligations. A constant whose
+  value depends on no variable is no input. A read of an object with
+  `Async_Writers` may bring in its value from outside, a read of one with
+  `Effective_Reads` writes it, and a write to one with `Effective_Writes`
+  keeps what was written before.
+- A constituent maps to the state abstraction the aspect names, through the
+  `Refined_State` of its package body or its own `Part_Of`.
+
+Proved when each output may depend on what the aspect lists for it and on
+nothing else: no flow is missing, none listed is shown not to exist, and no
+object the `Global` aspect lists as `Proof_In` reaches an output. It is
+GNATprove's check, which reports a missing dependency and an "incorrect
+dependency" alike.
+
+**Flow dependencies, boundary.** Raised for each subprogram body and
+expression function that has a `Depends` aspect, at the aspect (for a
+subprogram declared apart from its body, at the declaration's), unless
+`SPARK_Mode` is `Off` there; a body with a `Refined_Depends` is checked
+against the `Depends` aspect, through the refinement.
+`Unproved` when the dependencies differ from the aspect and whenever they
+are not worked out: a callee whose dependencies are not known (as for data
+dependencies), an exception handler, a `goto`, a package declared in the
+body, a procedure call in prefix notation, a call through an access value
+or that dispatches, `'Access` or `'Address`, tasking (an entry, or an
+operation of a protected object, which reads and writes the object without
+naming it). Never a `Definite_Error`: `Depends_Contract_Mismatch` reports each
+difference where the dependencies are worked out, and
+`Incomplete_Depends_Contract` what the aspect leaves out.
 
 ## Scalar VC language
 

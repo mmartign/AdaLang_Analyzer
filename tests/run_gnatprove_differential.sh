@@ -137,7 +137,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 25 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 26 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -159,7 +159,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_mutation_expression_functions \
   verification_fp116_declared_operator \
   verification_length_check \
-  verification_standing_values; do
+  verification_standing_values \
+  verification_flow_dependencies; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -394,6 +395,82 @@ print(f"check by check: {len(asserted)} assertions of FP-116, "
       f"{sum(proved_here.values())} of them proved by both; "
       f"{refused_there} checks of the standing values refused by both, "
       f"{sum(agreed.values())} proved by both")
+PYTHON
+
+#  The flow-dependencies fixture, aspect by aspect: each Depends aspect of
+#  its spec is proved here exactly when GNATprove's flow analysis proves it,
+#  but for Bad_Formal, whose generic one instantiation gives a procedure
+#  that writes a global: GNATprove reports the global missing from the
+#  Global aspect and proves the Depends aspect in that instance; here the
+#  effects of the formal are not known and neither aspect is proved.
+deps_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-deps.XXXXXX")
+deps_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-deps.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$deps_results" \
+  tests/verification_flow_dependencies.ads \
+  tests/verification_flow_dependencies.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer flow-dependencies run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=flow \
+  --report=all --output=oneline -u verification_flow_dependencies.adb \
+  >"$deps_log" 2>&1 || true
+
+python3 - "$deps_results" "$deps_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+spec = "verification_flow_dependencies.ads"
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+#  The lines of the spec where GNATprove proves a Depends aspect, that of a
+#  generic in its instance, and those where it reports a dependency it
+#  finds wrong.
+proved, refused = set(), set()
+for line in log:
+    found = re.match(
+        r"(\S+\.ad[bs]):(\d+):\d+: (info|low|medium|high): (.*)", line)
+    if not found or not found.group(1).endswith(spec):
+        continue
+    text, where = found.group(4), int(found.group(2))
+    if text.startswith("flow dependencies proved"):
+        proved.add(where)
+    elif "dependency" in text:
+        refused.add(where)
+
+ours = {}
+for item in report["proofObligations"]:
+    if item["kind"] == "flow-dependencies" and item["file"].endswith(spec):
+        ours[item["line"]] = (item["operation"],
+                              item["status"] == "proved-safe")
+if len(ours) != 44:
+    fail(f"flow dependencies: {len(ours)} obligations in the spec, not 44")
+agreed = 0
+for line, (operation, here) in sorted(ours.items()):
+    there = line in proved and line not in refused
+    if operation == "Depends of Bad_Formal":
+        if here:
+            fail("flow dependencies: Bad_Formal is proved")
+        continue
+    if here != there:
+        fail(f"flow dependencies: {operation} at line {line} is "
+             f"{'proved' if here else 'not proved'} here, "
+             f"{'proved' if there else 'not proved'} by GNATprove")
+    agreed += 1
+print(f"flow dependencies: {agreed} Depends aspects, the same verdict as "
+      "GNATprove's flow analysis")
 PYTHON
 
 echo "GNATprove differential tests passed"
