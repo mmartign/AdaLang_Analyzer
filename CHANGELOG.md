@@ -5,6 +5,90 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] - 2026-10-20
+
+A `--verify` release that proves `Depends` aspects, which no route proved
+before, and corrects the false positives of `Depends_Contract_Mismatch`.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+7,776 of the 15,043 checks GNATprove proves (was 7,400): all 332 `Depends`
+aspects among them (tokeneer 210, libkeccak 81, coap_spark 26, saatana 14,
+sparknacl 1) and 44 more `Global` aspects; it proves none that GNATprove
+does not, and on the SPARK testsuite each `Depends` and `Global` aspect it
+now proves is one GNATprove proves at the same place. No obligation is
+added and none is gone, no verdict of 1.9.0 is withdrawn and no definite
+error is new; on CubedOS and project_bias 22 and 16 more obligations are
+proved, on AWS, gnatcoll-core and the Ada Drivers Library none moves. The
+`--verify` lanes take the CPU time they took. On the ten corpora
+`Depends_Contract_Mismatch` reports 241 findings fewer, all false
+positives (FP-126 to FP-128): 231 on `Depends` aspects GNATprove proves
+(Tokeneer 183, libkeccak 40, Saatana 7, SPARKNaCl 1) and 10 on CubedOS;
+and 4 on CubedOS that are new and right: an
+output that depends on the length of an `out` string the contract leaves
+out, and three procedures whose body, a stub, writes nothing of what the
+contract says. Every other preset reports the findings of 1.9.0. The
+matched pairs are the 3,142 of 1.9.0 and "both safe" is unchanged, with no
+possible unsoundness and no false positive anywhere.
+
+### Added
+
+- `--verify` proves a `Depends` aspect: what each output may depend on is
+  worked out from the body, path by path -- assignments, the conditions of
+  `if` and `case` statements, those a loop goes round and is left under,
+  those under which an earlier `return` was taken, and what each call makes
+  of its outputs, from the callee's `Depends` aspect, its body, or its
+  `Global` aspect -- with the components of a record object followed one by
+  one, and the `flow-dependencies` obligation is proved when that is what
+  the aspect lists, no flow missing and none listed that is shown not to
+  exist. It was `Unproved` wherever it was raised. On the five corpora of
+  the gap ledger it proves all 332 `Depends` aspects GNATprove proves; four
+  of CubedOS's are wrong and stay unproved (the length of an `out` string
+  left out, three stub bodies that write nothing). The bounds of an array
+  are a part of its value, and a call of an operation of a protected object
+  is not followed. See "Data and flow dependencies" in
+  `docs/src/supported-verification-subset.md`.
+- `tests/verification_flow_dependencies` holds 25 `Depends` aspects that
+  hold and 21 that do not, each for one reason, the 21 in the mutation
+  manifest. GNATprove's flow analysis gives the 43 of its spec it can be
+  compared on the verdict `--verify` gives
+  (`tests/run_gnatprove_differential.sh`); on the last it reports the fault
+  as one of the `Global` aspect.
+
+### Changed
+
+- `Depends_Contract_Mismatch` takes its flow findings from that analysis,
+  where it works the dependencies out, and reports none where it does not:
+  a flow the contract does not list, a listed flow that does not exist, a
+  flow from a `Proof_In` global. The contract-only checks stay. This
+  removes the 241 false positives it reported on the ten corpora (FP-126,
+  FP-127, FP-128).
+- Data dependencies: a generic formal subprogram without a `Global` aspect
+  touches nothing when every instantiation of its generic among the sources
+  gives it a subprogram that touches nothing, and an instance of a generic
+  subprogram touches what the generic's `Global` aspect says. Both left
+  the `Global` aspects of their callers `Unproved` (libkeccak's sponges,
+  duplexes and lanes).
+
+### Fixed
+
+- A call of an instance of `Unchecked_Conversion` or
+  `Unchecked_Deallocation` was never recognized as touching nothing but its
+  parameters: the name compared was the instance's own, not the generic's,
+  so the `Global` aspect of every caller stayed `Unproved`.
+- A deferred constant, and a generic formal object of mode `in` seen from
+  an instance, were taken for variables, so a subprogram that reads one
+  could not have its `Global` aspect proved.
+- `Depends_Contract_Mismatch` false positives: an expanded name or a state
+  abstraction in a `Depends` or `Global` aspect resolved to no object, an
+  output so named was read as `null`, and each input listed for it was
+  reported as "listed after null" (FP-126, 181 findings on Tokeneer); an
+  `out` parameter of an unconstrained array type was not counted as an
+  input, its bounds being one, so `Data =>+ S` was reported (FP-127, 58
+  findings on libkeccak, CubedOS, Saatana and SPARKNaCl); a function's
+  value was taken from its parameters only, not from the objects of its
+  `Global` aspect (FP-128, 2 findings on Tokeneer). Regression:
+  `tests/depends_states_and_bounds_clean.adb`.
+
 ## [1.9.0] - 2026-10-19
 
 A `--verify` release that keeps what it knows across a call whose effects
