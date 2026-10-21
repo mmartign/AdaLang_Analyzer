@@ -49,7 +49,7 @@ CHECKS = [
     ("range check", "run-time check", "range-check"),
     ("discriminant check", "run-time check", "discriminant-check"),
     ("length check", "run-time check", "length-check"),
-    ("predicate check", "run-time check", None),
+    ("predicate check", "run-time check", "predicate-check"),
     ("invariant check", "run-time check", None),
     ("tag check", "run-time check", None),
     ("pointer dereference check", "run-time check", None),

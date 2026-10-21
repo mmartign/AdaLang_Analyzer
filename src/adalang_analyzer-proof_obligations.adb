@@ -90,6 +90,8 @@ package body Adalang_Analyzer.Proof_Obligations is
             return "length-check";
          when Discriminant_Check =>
             return "discriminant-check";
+         when Predicate_Check =>
+            return "predicate-check";
          when Initialization_Check =>
             return "initialization-check";
          when Assertion_Check =>

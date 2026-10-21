@@ -104,6 +104,20 @@ package Adalang_Analyzer.VC_Prover is
    --  object is not initialized in Flow or nothing could be taken. It is
    --  for the caller to say this only where the predicate holds.
 
+   function Decide_Predicate
+     (Predicate : Libadalang.Analysis.Expr;
+      Value     : Libadalang.Analysis.Expr'Class;
+      State     : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols   : Symbolic_State) return VC_Outcome;
+   --  Whether Predicate, the predicate aspect of a type or subtype
+   --  declaration written in terms of the current instance, holds of a
+   --  value: of the value Value has in State and Symbols where the type is
+   --  a scalar one, of the object, or the part of one, that Value names
+   --  otherwise, as Symbols knows its components. A component that has not
+   --  been written is a value of its subtype, as GNATprove takes it. A
+   --  check cannot leave out what it does not express, as an assumption
+   --  can: unsupported unless all of the predicate translates.
+
    function Join
      (Left, Right : Symbolic_State;
       Flow        : Adalang_Analyzer.Flow_Domain.Flow_State;
@@ -144,6 +158,39 @@ package Adalang_Analyzer.VC_Prover is
    --  assumed.
    type Contract_Frame is private;
    Empty_Contract_Frame : constant Contract_Frame;
+
+   procedure Set_Old_State
+     (Flow    : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State;
+      Frame   : Contract_Frame := Empty_Contract_Frame);
+   --  From here on, until Clear_Old_State, X'Old is the value X has in
+   --  Flow and Symbols, each scalar formal Frame binds having the term it
+   --  gives: the state on entry for the postcondition of the subprogram
+   --  verified, the state before a call, with the callee's formals bound
+   --  there, for the callee's. Without it X'Old is not translated. It is
+   --  for the caller to give a state that comes before the one X'Old is
+   --  read in on every path, with no loop between the two.
+
+   procedure Clear_Old_State;
+
+   function Prime_Old
+     (State     : Symbolic_State;
+      Condition : Libadalang.Analysis.Expr;
+      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Frame     : Contract_Frame := Empty_Contract_Frame)
+      return Symbolic_State;
+   --  State with a root for each part of an object that an X'Old of
+   --  Condition reads, read in State and Flow, the formals Frame binds
+   --  standing for what it binds: where X is written later on, the write
+   --  renews it. Set_Old_State reads X'Old only through such roots.
+
+   function With_Entry_Mark (State : Symbolic_State) return Symbolic_State;
+   function Has_Entry_Mark (State : Symbolic_State) return Boolean;
+   --  A mark that every transfer of a state keeps, a join keeps where both
+   --  states have it, and that a state where names may stand for other
+   --  values than they did -- Havoc, the entry of a loop body -- does not
+   --  have. Where a state descended from one with the mark still has it,
+   --  each symbol of that state names what it named there.
 
    procedure Block_Formal
      (Frame  : in out Contract_Frame;

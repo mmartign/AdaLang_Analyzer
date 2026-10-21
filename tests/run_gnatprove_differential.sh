@@ -137,7 +137,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 26 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 28 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -160,7 +160,9 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_fp116_declared_operator \
   verification_length_check \
   verification_standing_values \
-  verification_flow_dependencies; do
+  verification_flow_dependencies \
+  verification_predicate_checks \
+  verification_old; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -471,6 +473,79 @@ for line, (operation, here) in sorted(ours.items()):
     agreed += 1
 print(f"flow dependencies: {agreed} Depends aspects, the same verdict as "
       "GNATprove's flow analysis")
+PYTHON
+
+#  The predicate-check and 'Old fixtures, check by check: each predicate
+#  check, postcondition and assertion proved here is proved by GNATprove at
+#  the same line, where it reports no failure of the same kind. A level
+#  above 0 proves the checks of the Ok_* subprograms there.
+pairs_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-pairs.XXXXXX")
+pairs_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-pairs.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log" "$pairs_results" "$pairs_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$pairs_results" \
+  tests/verification_predicate_checks.ads \
+  tests/verification_predicate_checks.adb \
+  tests/verification_old.ads tests/verification_old.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer predicate and 'Old run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_predicate_checks.adb verification_old.adb \
+  >"$pairs_log" 2>&1 || true
+
+python3 - "$pairs_results" "$pairs_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = {"predicate-check": "predicate check",
+         "postcondition": "postcondition",
+         "assertion": "assertion"}
+units = ("verification_predicate_checks.ad", "verification_old.ad")
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+proved, refused = set(), set()
+for line in log:
+    found = re.match(
+        r"(\S+\.ad[bs]):(\d+):\d+: (info|low|medium|high): (.*)", line)
+    if not found or not found.group(1).startswith(units):
+        continue
+    place = (found.group(1), int(found.group(2)))
+    for text in kinds.values():
+        if found.group(4).startswith(text):
+            if found.group(3) == "info":
+                proved.add(place + (text,))
+            else:
+                refused.add(place + (text,))
+
+agreed = 0
+for item in report["proofObligations"]:
+    name = item["file"].split("/")[-1]
+    if item["kind"] not in kinds or not name.startswith(units):
+        continue
+    if item["status"] != "proved-safe":
+        continue
+    place = (name, item["line"], kinds[item["kind"]])
+    if place not in proved or place in refused:
+        fail(f"{item['kind']} {item['operation']!r} at {name}:"
+             f"{item['line']} is proved here, not by GNATprove")
+    agreed += 1
+if agreed < 20:
+    fail(f"predicate checks and 'Old: only {agreed} checks proved")
+print(f"predicate checks and 'Old: {agreed} checks proved here, each "
+      "proved by GNATprove")
 PYTHON
 
 echo "GNATprove differential tests passed"

@@ -333,3 +333,13 @@ predicate-after-other-code	tests/verification_mutation_predicates.adb	assertion	
 predicate-in-other-code	tests/verification_mutation_predicates.adb	assertion	Free.Limit <= 1000	unproved	a subprogram that is not SPARK code is not taken to be given parameters satisfying their predicates
 parts-outside-predicate	tests/verification_mutation_condition_parts.adb	assertion	Sparse (Second) > 0	unproved	a quantified expression over a subtype with a predicate ranges over the values that satisfy it, not over its whole range
 predicate-inside-its-own-test	tests/verification_mutation_predicates.adb	division-by-zero	M.Step	unproved	a function the predicate calls is run to find out whether the predicate holds: its parameter is not taken to satisfy it
+predicate-value	tests/verification_predicate_checks.adb	predicate-check	N * 8 + 1	unproved	a value outside the predicate of the subtype it is given to
+predicate-part	tests/verification_predicate_checks.adb	predicate-check	Bad_P	unproved	a component assignment that breaks the predicate of its record
+predicate-named	tests/verification_predicate_checks.adb	predicate-check	Bad_W	unproved	a predicate that names the components alone, broken by an assignment to one
+predicate-init	tests/verification_predicate_checks.adb	predicate-check	Bad_I	unproved	the components of an object of mode out written in an order that breaks the predicate
+predicate-actual	tests/verification_predicate_checks.adb	predicate-check	N * 4	unproved	an actual outside the predicate of the formal's subtype
+old-two	tests/verification_old.adb	postcondition	Bad_X = Bad_X'Old + 1	unproved	two calls that each add one do not add one
+old-unknown	tests/verification_old.adb	postcondition	Unknown_X = Unknown_X'Old + 1	unproved	after a call of unknown effects the names of the entry state are not kept
+old-loop	tests/verification_old.adb	postcondition	Loop_X = Loop_X'Old	unproved	a loop between the entry and the exit
+old-kept	tests/verification_old.adb	postcondition	Moved_X = Moved_X'Old + 1	unproved	a parameter the body does not write keeps its value
+old-component	tests/verification_old.adb	postcondition	Rate_Of (Bad_O.I) = Rate_Of (Bad_O.I'Old)	definite-error	a callee whose postcondition says the component changes

@@ -53,6 +53,7 @@ function gp_kind(msg) {
    if (msg ~ /range check/)         return "range-check"
    if (msg ~ /length check/)        return "length-check"
    if (msg ~ /discriminant check/)  return "discriminant-check"
+   if (msg ~ /predicate check/)     return "predicate-check"
    if (msg ~ /loop invariant/) {
       if (msg ~ /initialization/ || msg ~ /first iteration/)
          return "loop-invariant-initialization"

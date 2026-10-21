@@ -5,6 +5,62 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--verify` raises the predicate check of SPARK: in SPARK code, where a
+  value is given to an object whose subtype has a predicate, or to a part
+  of one -- an assignment, a call on the way in and on the way out, the
+  declaration of an object, a `return`, a conversion, a qualified
+  expression -- the new `predicate-check` obligation says that the object
+  keeps the predicate. It is decided by the solvers, every part of the
+  predicate being expressed or the check left `Unproved`, of the value
+  given for a scalar subtype and of the object as the state knows it once
+  written for any other; a component not written yet is a value of its
+  subtype, as GNATprove takes it. No check is raised for a predicate the
+  value already has from its own subtype, nor yet at the default value of
+  a type, an allocator or a component of an aggregate. The predicates
+  `--verify` has taken to hold of parameters since 1.8.7 are now checked
+  where they are established. See "Predicates" in
+  `docs/src/supported-verification-subset.md`.
+- `X'Old` is translated in postconditions: in the postcondition of the
+  subprogram under analysis it is the value `X` had on entry, as long as
+  no path to the exit lost what the names of the entry state stand for (a
+  call or code of unknown effects, an exception handler, most loops); in
+  the postcondition of a callee, assumed after a procedure call, it is the
+  value the actual had when the call was made, for a formal of mode `in`
+  or `in out`. `Rate_Of (Ctx) = Rate_Of (Ctx'Old)` after `Step
+  (Ctx.Inner)` keeps what was known of the rate of `Ctx.Inner`.
+- `tests/verification_predicate_checks` and `tests/verification_old` hold
+  checks that hold and checks that do not, each kind of the second in the
+  mutation manifest; GNATprove proves each check of the two that
+  `--verify` proves, at the same line (`tests/run_gnatprove_differential.sh`).
+  The gap ledger and the comparisons with GNATprove's output pair
+  GNATprove's predicate checks with the new obligation.
+
+### Changed
+
+- A predicate assumed of a parameter reads a component named alone in the
+  predicate of a record type (`Rate > Min_Padding_Bits`) as the component
+  of the object: such a predicate was taken as holding of nothing.
+- A constant, and a generic formal object of mode `in`, keep across a call
+  what is known of them; they were given a value of their own at every
+  call that could write objects declared outside the subprogram.
+- A function of a generic unit that is SPARK code wherever it is
+  instantiated is taken to have no side effects, as one under an explicit
+  `SPARK_Mode` is: a callee's postcondition that calls it is assumed, and a
+  call of it in an expression leaves objects their values.
+- The postcondition of a callee is assumed where two of its actuals are
+  different components of one record, or where an actual of mode `in` of a
+  scalar type names the object another actual writes; what an index or the
+  bounds of a slice in a written actual read is not taken as written.
+- A call that writes an element or a slice of an array component that its
+  name settles (`Ctx.Data (1 .. N)`) gives that array a new value and
+  leaves the other parts of the object as they were; it gave every object
+  named in the actual a new value. An element of an array that a call
+  renews keeps the subtype of the array's components in SPARK code.
+
 ## [1.9.1] - 2026-10-20
 
 A `--verify` release that proves `Depends` aspects, which no route proved

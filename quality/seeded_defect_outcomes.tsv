@@ -119,10 +119,10 @@ h04.adb	36	OK	precondition	proved-safe,proved-safe
 h04.adb	37	BAD	precondition	unproved,unproved
 h04.adb	45	BAD	precondition	unproved,unproved
 h04.adb	53	BAD	precondition	unproved,unproved
-h04.adb	56	OK	precondition	unproved,unproved
-h04.adb	57	BAD	precondition	unproved,unproved
+h04.adb	56	OK	precondition	proved-safe,proved-safe
+h04.adb	57	BAD	precondition	definite-error,definite-error
 h04.adb	64	BAD	division-by-zero	unproved
-h04.adb	72	BAD	division-by-zero	unproved
+h04.adb	72	BAD	division-by-zero	definite-error
 h04.adb	78	BAD	division-by-zero	unproved
 h04.adb	80	BAD	division-by-zero	definite-error
 h04.adb	87	BAD	division-by-zero	unproved
@@ -260,7 +260,7 @@ h07.adb	370	BAD	division-by-zero	definite-error
 h07.adb	386	BAD	division-by-zero	unproved
 h08.adb	51	OK	division-by-zero	proved-safe
 h08.adb	52	BAD	division-by-zero	definite-error
-h08.adb	59	BAD	division-by-zero	unproved
+h08.adb	59	BAD	division-by-zero	definite-error
 h08.adb	66	BAD	division-by-zero	unproved
 h08.adb	73	BAD	division-by-zero	unproved
 h08.adb	81	OK	division-by-zero	proved-safe
@@ -269,8 +269,8 @@ h08.adb	87	BAD	division-by-zero	unproved
 h08.adb	88	OK	division-by-zero	proved-safe
 h08.adb	89	OK	division-by-zero	proved-safe
 h08.adb	90	BAD	division-by-zero	definite-error
-h08.adb	98	OK	division-by-zero	unproved
-h08.adb	99	BAD	division-by-zero	unproved
+h08.adb	98	OK	division-by-zero	proved-safe
+h08.adb	99	BAD	division-by-zero	definite-error
 h08.adb	106	BAD	division-by-zero	unproved
 h08.adb	116	BAD	division-by-zero	unproved
 h08.adb	119	OK	division-by-zero	proved-safe

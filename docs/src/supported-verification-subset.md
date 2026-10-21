@@ -56,11 +56,12 @@ the section it links to has the whole of its proof basis and boundary.
 | [Range](#range) | Both bounds of the target subtype, resolved as of its elaboration; otherwise scalar bounds VC against those same two bounds | Integer scalar initialization, assignment, and conversion; the bounds of a slice; an actual parameter and what an `out` or `in out` formal gives back; the conversion of `X'Length` |
 | [Index](#index) | The indexed object's own bounds per dimension; otherwise scalar bounds VC against those bounds, an own-range `for` loop, or the object's own `'First` and `'Last` taken as symbols | Array objects and scalar indices |
 | [Length](#length) | An aggregate with an `others` choice; otherwise a scalar VC that the two lengths are equal in each dimension | An array given to a target, where a compiler keeps the check; the operands of `and`, `or` and `xor` on arrays |
+| [Predicate](#predicates) | The predicate of the subtype as a scalar Boolean VC, of the value given or of the object as the state knows its components once it is written | A value given to an object, to a part of one or to a formal, in SPARK code; none where the value already has the predicates of its own subtype |
 | Discriminant | The prefix object's own static discriminant constraint (an integer expression or an enumeration literal) selects the variant declaring the component; a constrained object's discriminants never change | A component of a top-level variant part, selected directly from an object declared with an explicit discriminant constraint; a constant, variable, or subtype-name constraint or choice is never resolved by spelling and stays `Unproved` |
 | [Initialization](#initialization) | Flow-sensitive definite-initialization state | Each read of a tracked scalar object; each `out` parameter and `Output` global at the subprogram's normal exit |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
 | [Precondition](#preconditions-and-postconditions) | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts, an operator that a declaration defines among them |
-| [Postcondition](#preconditions-and-postconditions) | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions |
+| [Postcondition](#preconditions-and-postconditions) | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions, `X'Old` among them |
 | [Loop invariant initialization](#loop-invariants-and-loop-variants) | Entry-edge abstract/symbolic state | Leading invariants on supported loops |
 | [Loop invariant preservation](#loop-invariants-and-loop-variants) | Generic one-iteration abstract/symbolic VC | A straight-line scalar loop body, with at most two independent conditionals along a path |
 | [Loop variant progress](#loop-invariants-and-loop-variants) | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant, on the loop bodies invariant preservation covers |
@@ -211,6 +212,51 @@ Its verdicts:
   in its instances has its check, which GNATprove, analyzing the instances,
   does not have.
 
+### Predicates
+
+SPARK keeps the predicate of the subtype of an object wherever the object,
+or a part of it, is given a value, and GNATprove checks it there. In SPARK
+code (see "SPARK code") `--verify` raises the same predicate check:
+
+- at an assignment, of the value assigned, for the subtype of the target;
+  and, once it is written, of each object the target is a part of whose
+  subtype has a predicate (`Ctx.Rate := R` checks the predicate of `Ctx`);
+- at a call, of each actual of mode `in` or `in out`, for the subtype of
+  the formal, when the call is made; and, once a procedure call returns,
+  of each actual of mode `out` or `in out`, for the predicates of its own
+  subtype that the formal's do not give, and of each object it is a part
+  of;
+- at the declaration of an object with an initial value;
+- at a `return` statement and at the expression of an expression
+  function, for the result subtype;
+- at a conversion or a qualified expression whose subtype has a
+  predicate.
+
+No check is raised for a predicate the value already has: the value of an
+object, of a part of one or of a call keeps the predicates of its own
+subtype, which were checked where it was given that value. `T := S`, the
+two of one subtype, and `Get (Ctx)` where `Ctx` has the subtype of the
+formal have no check, as they have none from GNATprove.
+
+The check is decided by the solvers, the name of the type standing for the
+value in the predicate: the value itself for a scalar subtype, the object
+for any other, as the state knows its components once it is written. A
+component named alone in the predicate of a record type ("Rate >
+Min_Padding_Bits") is the component of the object. Every part of the
+predicate has to be expressed in the scalar VC language -- a check cannot
+leave out what it does not express, as an assumption can -- and the check
+is `Unproved` otherwise: a predicate that reads the object an access value
+designates, one quantified over the elements of an array, the bounds of a
+string literal. A component of an object of mode `out` that is not written
+yet is a value of its subtype, as GNATprove takes it: after `C.Count := 0`
+the predicate `Count < Limit` holds whatever `Limit` is. Where the solvers
+find the predicate false the check is `Unproved` too, never a definite
+error.
+
+No check is raised yet at the default value of a type or of an object
+declared without an initial value, at an allocator, nor at a component of
+an aggregate.
+
 ### Initialization
 
 **Proof basis.** Flow-sensitive definite-initialization state; an object
@@ -252,7 +298,9 @@ subprogram makes of itself no parameter is read as an object of the
 caller: those are the parameters themselves.
 
 **Postcondition.** Proved from the joined normal-exit state and scalar
-Boolean VC, for supported scalar exits and contract expressions.
+Boolean VC, for supported scalar exits and contract expressions. `X'Old`
+is the value `X` had on entry, once the precondition holds (see "`'Old`
+and `'Loop_Entry`").
 
 The checks inside the precondition and the postcondition of a verified
 subprogram are obligations too. The precondition is evaluated on entry,
@@ -933,12 +981,13 @@ object at two places:
 
 SPARK keeps the predicate of an object at every assignment to it or to a
 part of it, and at every call that passes it: GNATprove raises a predicate
-check at each of those places. The first is therefore the caller's
-obligation and the second the callee's. `--verify` does not raise
-predicate checks, so nothing here is its own obligation anywhere: a
-verdict that uses a predicate holds for the executions in which those
-checks did not fail, and a project that gives `SPARK_Mode` to code that
-does not keep its predicates has to discount what is proved from them.
+check at each of those places, and so does `--verify` (see "Predicates").
+The first is therefore the caller's obligation and the second the
+callee's. A verdict that uses a predicate holds for the executions in which
+those checks did not fail; where the code that gives the object its value
+is not SPARK code, or is not part of the run, nothing checks it, and a
+project that gives `SPARK_Mode` to code that does not keep its predicates
+has to discount what is proved from them.
 
 The predicate is taken part by part (see "Assertions as assumptions"),
 the name of the type standing for the object: of `Dynamic_Predicate =>
@@ -946,7 +995,8 @@ Valid_Context (Context.First, Context.Last, Context.Cursors)` each part of
 the body of `Valid_Context` that the scalar VC language expresses is known
 of the components of the object, and a part that reads what it does not
 express -- the designated object of an access value, most often -- is
-left out. What is known is known of the values the object had at that
+left out. A component named alone in the predicate of a record type
+("Rate > Min_Padding_Bits") is the component of the object. What is known is known of the values the object had at that
 place. An assignment to a component afterwards, or to an element at an
 index that is not known, leaves the predicate saying what it said of the
 values that were replaced, which is nothing of the new ones; `--verify`
@@ -1086,9 +1136,12 @@ the direct name, for reads and writes alike.
   of a scalar object declared in the subprogram under analysis that the
   call does not have as an `out` or `in out` actual still holds after the
   call. Everything else gets a value of which nothing is known: each
-  object declared outside the subprogram, each actual the call may write
-  (every name in it), every record component and every array element of
-  whatever object, and the value of every object that is not a scalar.
+  object declared outside the subprogram, but a constant and a generic
+  formal object of mode `in`, which keep the value they were given when
+  they were elaborated; each actual the call may write (every name in it);
+  every record component and every array element of whatever object, an
+  element keeping the subtype of the array's components in SPARK code;
+  and the value of every object that is not a scalar.
   In SPARK code that takes no access value to anything and no address of
   anything, and declares no task or protected object, what is known of
   every part of an object declared in the subprogram under analysis, or of
@@ -1098,7 +1151,10 @@ the direct name, for reads and writes alike.
   by another name. An actual the call may write that is made of selections
   only (`Ctx.P.Request`) gives that part, and what shares storage with it,
   a value of which nothing is known, and leaves the other parts of the
-  object as they were; any other such actual, every name in it.
+  object as they were; so does an element or a slice of an array that is
+  such a part (`Ctx.Data (1 .. N)`), for the whole array, what its index
+  or its bounds read keeping its value; any other such actual, every name
+  in it.
 
 Tasking is outside this model: an object shared between tasks is expected
 to be volatile, atomic or protected.
@@ -1117,9 +1173,10 @@ of the result beyond that, not even its subtype.
 
 A function of its arguments is one that
 
-- is under an explicit `SPARK_Mode`, on the declaration, an enclosing unit
-  or the project, and has neither the `Side_Effects` nor the
-  `Volatile_Function` aspect;
+- is SPARK code (see "SPARK code"): under an explicit `SPARK_Mode`, on
+  the declaration, an enclosing unit or the project, or part of a generic
+  unit that is SPARK code wherever it is instantiated; and has neither the
+  `Side_Effects` nor the `Volatile_Function` aspect;
 - has no `out` or `in out` parameter; and
 - is known to read and write no object declared outside it: its `Global`
   aspect is `null`, or it has none and its body, with everything it calls,
@@ -1151,7 +1208,7 @@ anything of the new one:
   and what shares storage with it, a new value (see "Parts of an object");
 - an assignment to an element or a slice of *any* array, and a call in an
   expression to a function that is not a literal, a predefined operation or
-  under an explicit `SPARK_Mode`, give every object that is not a scalar a
+  SPARK code, give every object that is not a scalar a
   new value. Which objects an element belongs to, or is reached from
   through an access value, is not worked out, and two parameters passed by
   reference may be one object;
@@ -1200,8 +1257,7 @@ own objects, each formal standing for what the caller sees after the call:
 An operand that names a formal with neither is not assumed -- one left to
 its default, one whose actual is a call, one whose actual is declared
 outside the subprogram under analysis, one the call writes whose actual
-is an element of an array -- and so is an operand with `'Old`, which the
-scalar VC language does not express. The element of an array a call was
+is an element of an array. The element of an array a call was
 given to write was picked by its index as it was when the call was made,
 and the postcondition is assumed in the state the call left: `Fill (Row
 (K), K)` says nothing of `Row (K)` afterwards. The first of
@@ -1213,12 +1269,26 @@ Nothing is assumed where a fact could be about another value than the one
 the caller sees: the callee is declared inside the subprogram under
 analysis, which lets it name the caller's objects; an actual the call
 writes is declared outside it, where the callee can name it too; two
-actuals name one object and one of them is written; an actual takes an
+actuals may be one object, or parts of one that share storage, and one of
+them is written; an actual takes an
 access or an address; the call dispatches; the callee is under `SPARK_Mode
 => Off`; or the postcondition calls a function that may change state or is
 not taken to leave everything as it is. The postcondition is the one on
 the declaration the call resolves to or, for a body, on the declaration it
-completes when that is resolved exactly.
+completes when that is resolved exactly. Two components of one record
+(`Ctx.Inner` and `Ctx.Data (1 .. N)`) share no storage, nor does a formal
+of mode `in` of a scalar type, which is given a copy, share any with what
+the call writes; and the objects an index or the bounds of a slice name
+in an actual are read when the call is made, not written by it.
+
+`F'Old` is the value the actual of `F` had when the call was made, for a
+formal of mode `in` or `in out`: after `Step (Ctx.Inner)`, whose
+postcondition is `Rate_Of (Ctx) = Rate_Of (Ctx'Old)`, the rate of
+`Ctx.Inner` is known to be what it was. Each part of the actual that an
+`F'Old` reads is given a symbol before the call, which the call's write
+then renews. A formal of mode `out` has no value on entry, and an operand
+with its `'Old` is not assumed; nor is an operand with `'Old` where
+nothing is known after the call.
 
 What a callee of unknown effects leaves is nothing but this: its
 postcondition is assumed in a state that knows nothing else.
@@ -1364,6 +1434,18 @@ other such prefix -- a `'Loop_Entry` that names a loop, an `'Old` in a
 prefix is evaluated whether or not the place where the attribute is
 written is reached, so none of its obligations is `Unreachable` because
 that place is.
+
+The value of `X'Old` in the postcondition is that of `X` in the state on
+entry: each part of an object that an `X'Old` reads is given a symbol
+there, which a write later on renews, and what the entry state knows of
+those symbols is known at the exit. Where a path from the entry to the
+exit has lost what the names of the entry state stand for -- a call or
+other code whose effects are not known, an exception handler, and most
+loops, whose bodies are entered knowing nothing but the bounds of arrays
+-- `X'Old` is not translated and the postcondition is `Unproved`. `'Old`
+in the postcondition of a callee is described in "The
+postcondition of a callee"; `'Loop_Entry`, and `'Old` anywhere else, are
+not translated.
 
 ### Quantified expressions and loop parameters
 

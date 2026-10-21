@@ -29,6 +29,10 @@ project Verification_Differential_Broken is
       "verification_standing_values.ads",
       "verification_standing_values.adb",
       "verification_flow_dependencies.ads",
-      "verification_flow_dependencies.adb");
+      "verification_flow_dependencies.adb",
+      "verification_predicate_checks.ads",
+      "verification_predicate_checks.adb",
+      "verification_old.ads",
+      "verification_old.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;
