@@ -468,7 +468,7 @@ Of the 15,043 checks GNATprove proves on the five fully proved corpora,
 `--verify` proves 6,403 (6,100 in 1.8.6) and has an obligation for 12,551,
 as before, with no check it proves that GNATprove does not and no definite
 error on a check GNATprove proves
-(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`): 1,346 of the 2,938
+(`benchmarks/GNATPROVE_GAP_LEDGER.md`): 1,346 of the 2,938
 preconditions (1,076), 70 of the 589 assertions (51), 779 of the 2,372
 range checks (766). Given GNATprove's logs it accounts for all 15,043: the
 6,403 it proves itself, 6,148 that carry GNATprove's verdict on an
@@ -556,7 +556,7 @@ Of the 15,043 checks GNATprove proves on the five fully proved corpora,
 `--verify` proves 6,100 (5,980 in 1.8.5) and has an obligation for 12,551,
 as before, with no check it proves that GNATprove does not and no definite
 error on a check GNATprove proves
-(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). Given GNATprove's logs
+(`benchmarks/GNATPROVE_GAP_LEDGER.md`). Given GNATprove's logs
 it accounts for all 15,043: the 6,100 it proves itself, 6,451 that carry
 GNATprove's verdict on an obligation AdaLang has and did not decide, and
 2,492 that carry it with no AdaLang obligation. Every preset reports, on
@@ -650,7 +650,7 @@ Of the 15,043 checks GNATprove proves on the five fully proved corpora,
 `--verify` proves 5,980 (4,757 in 1.8.4) and has an obligation for 12,551,
 as before, with no check it proves that GNATprove does not and no definite
 error on a check GNATprove proves
-(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). Given GNATprove's logs
+(`benchmarks/GNATPROVE_GAP_LEDGER.md`). Given GNATprove's logs
 it accounts for all 15,043: the 5,980 it proves itself, 6,571 that carry
 GNATprove's verdict on an obligation AdaLang has and did not decide, and
 2,492 that carry it with no AdaLang obligation. Every preset reports, on
@@ -856,7 +856,7 @@ Of the 15,043 checks GNATprove proves on the five fully proved corpora,
 `--verify` proves 4,757 (4,299 in 1.8.3) and has an obligation for 12,551
 (11,922), 308 of GNATprove's 311 length checks among them, with no check
 it proves that GNATprove does not and no definite error on a check
-GNATprove proves (`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). Given
+GNATprove proves (`benchmarks/GNATPROVE_GAP_LEDGER.md`). Given
 GNATprove's logs it accounts for all 15,043 as before: the 4,757 it proves
 itself, 7,794 that carry GNATprove's verdict on an obligation AdaLang has
 and did not decide, and 2,492 that carry it with no AdaLang obligation.
@@ -1005,7 +1005,7 @@ Of the 15,043 checks GNATprove proves on the five fully proved corpora,
 `--verify` proves 4,299 (3,536 in 1.8.2), 687 of the 2,938 preconditions
 among them (479 in 1.8.2), and leaves 1,306 unsupported (2,324 in 1.8.2),
 with no check it proves that GNATprove does not and no definite error on a
-check GNATprove proves (`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`).
+check GNATprove proves (`benchmarks/GNATPROVE_GAP_LEDGER.md`).
 Given GNATprove's logs, it accounts for all 15,043: the 4,299 it proves
 itself, 7,623 that carry GNATprove's verdict on an obligation AdaLang has
 and did not decide, and 3,121 that carry it with no AdaLang obligation.
@@ -1163,7 +1163,7 @@ Of the 15,043 checks GNATprove proves on the five fully proved corpora,
 `--verify` proves 3,536 (3,018 in 1.8.1), 479 of the 2,938 preconditions
 among them (24 in 1.8.1), with no check it proves that GNATprove does not
 and no definite error on a check GNATprove proves
-(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). No finding changed in
+(`benchmarks/GNATPROVE_GAP_LEDGER.md`). No finding changed in
 any of the ten corpora re-run.
 
 What to expect when upgrading:
@@ -1261,7 +1261,7 @@ Of the 15,043 checks GNATprove proves on the five fully proved corpora,
 `--verify` proves 3,018 (467 in 1.8.0) and has an obligation for 11,922
 (6,903 in 1.8.0), with no check it proves that GNATprove does not and no
 definite error on a check GNATprove proves
-(`benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`). No finding changed in
+(`benchmarks/GNATPROVE_GAP_LEDGER.md`). No finding changed in
 any of the ten corpora re-run.
 
 What to expect when upgrading:
@@ -1465,7 +1465,7 @@ unsoundness and zero false positives wherever GNATprove is an oracle.
   check answers to. Findings keep the check's own name.
 - `benchmarks/gnatprove_gap_ledger.py` accounts for every check GNATprove
   proves on a corpus and what `--verify` does at that place; the first
-  ledger is `benchmarks/GNATPROVE_GAP_LEDGER_2026-10-05.md`. On the five
+  ledger is `benchmarks/GNATPROVE_GAP_LEDGER.md`. On the five
   fully proved corpora GNATprove proves 15,043 checks: AdaLang proves 467
   of them, has an undecided obligation for 6,436 and none for 8,140.
 

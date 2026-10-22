@@ -2,10 +2,9 @@
 
 Recorded 2026-10-22 with AdaLang Analyzer 1.10.0, against the GNATprove
 output saved by the 2026-10-02 runs of the five fully proved corpora
-(`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`). The file
-keeps the name it was given when the ledger was started, on 2026-10-05.
-What each release has added since is in `CHANGELOG.md`, and earlier states
-of the ledger are in the Git history.
+(`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`). The ledger
+was started on 2026-10-05. What each release has added since is in
+`CHANGELOG.md`, and earlier states of the ledger are in the Git history.
 
 The per-corpus comparisons (`<corpus>/RESULTS_2026-10-22.md`) answer one
 question: where both tools have exactly one obligation of a kind on a line,

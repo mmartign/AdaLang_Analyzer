@@ -89,7 +89,7 @@ What the two zero columns don't show:
 The table above only counts places where both tools have exactly one
 obligation of a kind, which is the right sample for asking whether they
 ever disagree and the wrong one for asking how far apart they are.
-[`GNATPROVE_GAP_LEDGER_2026-10-05.md`](GNATPROVE_GAP_LEDGER_2026-10-05.md)
+[`GNATPROVE_GAP_LEDGER.md`](GNATPROVE_GAP_LEDGER.md)
 takes every check GNATprove proves on the five fully proved corpora, 15,043
 of them once the repeats for generic instances are merged, and records
 what AdaLang does with each:
