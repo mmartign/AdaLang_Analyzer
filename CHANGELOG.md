@@ -5,7 +5,32 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.10.0] - 2026-10-22
+
+A `--verify` release that adds an obligation kind, the predicate check of
+SPARK, and translates `X'Old` in postconditions, with the precision changes
+that `'Old` needed to be of use.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+7,939 of the 15,043 checks GNATprove proves (was 7,776): 67 predicate
+checks, and 96 checks of other kinds -- 36 preconditions, 25
+postconditions, 11 assertions, 8 overflow, 7 loop-invariant preservation,
+4 range, 3 loop-invariant initialization and 2 length checks -- libkeccak
+116 of the 163, CoAP-SPARK 37, Saatana 8, Tokeneer 2. 374 of GNATprove's
+421 predicate checks have an obligation now; it proves none that GNATprove
+does not, and no proof of 1.9.1 is lost. The checks without an AdaLang
+obligation are 2,109 (was 2,481). On the ten corpora 453 predicate checks
+are raised, 68 of them proved, and 230 other obligations move from
+`Unproved` to `Proved_Safe`, 80 of them initialization checks of
+libkeccak; no other obligation is added or gone, and no definite error is
+new or gone. CubedOS, AWS, gnatcoll-core and the Ada Drivers Library see
+nothing move. Every preset of every corpus reports the findings of 1.9.1.
+The matched pairs are 3,339 (was 3,142), GNATprove's predicate checks now
+paired, with no possible unsoundness and no false positive anywhere; on
+the SPARK testsuite twelve predicate checks are raised, none proved, and a
+postcondition and an overflow check that read `'Old` are proved, each one
+GNATprove proves at the same place. libkeccak's `--verify` lane takes
+about a fifth more CPU time, the other lanes about what they took.
 
 ### Added
 
