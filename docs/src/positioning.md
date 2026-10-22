@@ -181,11 +181,11 @@ is not endorsed by AdaCore.
 
 The benchmark suite quantifies this on five independently authored,
 fully-proved SPARK corpora (SPARKNaCl, Saatana, libkeccak, coap_spark and
-Tokeneer): across 3,142 proof obligations both tools could evaluate at the
+Tokeneer): across 3,339 proof obligations both tools could evaluate at the
 same location, AdaLang never called something safe that GNATprove could not
 prove and never called something a definite error that GNATprove proved
 safe. Over every check GNATprove proves on those corpora, AdaLang proves
-a little under half and is `Unproved`/`Unsupported`, or has no
+a little over half and is `Unproved`/`Unsupported`, or has no
 obligation, for the rest -- consistent with "a much narrower scalar
 subset" above. This is
 evidence of precision on the subset AdaLang attempts, not of matching
