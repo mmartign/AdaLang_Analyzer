@@ -211,7 +211,7 @@ By GNATprove check, with the constructs it is most often in:
 | length check | 1 | conditional-expression 1 |
 
 Produced by `benchmarks/gnatprove_gap_contexts.py` from the ledger's rows.
-It has 2,481 of the 2,483 checks without an obligation: the script leaves
+It has 2,107 of the 2,109 checks without an obligation: the script leaves
 out a check whose source file it does not find under the corpus roots it is
 given. The construct is read from the syntax alone, from the inside out. What is
 left under a `Global` aspect is the initialization of state abstractions
