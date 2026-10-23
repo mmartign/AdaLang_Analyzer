@@ -5,6 +5,84 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.10.1] - 2026-10-23
+
+A `--verify` release that proves more loop invariants and corrects two
+false-safes.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+8,113 of the 15,043 checks GNATprove proves (was 7,939): 34 preconditions,
+28 assertions, 26 range, 25 overflow, 17 index, 15 loop-invariant
+preservation, 11 loop-invariant initialization, 8 postconditions, 6
+length and 4 predicate checks -- libkeccak 76, CoAP-SPARK 69, SPARKNaCl
+21, Tokeneer 8. It proves none that GNATprove does not, no proof of 1.10.0
+is lost, and the checks without an AdaLang obligation are 2,109, as
+before. On the ten corpora 366 obligations move from `Unproved` to
+`Proved_Safe` -- CoAP-SPARK 146, libkeccak 111, project_bias 51,
+SPARKNaCl 39, Tokeneer 13, CubedOS, gnatcoll-core and AWS 2 each -- and
+nothing else moves: no obligation is added or gone, and no definite error
+is new or gone. Every preset of every corpus reports the findings of
+1.10.0. The matched pairs are 3,339, 1,592 of them both safe (was 1,507),
+with no possible unsoundness and no false positive anywhere; on the SPARK
+testsuite 29 obligations are proved in eight units, each a check GNATprove
+proves at the same place. CoAP-SPARK's `--verify` lane takes about a
+seventh more CPU time and libkeccak's about 6% more; the others about
+what they took, or less.
+
+Who `FP-129` concerns: every release with `--verify` from 1.0.0 to
+1.10.0. A `Proved_Safe` obligation inside or after a loop whose leading
+invariants are proved is not to be relied on where it reads an object the
+loop changes only through a call -- the actual of an `in out` or `out`
+parameter, an output of the callee's `Global` aspect: the loop was taken
+to leave that object as it was.
+
+Who `FP-130` concerns: every release with `--verify` from 1.6.1 to
+1.10.0. A `Proved_Safe` precondition of a call statement with no actual
+in parentheses -- a procedure without parameters, or a call in prefix
+notation with the prefix only -- is not to be relied on inside or after a
+loop: it was decided on the first pass of the fixed-point run, not on the
+state that run settles on.
+
+### Changed
+
+- The leading invariants of a loop over a range (`for I in ...`) are
+  checked where an iteration starts: on the first one the range is not
+  empty and the parameter is its first value (its last, with `reverse`);
+  on the next one the parameter has the value after the one it had, the
+  range being that of the bounds where the loop was entered. An invariant
+  that names the parameter (`X = I`) is proved now. Such invariants are
+  known where an iteration starts only, at the pragmas, and are not
+  carried past the loop, which is left before any iteration when the
+  range is empty and after the last one.
+- The walk that proves a loop invariant preserved goes past an `exit`,
+  `exit when`, `return` or `raise` in the body -- the path that leaves the
+  loop asks nothing of the invariant -- and through declarations.
+- A record or array value given to an object, by an assignment or a
+  declaration, makes the symbolic state forget that object only; it
+  forgot every fact it held, those of the precondition among them.
+- A range or overflow question that the symbolic facts make too hard for
+  the solvers within their time limit is asked again without them.
+
+### Added
+
+- `tests/verification_loop_parameter`,
+  `tests/verification_fp129_summarized_loop` and
+  `tests/verification_fp130_parameterless_call` hold checks that hold and
+  checks that do not; GNATprove agrees with each verdict they check.
+
+### Fixed
+
+- `FP-129` (`quality/known_analysis_issues.tsv`): a loop whose leading
+  invariants are proved is followed with the same effects as any other --
+  a call in its body changes what it may change -- and its invariants are
+  a fact of every iteration on top of that. See above for whom it
+  concerns.
+- `FP-130` (`quality/known_analysis_issues.tsv`): the precondition of a
+  call statement with no actual in parentheses is decided on the state
+  the fixed-point run settles on, like that of any other call; one that
+  fails where it is decided is a definite error. See above for whom it
+  concerns.
+
 ## [1.10.0] - 2026-10-22
 
 A `--verify` release that adds an obligation kind, the predicate check of
