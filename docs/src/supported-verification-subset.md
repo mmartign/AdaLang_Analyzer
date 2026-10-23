@@ -320,7 +320,10 @@ and at the normal exit. Otherwise the spec contract contributes no facts.
 ### Loop invariants and loop variants
 
 **Loop invariant initialization.** Proved from the entry-edge
-abstract/symbolic state, for leading invariants on supported loops.
+abstract/symbolic state, for leading invariants on supported loops. For a
+loop over a range (`for I in ...`), the state is that of the start of the
+first iteration: the range is not empty and the parameter is its first
+value (its last, with `reverse`).
 
 **Loop invariant preservation.** Proved by a generic one-iteration
 abstract/symbolic VC, for these loop bodies:
@@ -334,6 +337,18 @@ abstract/symbolic VC, for these loop bodies:
   edge;
 - one further conditional, nested in an arm or sequential after the first,
   within the branch budget described below.
+
+An `exit`, `exit when`, `return` or `raise` in the body ends the path that
+takes it out of the loop, which then asks nothing of the invariant: the
+invariant is checked on the paths that come back to the loop's head, an
+`exit when` being walked past with its condition false, and an `if` one of
+whose arms leaves the loop through its other arm. Declarations in the body
+are walked as the analysis of the subprogram goes through them.
+
+For a loop over a range, the invariant is checked at the start of the next
+iteration: the parameter had a value other than the last one of the range
+and now has the one after it (before it, with `reverse`), the range being
+that of the bounds where the loop was entered.
 
 A missing or non-final `others`, a multi-choice or discontiguous case
 alternative, a third independent conditional along any single path (nested
@@ -1302,7 +1317,12 @@ an `Unproved` assertion therefore holds on the condition that the assertion
 does; with assertion checks disabled at run time, nothing enforces that
 condition. A leading loop invariant is carried past the loop only when it is
 proved both initially and at the end of an arbitrary iteration, the last one
-included.
+included. That of a loop over a range is proved where an iteration starts,
+and is known there only, at the pragma: it is not carried past the loop,
+which is left before any iteration when the range is empty, and after the
+last one. A loop whose leading invariants are proved is followed with the
+same effects as any other -- a call in its body changes what it may change
+-- and they are a fact of every iteration on top of that (FP-129).
 
 The path context may contain entry preconditions, branch predicates,
 straight-line scalar substitutions, sound relational postcondition transfer,

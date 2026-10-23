@@ -453,6 +453,26 @@ package Adalang_Analyzer.VC_Prover is
    --  "Low .. High". Only bounds whose value cannot change during the loop
    --  are used; otherwise State is returned as it is.
 
+   type Loop_Step is (First_Iteration, Next_Iteration);
+
+   function Step_Loop_Parameter
+     (State         : Symbolic_State;
+      Parameter     : Libadalang.Analysis.Ada_Node;
+      Iteration     : Libadalang.Analysis.Ada_Node'Class;
+      Reverse_Order : Boolean;
+      Step          : Loop_Step;
+      Flow          : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State with what is known of the loop parameter whose defining name is
+   --  Parameter, of a loop over Iteration (as for Assume_Loop_Range) that
+   --  goes up, or down with Reverse_Order. First_Iteration: the loop is
+   --  entered, and the parameter is the first value of its range; the
+   --  bounds are taken as they are in State, where the loop is entered.
+   --  Next_Iteration: the value the parameter had was not the last, and
+   --  it now has the next one, under a name of its own -- once per state;
+   --  only bounds whose value cannot change during the loop are used. State
+   --  as it is where the range cannot be told.
+
    function Decide_Nonzero
      (Value   : Libadalang.Analysis.Expr'Class;
       State   : Adalang_Analyzer.Flow_Domain.Flow_State;

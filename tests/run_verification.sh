@@ -133,6 +133,9 @@ flow_dependencies=$(mktemp "${TMPDIR:-/tmp}/adalang-flow-dependencies.XXXXXX")
 predicate_checks=$(mktemp "${TMPDIR:-/tmp}/adalang-predicate-checks.XXXXXX")
 old_values=$(mktemp "${TMPDIR:-/tmp}/adalang-old-values.XXXXXX")
 unchecked_conversion=$(mktemp "${TMPDIR:-/tmp}/adalang-unchecked-conversion.XXXXXX")
+fp129=$(mktemp "${TMPDIR:-/tmp}/adalang-fp129.XXXXXX")
+loop_parameter=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-parameter.XXXXXX")
+fp130=$(mktemp "${TMPDIR:-/tmp}/adalang-fp130.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -163,7 +166,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2749,5 +2752,59 @@ do
    must_not_prove "$old_values" postcondition "$operation" \
      "a postcondition with 'Old that does not hold"
 done
+
+#  FP-129: a loop whose invariants were proved was summarized by them on
+#  the second run, from the state it was entered in less the objects it
+#  assigns. An object written only through a call, a Global output among
+#  them, kept its value from before the loop: an assertion that does not
+#  hold after it was called safe. What the loop does not write is kept.
+run_json_pair "$fp129" tests/verification_fp129_summarized_loop
+for operation in 'X = 0' 'G = 0'; do
+   must_not_prove "$fp129" assertion "$operation" FP-129
+done
+must_prove "$fp129" loop-invariant-preservation 'X <= C' external-prover \
+  FP-129
+must_prove "$fp129" assertion 'Kept = 5' abstract-interpretation FP-129
+
+#  The invariants of a loop over a range hold where an iteration starts:
+#  the parameter is the first value of the range on the first one, and
+#  the value after the one it had on the next. They are known there only,
+#  not where the loop is left: before any iteration, when the range is
+#  empty, or after the last one. GNATprove agrees on all of them.
+run_json_pair "$loop_parameter" tests/verification_loop_parameter
+for operation in 'X = I' 'Y = 8 - J' 'Z = L - 1'; do
+   must_prove "$loop_parameter" loop-invariant-initialization "$operation" \
+     external-prover "loop parameter"
+   must_prove "$loop_parameter" loop-invariant-preservation "$operation" \
+     external-prover "loop parameter"
+done
+must_not_prove "$loop_parameter" assertion 'Z <= 9' \
+  "an invariant of a loop over a range assumed after its last iteration"
+must_not_prove "$loop_parameter" assertion 'N >= 1' \
+  "an invariant of a loop over a range assumed when the range is empty"
+must_not_prove "$loop_parameter" loop-invariant-preservation 'M <= N' \
+  "a loop range taken from bounds changed in the loop"
+if grep -F '"kind": "postcondition", "status": "definite-error"' \
+  "$loop_parameter" >/dev/null
+then
+   echo "a postcondition that holds after a loop over a range was refuted" >&2
+   exit 1
+fi
+
+#  FP-130: the precondition of a call with no actual in parentheses
+#  ("Bump") was decided on each visit of the fixed-point run only, never
+#  again on the converged state, and the first visit's proof stood. In a
+#  loop, G = 0 on that visit, and a precondition that fails on the 1001st
+#  iteration was called safe. One that holds at the fixed point is still
+#  proved, and one that fails where it is decided is a definite error.
+run_json_pair "$fp130" tests/verification_fp130_parameterless_call
+must_not_prove "$fp130" precondition 'Bump' FP-130
+must_prove "$fp130" precondition 'Check_G' contract-transfer FP-130
+if ! grep -F '"kind": "precondition", "status": "definite-error"' "$fp130" |
+  grep -F '"operation": "Bump"' >/dev/null
+then
+   echo "FP-130: a failing precondition of a call with no actual is not refuted" >&2
+   exit 1
+fi
 
 echo "bounded verification tests passed"

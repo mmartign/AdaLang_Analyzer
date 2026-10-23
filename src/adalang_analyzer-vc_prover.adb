@@ -7300,7 +7300,21 @@ package body Adalang_Analyzer.VC_Prover is
             Provenance => Unsupported_Provenance_For (Context, Value));
       end if;
 
-      return Decide_Goal (Range_Goal (Term, Bounds), Context);
+      declare
+         Outcome : constant VC_Outcome :=
+           Decide_Goal (Range_Goal (Term, Bounds), Context);
+      begin
+         --  What a state knows can make the query too hard for the solvers
+         --  where the ranges alone decide it: a value bound to a long term
+         --  with division in it, say. Fewer assumptions prove nothing that
+         --  more would not.
+         if Outcome.Result = VC_Unknown
+           and then not Equal (Symbols, Empty_Symbolic_State)
+         then
+            return Decide_Bounds (Value, Bounds, State, Empty_Symbolic_State);
+         end if;
+         return Outcome;
+      end;
    exception
       when others =>
          return Unknown_Outcome;
@@ -7595,20 +7609,18 @@ package body Adalang_Analyzer.VC_Prover is
          return Havoc;
    end Array_Bound_Facts;
 
-   function Assume_Loop_Range
-     (State     : Symbolic_State;
-      Parameter : Libadalang.Analysis.Ada_Node;
-      Iteration : Libadalang.Analysis.Ada_Node'Class;
-      Flow      : Domain.Flow_State) return Symbolic_State
+   --  The terms of the first and the last value of a loop over Iteration:
+   --  the loop's own "A'Range", "Low .. High", "T range Low .. High", or a
+   --  discrete subtype whose declaration gives such bounds. Both empty
+   --  where they cannot be told. With Fixed_Only, only bounds whose value
+   --  cannot change during the loop are given.
+   procedure Loop_Bound_Terms
+     (Iteration  : Libadalang.Analysis.Ada_Node'Class;
+      Context    : in out Translation_Context;
+      Fixed_Only : Boolean;
+      Low        : out Unbounded_String;
+      High       : out Unbounded_String)  --  adalang-analyzer: ignore Swappable_Parameters
    is
-      Context : Translation_Context :=
-        (State => Flow, Symbols => State, Supported => State.Supported,
-         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
-         Failure_Reason => No_Unsupported_Reason,
-         Failure_Node => Libadalang.Analysis.No_Ada_Node,
-         Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
-
       --  True when Expr is built only from literals, names whose value
       --  cannot change, and bounds of array objects: its value on any
       --  iteration is its value when the loop was entered.
@@ -7650,14 +7662,26 @@ package body Adalang_Analyzer.VC_Prover is
          end case;
       end Fixed;
 
-      Variable : Unbounded_String;
-      Low      : Unbounded_String;
-      High     : Unbounded_String;
+      --  Of an integer range only: the parameter of a loop over an
+      --  enumeration has another sort.
+      procedure Between (Left, Right : Libadalang.Analysis.Expr'Class) is
+         Typ : constant Libadalang.Analysis.Base_Type_Decl :=
+           Left.P_Expression_Type;
+      begin
+         if not Libadalang.Analysis.Is_Null (Typ)
+           and then Typ.P_Is_Int_Type
+           and then
+             (not Fixed_Only or else (Fixed (Left) and then Fixed (Right)))
+         then
+            Low := Integer_Term (Left, Context);
+            High := Integer_Term (Right, Context);
+         end if;
+      end Between;
    begin
-      if Libadalang.Analysis.Is_Null (Iteration)
-        or else Libadalang.Analysis.Is_Null (Parameter)
-      then
-         return State;
+      Low := Null_Unbounded_String;
+      High := Null_Unbounded_String;
+      if Libadalang.Analysis.Is_Null (Iteration) then
+         return;
       end if;
 
       if Iteration.Kind = Libadalang.Common.Ada_Attribute_Ref
@@ -7679,15 +7703,72 @@ package body Adalang_Analyzer.VC_Prover is
       elsif Iteration.Kind in Libadalang.Common.Ada_Bin_Op_Range
         and then Iteration.As_Bin_Op.F_Op =
           Libadalang.Common.Ada_Op_Double_Dot
-        and then Fixed (Iteration.As_Bin_Op.F_Left)
-        and then Fixed (Iteration.As_Bin_Op.F_Right)
       then
-         Low := Integer_Term (Iteration.As_Bin_Op.F_Left, Context);
-         High := Integer_Term (Iteration.As_Bin_Op.F_Right, Context);
-      else
+         Between (Iteration.As_Bin_Op.F_Left, Iteration.As_Bin_Op.F_Right);
+      elsif Iteration.Kind = Libadalang.Common.Ada_Subtype_Indication then
+         declare
+            Constraint : constant Libadalang.Analysis.Constraint :=
+              Iteration.As_Subtype_Indication.F_Constraint;
+         begin
+            if not Libadalang.Analysis.Is_Null (Constraint)
+              and then Constraint.Kind = Libadalang.Common.Ada_Range_Constraint
+            then
+               Loop_Bound_Terms
+                 (Constraint.As_Range_Constraint.F_Range.F_Range, Context,
+                  Fixed_Only, Low, High);
+            else
+               Loop_Bound_Terms
+                 (Iteration.As_Subtype_Indication.F_Name, Context, Fixed_Only,
+                  Low, High);
+            end if;
+         end;
+      elsif Iteration.Kind in Libadalang.Common.Ada_Name then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Iteration.As_Name.P_Referenced_Decl;
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl
+            then
+               declare
+                  Bounds : constant Libadalang.Analysis.Discrete_Range :=
+                    Decl.As_Base_Type_Decl.P_Discrete_Range;
+               begin
+                  Between
+                    (Libadalang.Analysis.Low_Bound (Bounds),
+                     Libadalang.Analysis.High_Bound (Bounds));
+               end;
+            end if;
+         end;
+      end if;
+   exception
+      when others =>
+         Low := Null_Unbounded_String;
+         High := Null_Unbounded_String;
+   end Loop_Bound_Terms;
+
+   function Assume_Loop_Range
+     (State     : Symbolic_State;
+      Parameter : Libadalang.Analysis.Ada_Node;
+      Iteration : Libadalang.Analysis.Ada_Node'Class;
+      Flow      : Domain.Flow_State) return Symbolic_State
+   is
+      Context : Translation_Context :=
+        (State => Flow, Symbols => State, Supported => State.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Variable : Unbounded_String;
+      Low      : Unbounded_String;
+      High     : Unbounded_String;
+   begin
+      if Libadalang.Analysis.Is_Null (Parameter) then
          return State;
       end if;
 
+      Loop_Bound_Terms (Iteration, Context, True, Low, High);
       if Context.Supported and then Length (Low) > 0 and then Length (High) > 0
       then
          Variable :=
@@ -7707,6 +7788,88 @@ package body Adalang_Analyzer.VC_Prover is
       when others =>
          return State;
    end Assume_Loop_Range;
+
+   function Step_Loop_Parameter
+     (State         : Symbolic_State;
+      Parameter     : Libadalang.Analysis.Ada_Node;
+      Iteration     : Libadalang.Analysis.Ada_Node'Class;
+      Reverse_Order : Boolean;
+      Step          : Loop_Step;
+      Flow          : Domain.Flow_State) return Symbolic_State
+   is
+      Context : Translation_Context :=
+        (State => Flow, Symbols => State, Supported => State.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Low      : Unbounded_String;
+      High     : Unbounded_String;
+      Variable : Unbounded_String;
+   begin
+      if Libadalang.Analysis.Is_Null (Parameter) then
+         return State;
+      end if;
+
+      Loop_Bound_Terms
+        (Iteration, Context, Step = Next_Iteration, Low, High);
+      if Context.Supported and then Length (Low) > 0 and then Length (High) > 0
+      then
+         Variable :=
+           To_Unbounded_String
+             (Symbol_For (Context, Plain_Key (Parameter), Integer_Sort));
+      end if;
+      if not Context.Supported or else Length (Variable) = 0 then
+         return State;
+      end if;
+
+      declare
+         First : constant String :=
+           To_String (if Reverse_Order then High else Low);
+         Last  : constant String :=
+           To_String (if Reverse_Order then Low else High);
+      begin
+         case Step is
+            when First_Iteration =>
+               --  The loop is entered: its range is not empty, and the
+               --  parameter is the first value of it.
+               Context.Symbols.Assumptions.Append
+                 (To_Unbounded_String
+                    ("(and (<= " & To_String (Low) & " " & To_String (High)
+                     & ") (= " & To_String (Variable) & " " & First & "))"));
+               return Context.Symbols;
+            when Next_Iteration =>
+               --  The value the parameter had was not the last, and it
+               --  now has the next one: a value of its own, related to
+               --  the one before, which facts already in State still name.
+               declare
+                  Key  : constant Symbol_Key := Plain_Key (Parameter);
+                  Name : constant String := Root_Name (Key, "n");
+               begin
+                  if Root_Index (Context.Symbols, Name) /= 0 then
+                     return State;
+                  end if;
+                  Add_Root (Context.Symbols, Name, Key, Integer_Sort, Flow);
+                  Set_Binding
+                    (Context.Symbols,
+                     (Key  => Key,
+                      Sort => Integer_Sort,
+                      Term => To_Unbounded_String (Name)));
+                  Context.Symbols.Assumptions.Append
+                    (To_Unbounded_String
+                       ("(and (not (= " & To_String (Variable) & " " & Last
+                        & ")) (= " & Name & " ("
+                        & (if Reverse_Order then "-" else "+") & " "
+                        & To_String (Variable) & " 1)))"));
+                  return Context.Symbols;
+               end;
+         end case;
+      end;
+   exception
+      when others =>
+         return State;
+   end Step_Loop_Parameter;
 
    function Join_On_Range
      (True_Side, False_Side : Symbolic_State;
