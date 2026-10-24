@@ -75,9 +75,9 @@ What the two zero columns don't show:
   `docs/src/positioning.md`'s framing of `--verify` as "a much narrower
   scalar subset," not a competitor to full SMT-backed proof. On the five
   fully proved corpora the "both safe" share of the matched pairs runs from
-  33% on Tokeneer to 73% on libkeccak, and is 47% on coap_spark, whose
+  33% on Tokeneer to 80% on libkeccak, and is 47% on coap_spark, whose
   RecordFlux-generated protocol contracts and session-state logic hold
-  47% of what is left of the gap. The next section measures that
+  49% of what is left of the gap. The next section measures that
   distance on every check, not only the paired ones.
 - **A false-safe on code that is proved correct**: there a bogus proof
   agrees with the oracle. The seeded-defect probes and the deliberately
