@@ -888,6 +888,29 @@ and the value given was a valid one.
 A call whose effects are not known drops every fact about a variable. It
 drops none of these: no callee can change them.
 
+## What a store leaves known
+
+After an assignment to an object of an integer subtype, and after the
+declaration of one with an initial value, the range kept for the object is
+the range of the value stored, narrowed to the object's subtype: the
+constraint its declaration gives it and the range of its subtype mark, as
+far as each bound is known, resolved as of the subtype's elaboration. A
+bound that reads a variable is not known, and that side is not narrowed.
+What is stored through a renaming is narrowed to the subtype of the object
+renamed, which is the one Ada checks it against; the subtype mark of the
+renaming does not constrain it. Where no value of the range is in the
+subtype, the store always fails, and nothing is narrowed.
+
+This rests on the range check of the store, which raises for a value
+outside the subtype. That check is an obligation of its own, decided where
+the store is; a verdict that uses the narrowed range holds for the
+executions in which that check did not fail, as GNATprove's do. A handler
+that the failing check reaches is given the range the object had before
+the store too, joined with the narrowed one.
+Where `pragma Suppress` or `-gnatp` removes the check, the obligation stays,
+and a value outside the subtype makes the execution erroneous: the verdict
+holds where the program keeps the value in the subtype.
+
 What is not one of them:
 
 - a variable declared outside the subprogram, whatever its subtype and

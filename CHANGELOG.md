@@ -5,6 +5,17 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The range kept for an object of an integer subtype after an assignment
+  to it, or after its declaration with an initial value, is narrowed to the
+  object's subtype: the store's range check raises for any value outside
+  it. What is stored through a renaming is narrowed to the subtype of the
+  object renamed. Before, the range was that of the value stored, which
+  after widening often had a bound given up.
+
 ## [1.10.2] - 2026-10-24
 
 A `--verify` release that gives back the proofs 1.10.1 lost on its test

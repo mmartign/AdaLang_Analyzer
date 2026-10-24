@@ -36,6 +36,8 @@ project Verification_Differential_Broken is
       "verification_old.adb",
       "verification_declared_bound_division.ads",
       "verification_declared_bound_division.adb",
-      "verification_loop_entry_widening.adb");
+      "verification_loop_entry_widening.adb",
+      "verification_subtype_clamp.ads",
+      "verification_subtype_clamp.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;

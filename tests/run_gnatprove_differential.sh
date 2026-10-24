@@ -137,7 +137,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 30 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 31 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -164,7 +164,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_predicate_checks \
   verification_old \
   verification_declared_bound_division \
-  verification_loop_entry_widening; do
+  verification_loop_entry_widening \
+  verification_subtype_clamp; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -616,6 +617,82 @@ if len(proved) < 10:
     fail(f"declared bounds: only {len(proved)} overflow checks proved")
 print(f"declared bounds: {len(proved)} overflow checks proved here, none "
       "refused by GNATprove, which refuses the 3 left unproved")
+PYTHON
+
+#  The checks of the subtype-clamp fixture, by line and kind: none proved
+#  here in its SPARK subprograms is one GNATprove finds might fail, and it
+#  finds the overflow of Bad_Top and the division and the overflow of
+#  Bad_Renaming might, which are not proved here.
+clamp_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-clamp.XXXXXX")
+clamp_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-clamp.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log" "$pairs_results" "$pairs_log" "$bounds_results" "$bounds_log" "$clamp_results" "$clamp_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$clamp_results" \
+  tests/verification_subtype_clamp.ads \
+  tests/verification_subtype_clamp.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer subtype-clamp run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_subtype_clamp.adb >"$clamp_log" 2>&1 || true
+
+python3 - "$clamp_results" "$clamp_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = {"overflow check": "integer-overflow",
+         "divide by zero": "division-by-zero",
+         "range check": "range-check"}
+#  Bad_Moved_Bound, from this line on, is not SPARK.
+last_spark_line = 57
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+refused = set()
+for line in log:
+    found = re.match(
+        r"verification_subtype_clamp\.adb:(\d+):\d+: (?:low|medium|high): "
+        r"(overflow check|divide by zero|range check) might fail", line)
+    if found:
+        refused.add((int(found.group(1)), kinds[found.group(2)]))
+
+expected = {(45, "integer-overflow"), (55, "division-by-zero"),
+            (55, "integer-overflow")}
+if not expected <= refused:
+    fail(f"subtype clamp: GNATprove refuses {sorted(refused)}, not "
+         f"{sorted(expected)}")
+
+proved = 0
+for item in report["proofObligations"]:
+    if not item["file"].endswith("verification_subtype_clamp.adb") or \
+       item["line"] > last_spark_line or item["kind"] not in kinds.values():
+        continue
+    place = (item["line"], item["kind"])
+    if item["status"] == "proved-safe":
+        if place in refused:
+            fail(f"{item['kind']} {item['operation']!r} at line "
+                 f"{item['line']} is proved here, GNATprove finds it might "
+                 "fail")
+        proved += 1
+    elif place in expected:
+        expected.discard(place)
+if expected:
+    fail(f"subtype clamp: {sorted(expected)} not reported unproved here")
+if proved < 12:
+    fail(f"subtype clamp: only {proved} checks proved")
+print(f"subtype clamp: {proved} checks proved here, none refused by "
+      "GNATprove, which refuses the 3 of the Bad_* subprograms")
 PYTHON
 
 echo "GNATprove differential tests passed"

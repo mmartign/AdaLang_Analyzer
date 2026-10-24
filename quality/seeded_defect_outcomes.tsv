@@ -143,7 +143,7 @@ h05.adb	14	BAD	division-by-zero	unproved
 h05.adb	26	BAD	division-by-zero	unproved
 h05.adb	37	BAD	division-by-zero	unproved
 h05.adb	38	BAD	division-by-zero	unproved
-h05.adb	39	OK	division-by-zero	unproved
+h05.adb	39	OK	division-by-zero	proved-safe
 h05.adb	53	BAD	division-by-zero	unproved
 h05.adb	63	OK	division-by-zero	proved-safe
 h05.adb	71	BAD	division-by-zero	unproved

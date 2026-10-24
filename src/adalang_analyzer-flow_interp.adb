@@ -4383,6 +4383,54 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end Definitely_Inside_Type;
 
+   --  Bounds, the range of a value stored in an object of integer type Typ
+   --  that Constraint may narrow further, narrowed to that subtype: the
+   --  range check of the store raises for a value outside it, so none such
+   --  is stored. Bounds unchanged where no value of Bounds is in the
+   --  subtype, where the store always fails.
+   function Within_Subtype
+     (Bounds     : Abstract_Range;
+      Typ        : Libadalang.Analysis.Base_Type_Decl;
+      Constraint : Subtype_Constraint;
+      State      : Flow_State) return Abstract_Range
+   is
+      Result : Abstract_Range := Bounds;
+
+      procedure Narrow (Allowed : Abstract_Range) is
+      begin
+         if Allowed.Has_Low
+           and then (not Result.Has_Low or else Result.Low < Allowed.Low)
+         then
+            Result.Has_Low := True;
+            Result.Low := Allowed.Low;
+         end if;
+         if Allowed.Has_High
+           and then (not Result.Has_High or else Result.High > Allowed.High)
+         then
+            Result.Has_High := True;
+            Result.High := Allowed.High;
+         end if;
+      end Narrow;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) or else not Typ.P_Is_Int_Type then
+         return Bounds;
+      end if;
+
+      Narrow (Type_Range (Typ, State));
+      if Constraint.Present then
+         Narrow (Constraint.Bounds);
+      end if;
+      if Result.Has_Low and then Result.Has_High
+        and then Result.Low > Result.High
+      then
+         return Bounds;
+      end if;
+      return Result;
+   exception
+      when others =>
+         return Bounds;
+   end Within_Subtype;
+
    function Overflow_Base_Range
      (Typ   : Libadalang.Analysis.Base_Type_Decl'Class;
       Node  : Libadalang.Analysis.Ada_Node'Class;
@@ -7727,8 +7775,12 @@ package body Adalang_Analyzer.Flow_Interp is
                     Integer_Value (Assign.F_Expr, State);
                   Bool_Value : constant Abstract_Bool :=
                     Boolean_Value (Assign.F_Expr, State);
+                  Stored     : constant Target_Subtype :=
+                    Stored_Subtype (Assign.F_Dest, State);
                   Bounds     : constant Abstract_Range :=
-                    Range_Value (Assign.F_Expr, State);
+                    Within_Subtype
+                      (Range_Value (Assign.F_Expr, State), Stored.Typ,
+                       Stored.Constraint, State);
                begin
                   Flow_Set (Next, Target, Value);
                   Flow_Bool_Set (Next, Target, Bool_Value);
@@ -8499,7 +8551,10 @@ package body Adalang_Analyzer.Flow_Interp is
                Bool_Value : constant Abstract_Bool :=
                  Boolean_Value (Default, State);
                Bounds : constant Abstract_Range :=
-                 Range_Value (Default, State);
+                 Within_Subtype
+                   (Range_Value (Default, State),
+                    Decl.F_Type_Expr.P_Designated_Type_Decl,
+                    Declared_Constraint (Decl.F_Type_Expr, State), State);
             begin
                --  A call in the initial value can write its out and in out
                --  actuals and its global outputs (FP-105).
