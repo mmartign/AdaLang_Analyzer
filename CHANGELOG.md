@@ -5,7 +5,33 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.10.3] - 2026-10-24
+
+A `--verify` release that proves 305 more of the checks GNATprove proves:
+what a variable is assigned stays within its subtype, a precondition on
+`in` parameters holds through a loop, and an assignment to the elements of
+one array no longer makes the analysis forget every other.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+8,436 of the 15,043 checks GNATprove proves (was 8,131): 139 overflow
+checks, 125 range checks, 18 index checks, 9 preconditions, 6 assertions,
+4 division checks and 4 length checks -- 206 of them in libkeccak, 84 in
+SPARKNaCl, 10 in CoAP-SPARK, 4 in Tokeneer and 1 in Saatana. It proves
+none that GNATprove does not, no proof of 1.10.2 is lost, and the checks
+without an AdaLang obligation are 2,109, as before. On the ten corpora
+1,083 obligations move from `Unproved` to `Proved_Safe` -- 509 overflow
+checks, 445 range checks, 76 index checks, 23 assertions, 18
+preconditions, 6 division checks and 6 length checks -- and none the other
+way: no obligation is added or gone, and no definite error is new or gone.
+Every preset of every corpus reports the findings of 1.10.2. The matched
+pairs are 3,339, 1,659 of them both safe (was 1,592), with no possible
+unsoundness and no false positive anywhere; on the SPARK testsuite 51
+obligations are proved that were not, 15 of them pairs, which makes 196
+both safe. No proof is lost on the 210 `--verify` fixtures of the test
+suite. The `--verify` lane of SPARKNaCl takes 29 s of CPU (was 18 s) and
+that of libkeccak 79 s (was 67 s), mostly in solver queries on goals the
+analysis can now state but not decide in the time allowed; the other
+lanes take about what they took.
 
 ### Changed
 
