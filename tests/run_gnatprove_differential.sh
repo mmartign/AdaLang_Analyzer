@@ -137,7 +137,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 28 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 30 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -162,7 +162,9 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_standing_values \
   verification_flow_dependencies \
   verification_predicate_checks \
-  verification_old; do
+  verification_old \
+  verification_declared_bound_division \
+  verification_loop_entry_widening; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -546,6 +548,74 @@ if agreed < 20:
     fail(f"predicate checks and 'Old: only {agreed} checks proved")
 print(f"predicate checks and 'Old: {agreed} checks proved here, each "
       "proved by GNATprove")
+PYTHON
+
+#  The overflow checks of the declared-bound and loop-entry fixtures, by
+#  line and expression: none proved here is one GNATprove finds might fail,
+#  and it finds the three of the Bad_* subprograms might, which are not
+#  proved here. Where the compiler sees an operation cannot overflow it
+#  places no check, and GNATprove reports none.
+bounds_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-bounds.XXXXXX")
+bounds_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-bounds.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log" "$pairs_results" "$pairs_log" "$bounds_results" "$bounds_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$bounds_results" \
+  tests/verification_declared_bound_division.ads \
+  tests/verification_declared_bound_division.adb \
+  tests/verification_loop_entry_widening.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer declared-bound run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_declared_bound_division.adb \
+  verification_loop_entry_widening.adb >"$bounds_log" 2>&1 || true
+
+python3 - "$bounds_results" "$bounds_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+units = ("verification_declared_bound_division.ad",
+         "verification_loop_entry_widening.ad")
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+refused = set()
+for line in log:
+    found = re.match(
+        r"(\S+\.ad[bs]):(\d+):\d+: (low|medium|high): overflow check "
+        r"might fail, cannot prove (?:upper|lower) bound for (.*?) \[", line)
+    if found and found.group(1).startswith(units):
+        refused.add((found.group(1), int(found.group(2)), found.group(4)))
+
+proved, unproved = set(), set()
+for item in report["proofObligations"]:
+    name = item["file"].split("/")[-1]
+    if item["kind"] != "integer-overflow" or not name.startswith(units):
+        continue
+    place = (name, item["line"], " ".join(item["operation"].split()))
+    (proved if item["status"] == "proved-safe" else unproved).add(place)
+
+for place in sorted(proved & refused):
+    fail(f"overflow check {place[2]!r} at {place[0]}:{place[1]} is proved "
+         "here, GNATprove finds it might fail")
+if len(refused) != 3 or not refused <= unproved:
+    fail(f"declared bounds: GNATprove refuses {sorted(refused)}, not the "
+         "three overflow checks of the Bad_* subprograms")
+if len(proved) < 10:
+    fail(f"declared bounds: only {len(proved)} overflow checks proved")
+print(f"declared bounds: {len(proved)} overflow checks proved here, none "
+      "refused by GNATprove, which refuses the 3 left unproved")
 PYTHON
 
 echo "GNATprove differential tests passed"

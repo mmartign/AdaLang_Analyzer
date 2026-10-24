@@ -207,8 +207,10 @@ package body H08 with SPARK_Mode is
          X := X - 3;
          I := I + 1;
       end loop;
+      --  X leaves the loop at one of 10, 7, 4, 1 and -2: it goes down by 3
+      --  only from above 0.
       Sink := 10 / (X - 1);              --  BAD
-      Sink := 10 / (X + 3);              --  BAD
+      Sink := 10 / (X + 3);              --  OK
       Sink := 10 / (X - 11);             --  OK
    end T15;
 

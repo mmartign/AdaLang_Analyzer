@@ -136,6 +136,9 @@ unchecked_conversion=$(mktemp "${TMPDIR:-/tmp}/adalang-unchecked-conversion.XXXX
 fp129=$(mktemp "${TMPDIR:-/tmp}/adalang-fp129.XXXXXX")
 loop_parameter=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-parameter.XXXXXX")
 fp130=$(mktemp "${TMPDIR:-/tmp}/adalang-fp130.XXXXXX")
+loop_summary=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-summary.XXXXXX")
+loop_entry_widening=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-entry-widening.XXXXXX")
+declared_bound_division=$(mktemp "${TMPDIR:-/tmp}/adalang-declared-bound-division.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -166,7 +169,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2806,5 +2809,59 @@ then
    echo "FP-130: a failing precondition of a call with no actual is not refuted" >&2
    exit 1
 fi
+
+#  The summary a while loop with proved invariants is given is the same on
+#  every visit of its head: made from what the first visit brings, it froze
+#  that visit's values (I = 0, so Y = X + 0 where later visits had
+#  Y = X + I), and a join in the body kept neither. The increments after
+#  the join are proved again. GNATprove agrees.
+for fixture in clean elsif_clean case_clean case_nested_if_clean \
+  elsif_nested_if_clean sequential_clean; do
+   run_json "$loop_summary" tests/verification_loop_branch_$fixture.adb
+   for kind in integer-overflow range-check; do
+      must_prove "$loop_summary" "$kind" 'Y + 1' external-prover \
+        "loop summary ($fixture)"
+   done
+done
+run_json "$loop_summary" tests/verification_loop_branch_ite_precision.adb
+for kind in integer-overflow range-check; do
+   must_prove "$loop_summary" "$kind" 'I + 1' external-prover \
+     "loop summary (ite_precision)"
+done
+
+#  Widening at a loop head is for what the back edge brings. Where the
+#  worklist reaches the head before the code ahead of the loop has settled,
+#  widening what the edge into the loop brings gave up the bounds of
+#  objects the loop does not write (S and T), or writes within them (W,
+#  whose loop comes after three others). GNATprove agrees.
+run_json "$loop_entry_widening" tests/verification_loop_entry_widening.adb
+for operation in 'S + T' 'S + T + W'; do
+   must_prove "$loop_entry_widening" integer-overflow "$operation" \
+     abstract-interpretation "loop entry widening"
+done
+run_json "$loop_entry_widening" tests/verification_pp_join_budget.adb
+for operation in 'S + T' 'S + T + U' 'S + T + U + W'; do
+   must_prove "$loop_entry_widening" integer-overflow "$operation" \
+     abstract-interpretation "loop entry widening (pp_join_budget)"
+done
+must_prove "$loop_entry_widening" loop-invariant-initialization \
+  'W <= 1 and then W >= 0' abstract-interpretation \
+  "loop entry widening (pp_join_budget)"
+
+#  The bound of a declared subtype written with "/", "mod" or "rem" over an
+#  attribute ("Positive'Last / 8") is static and is known. One past it is
+#  not taken for it. GNATprove agrees (tests/run_gnatprove_differential.sh).
+run_json_pair "$declared_bound_division" \
+  tests/verification_declared_bound_division
+for operation in 'Ctx.Block_Size - 1' 'Ctx.Block_Size * 8' 'Initial + 1' \
+  'Ctx.H * 2' "Ctx.M + (Integer'Last - 7)" "Ctx.R - (Integer'Last - 7)"; do
+   must_prove "$declared_bound_division" integer-overflow "$operation" \
+     external-prover "declared bound division"
+done
+for operation in 'Ctx.HP * 2' "Ctx.M + (Integer'Last - 6)" \
+  "Ctx.R - (Integer'Last - 6)"; do
+   must_not_prove "$declared_bound_division" integer-overflow "$operation" \
+     "declared bound division"
+done
 
 echo "bounded verification tests passed"

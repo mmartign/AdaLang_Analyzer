@@ -5,6 +5,43 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Widening at the head of a loop is for what its back edge brings, from
+  the third time that changes the head. What the edge into the loop
+  brings is joined and not widened: where the head was reached before the
+  code ahead of the loop had settled, the bounds of objects the loop does
+  not write were given up, and those of objects it writes within them. A
+  head changed 32 times is widened whatever edge changes it.
+- The second pass of the fixed-point run starts each loop head from the
+  join of the states the first pass's edges brought it, before widening:
+  one step of narrowing.
+- The bound of a declared subtype written with `/`, `mod` or `rem` over an
+  attribute or a constant (`Positive range 1 .. Positive'Last / 8`) is
+  known; it was only where both operands were literals.
+
+### Added
+
+- `tests/verification_loop_entry_widening` and
+  `tests/verification_declared_bound_division` hold checks that hold and
+  checks that do not; GNATprove agrees with each verdict they check
+  (`tests/run_gnatprove_differential.sh`). `tests/run_verification.sh`
+  checks the twenty proofs below.
+
+### Fixed
+
+- Twenty checks of the test fixtures that 1.10.0 proved and 1.10.1 did not
+  are proved again; no corpus had any. Inside a `while` loop whose
+  invariants are proved, an overflow or range check after a join in the
+  body (`Y := Y + 1` after an `if`, the invariant saying `Y = X + I`) was
+  no longer proved: the loop's summary was made again on each visit of
+  its head, the first time from the values the loop is entered with
+  (`I = 0`), and the join kept nothing the visits gave differently. The
+  summary is made from the same state on every visit now. The others were
+  lost to the widening above.
+
 ## [1.10.1] - 2026-10-23
 
 A `--verify` release that proves more loop invariants and corrects two

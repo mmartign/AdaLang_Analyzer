@@ -2303,6 +2303,23 @@ package body Adalang_Analyzer.Flow_Eval is
                      return Wrapped (Safe_Mul (Left.Value, Right.Value));
                   when Libadalang.Common.Ada_Op_Pow =>
                      return Wrapped (Safe_Pow (Left.Value, Right.Value));
+                  --  "Positive'Last / 8": Integer_Value folds such an
+                  --  operator only where both operands are literals.
+                  when Libadalang.Common.Ada_Op_Div =>
+                     if Right.Value = 0 then
+                        return Unknown_Int;
+                     end if;
+                     return Wrapped (Known_Int (Left.Value / Right.Value));
+                  when Libadalang.Common.Ada_Op_Mod =>
+                     if Right.Value = 0 then
+                        return Unknown_Int;
+                     end if;
+                     return Wrapped (Known_Int (Left.Value mod Right.Value));
+                  when Libadalang.Common.Ada_Op_Rem =>
+                     if Right.Value = 0 then
+                        return Unknown_Int;
+                     end if;
+                     return Wrapped (Known_Int (Left.Value rem Right.Value));
                   when others =>
                      return Unknown_Int;
                end case;

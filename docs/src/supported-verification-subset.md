@@ -1399,7 +1399,14 @@ its end. Fixed-point iteration widens growing loop ranges: a bound that a
 loop keeps moving is given up, after it has first been taken to the bound
 of the subtype the object is declared with, where that is static and the
 bound has not passed it. The iteration goes on from there, so the wider
-range stands only if the body of the loop keeps to it.
+range stands only if the body of the loop keeps to it. Only what the back
+edge of the loop brings is widened: what the way into the loop brings is
+joined as it is, so the bounds of an object the loop does not write are
+kept, however late the code ahead of the loop settles. The second pass of
+the run (the one that gives each loop with proved invariants its summary)
+starts each loop head from what the first pass brought it before
+widening, which takes back a bound that widening gave up and that no
+iteration reaches.
 A subprogram with an incomplete or malformed CFG cannot yield a proof based on
 that boundary. If the fixed-point run itself fails (for example on a
 Libadalang property error), every obligation of that subprogram is

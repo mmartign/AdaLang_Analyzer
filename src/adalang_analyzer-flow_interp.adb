@@ -8001,6 +8001,19 @@ package body Adalang_Analyzer.Flow_Interp is
         (others => VC.Empty_Symbolic_State);
       Reachable : Boolean_Array (States'Range) := (others => False);
       Updates   : Natural_Array (States'Range) := (others => 0);
+      --  Of those, the updates a back edge brought (Merge_Into).
+      Back_Updates : Natural_Array (States'Range) := (others => 0);
+      --  For each loop head the first pass reaches, the join of the states
+      --  its edges bring it there, before widening: the second pass starts
+      --  the head from it (Merge_Into). Where widening went beyond what the
+      --  edges bring, it is narrower than the first pass's state at the
+      --  head, and the second pass, whose edges bring no more, keeps it:
+      --  one step of narrowing. A start that is too narrow is never kept,
+      --  the second pass joining what each edge brings and widening as the
+      --  first does.
+      First_Pass_States  : State_Array (States'Range) :=
+        (others => Empty_Flow_State);
+      First_Pass_Reached : Boolean_Array (States'Range) := (others => False);
 
       --  How many CFG edges end at each node. A node only one edge leads to
       --  has exactly the state that edge carries, so a later visit replaces
@@ -9248,7 +9261,15 @@ package body Adalang_Analyzer.Flow_Interp is
          --  each edge brings; the summary is made again from what that
          --  domain holds at the head on each visit, which only at the end
          --  is true of every iteration: a value an object has where the
-         --  loop is entered is no value of the summary's.
+         --  loop is entered is no value of the summary's. So the interval
+         --  domain starts the head from what the first pass brought it
+         --  (First_Pass_States), which every iteration agrees with: the
+         --  summary is then
+         --  the same on every visit, and a join in the body does not lose
+         --  what the visits would otherwise give it differently (Y = X + 0
+         --  on the first, Y = X + I on the next). The iteration still joins
+         --  what each edge brings, so a start that is too narrow only makes
+         --  it go on.
          Summarized       : constant Boolean :=
            Summary_Mode
            and then CFG.Node_At (Graph, Target).Kind = CFG.Loop_Header_Node
@@ -9283,6 +9304,10 @@ package body Adalang_Analyzer.Flow_Interp is
                   Is_Back => False);
             end if;
 
+            if Summary_Mode and then First_Pass_Reached (Target) then
+               Incoming_State :=
+                 Flow_Join (First_Pass_States (Target), Incoming_State);
+            end if;
             if Summarized then
                Incoming_Symbols := VC.Havoc;
             end if;
@@ -9293,6 +9318,15 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
          Apply_Invariant_Cutpoint
            (Target, Incoming_State, Incoming_Symbols);
+         if not Summary_Mode
+           and then CFG.Node_At (Graph, Target).Kind = CFG.Loop_Header_Node
+         then
+            First_Pass_States (Target) :=
+              (if First_Pass_Reached (Target)
+               then Flow_Join (First_Pass_States (Target), Incoming_State)
+               else Incoming_State);
+            First_Pass_Reached (Target) := True;
+         end if;
 
          if not Reachable (Target) then
             States (Target) := Incoming_State;
@@ -9325,8 +9359,20 @@ package body Adalang_Analyzer.Flow_Interp is
                  Rename    =>
                    CFG.Node_At (Graph, Target).Kind /= CFG.Loop_Header_Node);
          end if;
+         --  Widening is for what the iterations bring, along the back edge,
+         --  from the third time one changes the head. What the edge into
+         --  the loop brings stops changing once the code before the loop
+         --  has settled, and neither counts nor is widened: that would give
+         --  up the bounds of what the loop does not write, or writes within
+         --  them, where the worklist reaches the head before that code's
+         --  last state does (S in 0 .. 1 after the loop before, but at
+         --  first S = 0). A cycle through the head that is no loop of the
+         --  source (a goto back) is widened all the same after enough
+         --  updates.
          if CFG.Node_At (Graph, Target).Kind = CFG.Loop_Header_Node
-           and then Updates (Target) >= 3
+           and then ((Incoming_Kind = CFG.Loop_Back_Edge
+                      and then Back_Updates (Target) >= 2)
+                     or else Updates (Target) >= 32)
          then
             declare
                Unwidened : constant Flow_State := Joined;
@@ -9346,6 +9392,9 @@ package body Adalang_Analyzer.Flow_Interp is
            or else not VC.Equal (Symbolic_States (Target), Joined_Symbols)
          then
             Updates (Target) := Updates (Target) + 1;
+            if Incoming_Kind = CFG.Loop_Back_Edge then
+               Back_Updates (Target) := Back_Updates (Target) + 1;
+            end if;
             if Updates (Target) > 64 then
                Flow_Havoc_All (Joined);
                Joined_Symbols := VC.Havoc;
@@ -14112,6 +14161,7 @@ package body Adalang_Analyzer.Flow_Interp is
          After_Symbolic_States := (others => VC.Empty_Symbolic_State);
          Reachable := (others => False);
          Updates := (others => 0);  --  adalang-analyzer: ignore Dead_Store -- rationale: read by nested Process_Node
+         Back_Updates := (others => 0);  --  adalang-analyzer: ignore Dead_Store -- rationale: read by Merge_Into
          Work.Clear;
          Head := 1;
          Reachable (CFG.Entry_Id (Graph)) := True;
