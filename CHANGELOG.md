@@ -5,7 +5,25 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.10.2] - 2026-10-24
+
+A `--verify` release that gives back the proofs 1.10.1 lost on its test
+fixtures, and proves 18 more checks of libkeccak.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+8,131 of the 15,043 checks GNATprove proves (was 8,113): 16 overflow
+checks, a range check and a postcondition, all in libkeccak. It proves
+none that GNATprove does not, no proof of 1.10.1 is lost, and the checks
+without an AdaLang obligation are 2,109, as before. On the ten corpora 55
+obligations of libkeccak move from `Unproved` to `Proved_Safe` -- 34
+overflow checks, 15 range checks, 5 assertions and a postcondition -- and
+nothing else moves: no obligation is added or gone, and no definite error
+is new or gone. Every preset of every corpus reports the findings of
+1.10.1. The matched pairs are 3,339, 1,592 of them both safe, as before,
+with no possible unsoundness and no false positive anywhere; on the SPARK
+testsuite one more obligation is proved, an overflow check the compiler
+leaves out because it cannot fail. Every lane takes about the CPU time it
+took.
 
 ### Changed
 
@@ -41,6 +59,9 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   (`I = 0`), and the join kept nothing the visits gave differently. The
   summary is made from the same state on every visit now. The others were
   lost to the widening above.
+- A seeded defect (`tests/seeded_defects/h08.adb`, `T15`) marked a division
+  that cannot divide by zero: `X` leaves the loop at one of 10, 7, 4, 1
+  and -2, and `10 / (X + 3)` is proved now. It is marked safe.
 
 ## [1.10.1] - 2026-10-23
 
