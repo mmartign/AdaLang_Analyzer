@@ -150,24 +150,25 @@ totals on these corpora is what the table shows.
 
 ## Where the missing obligations are
 
-1904 checks GNATprove proved have no AdaLang obligation at their place. By the construct they are in:
+2107 checks GNATprove proved have no AdaLang obligation at their place. By the construct they are in:
 
 | Construct | Checks |
 | --- | ---: |
 | argument | 300 |
 | slice | 281 |
 | subprogram-body | 143 |
-| in aspect pre | 119 |
+| in aspect global | 128 |
+| in aspect pre | 126 |
+| call-statement | 113 |
+| in aspect post | 106 |
 | object-declaration | 105 |
-| in aspect global | 97 |
 | attribute prefix or argument | 96 |
-| call-statement | 88 |
 | assignment-value | 87 |
-| in aspect post | 80 |
-| expression-function | 57 |
+| expression-function | 78 |
+| subprogram-declaration | 76 |
+| in aspect contract_cases | 61 |
+| condition | 50 |
 | in pragma loop_invariant | 48 |
-| in aspect contract_cases | 47 |
-| condition | 46 |
 | loop-range | 36 |
 | aggregate | 36 |
 | component-declaration | 33 |
@@ -178,32 +179,36 @@ totals on these corpora is what the table shows.
 | in aspect abstract_state | 16 |
 | instantiation | 15 |
 | assignment-target | 12 |
-| subtype-indication | 11 |
 
 By GNATprove check, with the constructs it is most often in:
 
 | GNATprove check | Checks | Where |
 | --- | ---: | --- |
-| range check | 439 | argument 117, object-declaration 52, expression-function 51, in pragma loop_invariant 44, in aspect pre 41 |
+| range check | 440 | argument 117, object-declaration 52, expression-function 51, in pragma loop_invariant 44, in aspect pre 41 |
 | pointer dereference check | 336 | attribute prefix or argument 94, slice 65, in aspect pre 63, in aspect post 63, argument 20 |
+| precondition | 268 | call-statement 109, assignment-value 59, subprogram-declaration 21, in aspect pre 17, in aspect contract_cases 14 |
 | index check | 212 | slice 194, aggregate 15, subtype-indication 2, argument 1 |
 | resource or memory leak | 211 | subprogram-body 98, argument 51, object-declaration 45, condition 17 |
-| precondition | 201 | call-statement 84, assignment-value 59, in aspect pre 13, loop-range 11, in pragma assert 11 |
 | discriminant check | 135 | subprogram-body 45, argument 41, condition 25, assignment-target 12, assignment-value 6 |
 | initialization of | 115 | in aspect global 97, in aspect abstract_state 16, return 1, subprogram-declaration 1 |
-| predicate check | 47 | slice 13, argument 10, type-declaration 8, component-declaration 7, aggregate 6 |
+| Always_Terminates | 67 | subprogram-declaration 50, expression-function 17 |
+| predicate check | 49 | slice 13, argument 10, type-declaration 8, component-declaration 7, aggregate 6 |
 | non-aliasing | 44 | argument 38, slice 6 |
-| overflow check | 37 | argument 16, assignment-value 6, in aspect post 5, expression-function 3, in pragma loop_invariant 2 |
+| overflow check | 38 | argument 16, assignment-value 6, in aspect post 5, in aspect pre 3, expression-function 3 |
 | contract case | 36 | in aspect contract_cases 36 |
+| data dependencies | 31 | in aspect global 31 |
 | flow dependencies | 25 | in aspect initializes 25 |
+| postcondition | 24 | in aspect post 24 |
 | refined post | 19 | in aspect refined_post 19 |
 | unchecked conversion | 15 | instantiation 15 |
 | default initial condition | 12 | component-declaration 6, object-declaration 6 |
 | invariant check | 9 | call-statement 4, subprogram-declaration 4, type-declaration 1 |
 | initialization check | 5 | argument 5 |
+| assertion | 5 | condition 4, in pragma postcondition 1 |
 | contract or exit cases | 4 | in aspect contract_cases 4 |
+| Container_Aggregates annotation | 4 | in aspect annotate 4 |
+| accessibility check | 2 | expression-function 2 |
 | length check | 1 | conditional-expression 1 |
-| assertion | 1 | in pragma postcondition 1 |
 
 Produced by `benchmarks/gnatprove_gap_contexts.py` from the ledger's rows.
 It has 2,107 of the 2,109 checks without an obligation: the script leaves
