@@ -264,6 +264,16 @@ package Adalang_Analyzer.VC_Prover is
    --  own, about which nothing is known; what State says of scalars and of
    --  array bounds stands.
 
+   function Forget_Elements
+     (State   : Symbolic_State;
+      Writer  : Libadalang.Analysis.Ada_Node'Class;
+      Written : Libadalang.Analysis.Ada_Node) return Symbolic_State;
+   --  State after Writer has assigned elements of the array object whose
+   --  defining name is Written, for code where no other object shares its
+   --  storage nor is designated by an access value: as
+   --  Forget_Composite_Values for the object and for every object that
+   --  renames another, what State says of the other objects standing.
+
    function Forget_Unowned_Values
      (State      : Symbolic_State;
       Writer     : Libadalang.Analysis.Ada_Node'Class;
@@ -436,11 +446,19 @@ package Adalang_Analyzer.VC_Prover is
    --  As Decide_Same_Length, for a one-dimensional Value given to a
    --  subtype whose length is the number Length.
 
-   function Array_Bound_Facts (State : Symbolic_State) return Symbolic_State;
+   function Array_Bound_Facts
+     (State    : Symbolic_State;
+      Standing : access function
+        (Object : Libadalang.Analysis.Ada_Node) return Boolean := null)
+      return Symbolic_State;
    --  What State knows about the bounds and lengths of array objects, and
    --  nothing else. Those never change while the objects are visible, so
    --  such facts survive where every fact about a variable must be
-   --  dropped, at the entry of a loop body in particular.
+   --  dropped, at the entry of a loop body in particular. Where Standing
+   --  is given, what State knows of the values of the scalar objects whose
+   --  defining name it is True for is kept too, alone or together with
+   --  those bounds: it is for the caller to say so only of objects whose
+   --  value nothing changes where the result is used.
 
    function Assume_Loop_Range
      (State     : Symbolic_State;

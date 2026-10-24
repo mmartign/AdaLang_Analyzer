@@ -610,7 +610,8 @@ limit of eight bodies -- called with arguments or without an argument list (`Inv
 `Pkg.Ready`), the body being read where the call stands, with what is known
 there of the objects it names. Integer `/`, `mod`, and `rem` are translated only when the divisor
 is provably nonzero and their Ada sign semantics are encoded: a nonzero
-literal, a name whose interval excludes zero, or an attribute or an
+literal, a name whose interval excludes zero or whose value is known and
+not zero (a named number, a constant), or an attribute or an
 arithmetic expression whose value or interval does -- `Byte'Size`, or
 `2 * Width + 1` with `Width` in `0 .. 10`.
 
@@ -731,7 +732,13 @@ bounds of a slice, a concatenation, an aggregate or a component as an
 actual. Where a formal stands for an object, in a postcondition taken
 after a call, it has the bounds a declaration fixes for that object. Facts that mention
 only such symbols are kept at the entry of a loop body, where every fact
-about a variable is dropped; the parameter of a `for` loop over `A'Range`,
+about a variable is dropped, and so are those that mention, besides them,
+only objects that hold a value nothing changes (see "Objects that always
+hold a value") and that are declared outside the loop: a precondition
+`Len <= Data'Length` on an `in` parameter `Len` holds all through the loop.
+A constant the loop declares, which it declares again each time round,
+the parameter of the loop or of an enclosing one, and a parameter of mode
+`in out` are not such objects. The parameter of a `for` loop over `A'Range`,
 or over bounds that cannot change during the loop, is known to lie within
 them. A component, a dereference or a call as the prefix, a dimension that
 is not written as an integer literal, and a dimension other than the first
@@ -823,7 +830,13 @@ of scalar objects, of the components of records that are in no array, of
 array bounds and of whether an object is constrained; every symbol read
 in an element, of whatever array, gets a value of which nothing is known,
 as does the value of every object that is not a scalar. Which array was
-written, and what it is a part of, is not worked out. A call renews them
+written, and what it is a part of, is not worked out -- except where the
+array is an object or a parameter named directly, and not a renaming, in
+SPARK code that takes no `'Access` or `'Address` of anything and declares
+no task or protected object: no other object shares its storage there,
+and only the elements and the value of that array, and of every object
+that renames another, are renewed. What a predicate or a precondition
+says of the elements of another array then stands. A call renews them
 as it renews the components of records (see "Objects and effects the
 analysis does not follow").
 

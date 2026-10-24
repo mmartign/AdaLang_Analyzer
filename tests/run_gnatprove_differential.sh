@@ -137,7 +137,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 31 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 33 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -165,7 +165,9 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_old \
   verification_declared_bound_division \
   verification_loop_entry_widening \
-  verification_subtype_clamp; do
+  verification_subtype_clamp \
+  verification_loop_standing_facts \
+  verification_element_writes; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -693,6 +695,162 @@ if proved < 12:
     fail(f"subtype clamp: only {proved} checks proved")
 print(f"subtype clamp: {proved} checks proved here, none refused by "
       "GNATprove, which refuses the 3 of the Bad_* subprograms")
+PYTHON
+
+#  The checks of the standing-facts fixture, by line and kind: none proved
+#  here is one GNATprove finds might fail, and it finds the divisions of the
+#  Bad_* subprograms and the index check of Bad_One_Way might, which are
+#  not proved here.
+standing_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-standing.XXXXXX")
+standing_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-standing.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log" "$pairs_results" "$pairs_log" "$bounds_results" "$bounds_log" "$clamp_results" "$clamp_log" "$standing_results" "$standing_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$standing_results" \
+  tests/verification_loop_standing_facts.ads \
+  tests/verification_loop_standing_facts.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer standing-facts run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_loop_standing_facts.adb >"$standing_log" 2>&1 || true
+
+python3 - "$standing_results" "$standing_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = {"overflow check": "integer-overflow",
+         "divide by zero": "division-by-zero",
+         "array index check": "index-check",
+         "range check": "range-check"}
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+refused = set()
+for line in log:
+    found = re.match(
+        r"verification_loop_standing_facts\.adb:(\d+):\d+: "
+        r"(?:low|medium|high): "
+        r"(overflow check|divide by zero|array index check|range check) "
+        r"might fail", line)
+    if found:
+        refused.add((int(found.group(1)), kinds[found.group(2)]))
+
+expected = {(52, "division-by-zero"), (63, "division-by-zero"),
+            (73, "division-by-zero"), (91, "index-check")}
+if not expected <= refused:
+    fail(f"standing facts: GNATprove refuses {sorted(refused)}, not "
+         f"{sorted(expected)}")
+
+proved = 0
+for item in report["proofObligations"]:
+    if not item["file"].endswith("verification_loop_standing_facts.adb") \
+       or item["kind"] not in kinds.values():
+        continue
+    place = (item["line"], item["kind"])
+    if item["status"] == "proved-safe":
+        if place in refused:
+            fail(f"{item['kind']} {item['operation']!r} at line "
+                 f"{item['line']} is proved here, GNATprove finds it might "
+                 "fail")
+        proved += 1
+    elif place in expected:
+        expected.discard(place)
+if expected:
+    fail(f"standing facts: {sorted(expected)} not reported unproved here")
+if proved < 15:
+    fail(f"standing facts: only {proved} checks proved")
+print(f"standing facts: {proved} checks proved here, none refused by "
+      "GNATprove, which refuses the 4 of the Bad_* subprograms")
+PYTHON
+
+#  The element-writes fixture: none of its checks proved here is one
+#  GNATprove finds might fail, and it finds the divisions of Bad_Same and
+#  Bad_Renaming might, which are not proved here (Bad_Other_Name is not
+#  SPARK).
+elements_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-elements.XXXXXX")
+elements_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-elements.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log" "$pairs_results" "$pairs_log" "$bounds_results" "$bounds_log" "$clamp_results" "$clamp_log" "$standing_results" "$standing_log" "$elements_results" "$elements_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$elements_results" \
+  tests/verification_element_writes.ads \
+  tests/verification_element_writes.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer element-writes run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_element_writes.adb >"$elements_log" 2>&1 || true
+
+python3 - "$elements_results" "$elements_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = {"overflow check": "integer-overflow",
+         "divide by zero": "division-by-zero",
+         "range check": "range-check",
+         "assertion": "assertion"}
+#  Bad_Other_Name, from this line on, is not SPARK.
+last_spark_line = 29
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+refused = set()
+for line in log:
+    found = re.match(
+        r"verification_element_writes\.adb:(\d+):\d+: "
+        r"(?:low|medium|high): "
+        r"(overflow check|divide by zero|range check|assertion) "
+        r"might fail", line)
+    if found:
+        refused.add((int(found.group(1)), kinds[found.group(2)]))
+
+expected = {(20, "division-by-zero"), (27, "division-by-zero")}
+if not expected <= refused:
+    fail(f"element writes: GNATprove refuses {sorted(refused)}, not "
+         f"{sorted(expected)}")
+
+proved = 0
+for item in report["proofObligations"]:
+    if not item["file"].endswith("verification_element_writes.adb") \
+       or item["line"] > last_spark_line \
+       or item["kind"] not in kinds.values():
+        continue
+    place = (item["line"], item["kind"])
+    if item["status"] == "proved-safe":
+        if place in refused:
+            fail(f"{item['kind']} {item['operation']!r} at line "
+                 f"{item['line']} is proved here, GNATprove finds it might "
+                 "fail")
+        proved += 1
+    elif place in expected:
+        expected.discard(place)
+if expected:
+    fail(f"element writes: {sorted(expected)} not reported unproved here")
+if proved < 12:
+    fail(f"element writes: only {proved} checks proved")
+print(f"element writes: {proved} checks proved here, none refused by "
+      "GNATprove, which refuses the 2 divisions of the Bad_* subprograms")
 PYTHON
 
 echo "GNATprove differential tests passed"

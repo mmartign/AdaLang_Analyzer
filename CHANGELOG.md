@@ -15,6 +15,27 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   it. What is stored through a renaming is narrowed to the subtype of the
   object renamed. Before, the range was that of the value stored, which
   after widening often had a bound given up.
+- At the entry of a loop body, and where a loop head is widened, the
+  symbolic state keeps what it knows of objects that hold a value nothing
+  changes -- constants, formal parameters and generic formal objects of
+  mode `in` -- declared outside the loop, besides the bounds of arrays: a
+  precondition such as `Len <= Data'Length` holds all through the loop. It
+  was dropped with every fact about a variable, and a check in the body
+  that rested on it together with the loop invariant was not proved.
+- An assignment to elements of an array named directly, in SPARK code
+  that takes no `'Access` or `'Address` of anything, renews what the
+  symbolic state knows of that array alone, and of objects that rename
+  another: what a predicate or precondition says of the elements of
+  another array -- an `in` parameter read after an `out` one is written --
+  stands. Every array's elements were renewed.
+- A division, `mod` or `rem` by a named number or a constant whose value
+  is known and not zero (`X / LM`, `LM : constant := 65536`) is translated
+  for the solvers; it was left out as a divisor that might be zero, and so
+  were the checks that rested on its result.
+- The solvers are given each operand of `/`, `mod`, `rem` and `abs` once,
+  bound by a `let`: written out each time it is used, a chain of
+  divisions such as a carry propagation grew exponentially (22 MB for one
+  check of SPARKNaCl).
 
 ## [1.10.2] - 2026-10-24
 

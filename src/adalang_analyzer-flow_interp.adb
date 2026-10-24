@@ -4431,6 +4431,44 @@ package body Adalang_Analyzer.Flow_Interp is
          return Bounds;
    end Within_Subtype;
 
+   --  What Symbols knows that holds all through the loop Loop_Node, each
+   --  time round: the bounds and lengths of arrays, and what it knows of
+   --  the scalar objects that hold the value they were declared with -- a
+   --  constant, a formal parameter or a generic formal object of mode "in"
+   --  -- declared outside the loop, which would otherwise declare them again
+   --  each time round. A loop parameter has another value on each
+   --  iteration of its own loop.
+   function Loop_Standing_Facts
+     (Symbols   : VC.Symbolic_State;
+      Loop_Node : Libadalang.Analysis.Ada_Node'Class)
+      return VC.Symbolic_State
+   is
+      function Stands
+        (Object : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+         Current : Libadalang.Analysis.Ada_Node := Object;
+      begin
+         if not Standing_Fact_Of (Object).Holds_A_Value
+           or else Object.As_Defining_Name.P_Basic_Decl.Kind =
+             Libadalang.Common.Ada_For_Loop_Var_Decl
+         then
+            return False;
+         end if;
+         while not Libadalang.Analysis.Is_Null (Current) loop
+            if Current = Libadalang.Analysis.Ada_Node (Loop_Node) then
+               return False;
+            end if;
+            Current := Current.Parent;
+         end loop;
+         return True;
+      exception
+         when others =>
+            return False;
+      end Stands;
+   begin
+      return VC.Array_Bound_Facts (Symbols, Stands'Access);
+   end Loop_Standing_Facts;
+
    function Overflow_Base_Range
      (Typ   : Libadalang.Analysis.Base_Type_Decl'Class;
       Node  : Libadalang.Analysis.Ada_Node'Class;
@@ -9438,7 +9476,8 @@ package body Adalang_Analyzer.Flow_Interp is
                   Next => Unwidened);
             end;
             if not Summarized then
-               Joined_Symbols := VC.Array_Bound_Facts (Joined_Symbols);
+               Joined_Symbols :=
+                 Loop_Standing_Facts (Joined_Symbols, Source_Node (Target));
             end if;
          end if;
          Apply_Invariant_Cutpoint (Target, Joined, Joined_Symbols);
@@ -10377,9 +10416,54 @@ package body Adalang_Analyzer.Flow_Interp is
                         --  place.) The array has another value, and so
                         --  has whatever it is a part of or is reached
                         --  from: which objects those are is not worked
-                        --  out.
-                        Output_Symbols :=
-                          VC.Forget_Composite_Values (Input_Symbols, Source);
+                        --  out, but where the array is an object named
+                        --  directly in code that keeps its parts to itself
+                        --  (Verified_Keeps_Parts), it is that one alone.
+                        declare
+                           Prefix  : constant Libadalang.Analysis.Name :=
+                             Dest.As_Call_Expr.F_Name;
+                           Written : Libadalang.Analysis.Ada_Node :=
+                             Libadalang.Analysis.No_Ada_Node;
+                        begin
+                           --  Not an access value: what it designates may
+                           --  be what another access value does.
+                           if Verified_Keeps_Parts
+                             and then Prefix.Kind =
+                               Libadalang.Common.Ada_Identifier
+                             and then not Libadalang.Analysis.Is_Null
+                               (Prefix.P_Expression_Type)
+                             and then Prefix.P_Expression_Type
+                               .P_Is_Array_Type
+                           then
+                              Written := Libadalang.Analysis.Ada_Node
+                                (Prefix.P_Referenced_Defining_Name);
+                           end if;
+                           if Libadalang.Analysis.Is_Null (Written)
+                             or else Written.As_Defining_Name.P_Basic_Decl
+                               .Kind not in
+                                 Libadalang.Common.Ada_Object_Decl
+                                   | Libadalang.Common.Ada_Param_Spec
+                             or else
+                               (Written.As_Defining_Name.P_Basic_Decl.Kind =
+                                  Libadalang.Common.Ada_Object_Decl
+                                and then not Libadalang.Analysis.Is_Null
+                                  (Written.As_Defining_Name.P_Basic_Decl
+                                     .As_Object_Decl.F_Renaming_Clause))
+                           then
+                              Output_Symbols :=
+                                VC.Forget_Composite_Values
+                                  (Input_Symbols, Source);
+                           else
+                              Output_Symbols :=
+                                VC.Forget_Elements
+                                  (Input_Symbols, Source, Written);
+                           end if;
+                        exception
+                           when Libadalang.Common.Property_Error =>
+                              Output_Symbols :=
+                                VC.Forget_Composite_Values
+                                  (Input_Symbols, Source);
+                        end;
                      elsif Dest.Kind = Libadalang.Common.Ada_Dotted_Name then
                         --  A component of an object the name settles: what
                         --  is known of its other parts stands.
@@ -10543,7 +10627,7 @@ package body Adalang_Analyzer.Flow_Interp is
                     not Loop_Range_Is_Empty
                           (Source.As_For_Loop_Stmt.F_Spec, Output);
                   Seed_For_Loop_Variable (Source, Edge_State);
-                  Edge_Symbols := VC.Array_Bound_Facts (Output_Symbols);
+                  Edge_Symbols := Loop_Standing_Facts (Output_Symbols, Source);
                   declare
                      Spec : constant Libadalang.Analysis.For_Loop_Spec :=
                        Source.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;

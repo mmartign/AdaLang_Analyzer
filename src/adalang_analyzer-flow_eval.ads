@@ -342,6 +342,14 @@ package Adalang_Analyzer.Flow_Eval is
    --  not. Unknown_Range for anything else, and for an object that renames
    --  another.
 
+   function Standing_Fact_Of
+     (Key : Libadalang.Analysis.Ada_Node) return Standing_Fact;
+   --  What always holds of the object whose defining name is Key, the
+   --  answer of the oracle Flow_Domain is given: Holds_A_Value for a
+   --  constant, a generic formal object or a formal parameter of mode "in",
+   --  or the parameter of a loop or a quantified expression, all of a
+   --  scalar type and under --verify.
+
    function Safe_Add
      (Left : Long_Long_Integer; Right : Long_Long_Integer) return Abstract_Int;
 

@@ -276,8 +276,12 @@ package body Adalang_Analyzer.VC_Prover is
    function Natural_Image (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
+   --  A term that is not a symbol or a literal is bound once by a "let":
+   --  written out three times, a nest of them grows exponentially.
    function Abs_Of (Term : String) return String is
-     ("(ite (>= " & Term & " 0) " & Term & " (- " & Term & "))");
+     (if Ada.Strings.Fixed.Index (Term, "(") = 0
+      then "(ite (>= " & Term & " 0) " & Term & " (- " & Term & "))"
+      else "(let ((ada!a " & Term & ")) (ite (>= ada!a 0) ada!a (- ada!a)))");
 
    --  A plain object's name is derived from its own defining name's source
    --  location, as before. A record-component key (Key.Component set)
@@ -763,8 +767,13 @@ package body Adalang_Analyzer.VC_Prover is
                  Referenced_Key (Node);
                Range_Value : constant Domain.Abstract_Range :=
                  Domain.Flow_Range_Lookup (State, Key);
+               --  A named number or a constant has a value and no range
+               --  in the state.
+               Value       : constant Domain.Abstract_Int :=
+                 Eval.Integer_Value (Node, State);
             begin
-               return (Range_Value.Has_Low and then Range_Value.Low > 0)
+               return (Value.Known and then Value.Value /= 0)
+                 or else (Range_Value.Has_Low and then Range_Value.Low > 0)
                  or else
                    (Range_Value.Has_High and then Range_Value.High < 0);
             end;
@@ -2825,8 +2834,16 @@ package body Adalang_Analyzer.VC_Prover is
                      end if;
 
                      declare
-                        L : constant String := To_String (Left);
-                        R : constant String := To_String (Right);
+                        --  The operands are bound once, by a "let", and
+                        --  named below by ada!l and ada!r: each is used
+                        --  several times, and written out each time a
+                        --  nest of divisions (a carry chain) grows
+                        --  exponentially.
+                        Bind : constant String :=
+                          "(let ((ada!l " & To_String (Left) & ") (ada!r " &
+                          To_String (Right) & ")) ";
+                        L : constant String := "ada!l";
+                        R : constant String := "ada!r";
 
                         --  Euclidean division of absolute values coincides
                         --  with truncating division when both operands are
@@ -2842,14 +2859,15 @@ package body Adalang_Analyzer.VC_Prover is
                      begin
                         case Expr.F_Op is
                            when Libadalang.Common.Ada_Op_Div =>
-                              return To_Unbounded_String (Tdiv);
+                              return To_Unbounded_String (Bind & Tdiv & ")");
 
                            when Libadalang.Common.Ada_Op_Rem =>
                               --  Ada "rem" truncates toward zero and
                               --  follows the dividend's sign, by
                               --  definition a - b * (a / b).
                               return To_Unbounded_String
-                                ("(- " & L & " (* " & R & " " & Tdiv & "))");
+                                (Bind & "(- " & L & " (* " & R & " " & Tdiv &
+                                   ")))");
 
                            when others =>
                               --  Ada "mod" floors and follows the
@@ -2865,9 +2883,9 @@ package body Adalang_Analyzer.VC_Prover is
                                    "(mod " & L & " " & R & ")";
                               begin
                                  return To_Unbounded_String
-                                   ("(ite (and (< " & R & " 0) (not (= " &
-                                      Er & " 0))) (+ " & Er & " " & R &
-                                      ") " & Er & ")");
+                                   (Bind & "(ite (and (< " & R &
+                                      " 0) (not (= " & Er & " 0))) (+ " &
+                                      Er & " " & R & ") " & Er & "))");
                               end;
                         end case;
                      end;
@@ -5225,9 +5243,14 @@ package body Adalang_Analyzer.VC_Prover is
          return Havoc;
    end Assume_In_Frame;
 
-   function Forget_Composite_Values
-     (State  : Symbolic_State;
-      Writer : Libadalang.Analysis.Ada_Node'Class) return Symbolic_State
+   --  As Forget_Composite_Values, for the objects Touched is True for when
+   --  it is given.
+   function Forget_Values_Of
+     (State   : Symbolic_State;
+      Writer  : Libadalang.Analysis.Ada_Node'Class;
+      Touched : access function
+        (Object : Libadalang.Analysis.Ada_Node) return Boolean)
+      return Symbolic_State
    is
       Result : Symbolic_State := State;
 
@@ -5249,8 +5272,9 @@ package body Adalang_Analyzer.VC_Prover is
       --  True for what a write to elements of an array can change: a
       --  value that is not a scalar, and a scalar read in an element.
       function Stale (Key : Symbol_Key; Sort : Scalar_Sort) return Boolean is
-        (Sort = Opaque_Sort
-         or else Ada.Strings.Unbounded.Index (Key.Path, "@") /= 0);
+        ((Sort = Opaque_Sort
+          or else Ada.Strings.Unbounded.Index (Key.Path, "@") /= 0)
+         and then (Touched = null or else Touched (Key.Object)));
    begin
       if not State.Supported or else Libadalang.Analysis.Is_Null (Writer) then
          return Havoc;
@@ -5274,7 +5298,62 @@ package body Adalang_Analyzer.VC_Prover is
    exception
       when others =>
          return Havoc;
-   end Forget_Composite_Values;
+   end Forget_Values_Of;
+
+   function Forget_Composite_Values
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class) return Symbolic_State
+   is (Forget_Values_Of (State, Writer, null));
+
+   function Forget_Elements
+     (State   : Symbolic_State;
+      Writer  : Libadalang.Analysis.Ada_Node'Class;
+      Written : Libadalang.Analysis.Ada_Node) return Symbolic_State
+   is
+      --  The declaration and the body of a subprogram name each of its
+      --  parameters, a key being of either.
+      function Canonical
+        (Name : Libadalang.Analysis.Ada_Node) return Libadalang.Analysis.Ada_Node
+      is (Libadalang.Analysis.Ada_Node (Name.As_Defining_Name.P_Canonical_Part));
+
+      Target : constant Libadalang.Analysis.Ada_Node := Canonical (Written);
+
+      --  True for an object the write may change a part of: the array
+      --  written, an object that renames another, and whatever the key
+      --  does not say.
+      function Touched (Object : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+      begin
+         if Libadalang.Analysis.Is_Null (Object)
+           or else Object.Kind /= Libadalang.Common.Ada_Defining_Name
+         then
+            return True;
+         end if;
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Object.As_Defining_Name.P_Basic_Decl;
+         begin
+            return Canonical (Object) = Target
+              or else
+                (Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
+                 and then not Libadalang.Analysis.Is_Null
+                   (Decl.As_Object_Decl.F_Renaming_Clause))
+              or else Decl.Kind not in Libadalang.Common.Ada_Object_Decl_Range
+                                     | Libadalang.Common.Ada_Param_Spec;
+         end;
+      exception
+         when others =>
+            return True;
+      end Touched;
+   begin
+      if Libadalang.Analysis.Is_Null (Target) then
+         return Havoc;
+      end if;
+      return Forget_Values_Of (State, Writer, Touched'Access);
+   exception
+      when others =>
+         return Havoc;
+   end Forget_Elements;
 
    --  Gives each key of State that Renewed selects a symbol of its own. A
    --  key is live when it has a binding, or a root under its own name: any
@@ -7548,7 +7627,11 @@ package body Adalang_Analyzer.VC_Prover is
          return Unknown_Outcome;
    end Decide_Length;
 
-   function Array_Bound_Facts (State : Symbolic_State) return Symbolic_State
+   function Array_Bound_Facts
+     (State    : Symbolic_State;
+      Standing : access function
+        (Object : Libadalang.Analysis.Ada_Node) return Boolean := null)
+      return Symbolic_State
    is
       --  True for the name Array_Attribute_Term gives a bound or length
       --  symbol, "af", "al" or "an", or Constrained_Term the symbol for
@@ -7562,8 +7645,23 @@ package body Adalang_Analyzer.VC_Prover is
            (for all Item of Token (Token'First + 2 .. Token'Last) =>
               Item in '0' .. '9' | '_' | File_Mark_Character));
 
-      --  True when every name in the SMT term Text is a bound symbol, an
-      --  operator or a literal.
+      Result : Symbolic_State := Empty_Symbolic_State;
+      --  The names of the roots of standing objects kept in Result.
+      Kept   : String_Sets.Map;
+
+      --  True for the root of the whole of a scalar object Standing is True
+      --  for.
+      function Is_Standing_Root (Item : Symbol_Root) return Boolean is
+        (Standing /= null
+         and then not Libadalang.Analysis.Is_Null (Item.Key.Object)
+         and then Libadalang.Analysis.Is_Null (Item.Key.Component)
+         and then Length (Item.Key.Path) = 0
+         and then Item.Key.Object.Kind = Libadalang.Common.Ada_Defining_Name
+         and then Standing (Item.Key.Object));
+
+      --  True when every name in the SMT term Text is a bound symbol, the
+      --  root of a standing object kept in Result (Kept), an operator, a
+      --  name a "let" of a division binds (Integer_Term) or a literal.
       function Only_Bounds (Text : String) return Boolean is
          Start : Natural := 0;
 
@@ -7571,6 +7669,11 @@ package body Adalang_Analyzer.VC_Prover is
            (Is_Bound_Symbol (Token)
             or else Token in "and" | "or" | "not" | "ite" | "=" | "<=" | ">="
                            | "<" | ">" | "+" | "-" | "*" | "true" | "false"
+            or else (Standing /= null
+                     and then
+                       (Token in "div" | "mod" | "abs" | "let"
+                                | "ada!l" | "ada!r" | "ada!a"
+                        or else Kept.Contains (Token)))
             or else (for all Item of Token => Item in '0' .. '9'));
       begin
          for Index in Text'Range loop
@@ -7586,8 +7689,6 @@ package body Adalang_Analyzer.VC_Prover is
          end loop;
          return Start = 0 or else Acceptable (Text (Start .. Text'Last));
       end Only_Bounds;
-
-      Result : Symbolic_State := Empty_Symbolic_State;
    begin
       if not State.Supported then
          return Havoc;
@@ -7596,8 +7697,28 @@ package body Adalang_Analyzer.VC_Prover is
       for Item of State.Roots loop
          if Is_Bound_Symbol (To_String (Item.Name)) then
             Result.Roots.Append (Item);
+         elsif Is_Standing_Root (Item) then
+            Result.Roots.Append (Item);
+            Kept.Include (To_String (Item.Name), True);
          end if;
       end loop;
+      --  A standing object can be bound to the root of another name of it:
+      --  a formal of a body to that of its declaration, which the
+      --  contract names.
+      if Standing /= null then
+         for Item of State.Bindings loop
+            if not Libadalang.Analysis.Is_Null (Item.Key.Object)
+              and then Libadalang.Analysis.Is_Null (Item.Key.Component)
+              and then Length (Item.Key.Path) = 0
+              and then Item.Key.Object.Kind =
+                Libadalang.Common.Ada_Defining_Name
+              and then Standing (Item.Key.Object)
+              and then Only_Bounds (To_String (Item.Term))
+            then
+               Result.Bindings.Append (Item);
+            end if;
+         end loop;
+      end if;
       for Item of State.Assumptions loop
          if Only_Bounds (To_String (Item)) then
             Result.Assumptions.Append (Item);
