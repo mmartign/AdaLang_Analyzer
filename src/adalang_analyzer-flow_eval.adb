@@ -289,6 +289,59 @@ package body Adalang_Analyzer.Flow_Eval is
    function Static_Number
      (Expr     : Libadalang.Analysis.Ada_Node'Class;
       Expected : Static_Integer;
+      Depth    : Natural) return Static_Integer;
+
+   --  The value of the constant Decl declares when its initializer is
+   --  static: such a constant is no more variable than a named number. The
+   --  initializer is taken in the constant's own type, each operator
+   --  wrapping as that type does. A constant whose value can change behind
+   --  its name (an address clause, an import, a volatile object) has none.
+   function Static_Constant
+     (Decl  : Libadalang.Analysis.Basic_Decl'Class;
+      Depth : Natural) return Static_Integer
+   is
+      Kind : Static_Integer;
+   begin
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else Decl.Kind /= Libadalang.Common.Ada_Object_Decl
+        or else not Decl.As_Object_Decl.F_Has_Constant
+        or else not Libadalang.Analysis.Is_Null
+          (Decl.As_Object_Decl.F_Renaming_Clause)
+        or else Libadalang.Analysis.Is_Null
+          (Decl.As_Object_Decl.F_Default_Expr)
+      then
+         return No_Static_Integer;
+      end if;
+
+      for Name of Decl.As_Object_Decl.F_Ids loop
+         if Classify (Libadalang.Analysis.Ada_Node (Name)) /= Tracked then
+            return No_Static_Integer;
+         end if;
+      end loop;
+
+      Kind := Declared_Kind (Decl);
+      if Kind.Kind = Not_Static then
+         return No_Static_Integer;
+      end if;
+
+      declare
+         Inner : constant Static_Integer :=
+           Static_Number
+             (Decl.As_Object_Decl.F_Default_Expr, Kind, Depth + 1);
+      begin
+         if Inner.Kind = Not_Static then
+            return No_Static_Integer;
+         end if;
+         return Of_Kind (Kind, Known_Int (Inner.Value));
+      end;
+   exception
+      when others =>
+         return No_Static_Integer;
+   end Static_Constant;
+
+   function Static_Number
+     (Expr     : Libadalang.Analysis.Ada_Node'Class;
+      Expected : Static_Integer;
       Depth    : Natural) return Static_Integer
    is
       --  Kind or, for an operator of universal operands, the kind this
@@ -345,6 +398,14 @@ package body Adalang_Analyzer.Flow_Eval is
                then
                   --  A constant, whose initializer is typed as it is
                   --  written.
+                  declare
+                     Folded : constant Static_Integer :=
+                       Static_Constant (Decl, Depth + 1);
+                  begin
+                     if Folded.Kind /= Not_Static then
+                        return Folded;
+                     end if;
+                  end;
                   return Of_Kind
                     (Declared_Kind (Decl),
                      Declared_Bound_Value (Expr, Empty_Flow_State));
@@ -513,9 +574,18 @@ package body Adalang_Analyzer.Flow_Eval is
          Decl : constant Libadalang.Analysis.Basic_Decl :=
            Node.As_Name.P_Referenced_Decl;
       begin
-         if Libadalang.Analysis.Is_Null (Decl)
-           or else Decl.Kind /= Libadalang.Common.Ada_Number_Decl
-         then
+         if Libadalang.Analysis.Is_Null (Decl) then
+            return Unknown_Int;
+         elsif Decl.Kind = Libadalang.Common.Ada_Object_Decl then
+            declare
+               Folded : constant Static_Integer := Static_Constant (Decl, 0);
+            begin
+               if Folded.Kind = Not_Static then
+                  return Unknown_Int;
+               end if;
+               return Known_Int (Folded.Value);
+            end;
+         elsif Decl.Kind /= Libadalang.Common.Ada_Number_Decl then
             return Unknown_Int;
          end if;
 

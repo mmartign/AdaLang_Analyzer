@@ -5,6 +5,27 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- A constant of an integer type declared outside the subprogram under
+  analysis has the value of its initializer when that is written with
+  literals, named numbers, other such constants and the arithmetic
+  operators, taken in the constant's own type, so that a modular one
+  wraps: `Bits : constant Positive := 2**Log` is 64 where `Log` is a
+  constant 6, as a named number would be. Before, only named numbers and
+  the constants of the subprogram itself had a known value, and a typed
+  constant of a package, even one initialized with a literal, was any
+  value of its subtype. A constant whose value can change behind its name
+  (a volatile object, an address clause, an import) has none, nor one
+  initialized from a variable. The rules that read a static operand
+  (`Ineffective_Operation`, `Constant_Result_Operation`, a static
+  `Division_By_Zero`) see such a constant's value as they see a named
+  number's: on the ten corpora this adds one `Ineffective_Operation`
+  finding, in GNATcoll (`Index_1 - Index_0 - 1` with `Index_0 : constant
+  Natural := 0`).
+
 ## [1.10.3] - 2026-10-24
 
 A `--verify` release that proves 305 more of the checks GNATprove proves:

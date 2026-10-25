@@ -107,8 +107,11 @@ package Adalang_Analyzer.Flow_Eval is
    --  expanded name, when its expression is one of integer literals, other
    --  such numbers, constants, T'First and T'Last, qualified expressions
    --  and the arithmetic operators, each operator taken in the type its
-   --  operands give it. Unknown_Int for any other node, for a real number
-   --  and for any other expression.
+   --  operands give it. The same of a constant of an integer type whose
+   --  initializer is such an expression, taken in the constant's type,
+   --  unless its value can change behind its name (an address clause, an
+   --  import, a volatile object). Unknown_Int for any other node, for a
+   --  real number and for any other expression.
 
    function Is_Static_Zero
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;

@@ -665,9 +665,15 @@ literals, other named numbers, constants, `T'First` and `T'Last`, qualified
 expressions and the arithmetic operators; each operator is taken in the
 type its operands give it, so that one of a modular type wraps. A real
 named number, and one declared with any other attribute, a conversion, a
-call or a conditional expression, has no value the analysis knows. In the
-interval analysis a name whose value is known is that value as an operand
-too: the product of a named number and a sum has the range that follows.
+call or a conditional expression, has no value the analysis knows. A
+constant of an integer type declared outside the subprogram, whose
+initializer is written the same way, is that value too, taken in the
+constant's own type (`Bits : constant Positive := 2**Log` is 64 where
+`Log` is a constant 6); not a constant whose value can change behind its
+name -- a volatile object, one with an address clause or an import -- nor
+one initialized from a variable or a call. In the interval analysis a name
+whose value is known is that value as an operand too: the product of a
+named number and a sum has the range that follows.
 
 ### `T'Size`
 
