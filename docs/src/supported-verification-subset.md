@@ -1108,6 +1108,8 @@ each of them, not for an instance in a unit the run does not have. A
 generic unit that is also instantiated inside a generic unit is left as the
 first analysis leaves it, the actuals of that instance depending on the
 instance of the unit it is in, and so is one the run does not instantiate.
+When the generic unit of an instantiation of the run cannot be found, which
+leaves an instance unseen, no generic unit is analyzed again.
 These analyses change obligations only: what they find is not reported
 again.
 

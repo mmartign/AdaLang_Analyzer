@@ -5,7 +5,34 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.10.4] - 2026-10-25
+
+A `--verify` release that proves 198 more of the checks GNATprove proves:
+a generic unit is analyzed once more for each of its instances, with the
+values of their actuals, and a typed constant of a package has the value of
+its static initializer.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+8,634 of the 15,043 checks GNATprove proves (was 8,436): 70 range checks,
+59 overflow checks, 35 division checks, 12 loop invariants on entry, 10
+preconditions, 7 predicate checks, 4 assertions and 1 postcondition -- 146
+of them in libkeccak, 50 in CoAP-SPARK and 2 in SPARKNaCl. It proves none
+that GNATprove does not, no proof of 1.10.3 is lost, and the checks
+without an AdaLang obligation are 2,109, as before. On the ten corpora 562
+obligations move from `Unproved` to `Proved_Safe` -- 247 range checks, 213
+overflow checks, 37 division checks, 26 preconditions, 15 index checks, 12
+loop invariants on entry, 7 predicate checks, 4 assertions and 1
+postcondition -- and none the other way; no obligation is added, 2 are gone
+in CubedOS (checks a bound now known through an instance shows to hold,
+which are not raised, as GNATprove raises none), and no definite error is
+new or gone. Every preset of every corpus reports the findings of 1.10.3
+but for one `Ineffective_Operation` more in GNATcoll (see below). The
+matched pairs are 3,339, 1,690 of them both safe (was 1,659), with no
+possible unsoundness and no false positive anywhere; on the SPARK testsuite
+4 obligations are proved that were not, none of them a pair. No proof is
+lost on the `--verify` fixtures of the test suite. The `--verify` lane of
+libkeccak takes 162 s of CPU (was 79 s), in the analyses of its generic
+units for each instance; the other lanes take about what they took.
 
 ### Added
 
@@ -20,8 +47,8 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   Keccak generics and 50 in CoAP-SPARK's RecordFlux generics. Instances
   that give the same values are analyzed once, and only the subprograms
   with an obligation still open; a generic unit also instantiated inside a
-  generic unit is left as it was. The `--verify` lane of libkeccak takes
-  173 s of CPU (was 79 s).
+  generic unit is left as it was, and so is every one when an
+  instantiation's generic unit is not found.
 - A name seen through an instance of a generic package (`P1.Bits`, or
   `Bits` under `use P1`) has the value it has in that instance: a formal
   object of mode `in` so reached is its actual.
