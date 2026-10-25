@@ -15,8 +15,10 @@
 with Ada.Characters.Handling;
 with Ada.Containers.Hashed_Maps;
 with Ada.Containers.Hashed_Sets;
+with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Vectors;
 with Ada.Exceptions;
+with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 
 with GNATCOLL.GMP.Integers;
@@ -31,7 +33,6 @@ with Adalang_Analyzer.Control_Flow_Graph;
 with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Contracts;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
-with Adalang_Analyzer.Project_Files;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;
@@ -14519,6 +14520,702 @@ package body Adalang_Analyzer.Flow_Interp is
          Visit (Unit.Root);
       end if;
    end Verify_Unit;
+
+   --  Instance passes ---------------------------------------------------
+
+   --  A part of a file, from First to Last.
+   type Source_Region is record
+      File  : Ada.Strings.Unbounded.Unbounded_String;
+      First : Langkit_Support.Slocs.Source_Location;
+      Last  : Langkit_Support.Slocs.Source_Location;
+   end record;
+   package Region_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Source_Region);
+
+   function Region_Of
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Source_Region
+   is (File  => Ada.Strings.Unbounded.To_Unbounded_String
+                  (Node.Unit.Get_Filename),
+       First => Langkit_Support.Slocs.Start_Sloc (Node.Sloc_Range),
+       Last  => Langkit_Support.Slocs.End_Sloc (Node.Sloc_Range));
+
+   function Contains
+     (Region : Source_Region;
+      File   : String;
+      Place  : Langkit_Support.Slocs.Source_Location) return Boolean
+   is
+      use type Langkit_Support.Slocs.Relative_Position;
+   begin
+      return Ada.Strings.Unbounded.To_String (Region.File) = File
+        and then Langkit_Support.Slocs.Compare (Region.First, Place) /=
+          Langkit_Support.Slocs.Before
+        and then Langkit_Support.Slocs.Compare (Region.Last, Place) /=
+          Langkit_Support.Slocs.After;
+   end Contains;
+
+   function Any_Contains
+     (Regions : Region_Vectors.Vector;
+      File    : String;
+      Place   : Langkit_Support.Slocs.Source_Location) return Boolean is
+   begin
+      for Region of Regions loop
+         if Contains (Region, File, Place) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Any_Contains;
+
+   package Instantiation_Vectors is new Ada.Containers.Vectors
+     (Index_Type   => Positive,
+      Element_Type => Libadalang.Analysis.Generic_Instantiation,
+      "="          => Libadalang.Analysis."=");
+
+   --  A generic unit of the run and its instantiations there. Complete is
+   --  False when one of them is part of a generic unit: what that one is
+   --  instantiated with depends on the instance of the unit it is in.
+   type Generic_Entry is record
+      Decl      : Libadalang.Analysis.Basic_Decl;
+      Instances : Instantiation_Vectors.Vector;
+      Complete  : Boolean := True;
+   end record;
+   package Generic_Entry_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Generic_Entry);
+   package Position_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Positive,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+
+   function Place_Key (Node : Libadalang.Analysis.Ada_Node'Class) return String
+   is (Node.Unit.Get_Filename & ":"
+       & Langkit_Support.Slocs.Image
+           (Langkit_Support.Slocs.Start_Sloc (Node.Sloc_Range)));
+
+   --  The instantiation of a generic package Name names, directly or by
+   --  renamings; No_Generic_Instantiation if none.
+   function Instance_Named
+     (Name : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Generic_Instantiation
+   is
+      Max_Renamings : constant := 8;
+      Decl : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Name)
+        or else Name.Kind not in Libadalang.Common.Ada_Name
+      then
+         return Libadalang.Analysis.No_Generic_Instantiation;
+      end if;
+      Decl := Name.As_Name.P_Referenced_Decl;
+      for Count in 1 .. Max_Renamings loop
+         if Libadalang.Analysis.Is_Null (Decl) then
+            return Libadalang.Analysis.No_Generic_Instantiation;
+         elsif Decl.Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
+         then
+            return Decl.As_Generic_Instantiation;
+         elsif Decl.Kind = Libadalang.Common.Ada_Package_Renaming_Decl then
+            Decl := Decl.As_Package_Renaming_Decl.F_Renames.F_Renamed_Object
+              .P_Referenced_Decl;
+         else
+            return Libadalang.Analysis.No_Generic_Instantiation;
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Generic_Instantiation;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Generic_Instantiation;
+   end Instance_Named;
+
+   --  Gives the formals of the generic unit Instance is of the values and
+   --  instances of its actuals, after those of the instance its name is
+   --  given through, if any: the formals of a unit a child or a nested unit
+   --  is part of. Lost is set when an actual could not be read.
+   procedure Bind_Instance
+     (Instance : Libadalang.Analysis.Generic_Instantiation'Class;
+      Depth    : Natural;
+      Lost     : in out Boolean)
+   is
+      Max_Depth : constant := 8;
+      Name      : Libadalang.Analysis.Name;
+   begin
+      if Depth > Max_Depth then
+         return;
+      end if;
+      if Instance.Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
+      then
+         Name := Instance.As_Generic_Package_Instantiation.F_Generic_Pkg_Name;
+      else
+         Name := Instance.As_Generic_Subp_Instantiation.F_Generic_Subp_Name;
+      end if;
+      if Name.Kind = Libadalang.Common.Ada_Dotted_Name then
+         declare
+            Enclosing : constant Libadalang.Analysis.Generic_Instantiation :=
+              Instance_Named (Name.As_Dotted_Name.F_Prefix);
+         begin
+            if not Libadalang.Analysis.Is_Null (Enclosing) then
+               Bind_Instance (Enclosing, Depth + 1, Lost);
+            end if;
+         end;
+      end if;
+
+      for Pair of Instance.P_Inst_Params loop
+         declare
+            Formal : constant Libadalang.Analysis.Defining_Name :=
+              Libadalang.Analysis.Param (Pair).As_Defining_Name;
+            Actual : constant Libadalang.Analysis.Expr :=
+              Libadalang.Analysis.Actual (Pair).As_Expr;
+            Decl   : Libadalang.Analysis.Basic_Decl := Formal.P_Basic_Decl;
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind in
+                Libadalang.Common.Ada_Generic_Formal_Obj_Decl
+                  | Libadalang.Common.Ada_Generic_Formal_Type_Decl
+            then
+               Decl := Decl.As_Generic_Formal.F_Decl;
+            end if;
+            if Libadalang.Analysis.Is_Null (Decl)
+              or else Libadalang.Analysis.Is_Null (Actual)
+            then
+               Lost := True;
+            elsif Decl.Kind = Libadalang.Common.Ada_Object_Decl
+              and then Decl.Parent.Kind =
+                Libadalang.Common.Ada_Generic_Formal_Obj_Decl
+              and then Decl.As_Object_Decl.F_Mode.Kind in
+                Libadalang.Common.Ada_Mode_In
+                  | Libadalang.Common.Ada_Mode_Default
+            then
+               declare
+                  Value : constant Abstract_Int := Integer_Value (Actual);
+               begin
+                  if Value.Known then
+                     Bind_Formal_Object (Formal, Value.Value);
+                  end if;
+               end;
+            elsif Decl.Kind = Libadalang.Common.Ada_Formal_Type_Decl
+              and then Actual.Kind in Libadalang.Common.Ada_Name
+            then
+               declare
+                  Given : constant Libadalang.Analysis.Basic_Decl :=
+                    Actual.As_Name.P_Referenced_Decl;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Given)
+                    and then Given.Kind in Libadalang.Common.Ada_Base_Type_Decl
+                    and then Given.As_Base_Type_Decl.P_Is_Scalar_Type
+                  then
+                     Bind_Formal_Type (Formal, Given.As_Base_Type_Decl);
+                  end if;
+               end;
+            elsif Decl.Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
+              and then Decl.Parent.Kind =
+                Libadalang.Common.Ada_Generic_Formal_Package
+            then
+               declare
+                  Given : constant Libadalang.Analysis.Generic_Instantiation :=
+                    Instance_Named (Actual);
+               begin
+                  if not Libadalang.Analysis.Is_Null (Given) then
+                     Bind_Formal_Package (Formal, Given);
+                  end if;
+               end;
+            end if;
+         exception
+            when others =>
+               Lost := True;
+         end;
+      end loop;
+   exception
+      when others =>
+         Lost := True;
+   end Bind_Instance;
+
+   package Index_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Positive);
+   package File_Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Index_Vectors.Vector,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=",
+      "="             => Index_Vectors."=");
+
+   --  What an instance pass gives each solver for a query, in
+   --  milliseconds: the facts it adds are values, which make a goal easy or
+   --  leave it as hard as it was.
+   Instance_Solver_Time_Limit : constant := 500;
+
+   procedure Verify_Instances
+     (Ctx   : Libadalang.Analysis.Analysis_Context;
+      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector)
+   is
+      use type Proof.Obligation_Status;
+
+      Entries    : Generic_Entry_Vectors.Vector;
+      Position   : Position_Maps.Map;
+      Unproved   : File_Index_Maps.Map;
+      --  The obligations left unproved, by the file they are in.
+      Incomplete : Boolean := False;
+      --  An instantiation whose generic unit was not found: some unit has
+      --  an instance not seen, and no instance pass can be trusted.
+
+      procedure Collect (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Node.Kind in Libadalang.Common.Ada_Generic_Instantiation
+           and then Node.Parent.Kind /=
+             Libadalang.Common.Ada_Generic_Formal_Package
+         then
+            declare
+               Instance : constant Libadalang.Analysis.Generic_Instantiation :=
+                 Node.As_Generic_Instantiation;
+               Decl     : constant Libadalang.Analysis.Basic_Decl :=
+                 Libadalang.Analysis.Basic_Decl
+                   (Instance.P_Designated_Generic_Decl);
+            begin
+               if Libadalang.Analysis.Is_Null (Decl) then
+                  Incomplete := True;
+               else
+                  declare
+                     Key : constant String := Place_Key (Decl);
+                  begin
+                     if not Position.Contains (Key) then
+                        Entries.Append ((Decl => Decl, others => <>));
+                        Position.Insert (Key, Entries.Last_Index);
+                     end if;
+                     declare
+                        Item : Generic_Entry renames
+                          Entries (Position.Element (Key));
+                     begin
+                        Item.Instances.Append (Instance);
+                        if Subprogram_Summaries.Generic_Unit_Key (Instance)
+                          /= ""
+                        then
+                           Item.Complete := False;
+                        end if;
+                     end;
+                  end;
+               end if;
+            exception
+               when others =>
+                  Incomplete := True;
+            end;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            Collect (Node.Child (Index));
+         end loop;
+      end Collect;
+
+      --  Runs the instance passes of one generic unit and records what they
+      --  prove.
+      procedure Verify_Generic (Item : Generic_Entry) is
+         Regions  : Region_Vectors.Vector;
+         Excluded : Region_Vectors.Vector;
+         Body_Part : Libadalang.Analysis.Body_Node;
+
+         Open : Index_Vectors.Vector;
+
+         package Body_Vectors is new Ada.Containers.Vectors
+           (Index_Type   => Positive,
+            Element_Type => Libadalang.Analysis.Base_Subp_Body,
+            "="          => Libadalang.Analysis."=");
+         Bodies : Body_Vectors.Vector;
+
+         package Image_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+           (Key_Type        => String,
+            Element_Type    => Libadalang.Analysis.Generic_Instantiation,
+            Hash            => Ada.Strings.Hash,
+            Equivalent_Keys => "=",
+            "="             => Libadalang.Analysis."=");
+         Passes : Image_Maps.Map;
+
+         type Pass_Outcome is record
+            Status : Proof.Obligation_Status := Proof.Unproved;
+            Method : Proof.Analysis_Method := Proof.No_Analysis;
+         end record;
+         package Outcome_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+           (Key_Type        => String,
+            Element_Type    => Pass_Outcome,
+            Hash            => Ada.Strings.Hash,
+            Equivalent_Keys => "=");
+         Proved : Outcome_Maps.Map;
+         --  The obligations of Open every pass so far has proved (or found
+         --  unreachable), with the method of a proof.
+
+         First_Pass : Boolean := True;
+         Failed     : Boolean := False;
+
+         function Place_Of (Index : Positive)
+           return Langkit_Support.Slocs.Source_Location
+         is
+            Item : constant Proof.Obligation := Proof.Element (Index);
+         begin
+            return
+              (Line   => Langkit_Support.Slocs.Line_Number (Item.Location.Line),
+               Column =>
+                 Langkit_Support.Slocs.Column_Number (Item.Location.Column));
+         end Place_Of;
+
+         function In_Unit (File : String;
+                           Place : Langkit_Support.Slocs.Source_Location)
+           return Boolean
+         is (Any_Contains (Regions, File, Place)
+             and then not Any_Contains (Excluded, File, Place));
+
+         --  The generic units declared in the unit, and their bodies: their
+         --  obligations are for their own instances.
+         procedure Find_Nested (Node : Libadalang.Analysis.Ada_Node'Class) is
+         begin
+            if Libadalang.Analysis.Is_Null (Node) then
+               return;
+            elsif Node.Kind in Libadalang.Common.Ada_Generic_Decl
+              and then Place_Key (Node) /= Place_Key (Item.Decl)
+            then
+               Excluded.Append (Region_Of (Node));
+               declare
+                  Nested_Body : constant Libadalang.Analysis.Body_Node :=
+                    Node.As_Basic_Decl.P_Body_Part_For_Decl;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Nested_Body) then
+                     Excluded.Append (Region_Of (Nested_Body));
+                  end if;
+               exception
+                  when others =>
+                     Failed := True;
+               end;
+               return;
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               Find_Nested (Node.Child (Index));
+            end loop;
+         end Find_Nested;
+
+         --  The bodies of the unit with an open obligation in them or in
+         --  their declaration.
+         procedure Find_Bodies (Node : Libadalang.Analysis.Ada_Node'Class) is
+            function Holds_Open (Part : Libadalang.Analysis.Ada_Node'Class)
+              return Boolean
+            is
+               Region : constant Source_Region := Region_Of (Part);
+            begin
+               for Index of Open loop
+                  if Contains
+                    (Region,
+                     Ada.Strings.Unbounded.To_String
+                       (Proof.Element (Index).Location.Filename),
+                     Place_Of (Index))
+                  then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Holds_Open;
+         begin
+            if Libadalang.Analysis.Is_Null (Node) then
+               return;
+            elsif Node.Kind in Libadalang.Common.Ada_Subp_Body
+                    | Libadalang.Common.Ada_Expr_Function
+              and then In_Unit
+                (Node.Unit.Get_Filename,
+                 Langkit_Support.Slocs.Start_Sloc (Node.Sloc_Range))
+            then
+               declare
+                  Decl_Part : Libadalang.Analysis.Basic_Decl;
+               begin
+                  begin
+                     Decl_Part := Node.As_Base_Subp_Body.P_Decl_Part;
+                  exception
+                     when others =>
+                        Decl_Part := Libadalang.Analysis.No_Basic_Decl;
+                  end;
+                  if Holds_Open (Node)
+                    or else (not Libadalang.Analysis.Is_Null (Decl_Part)
+                             and then Holds_Open (Decl_Part))
+                  then
+                     Bodies.Append (Node.As_Base_Subp_Body);
+                  end if;
+               end;
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               Find_Bodies (Node.Child (Index));
+            end loop;
+         end Find_Bodies;
+
+         --  Whether an obligation of Open still proved by every pass so far
+         --  is in Subprogram or in its declaration.
+         function Holds_Candidate
+           (Subprogram : Libadalang.Analysis.Base_Subp_Body) return Boolean
+         is
+            Parts     : Region_Vectors.Vector;
+            Decl_Part : Libadalang.Analysis.Basic_Decl;
+         begin
+            Parts.Append (Region_Of (Subprogram));
+            begin
+               Decl_Part := Subprogram.P_Decl_Part;
+               if not Libadalang.Analysis.Is_Null (Decl_Part) then
+                  Parts.Append (Region_Of (Decl_Part));
+               end if;
+            exception
+               when others =>
+                  return True;
+            end;
+            for Index of Open loop
+               declare
+                  Result : constant Proof.Obligation := Proof.Element (Index);
+               begin
+                  if Proved.Contains
+                       (Ada.Strings.Unbounded.To_String (Result.Stable_Id))
+                    and then Any_Contains
+                      (Parts,
+                       Ada.Strings.Unbounded.To_String
+                         (Result.Location.Filename),
+                       Place_Of (Index))
+                  then
+                     return True;
+                  end if;
+               end;
+            end loop;
+            return False;
+         end Holds_Candidate;
+
+         procedure Run_Pass (Instance : Libadalang.Analysis.Generic_Instantiation)
+         is
+            Seen : Outcome_Maps.Map;
+         begin
+            Clear_Formal_Bindings;
+            Bind_Instance (Instance, 0, Failed);
+            Forget_Standing_Facts;
+            VC.Forget_Declared_Facts;
+            for Effects of Body_Effects loop
+               Effects.Clear;
+            end loop;
+            Functions_Of_Arguments.Clear;
+            Report.Set_Muted (True);
+            VC.Set_Solver_Time_Limit (Instance_Solver_Time_Limit);
+            Proof.Begin_Capture;
+            begin
+               for Subprogram of Bodies loop
+                  Verify_Subprogram (Subprogram.Unit, Subprogram);
+               end loop;
+               for Index in 1 .. Proof.Count loop
+                  declare
+                     Result : constant Proof.Obligation := Proof.Element (Index);
+                  begin
+                     Seen.Include
+                       (Ada.Strings.Unbounded.To_String (Result.Stable_Id),
+                        (Status => Result.Status, Method => Result.Method));
+                  end;
+               end loop;
+            exception
+               when others =>
+                  Failed := True;
+            end;
+            Proof.End_Capture;
+            Report.Set_Muted (False);
+            VC.Set_Solver_Time_Limit (VC.Default_Solver_Time_Limit);
+            Clear_Formal_Bindings;
+            Forget_Standing_Facts;
+            VC.Forget_Declared_Facts;
+
+            if First_Pass then
+               for Index of Open loop
+                  declare
+                     Id : constant String := Ada.Strings.Unbounded.To_String
+                       (Proof.Element (Index).Stable_Id);
+                  begin
+                     if Seen.Contains (Id)
+                       and then Seen.Element (Id).Status in
+                         Proof.Proved_Safe | Proof.Unreachable
+                     then
+                        Proved.Include (Id, Seen.Element (Id));
+                     end if;
+                  end;
+               end loop;
+               First_Pass := False;
+            else
+               declare
+                  Kept : Outcome_Maps.Map;
+               begin
+                  for Cursor in Proved.Iterate loop
+                     declare
+                        Id : constant String := Outcome_Maps.Key (Cursor);
+                     begin
+                        if Seen.Contains (Id)
+                          and then Seen.Element (Id).Status in
+                            Proof.Proved_Safe | Proof.Unreachable
+                        then
+                           Kept.Include
+                             (Id,
+                              (if Outcome_Maps.Element (Cursor).Status =
+                                 Proof.Proved_Safe
+                               then Outcome_Maps.Element (Cursor)
+                               else Seen.Element (Id)));
+                        end if;
+                     end;
+                  end loop;
+                  Proved := Kept;
+               end;
+            end if;
+
+            --  An obligation one instance leaves unproved stays so: the
+            --  passes left need only the bodies the others are in.
+            declare
+               Kept : Body_Vectors.Vector;
+            begin
+               for Subprogram of Bodies loop
+                  if Holds_Candidate (Subprogram) then
+                     Kept.Append (Subprogram);
+                  end if;
+               end loop;
+               Bodies := Kept;
+            end;
+         exception
+            when others =>
+               Failed := True;
+               Proof.End_Capture;
+               Report.Set_Muted (False);
+               VC.Set_Solver_Time_Limit (VC.Default_Solver_Time_Limit);
+               Clear_Formal_Bindings;
+               Forget_Standing_Facts;
+               VC.Forget_Declared_Facts;
+         end Run_Pass;
+      begin
+         if not Item.Complete or else Item.Instances.Is_Empty then
+            return;
+         end if;
+
+         Regions.Append (Region_Of (Item.Decl));
+         begin
+            Body_Part := Item.Decl.P_Body_Part_For_Decl;
+         exception
+            when others =>
+               Body_Part := Libadalang.Analysis.No_Body_Node;
+         end;
+         if not Libadalang.Analysis.Is_Null (Body_Part) then
+            Regions.Append (Region_Of (Body_Part));
+         end if;
+         for Region of Regions loop
+            Find_Nested
+              (Ctx.Get_From_File (Ada.Strings.Unbounded.To_String (Region.File))
+                 .Root);
+         end loop;
+         if Failed then
+            return;
+         end if;
+
+         for Region_Index in 1 .. Natural (Regions.Length) loop
+            declare
+               File : constant String :=
+                 Ada.Strings.Unbounded.To_String (Regions (Region_Index).File);
+               Seen : Boolean := False;
+            begin
+               --  Each file once: the declaration and the body of a unit
+               --  may be in the same one.
+               for Earlier in 1 .. Region_Index - 1 loop
+                  Seen := Seen
+                    or else Ada.Strings.Unbounded.To_String
+                              (Regions (Earlier).File) = File;
+               end loop;
+               if not Seen and then Unproved.Contains (File) then
+                  for Index of Unproved.Element (File) loop
+                     if In_Unit (File, Place_Of (Index)) then
+                        Open.Append (Index);
+                     end if;
+                  end loop;
+               end if;
+            end;
+         end loop;
+         if Open.Is_Empty then
+            return;
+         end if;
+
+         for Region of Regions loop
+            Find_Bodies
+              (Ctx.Get_From_File (Ada.Strings.Unbounded.To_String (Region.File))
+                 .Root);
+         end loop;
+         if Bodies.Is_Empty then
+            return;
+         end if;
+
+         --  One pass for each set of values the instances give: an
+         --  instance whose actuals give none would only repeat the first
+         --  analysis, which left these obligations unproved.
+         for Instance of Item.Instances loop
+            Clear_Formal_Bindings;
+            Bind_Instance (Instance, 0, Failed);
+            declare
+               Image : constant String := Formal_Bindings_Image;
+            begin
+               Clear_Formal_Bindings;
+               if Failed or else Image = "" then
+                  return;
+               elsif not Passes.Contains (Image) then
+                  Passes.Insert (Image, Instance);
+               end if;
+            end;
+         end loop;
+
+         for Cursor in Passes.Iterate loop
+            Run_Pass (Image_Maps.Element (Cursor));
+            exit when Failed or else Proved.Is_Empty;
+         end loop;
+         if Failed then
+            return;
+         end if;
+
+         for Cursor in Proved.Iterate loop
+            declare
+               Outcome : constant Pass_Outcome := Outcome_Maps.Element (Cursor);
+            begin
+               Proof.Update_Result
+                 (Stable_Id      => Outcome_Maps.Key (Cursor),
+                  Status         => Outcome.Status,
+                  Method         => Outcome.Method,
+                  Abstract_State =>
+                    "instances of the generic unit in this run:"
+                    & Natural (Passes.Length)'Image,
+                  Explanation    =>
+                    (if Outcome.Status = Proof.Proved_Safe
+                     then "proved for the actuals of each instance of the "
+                          & "generic unit in this run"
+                     else "unreachable for the actuals of each instance of "
+                          & "the generic unit in this run"));
+            end;
+         end loop;
+      exception
+         when others =>
+            Proof.End_Capture;
+            Report.Set_Muted (False);
+            VC.Set_Solver_Time_Limit (VC.Default_Solver_Time_Limit);
+            Clear_Formal_Bindings;
+      end Verify_Generic;
+   begin
+      if not Config.Verification_Mode then
+         return;
+      end if;
+      for File of Files loop
+         Collect (Ctx.Get_From_File (File).Root);
+      end loop;
+      for Index in 1 .. Proof.Count loop
+         declare
+            Result : constant Proof.Obligation := Proof.Element (Index);
+            File   : constant String :=
+              Ada.Strings.Unbounded.To_String (Result.Location.Filename);
+         begin
+            if Result.Status = Proof.Unproved then
+               if not Unproved.Contains (File) then
+                  Unproved.Insert (File, Index_Vectors.Empty_Vector);
+               end if;
+               Unproved.Reference (File).Append (Index);
+            end if;
+         end;
+      end loop;
+      if Incomplete then
+         return;
+      end if;
+      for Item of Entries loop
+         Verify_Generic (Item);
+      end loop;
+   end Verify_Instances;
 
 begin
    VC.Set_Function_Oracle (Is_Function_Of_Arguments'Access);

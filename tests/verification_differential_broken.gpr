@@ -44,6 +44,19 @@ project Verification_Differential_Broken is
       "verification_element_writes.ads",
       "verification_element_writes.adb",
       "verification_static_constants.ads",
-      "verification_static_constants.adb");
+      "verification_static_constants.adb",
+      "verification_instance_passes.ads",
+      "verification_generic_lanes.ads",
+      "verification_generic_lanes.adb",
+      "verification_generic_lanes-wide.ads",
+      "verification_generic_lanes-wide.adb",
+      "verification_generic_narrow.ads",
+      "verification_generic_narrow.adb",
+      "verification_generic_user.ads",
+      "verification_generic_user.adb",
+      "verification_generic_inner.ads",
+      "verification_generic_inner.adb",
+      "verification_generic_outer.ads",
+      "verification_generic_outer.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;

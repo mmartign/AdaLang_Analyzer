@@ -14,6 +14,8 @@
 
 with Libadalang.Analysis;
 
+with Adalang_Analyzer.Project_Files;
+
 --  Flow-sensitive constant propagation (best effort): a second, stateful
 --  walk over one subprogram body, run alongside the ordinary node-local
 --  checks in Adalang_Analyzer.Checks, that lets Division_By_Zero,
@@ -50,5 +52,17 @@ package Adalang_Analyzer.Flow_Interp is
    --  Unit. A no-op unless Config.Verification_Mode is enabled. This pass is
    --  intentionally run after ordinary AST checks so it can refine their
    --  Unproved obligation records to guarded final outcomes.
+
+   procedure Verify_Instances
+     (Ctx   : Libadalang.Analysis.Analysis_Context;
+      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector);
+   --  Run once Verify_Unit has run for every unit of Files. Analyses each
+   --  generic unit once more for each instance of it in those units, its
+   --  formal objects having the values of the actuals of the instance (see
+   --  Flow_Eval.Bind_Formal_Object), and takes an obligation of the unit
+   --  that the first analysis left unproved as proved when it is proved
+   --  for every instance. A generic unit that is also instantiated inside
+   --  a generic unit, or nowhere, is left as it is. A no-op unless
+   --  Config.Verification_Mode is enabled.
 
 end Adalang_Analyzer.Flow_Interp;

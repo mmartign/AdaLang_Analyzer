@@ -1375,6 +1375,13 @@ package body Adalang_Analyzer.Report is
       return False;
    end Already_Reported;
 
+   Is_Muted : Boolean := False;
+
+   procedure Set_Muted (Muted : Boolean) is
+   begin
+      Is_Muted := Muted;
+   end Set_Muted;
+
    procedure Report_Violation_At
      (Filename    : String;
       Line_Number : Natural;
@@ -1389,6 +1396,9 @@ package body Adalang_Analyzer.Report is
         Ada.Strings.Unbounded.To_String (Rules.Rule_Infos (Rule).Name);
       Source_Text  : constant String := Source_Line (Filename, Line_Number);
    begin
+      if Is_Muted then
+         return;
+      end if;
       if Already_Reported (Filename, Line_Number, Column, Rule, Message) then
          return;
       end if;

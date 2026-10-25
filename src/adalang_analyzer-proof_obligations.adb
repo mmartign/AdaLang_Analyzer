@@ -350,6 +350,29 @@ package body Adalang_Analyzer.Proof_Obligations is
       Index_Of.Clear;
    end Reset;
 
+   Saved_Obligations : Obligation_Vectors.Vector;
+   Saved_Index_Of    : Index_Maps.Map;
+   Capturing         : Boolean := False;
+
+   procedure Begin_Capture is
+   begin
+      if Capturing then
+         raise Program_Error with "proof obligation captures do not nest";
+      end if;
+      Obligation_Vectors.Move (Target => Saved_Obligations, Source => Obligations);
+      Index_Maps.Move (Target => Saved_Index_Of, Source => Index_Of);
+      Capturing := True;
+   end Begin_Capture;
+
+   procedure End_Capture is
+   begin
+      if Capturing then
+         Obligation_Vectors.Move (Target => Obligations, Source => Saved_Obligations);
+         Index_Maps.Move (Target => Index_Of, Source => Saved_Index_Of);
+         Capturing := False;
+      end if;
+   end End_Capture;
+
    function Find (Stable_Id : String) return Natural is
       Position : constant Index_Maps.Cursor := Index_Of.Find (Stable_Id);
    begin

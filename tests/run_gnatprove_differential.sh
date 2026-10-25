@@ -137,7 +137,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 34 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 41 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -168,7 +168,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_subtype_clamp \
   verification_loop_standing_facts \
   verification_element_writes \
-  verification_static_constants; do
+  verification_static_constants \
+  verification_instance_passes; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -928,6 +929,82 @@ if proved < 18:
     fail(f"static constants: only {proved} checks proved")
 print(f"static constants: {proved} checks proved here, none refused by "
       "GNATprove, which refuses the 4 of the Bad_* subprograms")
+PYTHON
+
+#  The instance-pass fixture: no check of a generic unit the instance
+#  passes prove here is on a line where GNATprove finds a check might fail
+#  in an instance, and it finds the division and the range check of
+#  Verification_Generic_Narrow might, which are not proved here.
+instances_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-instances.XXXXXX")
+instances_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-instances.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log" "$pairs_results" "$pairs_log" "$bounds_results" "$bounds_log" "$clamp_results" "$clamp_log" "$standing_results" "$standing_log" "$elements_results" "$elements_log" "$constants_results" "$constants_log" "$instances_results" "$instances_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$instances_results" \
+  tests/verification_instance_passes.ads \
+  tests/verification_generic_lanes.ads tests/verification_generic_lanes.adb \
+  tests/verification_generic_lanes-wide.ads \
+  tests/verification_generic_lanes-wide.adb \
+  tests/verification_generic_narrow.ads tests/verification_generic_narrow.adb \
+  tests/verification_generic_user.ads tests/verification_generic_user.adb \
+  tests/verification_generic_inner.ads tests/verification_generic_inner.adb \
+  tests/verification_generic_outer.ads tests/verification_generic_outer.adb ||
+  status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer instance-pass run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_instance_passes.ads >"$instances_log" 2>&1 || true
+
+python3 - "$instances_results" "$instances_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = ("integer-overflow", "division-by-zero", "range-check", "index-check")
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+refused = set()
+for line in log:
+    found = re.match(
+        r"(verification_generic_\w+(?:-\w+)?\.adb):(\d+):\d+: "
+        r"(?:low|medium|high): .* might fail", line)
+    if found:
+        refused.add((found.group(1), int(found.group(2))))
+
+expected = {("verification_generic_narrow.adb", 6),
+            ("verification_generic_narrow.adb", 11)}
+if not expected <= refused:
+    fail(f"instance passes: GNATprove refuses {sorted(refused)}, not "
+         f"{sorted(expected)}")
+
+proved = 0
+for item in report["proofObligations"]:
+    name = item["file"].split("/")[-1]
+    if not name.startswith("verification_generic_") \
+       or not name.endswith(".adb") or item["kind"] not in kinds:
+        continue
+    if item["status"] == "proved-safe" \
+       and item["abstractState"].startswith("instances of the generic unit"):
+        if (name, item["line"]) in refused:
+            fail(f"{item['kind']} {item['operation']!r} at {name}:"
+                 f"{item['line']} is proved here, GNATprove finds a check "
+                 "there might fail")
+        proved += 1
+if proved < 6:
+    fail(f"instance passes: only {proved} checks proved for every instance")
+print(f"instance passes: {proved} checks proved for every instance, none on "
+      "a line where GNATprove refuses one in an instance")
 PYTHON
 
 echo "GNATprove differential tests passed"

@@ -13,6 +13,11 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Containers.Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Sets;
+with Ada.Containers.Indefinite_Vectors;
+with Ada.Strings.Unbounded;
+with Ada.Strings.Hash;
 with Ada.Exceptions;
 
 with Langkit_Support.Text;
@@ -286,10 +291,336 @@ package body Adalang_Analyzer.Flow_Eval is
       return No_Static_Integer;
    end Common_Kind;
 
+   --  What an instance pass gives the formals of the generic unit it
+   --  analyses (see Bind_Formal_Object): by the place of the formal's
+   --  defining name, which is the same seen from the generic unit and from
+   --  an instance of it. A formal given two values in one pass has none.
+   package Formal_Value_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Long_Long_Integer,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+   package Formal_Package_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Libadalang.Analysis.Generic_Instantiation,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=",
+      "="             => Libadalang.Analysis."=");
+   package Key_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
+
+   package Formal_Type_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Libadalang.Analysis.Base_Type_Decl,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=",
+      "="             => Libadalang.Analysis."=");
+
+   Formal_Values   : Formal_Value_Maps.Map;
+   Formal_Packages : Formal_Package_Maps.Map;
+   Formal_Types    : Formal_Type_Maps.Map;
+   Ambiguous       : Key_Sets.Set;
+
+   function Formal_Key (Name : Libadalang.Analysis.Ada_Node'Class) return String
+   is (Name.Unit.Get_Filename & ":"
+       & Name.Sloc_Range.Start_Line'Image
+       & Name.Sloc_Range.Start_Column'Image);
+
+   procedure Bind_Formal_Object
+     (Formal : Libadalang.Analysis.Defining_Name'Class;
+      Value  : Long_Long_Integer)
+   is
+      Key : constant String := Formal_Key (Formal);
+   begin
+      if Ambiguous.Contains (Key) then
+         return;
+      elsif Formal_Values.Contains (Key) then
+         if Formal_Values.Element (Key) /= Value then
+            Formal_Values.Delete (Key);
+            Ambiguous.Insert (Key);
+         end if;
+         return;
+      end if;
+      Formal_Values.Insert (Key, Value);
+   end Bind_Formal_Object;
+
+   procedure Bind_Formal_Package
+     (Formal : Libadalang.Analysis.Defining_Name'Class;
+      Actual : Libadalang.Analysis.Generic_Instantiation'Class)
+   is
+      Key : constant String := Formal_Key (Formal);
+   begin
+      if Ambiguous.Contains (Key) then
+         return;
+      elsif Formal_Packages.Contains (Key) then
+         if Formal_Key (Formal_Packages.Element (Key)) /= Formal_Key (Actual)
+         then
+            Formal_Packages.Delete (Key);
+            Ambiguous.Insert (Key);
+         end if;
+         return;
+      end if;
+      Formal_Packages.Insert
+        (Key, Libadalang.Analysis.Generic_Instantiation (Actual));
+   end Bind_Formal_Package;
+
+   procedure Bind_Formal_Type
+     (Formal : Libadalang.Analysis.Defining_Name'Class;
+      Actual : Libadalang.Analysis.Base_Type_Decl'Class)
+   is
+      Key : constant String := Formal_Key (Formal);
+   begin
+      if Ambiguous.Contains (Key) then
+         return;
+      elsif Formal_Types.Contains (Key) then
+         if Formal_Key (Formal_Types.Element (Key)) /= Formal_Key (Actual) then
+            Formal_Types.Delete (Key);
+            Ambiguous.Insert (Key);
+         end if;
+         return;
+      end if;
+      Formal_Types.Insert (Key, Libadalang.Analysis.Base_Type_Decl (Actual));
+   end Bind_Formal_Type;
+
+   procedure Clear_Formal_Bindings is
+   begin
+      Formal_Values.Clear;
+      Formal_Packages.Clear;
+      Formal_Types.Clear;
+      Ambiguous.Clear;
+   end Clear_Formal_Bindings;
+
+   function Has_Formal_Bindings return Boolean
+   is (not Formal_Values.Is_Empty or else not Formal_Packages.Is_Empty
+       or else not Formal_Types.Is_Empty);
+
+   --  The actual subtype an instance pass gives the formal type Typ, seen
+   --  from its generic unit, directly or through subtypes of it that add
+   --  no constraint; No_Base_Type_Decl if none.
+   function Bound_Type
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+      Max_Depth : constant := 16;
+      Current   : Libadalang.Analysis.Base_Type_Decl :=
+        Libadalang.Analysis.Base_Type_Decl (Typ);
+   begin
+      if Formal_Types.Is_Empty then
+         return Libadalang.Analysis.No_Base_Type_Decl;
+      end if;
+      for Depth in 1 .. Max_Depth loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Libadalang.Analysis.No_Base_Type_Decl;
+         elsif Current.Kind = Libadalang.Common.Ada_Formal_Type_Decl then
+            if Current.P_Generic_Instantiations'Length = 0
+              and then Formal_Types.Contains
+                (Formal_Key (Current.P_Defining_Name))
+            then
+               return Formal_Types.Element
+                 (Formal_Key (Current.P_Defining_Name));
+            end if;
+            return Libadalang.Analysis.No_Base_Type_Decl;
+         elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl
+           and then Libadalang.Analysis.Is_Null
+             (Current.As_Subtype_Decl.F_Subtype.F_Constraint)
+         then
+            Current :=
+              Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         else
+            return Libadalang.Analysis.No_Base_Type_Decl;
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Base_Type_Decl;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Type_Decl;
+   end Bound_Type;
+
+   function Formal_Bindings_Image return String is
+      package Sorting is new Ada.Containers.Indefinite_Vectors
+        (Index_Type => Positive, Element_Type => String);
+      package Sort is new Sorting.Generic_Sorting;
+      Items  : Sorting.Vector;
+      Result : Ada.Strings.Unbounded.Unbounded_String;
+   begin
+      for Position in Formal_Values.Iterate loop
+         Items.Append
+           (Formal_Value_Maps.Key (Position) & "="
+            & Formal_Value_Maps.Element (Position)'Image);
+      end loop;
+      for Position in Formal_Packages.Iterate loop
+         Items.Append
+           (Formal_Package_Maps.Key (Position) & "=>"
+            & Formal_Key (Formal_Package_Maps.Element (Position)));
+      end loop;
+      for Position in Formal_Types.Iterate loop
+         Items.Append
+           (Formal_Type_Maps.Key (Position) & ":="
+            & Formal_Key (Formal_Type_Maps.Element (Position)));
+      end loop;
+      Sort.Sort (Items);
+      for Item of Items loop
+         Ada.Strings.Unbounded.Append (Result, Item & ";");
+      end loop;
+      return Ada.Strings.Unbounded.To_String (Result);
+   end Formal_Bindings_Image;
+
+   --  The formal object of mode in that Decl declares and Name names, when
+   --  Decl is one.
+   function Is_Formal_In_Object
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is (not Libadalang.Analysis.Is_Null (Decl)
+       and then Decl.Kind = Libadalang.Common.Ada_Object_Decl
+       and then not Libadalang.Analysis.Is_Null (Decl.Parent)
+       and then Decl.Parent.Kind = Libadalang.Common.Ada_Generic_Formal_Obj_Decl
+       and then Decl.As_Object_Decl.F_Mode.Kind in
+         Libadalang.Common.Ada_Mode_In | Libadalang.Common.Ada_Mode_Default);
+
    function Static_Number
      (Expr     : Libadalang.Analysis.Ada_Node'Class;
       Expected : Static_Integer;
       Depth    : Natural) return Static_Integer;
+
+   --  The actual of the formal whose defining name is at Key in Instance:
+   --  in the instance an instance pass gives a formal package "is new G
+   --  (<>)", which has no actuals of its own. No_Expr when there is none.
+   function Actual_In
+     (Instance : Libadalang.Analysis.Generic_Instantiation'Class;
+      Key      : String) return Libadalang.Analysis.Expr
+   is
+      Given : Libadalang.Analysis.Generic_Instantiation :=
+        Libadalang.Analysis.Generic_Instantiation (Instance);
+   begin
+      if not Libadalang.Analysis.Is_Null (Given.Parent)
+        and then Given.Parent.Kind = Libadalang.Common.Ada_Generic_Formal_Package
+      then
+         if Given.Kind /= Libadalang.Common.Ada_Generic_Package_Instantiation
+           or else not Formal_Packages.Contains
+             (Formal_Key (Given.As_Generic_Package_Instantiation.F_Name))
+         then
+            return Libadalang.Analysis.No_Expr;
+         end if;
+         Given := Formal_Packages.Element
+           (Formal_Key (Given.As_Generic_Package_Instantiation.F_Name));
+      end if;
+      for Pair of Given.P_Inst_Params loop
+         if Formal_Key (Libadalang.Analysis.Param (Pair)) = Key then
+            return Libadalang.Analysis.Actual (Pair).As_Expr;
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Expr;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Actual_In;
+
+   --  The value of the formal object of mode in that Decl declares and Name
+   --  names. Seen through instances (Libadalang gives Decl the
+   --  instantiations it was reached through), it is its actual in the one
+   --  of them that is an instance of its generic unit; seen from the
+   --  generic unit itself, the value an instance pass gives it.
+   function Bound_Formal
+     (Name  : Libadalang.Analysis.Ada_Node'Class;
+      Decl  : Libadalang.Analysis.Basic_Decl'Class;
+      Depth : Natural) return Static_Integer
+   is
+      Key   : constant String :=
+        Formal_Key (Name.As_Name.P_Referenced_Defining_Name);
+      Kind  : constant Static_Integer := Declared_Kind (Decl);
+      Chain : constant Libadalang.Analysis.Generic_Instantiation_Array :=
+        Decl.P_Generic_Instantiations;
+   begin
+      if Kind.Kind = Not_Static then
+         return No_Static_Integer;
+      elsif Chain'Length = 0 then
+         if Formal_Values.Contains (Key) then
+            return Of_Kind (Kind, Known_Int (Formal_Values.Element (Key)));
+         end if;
+         return No_Static_Integer;
+      end if;
+
+      for Instance of Chain loop
+         declare
+            Actual : constant Libadalang.Analysis.Expr :=
+              Actual_In (Instance, Key);
+         begin
+            if not Libadalang.Analysis.Is_Null (Actual) then
+               declare
+                  Inner : constant Static_Integer :=
+                    Static_Number (Actual, Kind, Depth + 1);
+               begin
+                  if Inner.Kind = Not_Static then
+                     return No_Static_Integer;
+                  end if;
+                  return Of_Kind (Kind, Known_Int (Inner.Value));
+               end;
+            end if;
+         end;
+      end loop;
+      return No_Static_Integer;
+   exception
+      when others =>
+         return No_Static_Integer;
+   end Bound_Formal;
+
+   --  The actual, in the instance a name is seen through, of the formal
+   --  object Decl stands for: Libadalang resolves a formal object so
+   --  reached to an anonymous declaration of its actual. That of a formal
+   --  package "is new G (<>)" has no actual of its own: it is that of the
+   --  instance an instance pass gives the formal package, if any.
+   function Static_Actual
+     (Decl  : Libadalang.Analysis.Basic_Decl'Class;
+      Depth : Natural) return Static_Integer
+   is
+      Formal : constant Libadalang.Analysis.Defining_Name :=
+        Decl.As_Anonymous_Expr_Decl.P_Get_Formal;
+      Object : Libadalang.Analysis.Basic_Decl := Formal.P_Basic_Decl;
+      Actual : Libadalang.Analysis.Expr :=
+        Decl.As_Anonymous_Expr_Decl.F_Expr;
+      Kind   : Static_Integer;
+   begin
+      if not Libadalang.Analysis.Is_Null (Object)
+        and then Object.Kind = Libadalang.Common.Ada_Generic_Formal_Obj_Decl
+      then
+         Object := Object.As_Generic_Formal_Obj_Decl.F_Decl;
+      end if;
+      if not Is_Formal_In_Object (Object) then
+         return No_Static_Integer;
+      end if;
+      Kind := Declared_Kind (Object);
+      if Kind.Kind = Not_Static then
+         return No_Static_Integer;
+      end if;
+
+      if Libadalang.Analysis.Is_Null (Actual)
+        or else Actual.Kind = Libadalang.Common.Ada_Box_Expr
+      then
+         Actual := Libadalang.Analysis.No_Expr;
+         if Decl.Parent.Kind in Libadalang.Common.Ada_Generic_Instantiation
+         then
+            Actual := Actual_In
+              (Decl.Parent.As_Generic_Instantiation, Formal_Key (Formal));
+         end if;
+         if Libadalang.Analysis.Is_Null (Actual) then
+            return No_Static_Integer;
+         end if;
+      end if;
+
+      declare
+         Inner : constant Static_Integer :=
+           Static_Number (Actual, Kind, Depth + 1);
+      begin
+         if Inner.Kind = Not_Static then
+            return No_Static_Integer;
+         end if;
+         return Of_Kind (Kind, Known_Int (Inner.Value));
+      end;
+   exception
+      when others =>
+         return No_Static_Integer;
+   end Static_Actual;
 
    --  The value of the constant Decl declares when its initializer is
    --  static: such a constant is no more variable than a named number. The
@@ -394,6 +725,11 @@ package body Adalang_Analyzer.Flow_Eval is
                      return Of_Kind
                        (Universal_Expected, Known_Int (Inner.Value));
                   end;
+               elsif Is_Formal_In_Object (Decl) then
+                  return Bound_Formal (Expr, Decl, Depth + 1);
+               elsif Decl.Kind = Libadalang.Common.Ada_Anonymous_Expr_Decl
+               then
+                  return Static_Actual (Decl, Depth + 1);
                elsif Decl.Kind in Libadalang.Common.Ada_Object_Decl_Range
                then
                   --  A constant, whose initializer is typed as it is
@@ -576,6 +912,24 @@ package body Adalang_Analyzer.Flow_Eval is
       begin
          if Libadalang.Analysis.Is_Null (Decl) then
             return Unknown_Int;
+         elsif Is_Formal_In_Object (Decl) then
+            declare
+               Folded : constant Static_Integer := Bound_Formal (Node, Decl, 0);
+            begin
+               if Folded.Kind = Not_Static then
+                  return Unknown_Int;
+               end if;
+               return Known_Int (Folded.Value);
+            end;
+         elsif Decl.Kind = Libadalang.Common.Ada_Anonymous_Expr_Decl then
+            declare
+               Folded : constant Static_Integer := Static_Actual (Decl, 0);
+            begin
+               if Folded.Kind = Not_Static then
+                  return Unknown_Int;
+               end if;
+               return Known_Int (Folded.Value);
+            end;
          elsif Decl.Kind = Libadalang.Common.Ada_Object_Decl then
             declare
                Folded : constant Static_Integer := Static_Constant (Decl, 0);
@@ -2121,9 +2475,17 @@ package body Adalang_Analyzer.Flow_Eval is
                | Libadalang.Common.Ada_Generic_Package_Instantiation =>
                return True;
             when Libadalang.Common.Ada_Object_Decl_Range =>
-               return Decl.As_Object_Decl.F_Has_Constant
-                 and then Libadalang.Analysis.Is_Null
-                   (Decl.As_Object_Decl.F_Renaming_Clause);
+               --  A formal object of mode in is a constant of an instance:
+               --  of one an instance pass gives it the value of.
+               return
+                 (Decl.As_Object_Decl.F_Has_Constant
+                  and then Libadalang.Analysis.Is_Null
+                    (Decl.As_Object_Decl.F_Renaming_Clause))
+                 or else (Is_Formal_In_Object (Decl)
+                          and then Bound_Formal (Name, Decl, 0).Kind /=
+                            Not_Static);
+            when Libadalang.Common.Ada_Anonymous_Expr_Decl =>
+               return Static_Actual (Decl, 0).Kind /= Not_Static;
             when Libadalang.Common.Ada_Param_Spec =>
                return Decl.As_Param_Spec.F_Mode.Kind in
                  Libadalang.Common.Ada_Mode_In
@@ -2485,6 +2847,10 @@ package body Adalang_Analyzer.Flow_Eval is
       for Depth in 1 .. Max_Depth loop
          if Libadalang.Analysis.Is_Null (Current) then
             return (others => <>);
+         elsif Current.Kind = Libadalang.Common.Ada_Formal_Type_Decl
+           and then not Libadalang.Analysis.Is_Null (Bound_Type (Current))
+         then
+            Current := Bound_Type (Current);
          elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
             Current :=
               Current.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
@@ -2544,8 +2910,15 @@ package body Adalang_Analyzer.Flow_Eval is
       State : Flow_State) return Abstract_Range
    is
       Result : Abstract_Range := Unknown_Range;
+      Actual : constant Libadalang.Analysis.Base_Type_Decl :=
+        (if Libadalang.Analysis.Is_Null (Typ)
+         then Libadalang.Analysis.No_Base_Type_Decl
+         else Bound_Type (Typ));
    begin
-      if Libadalang.Analysis.Is_Null (Typ)
+      --  A formal type of an instance pass is its actual subtype.
+      if not Libadalang.Analysis.Is_Null (Actual) then
+         return Type_Range (Actual, State);
+      elsif Libadalang.Analysis.Is_Null (Typ)
         or else not Typ.P_Is_Int_Type
       then
          return Result;
@@ -2666,6 +3039,11 @@ package body Adalang_Analyzer.Flow_Eval is
       for Depth in 1 .. Max_Depth loop
          if Libadalang.Analysis.Is_Null (Current) then
             return Unknown_Int;
+         elsif Current.Kind = Libadalang.Common.Ada_Formal_Type_Decl
+           and then not Libadalang.Analysis.Is_Null (Bound_Type (Current))
+         then
+            --  A formal type of an instance pass is its actual subtype.
+            Current := Bound_Type (Current);
          elsif Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
             --  A subtype that adds a constraint has the size of its own
             --  values; one that adds none is its parent over again.
@@ -3819,6 +4197,11 @@ package body Adalang_Analyzer.Flow_Eval is
       Standing_Facts.Include (Key, Fact);
       return Fact;
    end Standing_Fact_Of;
+
+   procedure Forget_Standing_Facts is
+   begin
+      Standing_Facts.Clear;
+   end Forget_Standing_Facts;
 
 begin
    Set_Standing_Oracle (Standing_Fact_Of'Access);

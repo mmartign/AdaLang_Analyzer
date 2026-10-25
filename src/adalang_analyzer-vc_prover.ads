@@ -248,6 +248,16 @@ package Adalang_Analyzer.VC_Prover is
 
    procedure Set_Function_Oracle (Oracle : Function_Oracle);
 
+   Default_Solver_Time_Limit : constant := 2_000;
+   procedure Set_Solver_Time_Limit (Milliseconds : Positive);
+   --  The time each solver is given for one query, in milliseconds;
+   --  Default_Solver_Time_Limit unless set.
+
+   procedure Forget_Declared_Facts;
+   --  Empties the memos of the ranges of component subtypes and the sorts
+   --  of types, which may read the values of formals: before and after an
+   --  instance pass of a generic unit.
+
    procedure Assume_Component_Subtypes (Enabled : Boolean);
    --  From here on a symbol for a scalar component of a record object is,
    --  or is not, within the subtype the component is declared with. It is

@@ -2943,6 +2943,17 @@ package body Adalang_Analyzer.VC_Prover is
             end;
 
          when Libadalang.Common.Ada_Dotted_Name =>
+            --  An expanded name of a named number, of a constant whose
+            --  initializer is static or of a formal object seen through an
+            --  instance is its value, as the identifier is.
+            declare
+               Number : constant Domain.Abstract_Int :=
+                 Eval.Named_Number_Value (Node);
+            begin
+               if Number.Known then
+                  return To_Unbounded_String (SMT_Integer (Number.Value));
+               end if;
+            end;
             return Component_Term (Node.As_Dotted_Name, Context, Integer_Sort);
 
          when Libadalang.Common.Ada_If_Expr =>
@@ -6754,6 +6765,16 @@ package body Adalang_Analyzer.VC_Prover is
          return "";
    end First_Line;
 
+   Solver_Time_Limit : Positive := Default_Solver_Time_Limit;
+
+   function Limit_Image return String
+   is (Ada.Strings.Fixed.Trim (Solver_Time_Limit'Image, Ada.Strings.Left));
+
+   procedure Set_Solver_Time_Limit (Milliseconds : Positive) is
+   begin
+      Solver_Time_Limit := Milliseconds;
+   end Set_Solver_Time_Limit;
+
    function Run_Solver
      (Path       : String;
       Is_CVC5    : Boolean;
@@ -6778,7 +6799,7 @@ package body Adalang_Analyzer.VC_Prover is
          declare
             Args : GNAT.OS_Lib.Argument_List :=
               (1 => new String'("--lang=smt2"),
-               2 => new String'("--tlimit=2000"),
+               2 => new String'("--tlimit=" & Limit_Image),
                3 => new String'(Input_File));
          begin
             GNAT.OS_Lib.Spawn
@@ -6792,7 +6813,7 @@ package body Adalang_Analyzer.VC_Prover is
          declare
             Args : GNAT.OS_Lib.Argument_List :=
               (1 => new String'("-smt2"),
-               2 => new String'("-t:2000"),
+               2 => new String'("-t:" & Limit_Image),
                3 => new String'(Input_File));
          begin
             GNAT.OS_Lib.Spawn
@@ -8362,5 +8383,11 @@ package body Adalang_Analyzer.VC_Prover is
               Natural_Text (Kind_Tally_Maps.Element (Cursor)));
       end loop;
    end Dump_Symbolic_Diagnostics;
+
+   procedure Forget_Declared_Facts is
+   begin
+      Declared_Ranges.Clear;
+      Type_Sorts.Clear;
+   end Forget_Declared_Facts;
 
 end Adalang_Analyzer.VC_Prover;

@@ -191,6 +191,13 @@ package Adalang_Analyzer.Proof_Obligations is
    procedure Reset;
    --  Removes all obligations from the per-run registry.
 
+   procedure Begin_Capture;
+   --  Sets the registry aside and starts an empty one, for a pass whose
+   --  results are read (Count, Element) and then dropped: End_Capture
+   --  brings the registry back as it was. Captures do not nest.
+
+   procedure End_Capture;
+
    procedure Register (Item : Obligation);
    --  Adds Item. Raises Constraint_Error when Stable_Id is empty or already
    --  registered, preventing ambiguous updates and report identities.

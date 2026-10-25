@@ -1788,6 +1788,10 @@ package body Adalang_Analyzer.CLI is
          Process_File (F, Ctx);
       end loop;
 
+      if Verification_Mode then
+         Adalang_Analyzer.Flow_Interp.Verify_Instances (Ctx, Files_To_Process);
+      end if;
+
       if Rule_States (Circular_Package_Dependency) = Enabled then
          Adalang_Analyzer.Circular_Dependencies.Analyze
            (Ctx, Files_To_Process);

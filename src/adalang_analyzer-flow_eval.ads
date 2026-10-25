@@ -111,7 +111,38 @@ package Adalang_Analyzer.Flow_Eval is
    --  initializer is such an expression, taken in the constant's type,
    --  unless its value can change behind its name (an address clause, an
    --  import, a volatile object). Unknown_Int for any other node, for a
-   --  real number and for any other expression.
+   --  real number and for any other expression. A formal object of mode in
+   --  seen through an instance is the value of its actual there, when that
+   --  is such an expression.
+
+   --  An instance pass analyses a generic unit once more for one instance
+   --  of it in the run. While it runs, a formal object of mode in of the
+   --  unit (or of a unit it is a child of) has the value of its actual,
+   --  given here, and a formal package is the instance its actual names,
+   --  whose actuals are those of the formals seen through it. A formal
+   --  given two different values or instances has none. Outside a pass no
+   --  formal has one.
+   procedure Bind_Formal_Object
+     (Formal : Libadalang.Analysis.Defining_Name'Class;
+      Value  : Long_Long_Integer);
+   procedure Bind_Formal_Package
+     (Formal : Libadalang.Analysis.Defining_Name'Class;
+      Actual : Libadalang.Analysis.Generic_Instantiation'Class);
+   procedure Bind_Formal_Type
+     (Formal : Libadalang.Analysis.Defining_Name'Class;
+      Actual : Libadalang.Analysis.Base_Type_Decl'Class);
+   --  A formal scalar type is then its actual subtype for its range and
+   --  modulus.
+   procedure Clear_Formal_Bindings;
+   function Has_Formal_Bindings return Boolean;
+   function Formal_Bindings_Image return String;
+   --  The formals given a value or an instance, and what, in an order of
+   --  their own: two passes that give the same are the same.
+
+   procedure Forget_Standing_Facts;
+   --  Empties the memo of Standing_Fact_Of, whose answers read the bounds
+   --  of subtypes, which may be those of formals: before and after an
+   --  instance pass.
 
    function Is_Static_Zero
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;

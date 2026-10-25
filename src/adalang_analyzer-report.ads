@@ -112,6 +112,11 @@ package Adalang_Analyzer.Report is
    --  Maximum_Highlight_Width so a large construct doesn't dominate the
    --  terminal output.
 
+   procedure Set_Muted (Muted : Boolean);
+   --  While muted, nothing is reported: for a pass that analyses code once
+   --  more for its proof obligations alone (an instance pass of a generic
+   --  unit), whose findings were reported by the first.
+
    procedure Report_Violation_At
      (Filename    : String;
       Line_Number : Natural;

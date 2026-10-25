@@ -144,6 +144,7 @@ loop_standing_facts=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-standing-facts.XXXXXX
 element_writes=$(mktemp "${TMPDIR:-/tmp}/adalang-element-writes.XXXXXX")
 static_constants=$(mktemp "${TMPDIR:-/tmp}/adalang-static-constants.XXXXXX")
 static_constants_external=$(mktemp "${TMPDIR:-/tmp}/adalang-static-constants-external.XXXXXX")
+instance_passes=$(mktemp "${TMPDIR:-/tmp}/adalang-instance-passes.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -174,7 +175,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2965,5 +2966,71 @@ for operation in '(Port - 7)' '(Overlay - 7)'; do
    must_not_prove "$static_constants_external" division-by-zero \
      "$operation" "static constants (volatile, overlay)"
 done
+
+#  A generic unit is analysed once more for each instance of it in the run,
+#  with the values its actuals give its formal objects and the subtypes they
+#  give its formal scalar types, those of the instance of its parent a child
+#  is instantiated from and of the instance a formal package is given; an
+#  obligation it leaves unproved is proved when it is for every instance. Not
+#  where one instance makes the check fail, and not for a unit also
+#  instantiated inside a generic unit. GNATprove agrees
+#  (tests/run_gnatprove_differential.sh).
+status=0
+"$analyzer" --verify -q --format=json --output="$instance_passes" \
+  tests/verification_instance_passes.ads \
+  tests/verification_generic_lanes.ads tests/verification_generic_lanes.adb \
+  tests/verification_generic_lanes-wide.ads \
+  tests/verification_generic_lanes-wide.adb \
+  tests/verification_generic_narrow.ads tests/verification_generic_narrow.adb \
+  tests/verification_generic_user.ads tests/verification_generic_user.adb \
+  tests/verification_generic_inner.ads tests/verification_generic_inner.adb \
+  tests/verification_generic_outer.ads tests/verification_generic_outer.adb ||
+  status=$?
+if [ "$status" -gt 1 ]; then
+   echo "verification run failed for the instance passes with status $status" >&2
+   exit "$status"
+fi
+#  The obligation of Kind for Operation in File, which several of these
+#  files have.
+instance_obligation()
+{
+   grep -F "\"file\": \"tests/$1\"" "$instance_passes" |
+     grep -F "\"kind\": \"$2\"" | grep -F "\"operation\": \"$3\"" || true
+}
+must_prove_instances()
+{
+   if ! instance_obligation "$1" "$2" "$3" |
+     grep -F '"status": "proved-safe"' |
+     grep -F '"abstractState": "instances of the generic unit in this run' \
+       >/dev/null
+   then
+      echo "instance passes: $2 for '$3' in $1 is not proved for every instance" >&2
+      exit 1
+   fi
+}
+must_not_prove_instances()
+{
+   found=$(instance_obligation "$1" "$2" "$3")
+   if [ -z "$found" ]; then
+      echo "instance passes: no $2 obligation for '$3' in $1" >&2
+      exit 1
+   elif printf '%s\n' "$found" | grep -F '"status": "proved-safe"' >/dev/null
+   then
+      echo "instance passes: false-safe $2 for '$3' in $1" >&2
+      exit 1
+   fi
+}
+must_prove_instances verification_generic_lanes.adb division-by-zero '(Bits / 8)'
+must_prove_instances verification_generic_lanes.adb integer-overflow 'C + 1'
+must_prove_instances verification_generic_lanes-wide.adb division-by-zero \
+  '(Bits / 32)'
+must_prove_instances verification_generic_user.adb division-by-zero \
+  '(Lanes.Bits / 8)'
+must_not_prove_instances verification_generic_narrow.adb division-by-zero \
+  '(Bits / 8)'
+must_not_prove_instances verification_generic_narrow.adb integer-overflow \
+  'C + 1'
+must_not_prove_instances verification_generic_inner.adb division-by-zero \
+  '(Bits / 8)'
 
 echo "bounded verification tests passed"

@@ -671,9 +671,12 @@ initializer is written the same way, is that value too, taken in the
 constant's own type (`Bits : constant Positive := 2**Log` is 64 where
 `Log` is a constant 6); not a constant whose value can change behind its
 name -- a volatile object, one with an address clause or an import -- nor
-one initialized from a variable or a call. In the interval analysis a name
-whose value is known is that value as an operand too: the product of a
-named number and a sum has the range that follows.
+one initialized from a variable or a call. A name seen through an instance
+of a generic package (`P1.Bits`, or `Bits` under `use P1`) is the value it
+has in that instance: a formal object of mode `in` so reached is its
+actual. In the interval analysis a name whose value is known is that value
+as an operand too: the product of a named number and a sum has the range
+that follows.
 
 ### `T'Size`
 
@@ -1071,6 +1074,42 @@ more than six bodies one inside the other -- it is taken to hold of no
 parameter on entry.
 
 Outside SPARK code no predicate is taken to hold.
+
+## The instances of a generic unit
+
+A generic unit is analyzed as it is written, its formals unknown, where
+GNATprove analyzes each instance of it. Once every unit of the run has
+been analyzed, `--verify` analyzes each generic unit once more for each
+instance of it in the run, a formal object of mode `in` having the value of
+its actual there and a formal scalar type being its actual subtype, for its
+range, its modulus and its size:
+
+- The formals of the generic unit a child unit or a nested unit is part of
+  have the actuals of the instance its own instance is given through
+  (`package Lanes is new KeccakF_1600.Byte_Lanes`).
+- A formal package is the instance it is given: the formals seen through
+  it have that instance's actuals.
+- An actual has a value when it is written as a named number has one (see
+  "Names and named numbers"). A formal given two values, or one of a type
+  that is not an integer type, has none.
+
+Instances that give the same values are analyzed once. An obligation of
+the generic unit that the first analysis left unproved -- outside the
+generic units it declares, which have instances of their own -- is proved
+when the analysis of every instance proves it or finds it unreachable, and
+is reported once, at its place in the generic unit, as GNATprove reports a
+check of a generic unit. Only the subprograms with such an obligation in
+them or in their declaration are analyzed again, the solvers having half a
+second for a query, and the passes for one generic unit stop at the first
+that proves none of what is left.
+
+The instances are those in the units of the run: proved means proved for
+each of them, not for an instance in a unit the run does not have. A
+generic unit that is also instantiated inside a generic unit is left as the
+first analysis leaves it, the actuals of that instance depending on the
+instance of the unit it is in, and so is one the run does not instantiate.
+These analyses change obligations only: what they find is not reported
+again.
 
 ## Objects and effects the analysis does not follow
 

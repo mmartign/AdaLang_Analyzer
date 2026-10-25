@@ -7,6 +7,25 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `--verify` analyzes each generic unit once more for each instance of it
+  in the run, its formal objects of mode `in` having the values of their
+  actuals and its formal scalar types being their actual subtypes, those of
+  the parent unit of a child included and those seen through a formal
+  package; an obligation the first analysis left unproved is proved when it
+  is for every instance. GNATprove analyzes generic units so, and reports a
+  check of one where it is written: on the five corpora of the gap ledger
+  this proves 196 more of the checks GNATprove proves, 146 in libkeccak's
+  Keccak generics and 50 in CoAP-SPARK's RecordFlux generics. Instances
+  that give the same values are analyzed once, and only the subprograms
+  with an obligation still open; a generic unit also instantiated inside a
+  generic unit is left as it was. The `--verify` lane of libkeccak takes
+  173 s of CPU (was 79 s).
+- A name seen through an instance of a generic package (`P1.Bits`, or
+  `Bits` under `use P1`) has the value it has in that instance: a formal
+  object of mode `in` so reached is its actual.
+
 ### Changed
 
 - A constant of an integer type declared outside the subprogram under
