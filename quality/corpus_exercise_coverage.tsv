@@ -46,7 +46,7 @@ Contradictory_Condition	yes	automotive,recommended,spark,verify	10	0	0
 Contradictory_Range_Condition	no	-	0	0	0
 Identical_Branches	yes	recommended	4	17	11
 Repeated_Statement	yes	recommended	4	1	1
-Ineffective_Operation	yes	recommended	4	2	2
+Ineffective_Operation	yes	recommended	4	3	3
 Constant_Result_Operation	yes	recommended	4	1	1
 Empty_Loop	yes	recommended	4	46	8
 No_Recursion	yes	automotive,spark,verify	10	618	29
