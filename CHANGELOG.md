@@ -5,7 +5,28 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.11.0] - 2026-10-26
+
+A `--verify` release that raises a new kind of obligation, the dereference
+check of SPARK, and proves 316 more of the checks GNATprove proves. The
+JSON and SARIF reports name the new kind `pointer-dereference`.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+8,950 of the 15,043 checks GNATprove proves (was 8,634): 302 dereference
+checks, 7 preconditions and 7 postconditions, all in CoAP-SPARK. It proves
+none that GNATprove does not, no proof of 1.10.4 is lost, and the checks
+without an AdaLang obligation are 1,782 (was 2,109). On the ten corpora
+402 dereference checks are raised, all in CoAP-SPARK (350 `Proved_Safe`,
+50 `Unproved`, 2 `Unsupported`), and 21 obligations move from `Unproved` to
+`Proved_Safe` -- 14 preconditions and 7 postconditions -- and none the
+other way; no other obligation is added or gone, and no definite error is
+new or gone. Every preset of every corpus reports the findings of 1.10.4.
+The matched pairs are 3,623 (was 3,339), 1,960 of them both safe (was
+1,690), with no possible unsoundness and no false positive anywhere; on
+the SPARK testsuite 15 dereference checks are raised in 2 units, none
+proved, 6 of them pairs GNATprove proves. No proof is lost on the
+`--verify` fixtures of the test suite. The `--verify` lane of CoAP-SPARK
+takes 158 s of CPU (was 146 s); the other lanes take what they took.
 
 ### Added
 
