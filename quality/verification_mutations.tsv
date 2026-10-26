@@ -343,3 +343,10 @@ old-unknown	tests/verification_old.adb	postcondition	Unknown_X = Unknown_X'Old +
 old-loop	tests/verification_old.adb	postcondition	Loop_X = Loop_X'Old	unproved	a loop between the entry and the exit
 old-kept	tests/verification_old.adb	postcondition	Moved_X = Moved_X'Old + 1	unproved	a parameter the body does not write keeps its value
 old-component	tests/verification_old.adb	postcondition	Rate_Of (Bad_O.I) = Rate_Of (Bad_O.I'Old)	definite-error	a callee whose postcondition says the component changes
+dereference-order	tests/verification_dereferences.adb	pointer-dereference	Bad_O'Length	unproved	the access value is tested after the dereference, not before
+dereference-unguarded	tests/verification_dereferences.adb	pointer-dereference	Bad_U'Length	unproved	an access value nothing says anything of
+dereference-explicit	tests/verification_dereferences.adb	pointer-dereference	Bad_C.all	unproved	an explicit dereference of an access value nothing says anything of
+dereference-branch	tests/verification_dereferences.adb	pointer-dereference	Bad_B.Buffer'Length	unproved	a guard that does not cover the dereference
+dereference-call	tests/verification_dereferences.adb	pointer-dereference	Bad_K.Buffer'Length	unproved	a call with no contract may change the access value
+dereference-moved	tests/verification_dereferences.adb	pointer-dereference	Bad_M.Buffer'Length	unproved	the access value assigned null since the precondition
+dereference-element	tests/verification_dereferences.adb	pointer-dereference	Bad_S.Items (1).View'Last	unproved	a write to the element of an array the access value is in changes it

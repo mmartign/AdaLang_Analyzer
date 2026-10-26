@@ -274,6 +274,16 @@ package Adalang_Analyzer.VC_Prover is
    --  own, about which nothing is known; what State says of scalars and of
    --  array bounds stands.
 
+   function Forget_Element_Values
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class) return Symbolic_State;
+   --  As Forget_Composite_Values, for Writer a write to elements of an
+   --  array, whichever array it is, in code where no object a parameter
+   --  passed by reference stands for is also reached by another name: what
+   --  State says of an access value stands too, unless the access value is
+   --  in an element. A write through an access value changes what it
+   --  designates, not the access value.
+
    function Forget_Elements
      (State   : Symbolic_State;
       Writer  : Libadalang.Analysis.Ada_Node'Class;
@@ -508,6 +518,13 @@ package Adalang_Analyzer.VC_Prover is
    --  As Decide_Bounds, for Division_By_Zero_Check's "divisor /= 0" goal,
    --  which Abstract_Range cannot express (a single excluded point, not a
    --  bound).
+
+   function Decide_Not_Null
+     (Value   : Libadalang.Analysis.Expr'Class;
+      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome;
+   --  As Decide_Nonzero, for Pointer_Dereference_Check's "Value /= null"
+   --  goal, Value being of an access type.
 
    type Loop_Variant_Direction is (Decreases, Increases);
 

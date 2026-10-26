@@ -137,7 +137,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 41 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 42 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -169,7 +169,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_loop_standing_facts \
   verification_element_writes \
   verification_static_constants \
-  verification_instance_passes; do
+  verification_instance_passes \
+  verification_dereferences; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -1005,6 +1006,80 @@ if proved < 6:
     fail(f"instance passes: only {proved} checks proved for every instance")
 print(f"instance passes: {proved} checks proved for every instance, none on "
       "a line where GNATprove refuses one in an instance")
+PYTHON
+
+#  The dereference fixture, check by check: each dereference check proved
+#  here is proved by GNATprove at the same line, and GNATprove finds a
+#  check that might fail at each line where one of the Bad_* subprograms
+#  dereferences. Neither has a check where the subtype excludes null.
+derefs_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-derefs.XXXXXX")
+derefs_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-derefs.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log" "$pairs_results" "$pairs_log" "$bounds_results" "$bounds_log" "$clamp_results" "$clamp_log" "$standing_results" "$standing_log" "$elements_results" "$elements_log" "$constants_results" "$constants_log" "$instances_results" "$instances_log" "$derefs_results" "$derefs_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$derefs_results" \
+  tests/verification_dereferences.ads tests/verification_dereferences.adb ||
+  status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer dereference run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_dereferences.adb >"$derefs_log" 2>&1 || true
+
+python3 - "$derefs_results" "$derefs_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+proved, refused = set(), set()
+for line in log:
+    found = re.match(
+        r"(verification_dereferences\.ad[bs]):(\d+):\d+: "
+        r"(info|low|medium|high): pointer dereference check", line)
+    if found:
+        place = (found.group(1), int(found.group(2)))
+        (proved if found.group(3) == "info" else refused).add(place)
+
+agreed, bad = 0, set()
+for item in report["proofObligations"]:
+    name = item["file"].split("/")[-1]
+    if item["kind"] != "pointer-dereference" \
+       or not name.startswith("verification_dereferences."):
+        continue
+    place = (name, item["line"])
+    if item["status"] == "proved-safe":
+        if place not in proved or place in refused:
+            fail(f"dereference {item['operation']!r} at {name}:"
+                 f"{item['line']} is proved here, not by GNATprove")
+        agreed += 1
+    elif item["operation"].startswith("Bad_"):
+        bad.add(place)
+    if item["operation"].startswith("Sure_"):
+        fail(f"a dereference check at {name}:{item['line']} of a subtype "
+             "that excludes null")
+if agreed < 14:
+    fail(f"dereferences: only {agreed} checks proved")
+if not bad or not bad <= refused:
+    fail(f"dereferences: GNATprove refuses {sorted(refused)}, not every "
+         f"place of {sorted(bad)}")
+sure = [number for number, text in enumerate(
+    open("tests/verification_dereferences.ads"), start=1) if "Sure_B'" in text]
+if not sure or ("verification_dereferences.ads", sure[0]) in proved | refused:
+    fail("GNATprove has a dereference check where the subtype excludes null")
+print(f"dereferences: {agreed} checks proved here, each proved by GNATprove; "
+      f"GNATprove refuses the {len(bad)} the Bad_* subprograms make")
 PYTHON
 
 echo "GNATprove differential tests passed"

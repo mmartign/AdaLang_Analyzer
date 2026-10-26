@@ -65,7 +65,7 @@ package body Adalang_Analyzer.Gnatprove_Import is
       Of_Kind ("predicate check", Proof.Predicate_Check),
       No_Kind ("invariant check"),
       No_Kind ("tag check"),
-      No_Kind ("pointer dereference check"),
+      Of_Kind ("pointer dereference check", Proof.Pointer_Dereference_Check),
       No_Kind ("null exclusion check"),
       No_Kind ("accessibility check"),
       Of_Kind ("initialization check", Proof.Initialization_Check),

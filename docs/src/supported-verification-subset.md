@@ -57,6 +57,7 @@ the section it links to has the whole of its proof basis and boundary.
 | [Index](#index) | The indexed object's own bounds per dimension; otherwise scalar bounds VC against those bounds, an own-range `for` loop, or the object's own `'First` and `'Last` taken as symbols | Array objects and scalar indices |
 | [Length](#length) | An aggregate with an `others` choice; otherwise a scalar VC that the two lengths are equal in each dimension | An array given to a target, where a compiler keeps the check; the operands of `and`, `or` and `xor` on arrays |
 | [Predicate](#predicates) | The predicate of the subtype as a scalar Boolean VC, of the value given or of the object as the state knows its components once it is written | A value given to an object, to a part of one or to a formal, in SPARK code; none where the value already has the predicates of its own subtype |
+| [Dereference](#dereferences) | The access value is not null, as a scalar VC over its token | An explicit `.all`, and an access value as the prefix of a component, an indexed component, a slice or an array attribute, in SPARK code; none where the subtype of the access value excludes null |
 | Discriminant | The prefix object's own static discriminant constraint (an integer expression or an enumeration literal) selects the variant declaring the component; a constrained object's discriminants never change | A component of a top-level variant part, selected directly from an object declared with an explicit discriminant constraint; a constant, variable, or subtype-name constraint or choice is never resolved by spelling and stays `Unproved` |
 | [Initialization](#initialization) | Flow-sensitive definite-initialization state | Each read of a tracked scalar object; each `out` parameter and `Output` global at the subprogram's normal exit |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
@@ -256,6 +257,35 @@ error.
 No check is raised yet at the default value of a type or of an object
 declared without an initial value, at an allocator, nor at a component of
 an aggregate.
+
+### Dereferences
+
+A dereference raises `Constraint_Error` when the access value it reads is
+null, and GNATprove checks that it is not. In SPARK code (see "SPARK code")
+`--verify` raises the same check, at the dereference:
+
+- `P.all`, of `P`;
+- `P.C`, `P (I)`, `P (I .. J)`, and `P'First`, `P'Last`, `P'Length` and
+  `P'Range`, where `P` is of an access type: the dereference is implicit.
+
+No check is raised where the subtype of the access value excludes null --
+an object, a parameter or a component declared `not null`, or of a subtype
+or an access type that is -- as GNATprove raises none: the value is
+checked where it is given. Nor is one raised outside SPARK code, where what
+an access value designates can be reached by names the analysis does not
+follow, nor in the predicate of a subtype, which is not analyzed for its
+own checks.
+
+The check is decided by the solvers: `P /= null` as the translation of
+that condition has it (see "Access values"). It is proved from a
+precondition, from the left operand of `and then` or the condition of an
+`if` that tests the access value, from a callee's postcondition, and from
+an expression function such as RecordFlux's `Has_Buffer (Ctx)` whose body
+says so. A write through the access value, `P.all (I) := X` or
+`P (I .. J) := X`, leaves it as it was, and so does a write to an element of
+another array. The check is `Unproved` where the access value is a part of
+an object reached through another dereference, or the element of an array,
+or the result of a call: the translation has no name for it.
 
 ### Initialization
 
@@ -639,7 +669,10 @@ An access value is compared with `null` by `=` and `/=`. It is the token
 that the value of an object that is not a scalar has (see "Calls as
 terms"), and `null` is one token wherever it is written. What is known
 lasts as long as that token does: an assignment to the object ends it, and
-so does a call.
+so does a call. A write to elements of an array does not, unless the
+access value is in one of those elements: that write changes what an
+access value may designate, never the access value. The token of a record
+or an array, which such a write may change, is renewed there.
 
 ### Operators that a declaration defines
 
@@ -1309,7 +1342,9 @@ anything of the new one:
   SPARK code, give every object that is not a scalar a
   new value. Which objects an element belongs to, or is reached from
   through an access value, is not worked out, and two parameters passed by
-  reference may be one object;
+  reference may be one object. The assignment leaves an access value as it
+  was, unless the access value is in an element of an array (see "Access
+  values"); the call does not;
 - a procedure call does the same where it does not drop everything (see the
   call frame above);
 - a loop, a join of paths that disagree and an exception handler keep what

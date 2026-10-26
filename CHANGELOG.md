@@ -5,6 +5,32 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--verify` raises the dereference check of SPARK (new obligation kind
+  `pointer-dereference`) in SPARK code: that the access value read by
+  `P.all`, or by an implicit dereference -- `P.C`, `P (I)`, `P (I .. J)`,
+  `P'First`, `P'Last`, `P'Length`, `P'Range` with `P` of an access type --
+  is not null. It is decided by the solvers from what is known of `P` where
+  it is read: a precondition, a guard, a callee's postcondition, an
+  expression function such as RecordFlux's `Has_Buffer (Ctx)`. None is
+  raised where the subtype of the access value excludes null, as GNATprove
+  raises none, nor outside SPARK code. The gap ledger, the per-corpus
+  comparisons and `--gnatprove-log` pair GNATprove's pointer dereference
+  checks with the new kind. Who it concerns: a report read by a program
+  meets a kind it did not know.
+
+### Changed
+
+- An assignment to an element or a slice of an array leaves what is known
+  of an access value as it was, unless the access value is in an element of
+  an array: it changes what an access value may designate, not the access
+  value. `Ctx.Buffer.all (First .. Last) := Data` used to make every fact
+  about `Ctx.Buffer` lost, and with it the preconditions and postconditions
+  that read `Has_Buffer (Ctx)` after the write.
+
 ## [1.10.4] - 2026-10-25
 
 A `--verify` release that proves 198 more of the checks GNATprove proves:

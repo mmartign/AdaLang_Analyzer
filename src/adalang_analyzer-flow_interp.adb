@@ -251,6 +251,16 @@ package body Adalang_Analyzer.Flow_Interp is
          return True;
    end May_Share_Storage;
 
+   --  Symbols after Writer has written elements of an array. In SPARK code
+   --  an access value that is not in an element keeps what is known of it
+   --  (VC.Forget_Element_Values); elsewhere the element written may be a
+   --  part of a parameter passed by reference that holds one.
+   function Forget_Element_Values
+     (Symbols : VC.Symbolic_State;
+      Writer  : Libadalang.Analysis.Ada_Node'Class) return VC.Symbolic_State
+   is (if Verified_In_SPARK then VC.Forget_Element_Values (Symbols, Writer)
+       else VC.Forget_Composite_Values (Symbols, Writer));
+
    --  The symbolic state after Writer gives the object Key the value of
    --  Value. A scalar value is VC.Assign's to state. A record or an array
    --  has no term: the object gets a value of its own, and what is known
@@ -10452,8 +10462,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                      .As_Object_Decl.F_Renaming_Clause))
                            then
                               Output_Symbols :=
-                                VC.Forget_Composite_Values
-                                  (Input_Symbols, Source);
+                                Forget_Element_Values (Input_Symbols, Source);
                            else
                               Output_Symbols :=
                                 VC.Forget_Elements
@@ -10462,8 +10471,7 @@ package body Adalang_Analyzer.Flow_Interp is
                         exception
                            when Libadalang.Common.Property_Error =>
                               Output_Symbols :=
-                                VC.Forget_Composite_Values
-                                  (Input_Symbols, Source);
+                                Forget_Element_Values (Input_Symbols, Source);
                         end;
                      elsif Dest.Kind = Libadalang.Common.Ada_Dotted_Name then
                         --  A component of an object the name settles: what
@@ -11184,8 +11192,7 @@ package body Adalang_Analyzer.Flow_Interp is
                                  Symbols := VC.Havoc;
                               else
                                  Symbols :=
-                                   VC.Forget_Composite_Values
-                                     (Symbols, Source);
+                                   Forget_Element_Values (Symbols, Source);
                               end if;
                               State := After;
                            end;
@@ -13621,6 +13628,229 @@ package body Adalang_Analyzer.Flow_Interp is
                Occurrence => E);
       end Finalize_Predicate_Checks;
 
+      --  True where the subtype of the access value Value excludes null:
+      --  it names an object, a component or a parameter declared with such
+      --  a subtype. Such a value is never null where it is read, the check
+      --  being made where it is given one, and GNATprove has no dereference
+      --  check of it.
+      function Excludes_Null
+        (Value : Libadalang.Analysis.Expr'Class) return Boolean
+      is
+         function Of_Access_Def
+           (Def : Libadalang.Analysis.Type_Def) return Boolean
+         is (not Libadalang.Analysis.Is_Null (Def)
+             and then Def.Kind in Libadalang.Common.Ada_Access_Def
+             and then not Libadalang.Analysis.Is_Null
+               (Def.As_Access_Def.F_Has_Not_Null)
+             and then Def.As_Access_Def.F_Has_Not_Null.P_As_Bool);
+
+         function Of_Type_Expr
+           (Typ : Libadalang.Analysis.Type_Expr) return Boolean is
+         begin
+            if Libadalang.Analysis.Is_Null (Typ) then
+               return False;
+            elsif Typ.Kind = Libadalang.Common.Ada_Anonymous_Type then
+               return Of_Access_Def
+                 (Typ.As_Anonymous_Type.F_Type_Decl.F_Type_Def);
+            elsif Typ.Kind /= Libadalang.Common.Ada_Subtype_Indication then
+               return False;
+            elsif Typ.As_Subtype_Indication.F_Has_Not_Null.P_As_Bool then
+               return True;
+            end if;
+            declare
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Typ.As_Subtype_Indication.F_Name.P_Referenced_Decl;
+            begin
+               if Libadalang.Analysis.Is_Null (Decl) then
+                  return False;
+               elsif Decl.Kind = Libadalang.Common.Ada_Subtype_Decl then
+                  return Of_Type_Expr
+                    (Decl.As_Subtype_Decl.F_Subtype.As_Type_Expr);
+               elsif Decl.Kind = Libadalang.Common.Ada_Concrete_Type_Decl then
+                  return Of_Access_Def (Decl.As_Type_Decl.F_Type_Def);
+               end if;
+               return False;
+            end;
+         end Of_Type_Expr;
+
+         Decl : Libadalang.Analysis.Basic_Decl;
+      begin
+         if Value.Kind = Libadalang.Common.Ada_Paren_Expr then
+            return Excludes_Null (Value.As_Paren_Expr.F_Expr);
+         elsif Value.Kind not in Libadalang.Common.Ada_Identifier
+                               | Libadalang.Common.Ada_Dotted_Name
+         then
+            return False;
+         end if;
+         Decl := Value.As_Name.P_Referenced_Decl;
+         if Libadalang.Analysis.Is_Null (Decl) then
+            return False;
+         end if;
+         case Decl.Kind is
+            when Libadalang.Common.Ada_Object_Decl_Range =>
+               return Of_Type_Expr (Decl.As_Object_Decl.F_Type_Expr);
+            when Libadalang.Common.Ada_Param_Spec =>
+               return Of_Type_Expr (Decl.As_Param_Spec.F_Type_Expr);
+            when Libadalang.Common.Ada_Component_Decl =>
+               return Of_Type_Expr
+                 (Decl.As_Component_Decl.F_Component_Def.F_Type_Expr);
+            when Libadalang.Common.Ada_Discriminant_Spec =>
+               return Of_Type_Expr (Decl.As_Discriminant_Spec.F_Type_Expr);
+            when others =>
+               return False;
+         end case;
+      exception
+         when others =>
+            return False;
+      end Excludes_Null;
+
+      --  The access value Node dereferences: the prefix of ".all", or an
+      --  access value that is the prefix of a component, of an indexed
+      --  component or a slice, or of an array attribute, which is
+      --  dereferenced implicitly. No_Expr for anything else, and where the
+      --  access value cannot be null.
+      function Dereferenced
+        (Node : Libadalang.Analysis.Ada_Node'Class)
+         return Libadalang.Analysis.Expr
+      is
+         function Access_Value
+           (Prefix : Libadalang.Analysis.Expr'Class)
+            return Libadalang.Analysis.Expr
+         is
+            Typ : constant Libadalang.Analysis.Base_Type_Decl :=
+              Prefix.P_Expression_Type;
+         begin
+            if not Libadalang.Analysis.Is_Null (Typ)
+              and then Typ.P_Is_Access_Type
+              and then not Excludes_Null (Prefix)
+            then
+               return Libadalang.Analysis.Expr (Prefix);
+            end if;
+            return Libadalang.Analysis.No_Expr;
+         end Access_Value;
+      begin
+         case Node.Kind is
+            when Libadalang.Common.Ada_Explicit_Deref =>
+               return Access_Value (Node.As_Explicit_Deref.F_Prefix);
+
+            when Libadalang.Common.Ada_Call_Expr =>
+               if Node.As_Call_Expr.P_Kind in Libadalang.Common.Array_Index
+                                            | Libadalang.Common.Array_Slice
+               then
+                  return Access_Value (Node.As_Call_Expr.F_Name);
+               end if;
+
+            when Libadalang.Common.Ada_Dotted_Name =>
+               declare
+                  Suffix : constant Libadalang.Analysis.Basic_Decl :=
+                    Node.As_Dotted_Name.F_Suffix.P_Referenced_Decl;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Suffix)
+                    and then Suffix.Kind in
+                      Libadalang.Common.Ada_Component_Decl
+                        | Libadalang.Common.Ada_Discriminant_Spec
+                  then
+                     return Access_Value (Node.As_Dotted_Name.F_Prefix);
+                  end if;
+               end;
+
+            when Libadalang.Common.Ada_Attribute_Ref =>
+               declare
+                  Name   : constant String :=
+                    Normalized_Text (Node.As_Attribute_Ref.F_Attribute);
+                  Prefix : constant Libadalang.Analysis.Name :=
+                    Node.As_Attribute_Ref.F_Prefix;
+                  Decl   : constant Libadalang.Analysis.Basic_Decl :=
+                    (if Prefix.Kind in Libadalang.Common.Ada_Identifier
+                                     | Libadalang.Common.Ada_Dotted_Name
+                     then Prefix.P_Referenced_Decl
+                     else Libadalang.Analysis.No_Basic_Decl);
+               begin
+                  --  Not of a subtype's own name, the current instance in
+                  --  its predicate, which is not walked here.
+                  if Name in "first" | "last" | "length" | "range"
+                    and then (Libadalang.Analysis.Is_Null (Decl)
+                              or else Decl.Kind not in
+                                Libadalang.Common.Ada_Base_Type_Decl)
+                  then
+                     return Access_Value (Prefix);
+                  end if;
+               end;
+
+            when others =>
+               null;
+         end case;
+         return Libadalang.Analysis.No_Expr;
+      exception
+         when others =>
+            return Libadalang.Analysis.No_Expr;
+      end Dereferenced;
+
+      --  The check, in SPARK code, that the access value a dereference
+      --  reads is not null, at the dereference. GNATprove checks SPARK
+      --  code alone; elsewhere what an access value designates may be
+      --  reached by other names, which the symbolic state does not follow.
+      procedure Finalize_Dereference_Check
+        (Node      : Libadalang.Analysis.Ada_Node'Class;
+         Container : CFG.Node_Id)
+      is
+         Value : Libadalang.Analysis.Expr;
+      begin
+         if not Config.Verification_Mode or else not Verified_In_SPARK then
+            return;
+         end if;
+         Value := Dereferenced (Node);
+         if Libadalang.Analysis.Is_Null (Value) then
+            return;
+         elsif not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Node, Proof.Pointer_Dereference_Check,
+               "the access value has not been shown not to be null");
+         elsif Unreached (Container) then
+            Record_Unreachable
+              (Unit, Node, Proof.Pointer_Dereference_Check,
+               "the containing CFG node is unreachable");
+         else
+            declare
+               Outcome : constant VC.VC_Outcome :=
+                 VC.Decide_Not_Null
+                   (Value, State_At (Container), Symbols_At (Container));
+            begin
+               case Outcome.Result is
+                  when VC.VC_Proved =>
+                     --  proof-path: dereference-external
+                     Record_Proved_Safe
+                       (Unit, Node, Proof.Pointer_Dereference_Check,
+                        Proof.External_Prover,
+                        "scalar verification condition proves the access " &
+                          "value is not null",
+                        VC.Evidence, Final => True);
+                  when VC.VC_Refuted =>
+                     Record_Definite_Error
+                       (Unit, Node, Proof.Pointer_Dereference_Check,
+                        Proof.External_Prover,
+                        "the access value is null in every represented state",
+                        VC.Evidence, Final => True);
+                  when others =>
+                     Record_VC_Unproved
+                       (Unit, Node, Proof.Pointer_Dereference_Check,
+                        Proof.Abstract_Interpretation,
+                        "dereference failure is not established, but " &
+                          "absence is not proved",
+                        "the access value is not known not to be null",
+                        Outcome, Final => True);
+               end case;
+            end;
+         end if;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize dereference checks",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Dereference_Check;
+
       procedure Finalize_Node
         (Node      : Libadalang.Analysis.Ada_Node'Class;
          Container : CFG.Node_Id := CFG.No_Node)
@@ -13677,6 +13907,7 @@ package body Adalang_Analyzer.Flow_Interp is
          --  through to the child-recursion loop below so the rest of the
          --  file is still analyzed.
          Finalize_Predicate_Checks (Node, Here);
+         Finalize_Dereference_Check (Node, Here);
          begin
             if Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
                declare

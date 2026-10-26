@@ -413,6 +413,43 @@ package body Adalang_Analyzer.VC_Prover is
       end;
    end Root_Name;
 
+   --  The keys, by name, that the term of an access value has been made
+   --  for. A key stands for one object, or one part of one, the type of
+   --  which never changes: what is noted holds for the whole run.
+   package Key_Name_Sets is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Boolean,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+   Access_Value_Keys : Key_Name_Sets.Map;
+
+   function Is_Access_Expression
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+   begin
+      return Node.Kind in Libadalang.Common.Ada_Expr
+        and then not Libadalang.Analysis.Is_Null
+          (Node.As_Expr.P_Expression_Type)
+        and then Node.As_Expr.P_Expression_Type.P_Is_Access_Type;
+   exception
+      when others =>
+         return False;
+   end Is_Access_Expression;
+
+   procedure Note_Access_Value
+     (Key  : Symbol_Key;
+      Node : Libadalang.Analysis.Ada_Node'Class) is
+   begin
+      if Is_Access_Expression (Node) then
+         Access_Value_Keys.Include (Root_Name (Key), True);
+      end if;
+   end Note_Access_Value;
+
+   --  True for a key of an access value that is not in an element of an
+   --  array.
+   function Is_Access_Value (Key : Symbol_Key) return Boolean is
+     (Ada.Strings.Unbounded.Index (Key.Path, "@") = 0
+      and then Access_Value_Keys.Contains (Root_Name (Key)));
+
    function Binding_Index
      (State : Symbolic_State;
       Key   : Symbol_Key) return Natural
@@ -443,6 +480,10 @@ package body Adalang_Analyzer.VC_Prover is
          Item   : constant Symbolic_Binding :=
            (Key => Target, Sort => Sort, Term => To_Unbounded_String (Term));
       begin
+         --  The two keys are of one object, and so of one type.
+         if Is_Access_Value (Key) then
+            Access_Value_Keys.Include (Root_Name (Target), True);
+         end if;
          if Index = 0 then
             Result.Bindings.Append (Item);
          else
@@ -3746,11 +3787,14 @@ package body Adalang_Analyzer.VC_Prover is
                     (Context, Node, Unsupported_Expression_Kind);
                   return Null_Unbounded_String;
                end if;
-               return To_Unbounded_String
-                 (Symbol_For
-                    (Context,
-                     Part_Key (Resolved (Context, Referenced_Key (Node))),
-                     Opaque_Sort));
+               declare
+                  Key : constant Symbol_Key :=
+                    Part_Key (Resolved (Context, Referenced_Key (Node)));
+               begin
+                  Note_Access_Value (Key, Node);
+                  return To_Unbounded_String
+                    (Symbol_For (Context, Key, Opaque_Sort));
+               end;
             end;
 
          when Libadalang.Common.Ada_Call_Expr =>
@@ -3805,6 +3849,7 @@ package body Adalang_Analyzer.VC_Prover is
                   if not Libadalang.Analysis.Is_Null (Place.Object)
                     and then Initialized_At (Context, Place)
                   then
+                     Note_Access_Value (Part_Key (Place), Node);
                      return To_Unbounded_String
                        (Symbol_For (Context, Part_Key (Place), Opaque_Sort));
                   end if;
@@ -5257,10 +5302,11 @@ package body Adalang_Analyzer.VC_Prover is
    --  As Forget_Composite_Values, for the objects Touched is True for when
    --  it is given.
    function Forget_Values_Of
-     (State   : Symbolic_State;
-      Writer  : Libadalang.Analysis.Ada_Node'Class;
-      Touched : access function
-        (Object : Libadalang.Analysis.Ada_Node) return Boolean)
+     (State       : Symbolic_State;
+      Writer      : Libadalang.Analysis.Ada_Node'Class;
+      Touched     : access function
+        (Object : Libadalang.Analysis.Ada_Node) return Boolean;
+      Keep_Access : Boolean := False)
       return Symbolic_State
    is
       Result : Symbolic_State := State;
@@ -5281,10 +5327,12 @@ package body Adalang_Analyzer.VC_Prover is
       end Renew;
 
       --  True for what a write to elements of an array can change: a
-      --  value that is not a scalar, and a scalar read in an element.
+      --  value that is not a scalar, and a scalar read in an element. With
+      --  Keep_Access, not an access value outside an element.
       function Stale (Key : Symbol_Key; Sort : Scalar_Sort) return Boolean is
         ((Sort = Opaque_Sort
           or else Ada.Strings.Unbounded.Index (Key.Path, "@") /= 0)
+         and then not (Keep_Access and then Is_Access_Value (Key))
          and then (Touched = null or else Touched (Key.Object)));
    begin
       if not State.Supported or else Libadalang.Analysis.Is_Null (Writer) then
@@ -5315,6 +5363,11 @@ package body Adalang_Analyzer.VC_Prover is
      (State  : Symbolic_State;
       Writer : Libadalang.Analysis.Ada_Node'Class) return Symbolic_State
    is (Forget_Values_Of (State, Writer, null));
+
+   function Forget_Element_Values
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class) return Symbolic_State
+   is (Forget_Values_Of (State, Writer, null, Keep_Access => True));
 
    function Forget_Elements
      (State   : Symbolic_State;
@@ -8093,6 +8146,35 @@ package body Adalang_Analyzer.VC_Prover is
       when others =>
          return Unknown_Outcome;
    end Decide_Nonzero;
+
+   function Decide_Not_Null
+     (Value   : Libadalang.Analysis.Expr'Class;
+      State   : Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Token : Unbounded_String;
+   begin
+      Token := Opaque_Term (Value, Context);
+      if not Context.Supported or else Length (Token) = 0 then
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Value));
+      end if;
+      --  null is the token 0, as "X /= null" is translated.
+      return Decide_Goal
+        (To_Unbounded_String ("(distinct " & To_String (Token) & " 0)"),
+         Context);
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Not_Null;
 
    function Decide_Variant_Progress
      (Value          : Libadalang.Analysis.Expr'Class;

@@ -92,6 +92,8 @@ package body Adalang_Analyzer.Proof_Obligations is
             return "discriminant-check";
          when Predicate_Check =>
             return "predicate-check";
+         when Pointer_Dereference_Check =>
+            return "pointer-dereference";
          when Initialization_Check =>
             return "initialization-check";
          when Assertion_Check =>

@@ -52,7 +52,7 @@ CHECKS = [
     ("predicate check", "run-time check", "predicate-check"),
     ("invariant check", "run-time check", None),
     ("tag check", "run-time check", None),
-    ("pointer dereference check", "run-time check", None),
+    ("pointer dereference check", "run-time check", "pointer-dereference"),
     ("null exclusion check", "run-time check", None),
     ("accessibility check", "run-time check", None),
     ("initialization check", "initialization", "initialization-check"),
