@@ -5,7 +5,35 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.11.1] - 2026-10-27
+
+A `--verify` release that reads more of the scalar VC language -- operators
+a declaration defines, `T'Pos`, `F'Result`, `'Constrained` of a component,
+masks of low bits, powers and shifts -- and proves 109 more of the checks
+GNATprove proves. It corrects a false-safe of `--verify` (`FP-131`) that
+every release from 1.8.6 carries. No kind of obligation is added: a report
+has the members it had.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+9,059 of the 15,043 checks GNATprove proves (was 8,950): 34 range checks,
+26 preconditions, 24 postconditions, 14 overflow checks, 7 length checks,
+3 assertions and 1 index check. It proves none that GNATprove does not, no
+proof of 1.11.0 is lost, and the checks without an AdaLang obligation are
+1,782, as they were. On the ten corpora 191 obligations move from
+`Unproved` to `Proved_Safe` -- 63 range checks, 52 preconditions, 37
+overflow checks, 27 postconditions, 7 length checks, 4 assertions and 1
+index check, 128 of them in CoAP-SPARK -- and none the other way; no
+obligation is added or gone, and no definite error is new or gone. Every
+preset of every corpus reports the findings of 1.11.0. The matched pairs
+are 3,623, as they were, 2,003 of them both safe (was 1,960), with no
+possible unsoundness and no false positive anywhere; on the SPARK
+testsuite 7 obligations that read `F'Result` are proved, 3 of them pairs
+GNATprove proves (both safe 199, was 196). On the `--verify` fixtures of
+the test suite no proof is lost; the claims of the `FP-116` fixture that
+do not hold, written with operators whose functions do not compute what
+their symbols say, are now definite errors, and those that hold are
+proved. The `--verify` lane of CoAP-SPARK takes 157 s of user CPU (was
+150 s); the other lanes take what they took.
 
 ### Changed
 
