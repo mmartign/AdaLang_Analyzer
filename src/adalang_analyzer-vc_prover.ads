@@ -83,6 +83,22 @@ package Adalang_Analyzer.VC_Prover is
       Flow        : Adalang_Analyzer.Flow_Domain.Flow_State)
       return Symbolic_State;
 
+   function Result_Key
+     (Subprogram : Libadalang.Analysis.Basic_Decl'Class)
+      return Libadalang.Analysis.Ada_Node;
+   --  What stands for the value a function returns (F'Result): the defining
+   --  name of its first declaration.
+
+   function Assign_Result
+     (State    : Symbolic_State;
+      Function_Key : Libadalang.Analysis.Ada_Node;
+      Value    : Libadalang.Analysis.Expr'Class;
+      Flow     : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State after a return of Value from the function whose Result_Key is
+   --  Function_Key: the result has the term of Value. Where Value has none,
+   --  State, in which nothing is said of the result.
+
    function Assume
      (State     : Symbolic_State;
       Condition : Libadalang.Analysis.Expr;

@@ -59,6 +59,8 @@ project Verification_Differential_Broken is
       "verification_generic_outer.ads",
       "verification_generic_outer.adb",
       "verification_dereferences.ads",
-      "verification_dereferences.adb");
+      "verification_dereferences.adb",
+      "verification_translation_pieces.ads",
+      "verification_translation_pieces.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;

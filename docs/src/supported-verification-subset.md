@@ -330,7 +330,10 @@ caller: those are the parameters themselves.
 **Postcondition.** Proved from the joined normal-exit state and scalar
 Boolean VC, for supported scalar exits and contract expressions. `X'Old`
 is the value `X` had on entry, once the precondition holds (see "`'Old`
-and `'Loop_Entry`").
+and `'Loop_Entry`"). `F'Result`, of a scalar result, is the value each
+return statement gives, or the expression of an expression function; where
+the returns give values the join at the exit does not keep apart, it is a
+value of the result's sort of which nothing is known.
 
 The checks inside the precondition and the postcondition of a verified
 subprogram are obligations too. The precondition is evaluated on entry,
@@ -638,7 +641,9 @@ parts of an object that its name settles (see "Parts of an object"), and
 side-effect-free expression functions that can be inlined within the depth
 limit of eight bodies -- called with arguments or without an argument list (`Inv`,
 `Pkg.Ready`), the body being read where the call stands, with what is known
-there of the objects it names. Integer `/`, `mod`, and `rem` are translated only when the divisor
+there of the objects it names. `T'Pos (X)` is `X`, and `T'Val (N)` is
+`N`: an integer is its own position, and the term of an enumeration value is
+its position. Integer `/`, `mod`, and `rem` are translated only when the divisor
 is provably nonzero and their Ada sign semantics are encoded: a nonzero
 literal, a name whose interval excludes zero or whose value is known and
 not zero (a named number, a constant), or an attribute or an
@@ -680,14 +685,30 @@ An operator is the operation its symbol stands for only where it denotes
 that operation. Where a declaration defines a function for it -- for a type
 of the program, in the place of a predefined operator of `Integer` or
 `Boolean`, inherited by a derived type, or as a renaming of another
-function -- the operation is a call of that function: it has no value the
-analysis knows, a condition written with it says nothing of its operands,
-and it has no division or overflow check of its own, its precondition
-being the obligation. What it returns is within the subtype of its result.
-An operator that does not resolve has no known value either, and keeps the
-checks of the predefined operation. The short-circuit forms, ranges and
-membership tests are always what they read as, no declaration being able
-to define them.
+function -- the operation is a call of that function: the interval
+analysis knows no value of it, a condition written with it says nothing of
+its operands, and it has no division or overflow check of its own, its
+precondition being the obligation. In the scalar VC language the call is
+read through the expression of the function where it is an expression
+function, as any call is (the operands are its arguments, in order), and is
+otherwise unknown. What it returns is within the subtype of its result.
+The short-circuit forms, ranges and membership tests are always what they
+read as, no declaration being able to define them.
+
+Libadalang takes an operator for an abstract function where one hides the
+predefined operator of a type even when another function of the symbol
+takes the operands -- RecordFlux declares `"-"` of its `Index` type
+abstract and gives `Index - Index` a function that returns a `Length`. An
+abstract subprogram is never what a call calls (RM 3.9.3(7)): the function
+called is then the one function of the symbol in scope whose formals take
+the types of the operands -- a literal or a named number taking any integer
+type, an operand that is such an operator having the result type of the
+function it calls -- that is neither abstract nor hidden by an abstract one.
+Where two remain, the one whose result has the type of the other operand of
+the enclosing operation is taken (`Last - First <= Index'Last - 1`). Where
+none or more than one remains, the operator has no value, as an operator
+that does not resolve has none, and keeps the checks of the predefined
+operation.
 
 ### Names and named numbers
 
@@ -824,6 +845,12 @@ private type, a type that does not resolve), the result is unknown. In the
 scalar VC language a modular sum, difference or product by a constant is the
 term reduced with `mod`; the product of two unknown modular values is only
 known to be some value of the type, the same one for the same two operands.
+A power of two operands whose values are known is its value, reduced. `X and
+M`, `M` a mask of the low bits (`16#FF#`, `7`), is `X mod (M + 1)`, a value
+of a modular type being never negative; any other `and`, `or` and `xor` is
+outside the language. `Interfaces.Shift_Right (X, N)`, `N` known, is
+`X / 2 ** N`, and `Interfaces.Shift_Left (X, N)` is `X * 2 ** N` reduced by
+the modulus where it is known.
 
 ### Solvers and the names of symbols
 
@@ -895,8 +922,9 @@ of a package is read as it is written. Any other actual -- a call, an
 aggregate, an element at an index that is not known -- leaves the function
 to be a term (see "Calls as terms").
 
-`X'Constrained` (RM 3.7.2) is `True` of a constant and of a parameter of
-mode `in`. Of a parameter of mode `in out` or `out` it is what it is of
+`X'Constrained` (RM 3.7.2) is `True` of a constant -- a formal object of
+mode `in` among them, which has no reserved word `constant` (RM 12.4(9)) --
+of a parameter of mode `in`, and of a component of any of them. Of a parameter of mode `in out` or `out` it is what it is of
 the actual (RM 6.4.1): where the precondition of a call asks
 `not Ctx'Constrained` and the caller's own precondition says it of the
 parameter it passes on, the two meet. Nothing a subprogram does to an
@@ -904,10 +932,13 @@ object changes whether it is constrained, and what is known of it is kept
 when the object is written, across a call and at the entry of a loop
 body. Of a variable it is `False` where the declaration gives the name of
 a type alone, every discriminant of which has a default, the type being
-neither tagged nor limited. Any other variable -- declared with a
-constraint or with a subtype, a renaming, an aliased object -- is left
-unknown, and an actual that is a component, an element or a conversion
-says nothing of the formal.
+neither tagged nor limited, and so is a component of a variable whose
+declaration does so, through subtypes that add no constraint and no
+dereference (`Ctx.P.Response_Ctx`). Any other variable or component --
+declared with a constraint or with a subtype that has one, a renaming, an
+aliased object or component, one reached through an access value -- is
+left unknown, and an actual that is an element or a conversion says nothing
+of the formal.
 
 ## Objects that always hold a value
 

@@ -147,6 +147,8 @@ static_constants_external=$(mktemp "${TMPDIR:-/tmp}/adalang-static-constants-ext
 instance_passes=$(mktemp "${TMPDIR:-/tmp}/adalang-instance-passes.XXXXXX")
 dereferences=$(mktemp "${TMPDIR:-/tmp}/adalang-dereferences.XXXXXX")
 dereferences_ada=$(mktemp "${TMPDIR:-/tmp}/adalang-dereferences-ada.XXXXXX")
+translation_pieces=$(mktemp "${TMPDIR:-/tmp}/adalang-translation-pieces.XXXXXX")
+fp131=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp131.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -177,7 +179,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2052,10 +2054,29 @@ do
 done
 must_not_prove "$fp116" index-check 4 FP-116
 must_not_prove "$fp116" range-check 4 FP-116
-# The claims that hold are not refuted either, and a right operand of zero
-# is no error of a function called "/".
-if grep -F '"status": "definite-error"' "$fp116" >/dev/null; then
-   echo "FP-116: a definite error where a declared operator is called" >&2
+# The claims that hold are not refuted, and a right operand of zero is no
+# error of a function called "/". Since the operation is a call of its
+# function, read through its expression, those claims are proved where the
+# function says what the operands give: three of the four.
+for claim in 'Integer (Two + Three) = 1' 'not (Two < Three)' 'Two /= Two' \
+  'Integer (Share) = 2'
+do
+   if grep -F '"status": "definite-error"' "$fp116" |
+     grep -F "\"operation\": \"$claim\"" >/dev/null
+   then
+      echo "FP-116: the claim '$claim', which holds, refuted" >&2
+      exit 1
+   fi
+done
+for claim in 'Integer (Two + Three) = 1' 'not (Two < Three)' \
+  'Integer (Share) = 2'
+do
+   must_prove "$fp116" assertion "$claim" external-prover FP-116
+done
+if grep -F '"status": "definite-error"' "$fp116" |
+  grep -F '"kind": "division-by-zero"' >/dev/null
+then
+   echo "FP-116: a division error where a declared operator is called" >&2
    exit 1
 fi
 # Such a call has no division check and no overflow check of its own: what
@@ -3069,5 +3090,67 @@ then
    echo "a dereference check raised outside SPARK code" >&2
    exit 1
 fi
+
+#  Pieces of the scalar VC language: an operator a declaration defines,
+#  called where Libadalang takes an abstract function for it; T'Pos and
+#  T'Val; X'Constrained of a component; F'Result; a mask of low bits and a
+#  power of known operands; Interfaces.Shift_Right and Shift_Left. The
+#  claims of the Ok_* subprograms are proved, those of the Bad_* ones not.
+#  GNATprove agrees (tests/run_gnatprove_differential.sh) but on
+#  Bad_Aliased, which it proves.
+run_json_pair "$translation_pieces" tests/verification_translation_pieces
+must_prove "$translation_pieces" assertion 'D = Len (A) - Len (B)' \
+  external-prover "an operator a declaration defines"
+must_prove "$translation_pieces" assertion "A - B <= Idx'Last - 1" \
+  external-prover "an operator settled by the other operand"
+must_not_prove "$translation_pieces" assertion 'D = Len (A) - Len (B) + 1' \
+  "a false claim about an operator a declaration defines"
+must_prove "$translation_pieces" postcondition 'P <= 2' external-prover \
+  "T'Pos"
+must_not_prove "$translation_pieces" postcondition 'P <= 1' "T'Pos"
+must_prove "$translation_pieces" postcondition 'C = Green' external-prover \
+  "T'Val"
+for operation in 'Reset (O.Inner.Plain)' 'Reset (H.Same)'; do
+   must_prove "$translation_pieces" precondition "$operation" \
+     external-prover "X'Constrained of an unconstrained component"
+done
+for operation in 'Reset (H.Fixed)' 'Reset (H.Named)' \
+  'Reset (H.Aliased_Part)'
+do
+   must_not_prove "$translation_pieces" precondition "$operation" \
+     "X'Constrained of a constrained or aliased component"
+done
+for operation in "Ok_Next'Result = X + 1" "Ok_Half'Result <= X" \
+  "Ok_Negation'Result = not B"
+do
+   must_prove "$translation_pieces" postcondition "$operation" \
+     external-prover "F'Result"
+done
+for operation in "Bad_Next'Result = X" "Bad_Split'Result = 1"; do
+   must_not_prove "$translation_pieces" postcondition "$operation" \
+     "a false claim about F'Result"
+done
+must_prove "$translation_pieces" range-check 'Y and 16#FF#' external-prover \
+  "a mask of low bits"
+must_not_prove "$translation_pieces" range-check 'Y and 16#1F0#' \
+  "a mask that is not of low bits"
+must_not_prove "$translation_pieces" postcondition 'R <= 100' \
+  "a false claim about a mask of low bits"
+must_prove "$translation_pieces" postcondition 'R * 2 ** 8 <= Y' \
+  external-prover "a power of known operands"
+must_prove "$translation_pieces" range-check 'Shift_Right (Y, 24)' \
+  external-prover "Interfaces.Shift_Right"
+must_not_prove "$translation_pieces" range-check 'Shift_Right (Y, 16)' \
+  "a false claim about Interfaces.Shift_Right"
+must_prove "$translation_pieces" postcondition 'R mod 2 = 0' \
+  external-prover "Interfaces.Shift_Left"
+must_not_prove "$translation_pieces" postcondition 'R < 128' \
+  "a false claim about Interfaces.Shift_Left"
+
+#  FP-131: a formal object of mode in is a constant, so X'Constrained is
+#  True of it and of its components.
+run_json_pair "$fp131" tests/verification_fp131_formal_object
+must_not_prove "$fp131" assertion "not Whole'Constrained" FP-131
+must_not_prove "$fp131" assertion "not Outer.Part'Constrained" FP-131
 
 echo "bounded verification tests passed"

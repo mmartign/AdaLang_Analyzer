@@ -137,7 +137,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 42 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 43 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -170,7 +170,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_element_writes \
   verification_static_constants \
   verification_instance_passes \
-  verification_dereferences; do
+  verification_dereferences \
+  verification_translation_pieces; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -1080,6 +1081,101 @@ if not sure or ("verification_dereferences.ads", sure[0]) in proved | refused:
     fail("GNATprove has a dereference check where the subtype excludes null")
 print(f"dereferences: {agreed} checks proved here, each proved by GNATprove; "
       f"GNATprove refuses the {len(bad)} the Bad_* subprograms make")
+PYTHON
+
+#  The fixture of the pieces of the scalar VC language, claim by claim:
+#  each assertion, precondition, postcondition and range check proved here
+#  is proved by GNATprove where it has a check of the kind at the line, and
+#  GNATprove finds a check that might fail at each line where a claim of a
+#  Bad_* subprogram is made, but the aliased component (Bad_Aliased), whose
+#  precondition it proves and --verify leaves unproved.
+pieces_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-pieces.XXXXXX")
+pieces_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-pieces.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$deps_results" "$deps_log" "$pairs_results" "$pairs_log" "$bounds_results" "$bounds_log" "$clamp_results" "$clamp_log" "$standing_results" "$standing_log" "$elements_results" "$elements_log" "$constants_results" "$constants_log" "$instances_results" "$instances_log" "$derefs_results" "$derefs_log" "$pieces_results" "$pieces_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$pieces_results" \
+  tests/verification_translation_pieces.ads \
+  tests/verification_translation_pieces.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer translation pieces run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_translation_pieces.adb >"$pieces_log" 2>&1 || true
+
+python3 - "$pieces_results" "$pieces_log" <<'PYTHON'
+import json
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = {"assertion": "assertion", "precondition": "precondition",
+         "postcondition": "postcondition", "range-check": "range check"}
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+proved, refused = set(), set()
+for line in log:
+    found = re.match(
+        r"(verification_translation_pieces\.ad[bs]):(\d+):\d+: "
+        r"(info|low|medium|high): (assertion|precondition|postcondition|"
+        r"range check)", line)
+    if found:
+        place = (found.group(1), int(found.group(2)), found.group(4))
+        (proved if found.group(3) == "info" else refused).add(place)
+
+agreed = 0
+for item in report["proofObligations"]:
+    name = item["file"].split("/")[-1]
+    if item["kind"] not in kinds or item["status"] != "proved-safe" \
+       or not name.startswith("verification_translation_pieces."):
+        continue
+    place = (name, item["line"], kinds[item["kind"]])
+    if place in refused:
+        fail(f"{item['kind']} {item['operation']!r} at {name}:"
+             f"{item['line']} is proved here and refused by GNATprove")
+    if place in proved:
+        agreed += 1
+if agreed < 19:
+    fail(f"translation pieces: only {agreed} checks proved by both")
+
+lines = open("tests/verification_translation_pieces.adb").read().split("\n")
+spec = open("tests/verification_translation_pieces.ads").read().split("\n")
+bad = []
+for claim, source, kind in [
+        ("Len (B) + 1", lines, "assertion"),
+        ("Reset (H.Fixed)", lines, "precondition"),
+        ("Reset (H.Named)", lines, "precondition"),
+        ("Y and 16#1F0#", lines, "range check"),
+        ("Shift_Right (Y, 16)", lines, "range check"),
+        ("with Post => P <= 1", spec, "postcondition"),
+        ("Bad_Next'Result = X", spec, "postcondition"),
+        ("Bad_Split'Result = 1", spec, "postcondition"),
+        ("with Post => R <= 100", spec, "postcondition"),
+        ("with Post => R < 128", spec, "postcondition")]:
+    number = next((n for n, text in enumerate(source, start=1)
+                   if claim in text), None)
+    name = ("verification_translation_pieces.adb" if source is lines
+            else "verification_translation_pieces.ads")
+    if number is None or (name, number, kind) not in refused:
+        fail(f"translation pieces: GNATprove does not refuse {claim!r}")
+    bad.append(claim)
+aliased = next(n for n, text in enumerate(lines, start=1)
+               if "Reset (H.Aliased_Part)" in text)
+if ("verification_translation_pieces.adb", aliased, "precondition") \
+   not in proved:
+    fail("translation pieces: GNATprove no longer proves Bad_Aliased")
+print(f"translation pieces: {agreed} checks proved here, each proved by "
+      f"GNATprove; GNATprove refuses the {len(bad)} claims of the Bad_* "
+      "subprograms but Bad_Aliased")
 PYTHON
 
 echo "GNATprove differential tests passed"

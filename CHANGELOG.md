@@ -5,6 +5,46 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `--verify` reads more of the scalar VC language, where an obligation was
+  `Unproved` because part of it had no term:
+  - An operator a declaration defines is a call of that function, read
+    through its expression where it is an expression function, its operands
+    being the arguments. Where Libadalang takes the operator for an abstract
+    function that hides a predefined one -- as RecordFlux's `"-"` of
+    `Index` -- the function called is the one in scope that takes the types
+    of the operands, settled where two do by the type of the other operand
+    of the enclosing operation; with none or several, the operator stays
+    without a value.
+  - `T'Pos (X)` and `T'Val (N)`.
+  - `F'Result` in the postcondition of a function with a scalar result: the
+    value each return gives, or the expression of an expression function.
+    No postcondition that names `F'Result` was proved before.
+  - `X'Constrained` of a component of a variable, `False` where the
+    declaration of the component gives the name of a type with a default
+    for every discriminant (not tagged, not limited), through subtypes that
+    add no constraint, and the component is neither aliased nor reached
+    through an access value; and what a call says of a formal's
+    `'Constrained` is read before the formal is taken for its actual, so
+    that `Set_Ver (Ctx.P.Response_Ctx, ...)` meets RecordFlux's
+    `not Ctx'Constrained`.
+  - `X and M` of a modular type, `M` a mask of low bits, is `X mod (M + 1)`;
+    a power of known operands is its value; `Interfaces.Shift_Right` and
+    `Interfaces.Shift_Left` by a known amount.
+
+### Fixed
+
+- `FP-131`: a formal object of mode `in` is a constant (RM 12.4(9)), but
+  its declaration has no reserved word `constant`, and `--verify` took it
+  for a variable: of one of a type with defaulted discriminants,
+  `not X'Constrained` was proved, where `X'Constrained` is `True` and the
+  assertion fails at run time (GNAT warns so). Every release from 1.8.6 to
+  1.11.0. Who it concerns: a generic unit with a formal object of a
+  discriminated type whose contract or assertion reads its `'Constrained`.
+
 ## [1.11.0] - 2026-10-26
 
 A `--verify` release that raises a new kind of obligation, the dereference

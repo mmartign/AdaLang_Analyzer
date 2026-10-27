@@ -20,6 +20,7 @@ with Ada.Strings.Unbounded;
 with Ada.Strings.Hash;
 with Ada.Exceptions;
 
+with Langkit_Support.Slocs;
 with Langkit_Support.Text;
 
 with Adalang_Analyzer.Ada_Text;
@@ -1209,6 +1210,368 @@ package body Adalang_Analyzer.Flow_Eval is
       when others =>
          return Unresolved;
    end Origin_Of_Operator;
+
+   --  The same declaration, whatever instance it is seen through: two
+   --  operators are told apart by the types of their operands, and an
+   --  operand and a formal of one generic name its types in the same words.
+   function Same_Type
+     (Left, Right : Libadalang.Analysis.Base_Type_Decl) return Boolean
+   is
+      use type Libadalang.Analysis.Analysis_Unit;
+      use type Langkit_Support.Slocs.Source_Location;
+   begin
+      if Libadalang.Analysis.Is_Null (Left)
+        or else Libadalang.Analysis.Is_Null (Right)
+      then
+         return False;
+      end if;
+      declare
+         Left_Type  : constant Libadalang.Analysis.Base_Type_Decl :=
+           Left.P_Canonical_Type;
+         Right_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Right.P_Canonical_Type;
+      begin
+         return Left_Type.Unit = Right_Type.Unit
+           and then Langkit_Support.Slocs.Start_Sloc (Left_Type.Sloc_Range)
+                    = Langkit_Support.Slocs.Start_Sloc
+                        (Right_Type.Sloc_Range);
+      end;
+   end Same_Type;
+
+   function Callee_Of
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      In_Context : Boolean) return Libadalang.Analysis.Basic_Decl;
+
+   function Return_Type
+     (Decl : Libadalang.Analysis.Basic_Decl)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+     (if Libadalang.Analysis.Is_Null (Decl)
+        or else Libadalang.Analysis.Is_Null (Decl.P_Subp_Spec_Or_Null)
+      then Libadalang.Analysis.No_Base_Type_Decl
+      else Decl.P_Subp_Spec_Or_Null.P_Return_Type);
+
+   function Bare (Operand : Libadalang.Analysis.Expr)
+      return Libadalang.Analysis.Expr
+   is
+      Result : Libadalang.Analysis.Expr := Operand;
+   begin
+      while not Libadalang.Analysis.Is_Null (Result)
+        and then Result.Kind = Libadalang.Common.Ada_Paren_Expr
+      loop
+         Result := Result.As_Paren_Expr.F_Expr;
+      end loop;
+      return Result;
+   end Bare;
+
+   --  A literal or a named number has every integer type.
+   function Universal (Operand : Libadalang.Analysis.Expr) return Boolean is
+      Item : constant Libadalang.Analysis.Expr := Bare (Operand);
+   begin
+      if Item.Kind = Libadalang.Common.Ada_Int_Literal then
+         return True;
+      elsif Item.Kind in Libadalang.Common.Ada_Name then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Item.As_Name.P_Referenced_Decl;
+         begin
+            return not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind = Libadalang.Common.Ada_Number_Decl;
+         end;
+      end if;
+      return False;
+   end Universal;
+
+   --  The type of Operand: where it is an operation whose function
+   --  Libadalang does not settle, the result type of the function it calls
+   --  (Libadalang's type is that of the function it settles on instead).
+   function Operand_Type (Operand : Libadalang.Analysis.Expr)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+      Item : constant Libadalang.Analysis.Expr := Bare (Operand);
+   begin
+      if Item.Kind in Libadalang.Common.Ada_Un_Op
+                    | Libadalang.Common.Ada_Bin_Op_Range
+        and then Origin_Of_Operator (Item) = Unresolved
+      then
+         return Return_Type (Callee_Of (Item, In_Context => False));
+      end if;
+      return Item.P_Expression_Type;
+   end Operand_Type;
+
+   Max_Operator_Formals : constant := 2;
+   type Formal_Type_Array is array (Positive range <>)
+     of Libadalang.Analysis.Base_Type_Decl;
+
+   --  The type of each formal of the subprogram Spec specifies, one for
+   --  each name ("Left, Right : T" is two); empty for none, or for more
+   --  than an operator takes.
+   function Operator_Formal_Types
+     (Spec : Libadalang.Analysis.Base_Subp_Spec)
+     return Formal_Type_Array
+   is
+      Result : Formal_Type_Array (1 .. Max_Operator_Formals);
+      Count  : Natural := 0;
+   begin
+      for Formal of Spec.P_Abstract_Formal_Params loop
+         for Name of Formal.P_Defining_Names loop
+            pragma Unreferenced (Name);
+            if Count = Max_Operator_Formals then
+               return Result (1 .. 0);
+            end if;
+            Count := Count + 1;
+            Result (Count) := Formal.P_Formal_Type;
+         end loop;
+      end loop;
+      return Result (1 .. Count);
+   end Operator_Formal_Types;
+
+   function Callee_Of
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      In_Context : Boolean) return Libadalang.Analysis.Basic_Decl
+   is
+      use type Libadalang.Analysis.Analysis_Unit;
+      use type Langkit_Support.Slocs.Source_Location;
+
+      Max_Candidates : constant := 8;
+
+      Operator   : Libadalang.Analysis.Op;
+      Operands   : array (1 .. 2) of Libadalang.Analysis.Expr;
+      Types      : array (1 .. 2) of Libadalang.Analysis.Base_Type_Decl;
+      Count      : Natural;
+      Candidates : array (1 .. Max_Candidates)
+        of Libadalang.Analysis.Basic_Decl;
+      Found      : Natural := 0;
+
+      --  Whether Decl is a function whose formals take the operands.
+      function Takes_Operands
+        (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+      is
+         Spec : constant Libadalang.Analysis.Base_Subp_Spec :=
+           Decl.P_Subp_Spec_Or_Null;
+      begin
+         if Libadalang.Analysis.Is_Null (Spec)
+           or else Libadalang.Analysis.Is_Null (Spec.P_Return_Type)
+         then
+            return False;
+         end if;
+         declare
+            Formals : constant Formal_Type_Array :=
+              Operator_Formal_Types (Spec);
+         begin
+            if Formals'Length /= Count then
+               return False;
+            end if;
+            for Position in 1 .. Count loop
+               declare
+                  Formal_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+                    Formals (Position);
+               begin
+                  if Libadalang.Analysis.Is_Null (Formal_Type) then
+                     return False;
+                  elsif Universal (Operands (Position)) then
+                     if not Formal_Type.P_Is_Int_Type then
+                        return False;
+                     end if;
+                  elsif not Same_Type (Types (Position), Formal_Type) then
+                     return False;
+                  end if;
+               end;
+            end loop;
+            return True;
+         end;
+      end Takes_Operands;
+
+      --  Whether Left and Right have the same formal and result types:
+      --  then one hides the other.
+      function Homographs
+        (Left, Right : Libadalang.Analysis.Basic_Decl) return Boolean
+      is
+         Left_Spec  : constant Libadalang.Analysis.Base_Subp_Spec :=
+           Left.P_Subp_Spec_Or_Null;
+         Right_Spec : constant Libadalang.Analysis.Base_Subp_Spec :=
+           Right.P_Subp_Spec_Or_Null;
+      begin
+         if Libadalang.Analysis.Is_Null (Left_Spec)
+           or else Libadalang.Analysis.Is_Null (Right_Spec)
+           or else not Same_Type
+             (Left_Spec.P_Return_Type, Right_Spec.P_Return_Type)
+         then
+            return False;
+         end if;
+         declare
+            Left_Formals  : constant Formal_Type_Array :=
+              Operator_Formal_Types (Left_Spec);
+            Right_Formals : constant Formal_Type_Array :=
+              Operator_Formal_Types (Right_Spec);
+         begin
+            if Left_Formals'Length = 0
+              or else Left_Formals'Length /= Right_Formals'Length
+            then
+               return False;
+            end if;
+            for Position in Left_Formals'Range loop
+               if not Same_Type
+                 (Left_Formals (Position), Right_Formals (Position))
+               then
+                  return False;
+               end if;
+            end loop;
+            return True;
+         end;
+      end Homographs;
+
+      function Same_Decl (Left, Right : Libadalang.Analysis.Ada_Node'Class)
+         return Boolean
+      is
+        (Left.Unit = Right.Unit
+         and then Langkit_Support.Slocs.Start_Sloc (Left.Sloc_Range)
+                  = Langkit_Support.Slocs.Start_Sloc (Right.Sloc_Range));
+
+      --  The type the operation is expected to have, where it is an
+      --  operand of another whose other operand has a type of its own;
+      --  No_Base_Type_Decl elsewhere.
+      function Expected return Libadalang.Analysis.Base_Type_Decl is
+         Parent : Libadalang.Analysis.Ada_Node := Node.Parent;
+         Child  : Libadalang.Analysis.Ada_Node := Node.As_Ada_Node;
+      begin
+         while not Libadalang.Analysis.Is_Null (Parent)
+           and then Parent.Kind = Libadalang.Common.Ada_Paren_Expr
+         loop
+            Child := Parent;
+            Parent := Parent.Parent;
+         end loop;
+         if Libadalang.Analysis.Is_Null (Parent)
+           or else Parent.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+           or else Parent.As_Bin_Op.F_Op.Kind in
+             Libadalang.Common.Ada_Op_And_Then
+             | Libadalang.Common.Ada_Op_Or_Else
+             | Libadalang.Common.Ada_Op_And
+             | Libadalang.Common.Ada_Op_Or
+             | Libadalang.Common.Ada_Op_Xor
+             | Libadalang.Common.Ada_Op_Double_Dot
+             | Libadalang.Common.Ada_Op_In
+             | Libadalang.Common.Ada_Op_Not_In
+         then
+            return Libadalang.Analysis.No_Base_Type_Decl;
+         end if;
+         declare
+            Other : constant Libadalang.Analysis.Expr :=
+              (if Libadalang.Analysis."="
+                    (Child, Parent.As_Bin_Op.F_Left.As_Ada_Node)
+               then Parent.As_Bin_Op.F_Right
+               else Parent.As_Bin_Op.F_Left);
+         begin
+            if Universal (Other) then
+               return Libadalang.Analysis.No_Base_Type_Decl;
+            end if;
+            return Operand_Type (Other);
+         end;
+      end Expected;
+   begin
+      if Origin_Of_Operator (Node) = Predefined then
+         return Libadalang.Analysis.No_Basic_Decl;
+      elsif Origin_Of_Operator (Node) = Declared then
+         return Libadalang.Analysis.Op'
+           (if Node.Kind = Libadalang.Common.Ada_Un_Op
+            then Node.As_Un_Op.F_Op
+            else Node.As_Bin_Op.F_Op).P_Referenced_Decl;
+      end if;
+
+      if Node.Kind = Libadalang.Common.Ada_Un_Op then
+         Operator := Node.As_Un_Op.F_Op;
+         Operands (1) := Node.As_Un_Op.F_Expr;
+         Count := 1;
+      elsif Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+         Operator := Node.As_Bin_Op.F_Op;
+         Operands (1) := Node.As_Bin_Op.F_Left;
+         Operands (2) := Node.As_Bin_Op.F_Right;
+         Count := 2;
+      else
+         return Libadalang.Analysis.No_Basic_Decl;
+      end if;
+      for Position in 1 .. Count loop
+         if not Universal (Operands (Position)) then
+            Types (Position) := Operand_Type (Operands (Position));
+            if Libadalang.Analysis.Is_Null (Types (Position)) then
+               return Libadalang.Analysis.No_Basic_Decl;
+            end if;
+         end if;
+      end loop;
+
+      --  Libadalang resolves an operator to the abstract function that
+      --  hides a predefined one even where another function of the symbol
+      --  takes the operands, and an abstract subprogram is never what a
+      --  call calls (RM 3.9.3(7)). What is called is then the function of
+      --  the symbol in scope that takes the operands, neither abstract nor
+      --  hidden by an abstract one -- of the type the context expects,
+      --  where more than one does -- and none is known where that does not
+      --  leave exactly one.
+      declare
+         Elements : constant Libadalang.Analysis.Ada_Node_Array :=
+           Operator.P_All_Env_Elements (Seq => False);
+      begin
+         for Element of Elements loop
+            if Element.Kind in Libadalang.Common.Ada_Basic_Decl
+              and then Element.Kind /= Libadalang.Common.Ada_Abstract_Subp_Decl
+              and then Takes_Operands (Element.As_Basic_Decl)
+            then
+               declare
+                  Hidden : Boolean := False;
+               begin
+                  for Other of Elements loop
+                     if Other.Kind = Libadalang.Common.Ada_Abstract_Subp_Decl
+                       and then Homographs
+                         (Element.As_Basic_Decl, Other.As_Basic_Decl)
+                     then
+                        Hidden := True;
+                     end if;
+                  end loop;
+                  for Index in 1 .. Found loop
+                     Hidden := Hidden
+                       or else Same_Decl (Candidates (Index), Element);
+                  end loop;
+                  if not Hidden then
+                     if Found = Max_Candidates then
+                        return Libadalang.Analysis.No_Basic_Decl;
+                     end if;
+                     Found := Found + 1;
+                     Candidates (Found) := Element.As_Basic_Decl;
+                  end if;
+               end;
+            end if;
+         end loop;
+      end;
+
+      if Found > 1 and then In_Context then
+         declare
+            Wanted : constant Libadalang.Analysis.Base_Type_Decl := Expected;
+            Kept   : Natural := 0;
+         begin
+            if not Libadalang.Analysis.Is_Null (Wanted) then
+               for Index in 1 .. Found loop
+                  if Same_Type (Return_Type (Candidates (Index)), Wanted) then
+                     Kept := Kept + 1;
+                     Candidates (Kept) := Candidates (Index);
+                  end if;
+               end loop;
+               Found := Kept;
+            end if;
+         end;
+      end if;
+
+      return
+        (if Found = 1 then Candidates (1)
+         else Libadalang.Analysis.No_Basic_Decl);
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Callee_Of;
+
+   function Operator_Callee
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is (Callee_Of (Node, In_Context => True));
 
    function Integer_Value
      (Node  : Libadalang.Analysis.Ada_Node'Class;

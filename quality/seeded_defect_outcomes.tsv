@@ -88,7 +88,7 @@ h03_arith.adb	32	BAD	division-by-zero	unproved
 h03_arith.adb	34	BAD	division-by-zero	definite-error
 h03_arith.adb	36	BAD	division-by-zero	definite-error
 h03_arith.adb	38	BAD	division-by-zero	definite-error
-h03_arith.adb	40	BAD	division-by-zero	unproved
+h03_arith.adb	40	BAD	division-by-zero	definite-error
 h03_arith.adb	42	BAD	division-by-zero	definite-error
 h03_arith.adb	44	BAD	division-by-zero	unproved
 h03_arith.adb	46	BAD	division-by-zero	unproved

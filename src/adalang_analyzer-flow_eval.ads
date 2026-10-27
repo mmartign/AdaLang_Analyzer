@@ -51,6 +51,15 @@ package Adalang_Analyzer.Flow_Eval is
    --  own: a call of a function a declaration defines says nothing of the
    --  kind about its operands (FP-116).
 
+   function Operator_Callee
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Basic_Decl;
+   --  The function the operation Node (a unary or binary operation) calls
+   --  where Libadalang does not take it for a predefined operation: the
+   --  declaration that defines it, or the predefined operator it turns out
+   --  to be (P_Is_Predefined_Operator); No_Basic_Decl where it is
+   --  predefined, or where which function it calls is not settled.
+
    function Integer_Value
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State := Empty_Flow_State) return Abstract_Int;

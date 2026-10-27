@@ -174,27 +174,27 @@ hidden-true-constant	tests/verification_fp115_hidden_literal.adb	assertion	True	
 hidden-false-branch	tests/verification_fp115_hidden_literal.adb	division-by-zero	Count	definite-error	FP-115: the branch a parameter named False guards is reached, with the divisor at zero
 declared-plus	tests/verification_fp116_declared_operator.adb	assertion	Integer (Two + Three) = 5	unproved	FP-116: a function "+" that returns the distance between its operands gives 1
 declared-times	tests/verification_fp116_declared_operator.adb	assertion	Integer (Two * Three) = 6	unproved	FP-116: a function "*" that returns the smaller operand gives 2
-declared-mod	tests/verification_fp116_declared_operator.adb	assertion	Integer (Two mod Three) = 2	unproved	FP-116: a function "mod" that returns its right operand gives 3
-declared-power	tests/verification_fp116_declared_operator.adb	assertion	Integer (Two ** Exponent) = 4	unproved	FP-116: a function "**" that returns its left operand gives 2
+declared-mod	tests/verification_fp116_declared_operator.adb	assertion	Integer (Two mod Three) = 2	definite-error	FP-116: a function "mod" that returns its right operand gives 3
+declared-power	tests/verification_fp116_declared_operator.adb	assertion	Integer (Two ** Exponent) = 4	definite-error	FP-116: a function "**" that returns its left operand gives 2
 declared-minus	tests/verification_fp116_declared_operator.adb	assertion	Integer (-Two) /= 2	unproved	FP-116: a function "-" that returns its operand gives 2
 declared-abs	tests/verification_fp116_declared_operator.adb	assertion	Integer (abs Two) = 2	unproved	FP-116: a function "abs" that returns zero gives 0
-declared-less	tests/verification_fp116_declared_operator.adb	assertion	Two < Three	unproved	FP-116: a function "<" that reverses the order is False for 2 and 3
+declared-less	tests/verification_fp116_declared_operator.adb	assertion	Two < Three	definite-error	FP-116: a function "<" that reverses the order is False for 2 and 3
 declared-less-branch	tests/verification_fp116_declared_operator.adb	assertion	Integer (Left) >= Integer (Right)	unproved	FP-116: the branch a declared "<" guards says nothing of the predefined order
-declared-equal	tests/verification_fp116_declared_operator.adb	assertion	Two = Two	unproved	FP-116: a function "=" that is never True
+declared-equal	tests/verification_fp116_declared_operator.adb	assertion	Two = Two	definite-error	FP-116: a function "=" that is never True
 declared-unequal	tests/verification_fp116_declared_operator.adb	assertion	not (Two /= Two)	unproved	FP-116: "/=" is the complement of the declared "=", and so always True
 declared-unequal-branch	tests/verification_fp116_declared_operator.adb	assertion	Integer (Left) /= Integer (Right)	unproved	FP-116: the branch the complement of a declared "=" guards is reached with equal operands
 declared-operand	tests/verification_fp116_declared_operator.adb	assertion	Two + Three > Two	unproved	FP-116: a declared "+" as operand of a predefined comparison: 1 is not above 2
 declared-membership	tests/verification_fp116_declared_operator.adb	assertion	Two + Three in Fifth	unproved	FP-116: a declared "+" tested for membership: 1 is not 5
-declared-array-bound	tests/verification_fp116_declared_operator.adb	assertion	Buffer'Last = 5	unproved	FP-116: an array bound written with a declared "+" is 1
+declared-array-bound	tests/verification_fp116_declared_operator.adb	assertion	Buffer'Last = 5	definite-error	FP-116: an array bound written with a declared "+" is 1
 declared-array-index	tests/verification_fp116_declared_operator.adb	index-check	4	unproved	FP-116: an index outside an array whose bound is written with a declared "+"
 declared-subtype-bound	tests/verification_fp116_declared_operator.adb	range-check	4	unproved	FP-116: a value outside a subtype whose bound is written with a declared "+"
 declared-inherited	tests/verification_fp116_declared_operator.adb	assertion	Integer (Low + High) = 5	unproved	FP-116: a derived type has the function of its parent, not the predefined operator
 declared-renaming	tests/verification_fp116_declared_operator.adb	assertion	Integer (Two + Offset) = 5	unproved	FP-116: an operator that renames a function is that function
 declared-on-integer	tests/verification_fp116_declared_operator.adb	assertion	Small + Large = 5	unproved	FP-116: a function "+" on Integer takes the place of the predefined one where it is visible
-declared-and	tests/verification_fp116_declared_operator.adb	assertion	Yes and Yes	unproved	FP-116: a function "and" on Boolean that is never True
-declared-or	tests/verification_fp116_declared_operator.adb	assertion	not (No or No)	unproved	FP-116: a function "or" on Boolean that is always True
-declared-not	tests/verification_fp116_declared_operator.adb	assertion	not Off	unproved	FP-116: a function "not" on Boolean that returns its operand
-declared-xor	tests/verification_fp116_declared_operator.adb	assertion	On xor Idle	unproved	FP-116: a function "xor" on Boolean that is never True
+declared-and	tests/verification_fp116_declared_operator.adb	assertion	Yes and Yes	definite-error	FP-116: a function "and" on Boolean that is never True
+declared-or	tests/verification_fp116_declared_operator.adb	assertion	not (No or No)	definite-error	FP-116: a function "or" on Boolean that is always True
+declared-not	tests/verification_fp116_declared_operator.adb	assertion	not Off	definite-error	FP-116: a function "not" on Boolean that returns its operand
+declared-xor	tests/verification_fp116_declared_operator.adb	assertion	On xor Idle	definite-error	FP-116: a function "xor" on Boolean that is never True
 length-into-integer	tests/verification_length_conversion.adb	range-check	Compared'Length	unproved	an array over Natural may have one component more than Integer has values for
 length-into-subtype	tests/verification_length_conversion.adb	range-check	Qualified'Length	unproved	the length of an array over Natural may be outside Natural
 length-into-chosen-base	tests/verification_length_conversion.adb	range-check	Shortened'Length	unproved	nothing says a base range of a type declared 0 .. 100 holds 2 ** 31
@@ -350,3 +350,10 @@ dereference-branch	tests/verification_dereferences.adb	pointer-dereference	Bad_B
 dereference-call	tests/verification_dereferences.adb	pointer-dereference	Bad_K.Buffer'Length	unproved	a call with no contract may change the access value
 dereference-moved	tests/verification_dereferences.adb	pointer-dereference	Bad_M.Buffer'Length	unproved	the access value assigned null since the precondition
 dereference-element	tests/verification_dereferences.adb	pointer-dereference	Bad_S.Items (1).View'Last	unproved	a write to the element of an array the access value is in changes it
+operator-false	tests/verification_translation_pieces.adb	assertion	D = Len (A) - Len (B) + 1	unproved	a false claim about the value of an operator a declaration defines
+constrained-component	tests/verification_translation_pieces.adb	precondition	Reset (H.Fixed)	unproved	a component whose declaration constrains it is constrained
+result-false	tests/verification_translation_pieces.adb	postcondition	Bad_Next'Result = X	definite-error	the function returns X + 1 on its one path
+result-split	tests/verification_translation_pieces.adb	postcondition	Bad_Split'Result = 1	unproved	one return gives 2
+mask-not-low-bits	tests/verification_translation_pieces.adb	range-check	Y and 16#1F0#	unproved	a mask that is not of low bits keeps bits above 255
+shift-right-short	tests/verification_translation_pieces.adb	range-check	Shift_Right (Y, 16)	unproved	sixteen bits are left above 255
+fp131-formal-object	tests/verification_fp131_formal_object.adb	assertion	not Whole'Constrained	definite-error	a formal object of mode in is a constant: X'Constrained is True

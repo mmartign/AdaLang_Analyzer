@@ -10534,6 +10534,29 @@ package body Adalang_Analyzer.Flow_Interp is
                   --  An expression here is that of an expression function.
                   Scan_Expression_For_Flow_Bugs
                     (Unit, Source, Input, Input_Symbols);
+
+                  --  What the function returns is its result (F'Result).
+                  declare
+                     Value : constant Libadalang.Analysis.Expr :=
+                       (if Source.Kind = Libadalang.Common.Ada_Return_Stmt
+                        then Source.As_Return_Stmt.F_Return_Expr
+                        elsif Subprogram.Kind =
+                          Libadalang.Common.Ada_Expr_Function
+                          and then Source = Libadalang.Analysis.Ada_Node
+                            (Subprogram.As_Expr_Function.F_Expr)
+                        then Source.As_Expr
+                        else Libadalang.Analysis.No_Expr);
+                     Key : constant Libadalang.Analysis.Ada_Node :=
+                       VC.Result_Key (Subprogram);
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Value)
+                       and then not Libadalang.Analysis.Is_Null (Key)
+                     then
+                        Output_Symbols :=
+                          VC.Assign_Result (Input_Symbols, Key, Value, Input);
+                        Flow_Set_Initialized (Output, Key, Bool_True);
+                     end if;
+                  end;
                end if;
 
             when CFG.Condition_Node =>
