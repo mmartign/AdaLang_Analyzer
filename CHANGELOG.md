@@ -5,12 +5,38 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.11.2] - 2026-10-29
+
+A `--verify` release that raises the index checks GNATprove has at the
+bounds of a slice that is the target of an assignment, proves the check of
+a slice whose bounds are within the array whenever it is not null, and
+proves 170 more of the checks GNATprove proves. It corrects a false
+positive of `Dead_Store` and `Overwritten_Assignment` (`FP-132`). No kind
+of obligation is added, but a report has more `index-check` obligations.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+9,229 of the 15,043 checks GNATprove proves (was 9,059): 118 index checks
+at the bounds of a target slice and 52 range checks of slices. It proves
+none that GNATprove does not, no proof of 1.11.1 is lost, and the checks
+without an AdaLang obligation are 1,588 (was 1,782). On the ten corpora
+437 index checks are raised at the bounds of target slices (186
+`Proved_Safe`, 233 `Unproved`, 18 `Unsupported`), and 176 range checks of
+slices move from `Unproved` to `Proved_Safe`, none the other way; no other
+obligation is added or gone, and no definite error is new or gone. Every
+preset of every corpus reports the findings of 1.11.1. The matched pairs
+are 3,625 (was 3,623), 2,009 of them both safe (was 2,003), with no
+possible unsoundness and no false positive anywhere; one pair of
+project_bias is no longer one to one, AdaLang having three index checks on
+its line to GNATprove's one. On the SPARK testsuite 10 index checks are
+raised, 6 of them proved, and 3 range checks of slices are proved, 2 of
+them pairs GNATprove proves (both safe 201, was 199). On the `--verify`
+fixtures of the test suite no proof is lost. The `--verify` lanes take
+what they took.
 
 ### Added
 
 - `--verify` raises an index check at each bound of a slice that is the
-  target of an assignment, `A (L .. H) := ...`, where GNATprove has one,
+  target of an assignment, `A (L .. H) := ...`, as GNATprove does,
   besides the range check of the slice at `A` it raised already; at the
   range, for a target slice given by a subtype name or a `'Range`. A bound
   is proved when it is within the bounds of `A`, when the slice is known to
