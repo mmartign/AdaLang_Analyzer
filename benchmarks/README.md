@@ -34,21 +34,21 @@ only — see `git log` for prior snapshots).
 
 | Corpus | Author | Domain | Matched pairs | Both safe | Unsoundness | False positives |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 1,114 | 572 | 0 | 0 |
+| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 1,116 | 576 | 0 | 0 |
 | [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 162 | 82 | 0 | 0 |
-| [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 250 | 199 | 0 | 0 |
+| [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 250 | 201 | 0 | 0 |
 | [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 1,868 | 1,075 | 0 | 0 |
 | [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 229 | 75 | 0 | 0 |
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 6 | 0 | 0 | 0 |
-| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 595 | 199 | 0 | 0 |
+| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 595 | 201 | 0 | 0 |
 
-These are the figures of release 1.11.1 (run of 2026-10-27 against the
+These are the figures of release 1.11.2 (run of 2026-10-29 against the
 GNATprove output of 2026-10-02). A matched pair is a
 `(file, line, check kind)` at which each tool has exactly one obligation;
 "both safe" is the number of pairs AdaLang proves too.
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark, Tokeneer) — 3,623 proof obligations both
+Saatana, libkeccak, coap_spark, Tokeneer) — 3,625 proof obligations both
 tools could independently evaluate at the same location, spanning five
 different authors/origins and five structurally different domains —
 AdaLang has never once called something safe that GNATprove could not
@@ -66,7 +66,7 @@ span far more distinct code shapes than the six real projects reach; its
 value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-10-27.md`.
+`proved-safe`. See `spark_testsuite/RESULTS_2026-10-29.md`.
 
 What the two zero columns don't show:
 
@@ -96,30 +96,30 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 9,059 | 60.2% |
-| Has the obligation, leaves it unproved | 4,173 | 27.7% |
+| Proves it | 9,229 | 61.4% |
+| Has the obligation, leaves it unproved | 4,197 | 27.9% |
 | Has the obligation, calls it unsupported | 28 | 0.2% |
 | Has the obligation, finds the code never reached | 1 | 0.0% |
-| Has no obligation of that kind at that place | 1,223 | 8.1% |
+| Has no obligation of that kind at that place | 1,029 | 6.8% |
 | Has no obligation of that kind at all | 350 | 2.3% |
 | Raises nothing in that file | 209 | 1.4% |
 
 Since 1.8.3 the analyzer does this accounting itself when it is given the
 log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
 on each check beside its own result, and on these corpora that leaves none
-of the 15,043 unaccounted for -- 9,059 proved by AdaLang too, 4,202 with
-GNATprove's verdict alone on an obligation AdaLang has, 1,782 with
+of the 15,043 unaccounted for -- 9,229 proved by AdaLang too, 4,226 with
+GNATprove's verdict alone on an obligation AdaLang has, 1,588 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
 
 What is left, and why:
 
-- **Unproved (4,173).** AdaLang has the obligation and does not decide it.
+- **Unproved (4,197).** AdaLang has the obligation and does not decide it.
   The ledger gives the reason it reports for each, per corpus.
 - **Unsupported (28).** The obligation is in a subprogram `--verify`
   leaves outside the verified subset, almost all for a dispatching call;
   26 of them are in coap_spark.
-- **No obligation (1,782).** Discriminant checks and memory leaks, which
+- **No obligation (1,588).** Discriminant checks and memory leaks, which
   AdaLang does not have; predicate checks at the
   default value of a type, at an allocator and at a component of an
   aggregate, where it raises none yet; and range, index and precondition
@@ -128,8 +128,8 @@ What is left, and why:
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a
 check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
-the ledger from the lanes' results. How the figure got to 9,059, release
-by release, is in `CHANGELOG.md` (1.8.1 to 1.11.1), with the analyzer faults
+the ledger from the lanes' results. How the figure got to 9,229, release
+by release, is in `CHANGELOG.md` (1.8.1 to 1.11.2), with the analyzer faults
 that the work turned up on the way (`FP-104`, `FP-106` to `FP-122`,
 `FP-124` to `FP-131`).
 
@@ -421,9 +421,9 @@ third, unrelated domain (a general-purpose utility library, not a web
 server or crypto primitive): GNATprove hard-stops on a SPARK-illegal
 aspect 41 units into the project, while AdaLang completes a full pass.
 
-**Where the tradeoff bites.** AdaLang proves 60% of what GNATprove proves
-on those corpora (9,059 of 15,043 checks), from 55% on Saatana (203 of
-367) to 66% on Tokeneer (1,395 of 2,114), so its `Proved_Safe`
+**Where the tradeoff bites.** AdaLang proves 61% of what GNATprove proves
+on those corpora (9,229 of 15,043 checks), from 58% on Saatana (213 of
+367) to 67% on Tokeneer (1,426 of 2,114), so its `Proved_Safe`
 verdicts are a bonus on top of GNATprove where both are available, not a
 substitute, and its `Unproved`/`Unsupported` results mean "no information,"
 not "probably fine." Saatana (162 matched pairs) and CubedOS (6, and not
