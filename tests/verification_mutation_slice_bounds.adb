@@ -58,12 +58,57 @@ is
       return Too_Long'Length;
    end Head;
 
+   --  The same, for slices that are the target of an assignment, each
+   --  bound of which has an index check of its own.
+
+   --  The high bound of the target is any Integer.
+   function Fill_Open (From : Index; Wide_Upper : Integer) return Integer
+     with Pre => True
+   is
+      Open_Store : Vector (1 .. 10) := (others => 0);
+   begin
+      Open_Store (From .. Wide_Upper) := (others => 1);
+      return Open_Store (1);
+   end Fill_Open;
+
+   --  A target that is null for every value of Nearly_Count but zero.
+   function Fill_Almost_Null (Nearly_Count : Natural) return Integer
+     with Pre => True
+   is
+      Nearly : Vector (1 .. 10) := (others => 0);
+   begin
+      Nearly (Nearly_Count .. 0) := (others => 1);
+      return Nearly (1);
+   end Fill_Almost_Null;
+
+   --  Not null, the target reaches one past the array when Tail_Count is
+   --  twelve.
+   function Fill_Tail (Tail_Count : Natural) return Integer
+     with Pre => Tail_Count <= 12
+   is
+      Tail_Store : Vector (1 .. 10) := (others => 0);
+   begin
+      Tail_Store (1 .. Tail_Count - 1) := (others => 1);
+      return Tail_Store (1);
+   end Fill_Tail;
+
+   --  Nothing says the target has two elements.
+   procedure Clear_Brief (Brief : in out Vector)
+     with Pre => Brief'Last < Positive'Last
+   is
+   begin
+      Brief (Brief'First .. Brief'First + 1) := (0, 0);
+   end Clear_Brief;
+
    Seen : constant Boolean :=
      Open_High (1, 3) >= 0
      and then Below (1) >= 0
      and then Above (1) >= 0
      and then Almost_Null (1) >= 0
-     and then Head (Data) >= 0;
+     and then Head (Data) >= 0
+     and then Fill_Open (1, 3) >= 0
+     and then Fill_Almost_Null (1) >= 0
+     and then Fill_Tail (3) >= 0;
 begin
    pragma Assert (Seen or else not Seen);
 end Verification_Mutation_Slice_Bounds;

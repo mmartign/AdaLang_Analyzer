@@ -8096,6 +8096,73 @@ package body Adalang_Analyzer.VC_Prover is
          return Unknown_Outcome;
    end Decide_Index_In_Object;
 
+   function Decide_Slice_Bounds
+     (Low, High : Libadalang.Analysis.Expr'Class;
+      Prefix    : Libadalang.Analysis.Name'Class;
+      Bounds    : Domain.Abstract_Range;
+      Which     : Slice_Bound;
+      State     : Domain.Flow_State;
+      Symbols   : Symbolic_State) return VC_Outcome
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Low_Term  : Unbounded_String;
+      High_Term : Unbounded_String;
+      First     : Unbounded_String;
+      Last      : Unbounded_String;
+
+      function Within (Term : Unbounded_String) return String is
+        ("(and (<= " & To_String (First) & " " & To_String (Term) &
+         ") (<= " & To_String (Term) & " " & To_String (Last) & "))");
+   begin
+      Low_Term := Integer_Term (Low, Context);
+      if Context.Supported and then Length (Low_Term) > 0 then
+         High_Term := Integer_Term (High, Context);
+      end if;
+      if Context.Supported and then Length (High_Term) > 0 then
+         if Bounds.Has_Low and then Bounds.Has_High then
+            First := To_Unbounded_String (SMT_Integer (Bounds.Low));
+            Last := To_Unbounded_String (SMT_Integer (Bounds.High));
+         else
+            First :=
+              Array_Attribute_Term (Prefix.As_Name, "first", Low, Context);
+            if Context.Supported and then Length (First) > 0 then
+               Last :=
+                 Array_Attribute_Term (Prefix.As_Name, "last", High, Context);
+            end if;
+         end if;
+      end if;
+      if not Context.Supported or else Length (Last) = 0 then
+         if Context.Supported then
+            Mark_Unsupported (Context, Low, Missing_Static_Bounds);
+         end if;
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Low));
+      end if;
+
+      return Decide_Goal
+        (To_Unbounded_String
+           ("(=> (<= " & To_String (Low_Term) & " " & To_String (High_Term) &
+            ") " &
+            (case Which is
+               when Low_Bound   => Within (Low_Term),
+               when High_Bound  => Within (High_Term),
+               when Both_Bounds =>
+                 "(and " & Within (Low_Term) & " " & Within (High_Term) &
+                 ")") &
+            ")"),
+         Context);
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Slice_Bounds;
+
    --  The term for the length of the Dimension-th dimension of the array
    --  Item denotes, or of the range Item is; empty, with Context marked,
    --  when it has none.

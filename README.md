@@ -265,8 +265,8 @@ runs 31 clean and 25 deliberately broken units through GNATprove when that tool
 is installed, compares three of them with it check by check, and reports an
 explicit skip otherwise. A separate seeded
 mutation campaign guards all 16 enumerated obligation families against
-false-safe regressions. A proof-path evidence gate maps 85 abstract, flow,
-contract-transfer, and external-prover routes to every one of the 29 current
+false-safe regressions. A proof-path evidence gate maps 93 abstract, flow,
+contract-transfer, and external-prover routes to every one of the 35 current
 `Proved_Safe` producer sites, including adversarial and solver-boundary cases.
 
 ## Commercial support from Spazio IT

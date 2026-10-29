@@ -11787,32 +11787,128 @@ package body Adalang_Analyzer.Flow_Interp is
       --  sliced array, unless the slice is null. One obligation for the
       --  slice, at the name that is sliced, which is where GNATprove
       --  reports it. It is proved when both bounds are shown to be within
-      --  the array's bounds, or the slice is shown to be null. It is never
-      --  a definite error: a bound outside the array is legal when the
-      --  slice turns out null, and that is not decided here.
+      --  the array's bounds, or the slice is shown to be null, or the
+      --  bounds are shown to be within the array's whenever the slice is
+      --  not null. It is never a definite error: a bound outside the array
+      --  is legal when the slice turns out null, and that is not decided
+      --  here.
+      --
+      --  A slice that is the target of an assignment has an index check at
+      --  each of its bounds too, which is where GNATprove reports them; at
+      --  its range, when that is not written as two bounds. Each is
+      --  decided as the check of the slice is, for that bound alone.
       procedure Finalize_Slice_Check
         (Slice     : Libadalang.Analysis.Call_Expr;
          Container : CFG.Node_Id)
       is
-         Anchor   : constant Libadalang.Analysis.Name := Slice.F_Name;
-         Interval : constant Libadalang.Analysis.Ada_Node :=
+         Anchor     : constant Libadalang.Analysis.Name := Slice.F_Name;
+         Interval   : constant Libadalang.Analysis.Ada_Node :=
            Slice.F_Suffix.As_Ada_Node;
+         Two_Bounds : constant Boolean :=
+           Interval.Kind = Libadalang.Common.Ada_Bin_Op
+           and then Interval.As_Bin_Op.F_Op.Kind =
+                      Libadalang.Common.Ada_Op_Double_Dot;
+         Target     : constant Boolean :=
+           Slice.Parent.Kind = Libadalang.Common.Ada_Assign_Stmt
+           and then Libadalang.Analysis.Ada_Node
+                      (Slice.Parent.As_Assign_Stmt.F_Dest) =
+                    Slice.As_Ada_Node;
+
+         --  What is shown of a bound of a target.
+         type Bound_Outcome is
+           (Bound_Unsupported, Bound_Unreached, Bound_Unwritten, Bound_Null,
+            Bound_By_Interval, Bound_By_Prover, Bound_Unless_Null,
+            Bound_Not_Shown);
+
+         --  The index check of Bound, a bound of a target or its range.
+         procedure Record_Bound
+           (Bound   : Libadalang.Analysis.Ada_Node'Class;
+            Outcome : Bound_Outcome)
+         is
+         begin
+            case Outcome is
+               when Bound_Unsupported =>
+                  Record_Unsupported
+                    (Unit, Bound, Proof.Index_Check,
+                     "slice bound has not been established");
+               when Bound_Unreached =>
+                  Record_Unreachable
+                    (Unit, Bound, Proof.Index_Check,
+                     "the containing CFG node is unreachable");
+               when Bound_Unwritten =>
+                  Record_Unproved
+                    (Unit, Bound, Proof.Index_Check,
+                     Proof.Abstract_Interpretation,
+                     "slice bound is not established as within the array " &
+                       "bounds",
+                     Imprecision =>
+                       "the slice range is not written as two bounds",
+                     Final => True);
+               when Bound_Null =>
+                  --  proof-path: slice-bound-null
+                  Record_Proved_Safe
+                    (Unit, Bound, Proof.Index_Check,
+                     Proof.Abstract_Interpretation,
+                     "the slice is null, so its bounds are not checked",
+                     "slice low bound is above its high bound",
+                     Final => True);
+               when Bound_By_Interval | Bound_By_Prover =>
+                  --  proof-path: slice-bound-index
+                  Record_Proved_Safe
+                    (Unit, Bound, Proof.Index_Check,
+                     (if Outcome = Bound_By_Prover
+                      then Proof.External_Prover
+                      else Proof.Abstract_Interpretation),
+                     "the slice bound is within the array index bounds",
+                     (if Outcome = Bound_By_Prover then VC.Evidence
+                      else "slice bound is within array bounds"),
+                     Final => True);
+               when Bound_Unless_Null =>
+                  --  proof-path: slice-bound-unless-null
+                  Record_Proved_Safe
+                    (Unit, Bound, Proof.Index_Check,
+                     Proof.External_Prover,
+                     "the slice bound is within the array index bounds " &
+                       "whenever the slice is not null",
+                     VC.Evidence, Final => True);
+               when Bound_Not_Shown =>
+                  Record_Unproved
+                    (Unit, Bound, Proof.Index_Check,
+                     Proof.Abstract_Interpretation,
+                     "slice bound is not established as within the array " &
+                       "bounds",
+                     Imprecision =>
+                       "slice bound and array bound ranges remain " &
+                         "inconclusive",
+                     Final => True);
+            end case;
+         end Record_Bound;
+
+         --  Record_Bound for each bound of a target, or for its range.
+         procedure Record_Bounds (Outcome : Bound_Outcome) is
+         begin
+            if Target and then Two_Bounds then
+               Record_Bound (Interval.As_Bin_Op.F_Left, Outcome);
+               Record_Bound (Interval.As_Bin_Op.F_Right, Outcome);
+            elsif Target then
+               Record_Bound (Interval, Outcome);
+            end if;
+         end Record_Bounds;
       begin
          if not Boundary_Supported then
             Record_Unsupported
               (Unit, Anchor, Proof.Range_Check,
                "slice bounds have not been established");
+            Record_Bounds (Bound_Unsupported);
             return;
          elsif Unreached (Container)
          then
             Record_Unreachable
               (Unit, Anchor, Proof.Range_Check,
                "the containing CFG node is unreachable");
+            Record_Bounds (Bound_Unreached);
             return;
-         elsif Interval.Kind /= Libadalang.Common.Ada_Bin_Op
-           or else Interval.As_Bin_Op.F_Op.Kind /=
-                     Libadalang.Common.Ada_Op_Double_Dot
-         then
+         elsif not Two_Bounds then
             Record_Unproved
               (Unit, Anchor, Proof.Range_Check,
                Proof.Abstract_Interpretation,
@@ -11821,6 +11917,7 @@ package body Adalang_Analyzer.Flow_Interp is
                Imprecision =>
                  "the slice range is not written as two bounds",
                Final => True);
+            Record_Bounds (Bound_Unwritten);
             return;
          end if;
 
@@ -11837,6 +11934,10 @@ package body Adalang_Analyzer.Flow_Interp is
               Array_Object_Index_Range (Anchor, 1, State);
             Low_Range  : constant Abstract_Range := Range_Value (Low, State);
             High_Range : constant Abstract_Range := Range_Value (High, State);
+            Null_Slice : constant Boolean :=
+              Low_Range.Has_Low
+              and then High_Range.Has_High
+              and then Low_Range.Low > High_Range.High;
             type Containment is (Not_Shown, By_Interval, By_Prover);
 
             --  How Bound is shown to be within the array's bounds, if it
@@ -11860,16 +11961,46 @@ package body Adalang_Analyzer.Flow_Interp is
                return Not_Shown;
             end Inside;
 
+            --  The check of the slice needs the high bound only once the
+            --  low one is shown; that of a bound of a target needs it in
+            --  any case.
             Low_Inside  : constant Containment := Inside (Low);
             High_Inside : constant Containment :=
-              (if Low_Inside = Not_Shown then Not_Shown else Inside (High));
+              (if Low_Inside = Not_Shown and then not Target then Not_Shown
+               else Inside (High));
             Used_Prover : constant Boolean :=
               Low_Inside = By_Prover or else High_Inside = By_Prover;
+            --  Asked only when neither of the above proves the slice.
+            Both_Unless_Null : constant Boolean :=
+              not Null_Slice
+              and then (Low_Inside = Not_Shown or else High_Inside = Not_Shown)
+              and then VC.Decide_Slice_Bounds
+                         (Low, High, Anchor, Limits, VC.Both_Bounds, State,
+                          Symbols).Result = VC.VC_Proved;
+
+            --  What is shown of the bound Which of a target, of which
+            --  Shown is what Inside says.
+            function Outcome
+              (Shown : Containment; Which : VC.Slice_Bound)
+               return Bound_Outcome is
+            begin
+               if Null_Slice then
+                  return Bound_Null;
+               elsif Shown = By_Interval then
+                  return Bound_By_Interval;
+               elsif Shown = By_Prover then
+                  return Bound_By_Prover;
+               elsif Both_Unless_Null
+                 or else VC.Decide_Slice_Bounds
+                           (Low, High, Anchor, Limits, Which, State,
+                            Symbols).Result = VC.VC_Proved
+               then
+                  return Bound_Unless_Null;
+               end if;
+               return Bound_Not_Shown;
+            end Outcome;
          begin
-            if Low_Range.Has_Low
-              and then High_Range.Has_High
-              and then Low_Range.Low > High_Range.High
-            then
+            if Null_Slice then
                --  proof-path: slice-null
                Record_Proved_Safe
                  (Unit, Anchor, Proof.Range_Check,
@@ -11887,6 +12018,14 @@ package body Adalang_Analyzer.Flow_Interp is
                   (if Used_Prover then VC.Evidence
                    else "slice bounds are within array bounds"),
                   Final => True);
+            elsif Both_Unless_Null then
+               --  proof-path: slice-bounds-unless-null
+               Record_Proved_Safe
+                 (Unit, Anchor, Proof.Range_Check,
+                  Proof.External_Prover,
+                  "both slice bounds are within the array index bounds " &
+                    "whenever the slice is not null",
+                  VC.Evidence, Final => True);
             else
                Record_Unproved
                  (Unit, Anchor, Proof.Range_Check,
@@ -11896,6 +12035,10 @@ package body Adalang_Analyzer.Flow_Interp is
                   Imprecision =>
                     "slice bound and array bound ranges remain inconclusive",
                   Final => True);
+            end if;
+            if Target then
+               Record_Bound (Low, Outcome (Low_Inside, VC.Low_Bound));
+               Record_Bound (High, Outcome (High_Inside, VC.High_Bound));
             end if;
          end;
       end Finalize_Slice_Check;

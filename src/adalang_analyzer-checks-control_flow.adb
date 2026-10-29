@@ -387,24 +387,44 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          return False;
    end Is_Discard_Name;
 
-   --  Whether a body nested in Subprogram's declarative part (a local
-   --  subprogram, expression function, task, protected, or package body)
-   --  reads Decl as an up-level reference. Such a body can observe Decl's
-   --  value whenever it runs, which a textual search of Subprogram's own
-   --  statements after an assignment cannot see (FP-071).
+   --  Whether a body that can run after Site (a local subprogram,
+   --  expression function, task, protected, or package body) reads Decl as
+   --  an up-level reference: one declared in Subprogram's declarative part
+   --  (FP-071) or in that of a block statement Site is in (FP-132). Such a
+   --  body can observe Decl's value whenever it runs, which a textual
+   --  search of the statements after Site cannot see. A body of a block
+   --  that has ended before Site cannot be called any more.
    function Read_By_Nested_Body
      (Decl       : Libadalang.Analysis.Basic_Decl;
-      Subprogram : Libadalang.Analysis.Subp_Body) return Boolean
+      Subprogram : Libadalang.Analysis.Subp_Body;
+      Site       : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
+      function Read_In
+        (Decls : Libadalang.Analysis.Ada_Node_List) return Boolean is
+      begin
+         for Item of Decls loop
+            if Item.Kind in Libadalang.Common.Ada_Body_Node
+              and then Data_Flow.Reads_Declaration (Item, Decl)
+            then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Read_In;
+
+      Current : Libadalang.Analysis.Ada_Node := Site.Parent;
    begin
-      for Item of Subprogram.F_Decls.F_Decls loop
-         if Item.Kind in Libadalang.Common.Ada_Body_Node
-           and then Data_Flow.Reads_Declaration (Item, Decl)
+      while not Libadalang.Analysis.Is_Null (Current)
+        and then Current /= Subprogram.As_Ada_Node
+      loop
+         if Current.Kind = Libadalang.Common.Ada_Decl_Block
+           and then Read_In (Current.As_Decl_Block.F_Decls.F_Decls)
          then
             return True;
          end if;
+         Current := Current.Parent;
       end loop;
-      return False;
+      return Read_In (Subprogram.F_Decls.F_Decls);
    exception
       when others =>
          return True;
@@ -711,7 +731,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                            --  overwrites an unread value.
                            if not Target_Is_Local
                              or else not Read_By_Nested_Body
-                               (Decl, Subprogram)
+                               (Decl, Subprogram, Stmt)
                            then
                               for J in I + 1 .. List.Children_Count loop
                                  declare
@@ -887,7 +907,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               and then not Is_Discard_Name (Decl)
               and then not Data_Flow.Has_Read_After
                 (Subprogram.F_Stmts, Decl, Stmt)
-              and then not Read_By_Nested_Body (Decl, Subprogram)
+              and then not Read_By_Nested_Body (Decl, Subprogram, Stmt)
             then
                Report_Rule_Violation
                  (Unit, Stmt, Dead_Store,
@@ -2081,7 +2101,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                              and then not Data_Flow.Has_Read_After_Node
                                (Subprogram.F_Stmts, Decl, Stmt)
                              and then not Read_By_Nested_Body
-                               (Decl, Subprogram)
+                               (Decl, Subprogram, Stmt)
                              and then not Callee_Has_Inspection_Point
                                (Call.As_Call_Expr)
                            then

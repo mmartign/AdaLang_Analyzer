@@ -5,6 +5,39 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--verify` raises an index check at each bound of a slice that is the
+  target of an assignment, `A (L .. H) := ...`, where GNATprove has one,
+  besides the range check of the slice at `A` it raised already; at the
+  range, for a target slice given by a subtype name or a `'Range`. A bound
+  is proved when it is within the bounds of `A`, when the slice is known to
+  be null or when the solvers show it within them whenever the slice is not
+  null; it is never a definite error. A slice that is read, or given to a
+  formal, has the check at `A` alone, as in GNATprove. Who it concerns: a
+  report has more `index-check` obligations, about two for each slice
+  assignment.
+
+### Changed
+
+- The range check of a slice is proved, too, when the solvers show its two
+  bounds within the array's whenever the slice is not null: `Tmp (0 .. B - 1)`
+  with `B` of zero is a null slice, which Ada does not check. It needed both
+  bounds within the array whatever the slice.
+
+### Fixed
+
+- `Dead_Store` and `Overwritten_Assignment` no longer report a store to a
+  variable that a body declared in a block statement reads when it is
+  called later in the block (`FP-132`): `Seen := True; return Twice;`, with
+  `Seen` and `Twice` declared in the same `declare` block. A read by a body
+  in the declarative part of the subprogram was already seen (`FP-071`); a
+  body of a block that has ended before the store still does not count.
+  Found by the self-analysis gate on the new slice code; no benchmark
+  corpus showed it.
+
 ## [1.11.1] - 2026-10-27
 
 A `--verify` release that reads more of the scalar VC language -- operators

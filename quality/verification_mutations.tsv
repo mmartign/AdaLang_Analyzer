@@ -23,6 +23,11 @@ output-init-zero-trip-loop	tests/verification_mutation_output_initialization.adb
 slice-open-high	tests/verification_mutation_slice_bounds.adb	range-check	Data	unproved	a slice bound of a subtype wider than the array's index range
 slice-symbolic-short	tests/verification_mutation_slice_bounds.adb	range-check	Short	unproved	a two-element slice of an object not known to have two elements
 slice-almost-null	tests/verification_mutation_slice_bounds.adb	range-check	Reserve	unproved	a slice that is null for every value of its low bound but zero
+slice-target-open-high	tests/verification_mutation_slice_bounds.adb	index-check	Wide_Upper	unproved	a bound of a target slice of a subtype wider than the array's index range
+slice-target-symbolic-short	tests/verification_mutation_slice_bounds.adb	index-check	Brief'First + 1	unproved	a bound of a two-element target slice of an object not known to have two elements
+slice-target-almost-null	tests/verification_mutation_slice_bounds.adb	index-check	Nearly_Count	unproved	a bound of a target slice that is null for every value of it but zero
+slice-target-one-past	tests/verification_mutation_slice_bounds.adb	index-check	Tail_Count - 1	unproved	the high bound of a target slice one past the array when the slice is not null
+slice-target-one-past-slice	tests/verification_mutation_slice_bounds.adb	range-check	Tail_Store	unproved	a target slice one past the array when it is not null
 guard-admits-zero	tests/verification_mutation_guarded_operand.adb	division-by-zero	Admitted	unproved	the guard before the division admits a zero divisor
 guard-wrong-connective	tests/verification_mutation_guarded_operand.adb	division-by-zero	Refused	unproved	the right operand of or-else is evaluated where the divisor is not positive
 guard-other-object	tests/verification_mutation_guarded_operand.adb	index-check	Unbound	unproved	the membership test before the indexing is on another object

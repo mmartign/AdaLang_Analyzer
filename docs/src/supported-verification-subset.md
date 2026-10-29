@@ -54,7 +54,7 @@ the section it links to has the whole of its proof basis and boundary.
 | Division by zero | Exact/range exclusion of zero; otherwise scalar `divisor /= 0` VC | Integer scalar divisor only |
 | [Integer overflow](#integer-overflow) | Operation base-type range; otherwise scalar bounds VC | Integer `+`, `-`, `*`, `/`, and selected power checks |
 | [Range](#range) | Both bounds of the target subtype, resolved as of its elaboration; otherwise scalar bounds VC against those same two bounds | Integer scalar initialization, assignment, and conversion; the bounds of a slice; an actual parameter and what an `out` or `in out` formal gives back; the conversion of `X'Length` |
-| [Index](#index) | The indexed object's own bounds per dimension; otherwise scalar bounds VC against those bounds, an own-range `for` loop, or the object's own `'First` and `'Last` taken as symbols | Array objects and scalar indices |
+| [Index](#index) | The indexed object's own bounds per dimension; otherwise scalar bounds VC against those bounds, an own-range `for` loop, or the object's own `'First` and `'Last` taken as symbols | Array objects and scalar indices; each bound of a slice that is the target of an assignment |
 | [Length](#length) | An aggregate with an `others` choice; otherwise a scalar VC that the two lengths are equal in each dimension | An array given to a target, where a compiler keeps the check; the operands of `and`, `or` and `xor` on arrays |
 | [Predicate](#predicates) | The predicate of the subtype as a scalar Boolean VC, of the value given or of the object as the state knows its components once it is written | A value given to an object, to a part of one or to a formal, in SPARK code; none where the value already has the predicates of its own subtype |
 | [Dereference](#dereferences) | The access value is not null, as a scalar VC over its token | An explicit `.all`, and an access value as the prefix of a component, an indexed component, a slice or an array attribute, in SPARK code; none where the subtype of the access value excludes null |
@@ -111,10 +111,12 @@ elaboration; otherwise scalar bounds VC against those same two bounds.
   subtype whose two bounds are both known; a subtype with a bound that is
   not (`range 1 .. N` for a variable or unconstrained `N`) is `Unproved`.
 - **The bounds of a slice.** The two bounds of a slice written
-  `A (L .. H)`, against the bounds of `A` as an index check takes them:
-  proved when both bounds are within them, or when the slice is known to be
-  null, which Ada does not check. A slice given by a subtype name or a
-  `'Range` is `Unproved`.
+  `A (L .. H)`, against the bounds of `A` as an index check takes them,
+  at `A`: proved when both bounds are within them, when the slice is known
+  to be null, which Ada does not check, or when a scalar VC shows that
+  they are within them whenever `L <= H`. A slice given by a subtype name
+  or a `'Range` is `Unproved`. A slice that is the target of an assignment
+  has an [index check](#index) at each bound as well.
 - **Actual parameters.** An actual parameter against the subtype of its
   integer formal, and what an `out` or `in out` formal gives back against
   the subtype of the actual: raised only where the check is needed, that is
@@ -163,6 +165,17 @@ those bounds. One with no bounds anything fixes (a formal parameter, or an
 object initialized from one, from a call or from an aggregate) proves only
 in the own-range loop form or against those symbols: its index subtype says
 what its bounds may be, not what they are.
+
+**The bounds of a target slice.** A slice that is the target of an
+assignment, `A (L .. H) := ...`, has an index check at `L` and one at `H`,
+where GNATprove has them, besides the [range check](#range) of the slice at
+`A`; a target slice given by a subtype name or a `'Range` has one, at the
+range, which is `Unproved`. Each bound is decided on its own, as the check
+of the slice is: proved when it is within the bounds of `A`, when the slice
+is known to be null, or when a scalar VC shows that it is within them
+whenever `L <= H`. It is never a definite error, a bound outside the array
+being legal in a null slice. A slice that is read, or given to a formal,
+has the check at `A` alone, as in GNATprove.
 
 ### Length
 

@@ -459,6 +459,24 @@ package Adalang_Analyzer.VC_Prover is
    --  check for an object whose bounds are not known as numbers: an
    --  unconstrained formal, most often.
 
+   type Slice_Bound is (Low_Bound, High_Bound, Both_Bounds);
+
+   function Decide_Slice_Bounds
+     (Low, High : Libadalang.Analysis.Expr'Class;
+      Prefix    : Libadalang.Analysis.Name'Class;
+      Bounds    : Adalang_Analyzer.Flow_Domain.Abstract_Range;
+      Which     : Slice_Bound;
+      State     : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols   : Symbolic_State) return VC_Outcome;
+   --  Decides that the bound or bounds Which of the slice
+   --  Prefix (Low .. High) are within the index bounds of Prefix whenever
+   --  the slice is not null: "Low <= High implies ...". The index bounds
+   --  are Bounds where it has both, and otherwise Prefix'First and
+   --  Prefix'Last as Decide_Index_In_Object takes them. Ada does not check
+   --  the bounds of a null slice, so this is the whole of the check, of
+   --  which Decide_Bounds and Decide_Index_In_Object prove the part that
+   --  holds whether the slice is null or not.
+
    function Decide_Same_Length
      (Target     : Libadalang.Analysis.Expr'Class;
       Value      : Libadalang.Analysis.Expr'Class;

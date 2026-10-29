@@ -47,10 +47,56 @@ is
       return Part'Length;
    end Head;
 
+   --  A slice that is the target of an assignment has an index check at
+   --  each of its bounds as well as the check of the slice. Here both
+   --  bounds are of a subtype inside the array's index range.
+   function Fill (Lowest, Highest : Index) return Integer
+     with Pre => True
+   is
+      Filled : Vector (1 .. 10) := (others => 0);
+   begin
+      Filled (Lowest .. Highest) := (others => 1);
+      return Filled (1);
+   end Fill;
+
+   --  A null target: its bounds are not checked.
+   function Fill_Nothing return Integer
+     with Pre => True
+   is
+      Past   : constant := 12;
+      Unused : Vector (1 .. 10) := (others => 0);
+   begin
+      Unused (Past .. Past - 1) := (others => 1);
+      return Unused (1);
+   end Fill_Nothing;
+
+   --  The high bound is outside the array only when the slice is null,
+   --  for a Count of zero or one.
+   function Fill_Before (Count : Natural) return Integer
+     with Pre => Count <= 11
+   is
+      Before : Vector (1 .. 10) := (others => 0);
+   begin
+      Before (1 .. Count - 1) := (others => 1);
+      return Before (1);
+   end Fill_Before;
+
+   --  The bounds of the target are those of the object itself. Not
+   --  called below, as Head.
+   procedure Clear_Head (Cells : in out Vector)
+     with Pre => Cells'Length >= 2 and then Cells'Last < Positive'Last
+   is
+   begin
+      Cells (Cells'First .. Cells'First + 1) := (0, 0);
+   end Clear_Head;
+
    Seen : constant Boolean :=
      Middle >= 0
      and then Nothing >= 0
-     and then Between (2, 3) >= 0;
+     and then Between (2, 3) >= 0
+     and then Fill (2, 3) >= 0
+     and then Fill_Nothing >= 0
+     and then Fill_Before (3) >= 0;
 begin
    pragma Assert (Seen or else not Seen);
 end Verification_Slice_Bounds;
