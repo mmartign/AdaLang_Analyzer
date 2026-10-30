@@ -5,6 +5,104 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.12.0] - 2026-10-30
+
+A `--verify` release that follows initialization through contracts and through
+the parts of an object, as GNATprove does, and proves 405 more of the checks
+GNATprove proves. It corrects two false-safes, `FP-133` and `FP-134`:
+**re-check the `Proved_Safe` verdicts they name.** It also adds an assumption
+to a verdict, which "Added" describes. No kind of obligation is added, but a
+report has more `initialization-check` obligations, raised at calls.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+9,729 of the 15,043 checks GNATprove proves (was 9,229). Of those 500, 95 are a
+correction of the ledger's pairing, which gives 9,324 on the results of 1.11.2,
+and 405 are the analyzer's: initialization checks for the most part, and with
+them 12 preconditions, 12 postconditions, 9 range checks, 8 assertions, 3
+predicate checks and 1 overflow check. It proves none that GNATprove does not,
+and the checks without an AdaLang obligation are 1,478 (was 1,588).
+
+Four proofs of 1.11.2 are lost, two of them on a ledger row: the initialization
+of an object after an `out` parameter with `Relaxed_Initialization`, in
+`coap_spark-client_session.adb`, `coap_spark-server_session.adb` and Saatana's
+`test_phelix_api.adb`. They rested on `FP-133`; GNATprove reads a `Post` that
+says `'Initialized`, which AdaLang does not, and raises no check where such an
+object is only passed on.
+
+On the ten corpora 2,208 initialization checks are raised at calls (2,035
+`Proved_Safe`, 173 `Unproved`) and 182 are gone, at `X'Constrained` and at the
+name of an object whose component is an `out` actual. 1,774 obligations move
+from `Unproved` to `Proved_Safe`: 1,658 initialization checks, 36 range checks,
+27 overflow checks, 23 preconditions, 12 postconditions, 8 assertions, 7 index
+checks and 3 predicate checks. No definite error is new or gone, and every
+preset of every corpus reports the findings of 1.11.2. The matched pairs are
+3,625 as before, 2,024 of them both safe (was 2,009), with no possible
+unsoundness and no false positive anywhere. On the SPARK testsuite 19
+initialization checks are raised, 15 of them proved, 51 obligations are proved
+that were not, and 4 proofs are lost, all in units on `Relaxed_Initialization`;
+both safe is 200 of 595 (was 201), with no possible unsoundness and no false
+positive in the 124 units. The `--verify` lane takes more CPU: user and system
+time are up 3 to 13% on nine of the ten corpora (most on Tokeneer and GNATcoll).
+
+### Added
+
+- `--verify` follows initialization through contracts. In SPARK code a
+  subprogram is entered with the objects it takes from outside initialized:
+  the globals its contract lists with a mode other than `Output`, or, with
+  no `Global` aspect, what its body is followed to the end and found only to
+  read. What it assumes is checked where it is called: one
+  `initialization-check` per object at each call, including a function called
+  with no actuals and an operator a declaration defines, reported with the
+  operation "`P` reads `G`". GNATprove does the same. **This changes what a
+  verdict assumes:** a read of an outside object rests on those checks, and
+  none is raised for a call made while a package is elaborated, nor are the
+  objects a main subprogram reads checked against elaboration. See "What comes
+  from outside" in the supported verification subset.
+- A call of SPARK code, a formal subprogram or an instance included, leaves a
+  global its contract lists as `Output` initialized, state abstractions
+  included, and an object that was initialized still initialized.
+- The components of a record are followed one by one in SPARK code: an `out`
+  parameter or an `Output` global given a value part by part is proved, and a
+  read of a component that has one. A `for` loop over the whole of an array
+  that assigns `A (I)` on every path through its body gives the array a value.
+
+### Fixed
+
+- `FP-133`: an `out` parameter of a call of SPARK code was taken as
+  initialized on return whatever it was. An object that code can leave with
+  parts that have no value could then be read after the call and the read
+  proved: an actual of a type with `Relaxed_Initialization` on it or on a
+  component, or a formal the subprogram's own aspect names. GNATprove refuses
+  the read or the call. This concerns every release from 1.8.5 to 1.11.2 and
+  code that uses `Relaxed_Initialization`: re-check a `Proved_Safe`
+  initialization check on such an object. Those objects are now left out of the
+  rule, of the rules added here and of the following of parts.
+
+- `FP-134`: an object declared with another name in one declaration, as in
+  `First, Second : Integer`, kept what was known of it across a call that writes
+  it, so a check after the call was decided on the value from before:
+  `Second := 1; Store_Second (5); R := 10 / (Second - 5);` was proved safe, a
+  division by zero at run time. GNATprove refuses it. This concerns every release
+  up to 1.11.2 and any code that declares two objects in one declaration and has
+  a subprogram write one of them: re-check a `Proved_Safe` obligation that reads
+  such an object after a call.
+
+- A subprogram reached as a primitive or through an instance had its own
+  parameters counted among the objects it touches outside it, so a generic
+  formal given such a subprogram was taken to reach outside, and whether it was
+  depended on which call was looked at first. Only proofs were lost: a
+  `Depends` of RecordFlux's `Update` was proved by chance in 1.11.2.
+
+### Changed
+
+- `X'Constrained` no longer counts as a read of `X`, in any mode. So an `out`
+  parameter named in `Pre => not X'Constrained` has no initialization
+  obligation there.
+- The gap ledger pairs an `initialization of` check at the name of a global in
+  an aspect with the obligation at that place first. It used to give that
+  obligation to the object's declaration and report the aspect as having none:
+  95 checks of the 1.11.2 results were proved and counted otherwise.
+
 ## [1.11.2] - 2026-10-29
 
 A `--verify` release that raises the index checks GNATprove has at the
