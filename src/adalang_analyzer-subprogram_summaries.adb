@@ -6,9 +6,11 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Containers.Vectors;
 with Ada.Exceptions;
+with Ada.Strings.Hash;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 with Langkit_Support.Slocs;
@@ -68,12 +70,21 @@ package body Adalang_Analyzer.Subprogram_Summaries is
      (Index_Type => Positive, Element_Type => Instantiation);
 
    Instantiations : Instantiation_Vectors.Vector;
+
+   package Name_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
+
+   --  The subprograms Passed_As_Actual answers for, by Declaration_Name.
+   Passed_Actuals : Name_Sets.Set;
    Under_SPARK    : Mode_Oracle := null;
 
    procedure Reset is
    begin
       Summaries.Clear;
       Instantiations.Clear;
+      Passed_Actuals.Clear;
    end Reset;
 
    procedure Set_SPARK_Mode_Oracle (Oracle : Mode_Oracle) is
@@ -138,6 +149,62 @@ package body Adalang_Analyzer.Subprogram_Summaries is
    end Generic_Unit_Key;
 
    --  An instantiation named as the actual of a formal package is none.
+   function Declaration_Name
+     (Decl : Libadalang.Analysis.Basic_Decl) return String;
+
+   --  Notes that Name is passed around, when it names a subprogram.
+   procedure Note_Passed (Name : Libadalang.Analysis.Ada_Node'Class) is
+   begin
+      if Name.Kind in Libadalang.Common.Ada_Name then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Name.As_Name.P_Referenced_Decl;
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind in Libadalang.Common.Ada_Basic_Subp_Decl
+                                  | Libadalang.Common.Ada_Base_Subp_Body
+            then
+               Passed_Actuals.Include (Declaration_Name (Decl));
+            end if;
+         end;
+      end if;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping a subprogram passed as an actual: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Note_Passed;
+
+   function Passed_As_Actual
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is (Passed_Actuals.Contains
+         (Declaration_Name (Libadalang.Analysis.Basic_Decl (Decl))));
+
+   --  Notes the subprograms Node passes as actuals: those it writes, then
+   --  those the generic unit defaults to, which only the resolved parameters
+   --  show and which cannot always be resolved. A failure here leaves the
+   --  instantiation to be registered all the same.
+   procedure Note_Actuals (Node : Libadalang.Analysis.Generic_Instantiation) is
+      Params : constant Libadalang.Analysis.Ada_Node :=
+        (if Node.Kind = Libadalang.Common.Ada_Generic_Package_Instantiation
+         then Node.As_Generic_Package_Instantiation.F_Params.As_Ada_Node
+         else Node.As_Generic_Subp_Instantiation.F_Params.As_Ada_Node);
+   begin
+      for Index in 1 .. Params.Children_Count loop
+         if Params.Child (Index).Kind = Libadalang.Common.Ada_Param_Assoc then
+            Note_Passed (Params.Child (Index).As_Param_Assoc.F_R_Expr);
+         end if;
+      end loop;
+      for Pair of Node.P_Inst_Params loop
+         Note_Passed (Libadalang.Analysis.Actual (Pair));
+      end loop;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping the actuals of an instantiation: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Note_Actuals;
+
    procedure Register_Instantiation
      (Node : Libadalang.Analysis.Generic_Instantiation)
    is
@@ -146,6 +213,7 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       if Node.Parent.Kind = Libadalang.Common.Ada_Generic_Formal_Package then
          return;
       end if;
+      Note_Actuals (Node);
       Unit := Generic_Of (Node.P_Designated_Generic_Decl);
       if Libadalang.Analysis.Is_Null (Unit) then
          return;
@@ -693,6 +761,13 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       end if;
       if Node.Kind in Libadalang.Common.Ada_Generic_Instantiation then
          Register_Instantiation (Node.As_Generic_Instantiation);
+      elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Text_Utils.Normalize_Rule_Name
+          (Langkit_Support.Text.To_UTF8
+             (Node.As_Attribute_Ref.F_Attribute.Text))
+          in "access" | "unchecked-access" | "unrestricted-access"
+      then
+         Note_Passed (Node.As_Attribute_Ref.F_Prefix);
       end if;
       if Node.Kind = Libadalang.Common.Ada_Subp_Body then
          Register_Body (Node.As_Subp_Body);

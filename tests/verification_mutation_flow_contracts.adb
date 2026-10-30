@@ -87,5 +87,5 @@ begin
    Sometimes (Outcome > 0);
    Half;
    Scaled (1, Outcome);
-   Source := (if Outcome > Maybe then Both.First else 0);
+   Source := (if Outcome > 0 then 1 else 0);
 end Verification_Mutation_Flow_Contracts;

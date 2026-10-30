@@ -173,10 +173,12 @@ package Adalang_Analyzer.Proof_Obligations is
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Node    : Libadalang.Analysis.Ada_Node'Class;
       Kind    : Obligation_Kind;
-      Subject : Libadalang.Analysis.Ada_Node'Class);
+      Subject : Libadalang.Analysis.Ada_Node'Class;
+      Operation : String := "");
    --  Records Subject's position as the subject of the obligation of Kind
-   --  that Register_At anchored at Node. Does nothing when there is no such
-   --  obligation or Subject is null.
+   --  that Register_At anchored at Node, under Operation if it was given
+   --  one. Does nothing when there is no such obligation or Subject is
+   --  null.
 
    procedure Set_Position
      (Unit   : Libadalang.Analysis.Analysis_Unit;

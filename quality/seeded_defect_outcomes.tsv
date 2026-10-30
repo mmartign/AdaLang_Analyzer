@@ -262,7 +262,7 @@ h08.adb	51	OK	division-by-zero	proved-safe
 h08.adb	52	BAD	division-by-zero	definite-error
 h08.adb	59	BAD	division-by-zero	definite-error
 h08.adb	66	BAD	division-by-zero	unproved
-h08.adb	73	BAD	division-by-zero	unproved
+h08.adb	73	BAD	division-by-zero	definite-error
 h08.adb	81	OK	division-by-zero	proved-safe
 h08.adb	82	BAD	division-by-zero	unproved
 h08.adb	87	BAD	division-by-zero	unproved

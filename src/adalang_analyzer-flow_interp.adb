@@ -656,7 +656,8 @@ package body Adalang_Analyzer.Flow_Interp is
       Reason_Code    : String := "";
       Blocking_Expression : String := "";
       Inline_Path    : String := "";
-      Final          : Boolean := False) is
+      Final          : Boolean := False;
+      Operation      : String := "") is
    begin
       Proof.Register_At
         (Unit             => Unit,
@@ -664,6 +665,7 @@ package body Adalang_Analyzer.Flow_Interp is
          Kind             => Kind,
          Status           => Status,
          Method           => Method,
+         Operation        => Operation,
          Abstract_State   => Abstract_State,
          Explanation      => Explanation,
          Imprecision_Source => Imprecision,
@@ -712,12 +714,13 @@ package body Adalang_Analyzer.Flow_Interp is
       Reason_Code    : String := "";
       Blocking_Expression : String := "";
       Inline_Path    : String := "";
-      Final          : Boolean := False) is
+      Final          : Boolean := False;
+      Operation      : String := "") is
    begin
       Record_Outcome
         (Unit, Node, Kind, Proof.Unproved, Method, Explanation,
          Abstract_State, Imprecision, Reason_Code, Blocking_Expression,
-         Inline_Path, Final => Final);
+         Inline_Path, Final => Final, Operation => Operation);
    end Record_Unproved;
 
    procedure Record_VC_Unproved
@@ -757,11 +760,12 @@ package body Adalang_Analyzer.Flow_Interp is
       Method         : Proof.Analysis_Method;
       Explanation    : String;
       Abstract_State : String := "";
-      Final          : Boolean := False) is
+      Final          : Boolean := False;
+      Operation      : String := "") is
    begin
       Record_Outcome
         (Unit, Node, Kind, Proof.Proved_Safe, Method, Explanation,
-         Abstract_State, Final => Final);
+         Abstract_State, Final => Final, Operation => Operation);
    end Record_Proved_Safe;
 
    --  Records the read Node of the object Key as safe where it is what
@@ -1104,9 +1108,9 @@ package body Adalang_Analyzer.Flow_Interp is
          begin
             return Attribute_Name in
               "access" | "address" | "alignment" | "component-size"
-                | "first" | "last" | "length" | "object-size" | "range"
-                | "size" | "unchecked-access" | "unrestricted-access"
-                | "value-size";
+                | "constrained" | "first" | "last" | "length" | "object-size"
+                | "range" | "size" | "unchecked-access"
+                | "unrestricted-access" | "value-size";
          end;
       exception
          when others =>
@@ -1395,8 +1399,8 @@ package body Adalang_Analyzer.Flow_Interp is
          if Libadalang.Analysis.Is_Null (Decl) then
             return "";
          end if;
-         return Langkit_Support.Text.To_UTF8
-           (Decl.P_Unique_Identifying_Name) & ":" & Normalized_Text (Node);
+         return Adalang_Analyzer.Subprogram_Summaries.Object_Key
+           (Decl, Normalized_Text (Node));
       end;
    exception
       when others =>
@@ -3557,11 +3561,12 @@ package body Adalang_Analyzer.Flow_Interp is
 
    --  True when Call is to a subprogram that is SPARK code (In_SPARK_Code),
    --  and to that subprogram whatever the call: not a dispatching call, nor
-   --  one through a formal subprogram, a renaming or an access value. What
-   --  SPARK asks of the declaration is then what the callee leaves behind
-   --  it: an out parameter is initialized when it returns, which is the
-   --  callee's own obligation and is raised at the parameter when its body
-   --  is verified.
+   --  one through a renaming or an access value. A formal subprogram of a
+   --  generic that is SPARK code is one, its actual being in SPARK wherever
+   --  the generic is, and so is an instance. What SPARK asks of the
+   --  declaration is then what the callee leaves behind it: an out
+   --  parameter is initialized when it returns, which is the callee's own
+   --  obligation and is raised at the parameter when its body is verified.
    function Callee_Keeps_SPARK_Rules
      (Call : Libadalang.Analysis.Name'Class) return Boolean
    is
@@ -3572,6 +3577,9 @@ package body Adalang_Analyzer.Flow_Interp is
         and then Decl.Kind in Libadalang.Common.Ada_Subp_Decl
                             | Libadalang.Common.Ada_Subp_Body
                             | Libadalang.Common.Ada_Subp_Body_Stub
+                            | Libadalang.Common.Ada_Concrete_Formal_Subp_Decl
+                            | Libadalang.Common.Ada_Generic_Subp_Internal
+                            | Libadalang.Common.Ada_Generic_Subp_Instantiation
         and then not Call.P_Is_Dispatching_Call
         and then In_SPARK_Code (Decl);
    exception
@@ -3861,6 +3869,477 @@ package body Adalang_Analyzer.Flow_Interp is
          return Symbols;
    end With_Call_Predicates;
 
+   --  A component of a record object, or the object itself with an empty
+   --  Path; a null Key for any other name. The component of what an access
+   --  value designates is no part of the object that holds the value.
+   type Object_Part is record
+      Key  : Libadalang.Analysis.Ada_Node := Libadalang.Analysis.No_Ada_Node;
+      Path : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Part_Of
+     (Name : Libadalang.Analysis.Ada_Node'Class) return Object_Part
+   is
+      use Ada.Strings.Unbounded;
+   begin
+      if Libadalang.Analysis.Is_Null (Name) then
+         return (others => <>);
+      elsif Name.Kind = Libadalang.Common.Ada_Identifier then
+         return (Key => Flow_Referenced_Name (Name), Path => <>);
+      elsif Name.Kind /= Libadalang.Common.Ada_Dotted_Name then
+         return (others => <>);
+      end if;
+
+      declare
+         Selected : constant Libadalang.Analysis.Dotted_Name :=
+           Name.As_Dotted_Name;
+         Field    : constant Libadalang.Analysis.Basic_Decl :=
+           Selected.F_Suffix.P_Referenced_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Field)
+           or else Field.Kind /= Libadalang.Common.Ada_Component_Decl
+         then
+            return (Key => Flow_Referenced_Name (Name), Path => <>);
+         elsif Selected.F_Prefix.P_Expression_Type.P_Is_Access_Type then
+            return (others => <>);
+         end if;
+
+         declare
+            Outer : constant Object_Part := Part_Of (Selected.F_Prefix);
+            Own   : constant String :=
+              Text_Utils.Normalize_Rule_Name
+                (Ada_Text.Node_Text (Selected.F_Suffix));
+         begin
+            return
+              (Key  => Outer.Key,
+               Path => (if Length (Outer.Path) = 0
+                        then To_Unbounded_String (Own)
+                        else Outer.Path & "." & Own));
+         end;
+      end;
+   exception
+      when others =>
+         return (others => <>);
+   end Part_Of;
+
+   --  True when Actual, the actual of an out parameter, names what the
+   --  call stores into and reads nothing: an object, or in SPARK code a
+   --  component of one.
+   function Only_Names_Its_Target
+     (Actual : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is (Actual.Kind = Libadalang.Common.Ada_Identifier
+       or else
+         (Config.Verification_Mode
+          and then Verified_In_SPARK
+          and then Actual.Kind = Libadalang.Common.Ada_Dotted_Name
+          and then not Libadalang.Analysis.Is_Null (Part_Of (Actual).Key)));
+
+   --  True when From sees every component of Typ: no ancestor of it is a
+   --  private view, whose components the shape of Typ leaves out.
+   function Shows_Every_Component
+     (Typ  : Libadalang.Analysis.Base_Type_Decl;
+      From : Libadalang.Analysis.Ada_Node) return Boolean is
+   begin
+      for Ancestor of Typ.P_Base_Types (Origin => From) loop
+         if Ancestor.P_Is_Private
+           or else not Shows_Every_Component (Ancestor, From)
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Shows_Every_Component;
+
+   --  True when the part Path of Key, of the subtype Typ, has a value in
+   --  State: it was given one, or it is a record of one shape every
+   --  component of which was. A record with a variant part has several: a
+   --  branch on its discriminant is not followed. A default of a component
+   --  is not taken: GNATprove does not take it for an out parameter.
+   function Part_Has_Value
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node;
+      Path  : String;
+      Typ   : Libadalang.Analysis.Base_Type_Decl) return Boolean
+   is
+   begin
+      if Path /= "" and then Flow_Part_Initialized (State, Key, Path) then
+         return True;
+      elsif Libadalang.Analysis.Is_Null (Typ)
+        or else not Typ.P_Is_Record_Type
+        or else not Shows_Every_Component (Typ, Key)
+      then
+         return False;
+      end if;
+
+      declare
+         Shapes : constant Libadalang.Analysis.Shape_Array :=
+           Typ.P_Shapes (Include_Discriminants => False, Origin => Key);
+      begin
+         if Shapes'Length /= 1 then
+            return False;
+         end if;
+
+         declare
+            Components : constant
+              Libadalang.Analysis.Base_Formal_Param_Decl_Array :=
+                Libadalang.Analysis.Components (Shapes (Shapes'First));
+         begin
+            if Components'Length = 0 then
+               return False;
+            end if;
+            for Component of Components loop
+               for Name of Component.P_Defining_Names loop
+                  declare
+                     Own : constant String :=
+                       Text_Utils.Normalize_Rule_Name
+                         (Ada_Text.Node_Text (Name));
+                  begin
+                     if not Part_Has_Value
+                       (State, Key,
+                        (if Path = "" then Own else Path & "." & Own),
+                        Component.P_Formal_Type)
+                     then
+                        return False;
+                     end if;
+                  end;
+               end loop;
+            end loop;
+         end;
+      end;
+      return True;
+   exception
+      when others =>
+         return False;
+   end Part_Has_Value;
+
+   --  The subtype of the object of Key.
+   function Object_Type
+     (Key : Libadalang.Analysis.Ada_Node)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Key.As_Defining_Name.P_Basic_Decl;
+   begin
+      return Decl.P_Type_Expression.P_Designated_Type_Decl;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Type_Decl;
+   end Object_Type;
+
+   --  True when Typ or something it is made of has the aspect
+   --  Relaxed_Initialization, so that SPARK code can leave an object of it
+   --  with parts that have no value. Whatever cannot be told is taken to.
+   function Type_Is_Relaxed
+     (Typ   : Libadalang.Analysis.Base_Type_Decl;
+      Depth : Natural := 0) return Boolean
+   is
+      --  Each private view, subtype and component is a step: nested
+      --  contexts are many steps deep, and an answer of True here costs
+      --  every fact about the object.
+      Max_Depth : constant := 64;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return False;
+      elsif Depth > Max_Depth
+        or else Has_Aspect (Typ, "Relaxed_Initialization")
+      then
+         return True;
+      end if;
+
+      declare
+         Full : constant Libadalang.Analysis.Base_Type_Decl := Typ.P_Full_View;
+      begin
+         if not Libadalang.Analysis.Is_Null (Full)
+           and then Libadalang.Analysis.Ada_Node (Full) /=
+                    Libadalang.Analysis.Ada_Node (Typ)
+         then
+            return Type_Is_Relaxed (Full, Depth + 1);
+         end if;
+      end;
+
+      if Typ.Kind = Libadalang.Common.Ada_Subtype_Decl then
+         return Type_Is_Relaxed
+           (Typ.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl, Depth + 1);
+      end if;
+
+      for Ancestor of Typ.P_Base_Types loop
+         if Type_Is_Relaxed (Ancestor, Depth + 1) then
+            return True;
+         end if;
+      end loop;
+
+      if Typ.P_Is_Array_Type then
+         return Type_Is_Relaxed (Typ.P_Comp_Type, Depth + 1);
+      elsif Typ.P_Is_Record_Type then
+         for Shape of Typ.P_Shapes (Include_Discriminants => False) loop
+            for Component of Libadalang.Analysis.Components (Shape) loop
+               if Type_Is_Relaxed (Component.P_Formal_Type, Depth + 1) then
+                  return True;
+               end if;
+            end loop;
+         end loop;
+      end if;
+      return False;
+   exception
+      when others =>
+         return True;
+   end Type_Is_Relaxed;
+
+   package Relaxed_Object_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Boolean,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=");
+
+   Relaxed_Objects : Relaxed_Object_Maps.Map;
+
+   --  True when the object of Key is one SPARK code can leave with parts
+   --  that have no value: an Output global or an out parameter of it says
+   --  nothing of its initialization, which is a matter of proof for
+   --  GNATprove. The aspect is on the object, on its type or on what its
+   --  type is made of, or on the subprogram of a parameter, which names the
+   --  parameters it is for. A state abstraction is not such an object:
+   --  GNATprove takes one as initialized by its Output.
+   function Has_Relaxed_Initialization
+     (Key : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+      function Decide return Boolean is
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Key.As_Defining_Name.P_Basic_Decl;
+         Own  : constant String :=
+           Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Key));
+
+         --  True when Key is named under Node, with whatever value.
+         function Mentions (Node : Libadalang.Analysis.Ada_Node'Class)
+                            return Boolean is
+         begin
+            if Libadalang.Analysis.Is_Null (Node) then
+               return False;
+            elsif Node.Kind = Libadalang.Common.Ada_Identifier then
+               return Text_Utils.Normalize_Rule_Name
+                 (Ada_Text.Node_Text (Node)) = Own;
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               if Mentions (Node.Child (Index)) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Mentions;
+
+         --  True when the aspect of the subprogram Subprogram is for Key.
+         --  The aspect of a body is on its declaration, if it has one. An
+         --  aspect with no list is taken for all the parameters.
+         function Listed_By
+           (Subprogram : Libadalang.Analysis.Basic_Decl) return Boolean
+         is
+            Aspect : constant Libadalang.Analysis.Aspect :=
+              Subprogram.P_Get_Aspect
+                (Langkit_Support.Text.To_Unbounded_Text
+                   (Langkit_Support.Text.To_Text
+                      ("Relaxed_Initialization")));
+         begin
+            if Libadalang.Analysis.Exists (Aspect) then
+               return Libadalang.Analysis.Is_Null
+                        (Libadalang.Analysis.Value (Aspect))
+                 or else Mentions (Libadalang.Analysis.Value (Aspect));
+            elsif Subprogram.Kind = Libadalang.Common.Ada_Subp_Body then
+               declare
+                  Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
+                    Subprogram.As_Subp_Body.P_Decl_Part
+                      (Imprecise_Fallback => True);
+               begin
+                  return not Libadalang.Analysis.Is_Null (Decl_Part)
+                    and then Listed_By (Decl_Part);
+               end;
+            end if;
+            return False;
+         end Listed_By;
+
+         --  The aspect as written on Decl: looking it up by name does not
+         --  find it on a declaration of several names.
+         function Written_On_Decl return Boolean is
+            Spec : constant Libadalang.Analysis.Aspect_Spec := Decl.F_Aspects;
+         begin
+            if Libadalang.Analysis.Is_Null (Spec) then
+               return False;
+            end if;
+            for Assoc of Spec.F_Aspect_Assocs loop
+               if Text_Utils.Normalize_Rule_Name
+                    (Ada_Text.Node_Text (Assoc.As_Aspect_Assoc.F_Id)) =
+                  "relaxed-initialization"
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Written_On_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.Kind not in Libadalang.Common.Ada_Object_Decl
+                                  | Libadalang.Common.Ada_Param_Spec
+         then
+            return False;
+         elsif Written_On_Decl
+           or else Has_Aspect (Decl, "Relaxed_Initialization")
+         then
+            return True;
+         elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+            declare
+               Scope : Libadalang.Analysis.Ada_Node := Decl.Parent;
+            begin
+               while not Libadalang.Analysis.Is_Null (Scope) loop
+                  if Scope.Kind in Libadalang.Common.Ada_Basic_Decl then
+                     if Listed_By (Scope.As_Basic_Decl) then
+                        return True;
+                     end if;
+                     exit;
+                  end if;
+                  Scope := Scope.Parent;
+               end loop;
+            end;
+         end if;
+         return Type_Is_Relaxed (Object_Type (Key));
+      exception
+         when others =>
+            return True;
+      end Decide;
+   begin
+      if Libadalang.Analysis.Is_Null (Key) then
+         return False;
+      end if;
+
+      declare
+         Known : constant Relaxed_Object_Maps.Cursor :=
+           Relaxed_Objects.Find (Key);
+      begin
+         if Relaxed_Object_Maps.Has_Element (Known) then
+            return Relaxed_Object_Maps.Element (Known);
+         end if;
+      end;
+
+      declare
+         Answer : constant Boolean := Decide;
+      begin
+         Relaxed_Objects.Insert (Key, Answer);
+         return Answer;
+      end;
+   end Has_Relaxed_Initialization;
+
+   --  What SPARK code leaves of Name, a part of an object it has just
+   --  given a value: the part has one, and so does the object once every
+   --  part of it has. An object that can be left with parts that have no
+   --  value is not followed part by part.
+   procedure Note_Part_Written
+     (Name  : Libadalang.Analysis.Ada_Node'Class;
+      State : in out Flow_State)
+   is
+      use Ada.Strings.Unbounded;
+      Part : constant Object_Part := Part_Of (Name);
+   begin
+      if Config.Verification_Mode
+        and then Verified_In_SPARK
+        and then not Libadalang.Analysis.Is_Null (Part.Key)
+        and then Length (Part.Path) > 0
+        and then Classify (Part.Key) = Tracked
+        and then not Has_Relaxed_Initialization (Part.Key)
+      then
+         Flow_Set_Part_Initialized (State, Part.Key, To_String (Part.Path));
+         if Part_Has_Value (State, Part.Key, "", Object_Type (Part.Key)) then
+            Flow_Set_Initialized (State, Part.Key, Bool_True);
+         end if;
+      end if;
+   end Note_Part_Written;
+
+   --  What the end of the loop Stmt leaves of the arrays it gives a value
+   --  to as a whole, in SPARK code.
+   procedure Note_Filled_Arrays
+     (Stmt  : Libadalang.Analysis.For_Loop_Stmt;
+      State : in out Flow_State)
+   is
+      procedure Filled (Target : Libadalang.Analysis.Name) is
+         Key : constant Libadalang.Analysis.Ada_Node :=
+           Flow_Referenced_Name (Target);
+      begin
+         if Target.Kind = Libadalang.Common.Ada_Identifier then
+            if Classify (Key) = Tracked then
+               Flow_Set_Initialized (State, Key, Bool_True);
+            end if;
+         else
+            Note_Part_Written (Target, State);
+         end if;
+      end Filled;
+   begin
+      if Config.Verification_Mode and then Verified_In_SPARK then
+         SPARK_Readiness.For_Each_Filled_Array (Stmt, Filled'Access);
+      end if;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping the arrays a loop fills: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Note_Filled_Arrays;
+
+   --  What State says of the initialization of the object Key at Node, the
+   --  name of the object in a read: what it says of the part read, where
+   --  the read selects components and the object as a whole is not known.
+   --  A discriminant has a value wherever the object has been elaborated.
+   function Read_Initialization
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Key   : Libadalang.Analysis.Ada_Node;
+      State : Flow_State) return Abstract_Bool
+   is
+      Whole : constant Abstract_Bool := Flow_Initialization (State, Key);
+   begin
+      if Whole = Bool_True
+        or else not Config.Verification_Mode
+        or else not Verified_In_SPARK
+      then
+         return Whole;
+      end if;
+
+      declare
+         Current : Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.Ada_Node (Node);
+      begin
+         while Current.Parent.Kind = Libadalang.Common.Ada_Dotted_Name
+           and then Libadalang.Analysis.Ada_Node
+             (Current.Parent.As_Dotted_Name.F_Prefix) = Current
+         loop
+            Current := Current.Parent;
+            declare
+               Field : constant Libadalang.Analysis.Basic_Decl :=
+                 Current.As_Dotted_Name.F_Suffix.P_Referenced_Decl;
+            begin
+               if not Libadalang.Analysis.Is_Null (Field)
+                 and then Field.Kind =
+                            Libadalang.Common.Ada_Discriminant_Spec
+                 and then not Current.As_Dotted_Name.F_Prefix
+                                .P_Expression_Type.P_Is_Access_Type
+               then
+                  return Bool_True;
+               end if;
+            end;
+            declare
+               Part : constant Object_Part := Part_Of (Current);
+            begin
+               exit when Libadalang.Analysis.Is_Null (Part.Key);
+               if Part_Has_Value
+                    (State, Part.Key,
+                     Ada.Strings.Unbounded.To_String (Part.Path),
+                     Current.As_Expr.P_Expression_Type)
+               then
+                  return Bool_True;
+               end if;
+            end;
+         end loop;
+      end;
+      return Whole;
+   exception
+      when others =>
+         return Whole;
+   end Read_Initialization;
+
    --  As Havoc_Identifiers_In, for an object that the write leaves
    --  initialized if it was: nothing is known of its value any more, and
    --  what was initialized is still.
@@ -3890,6 +4369,42 @@ package body Adalang_Analyzer.Flow_Interp is
          Forget_Identifiers_In (Node.Child (I), State);
       end loop;
    end Forget_Identifiers_In;
+
+   --  The object the name Name is made from through indexes, slices and
+   --  components; null for any other name.
+   function Target_Object
+     (Name : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node is
+   begin
+      case Name.Kind is
+         when Libadalang.Common.Ada_Identifier =>
+            return Flow_Referenced_Name (Name);
+         when Libadalang.Common.Ada_Dotted_Name =>
+            declare
+               Selected : constant Libadalang.Analysis.Dotted_Name :=
+                 Name.As_Dotted_Name;
+               Field    : constant Libadalang.Analysis.Basic_Decl :=
+                 Selected.F_Suffix.P_Referenced_Decl;
+            begin
+               return
+                 (if not Libadalang.Analysis.Is_Null (Field)
+                    and then Field.Kind = Libadalang.Common.Ada_Component_Decl
+                  then Target_Object (Selected.F_Prefix)
+                  else Flow_Referenced_Name (Name));
+            end;
+         when Libadalang.Common.Ada_Call_Expr =>
+            return
+              (if Name.As_Call_Expr.P_Kind in Libadalang.Common.Array_Index
+                                            | Libadalang.Common.Array_Slice
+               then Target_Object (Name.As_Call_Expr.F_Name)
+               else Libadalang.Analysis.No_Ada_Node);
+         when others =>
+            return Libadalang.Analysis.No_Ada_Node;
+      end case;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Target_Object;
 
    --  What the call of Call leaves State able to say of the actuals of the
    --  parameters it can write.
@@ -3942,13 +4457,23 @@ package body Adalang_Analyzer.Flow_Interp is
                  or else not Effects_Known
                  or else Adalang_Analyzer.Subprogram_Summaries
                    .Callee_Formal_May_Write (Call, Formal);
+               --  Either side can come back with parts that have no value
+               --  (FP-133).
+               Relaxed   : constant Boolean :=
+                 Config.Verification_Mode
+                 and then
+                   (Has_Relaxed_Initialization
+                      (Libadalang.Analysis.Ada_Node (Formal))
+                    or else Has_Relaxed_Initialization (Part_Of (Actual).Key));
                --  What SPARK asks of a callee is not taken where its body
                --  is in sight and never writes the parameter.
                Written   : constant Boolean :=
-                 (not Dispatching
-                  and then Adalang_Analyzer.Subprogram_Summaries
-                    .Callee_Formal_Definitely_Writes (Call, Formal))
-                 or else (Out_Only and then By_SPARK and then May_Write);
+                 not Relaxed
+                 and then
+                   ((not Dispatching
+                     and then Adalang_Analyzer.Subprogram_Summaries
+                       .Callee_Formal_Definitely_Writes (Call, Formal))
+                    or else (Out_Only and then By_SPARK and then May_Write));
             begin
                if not May_Write and then not Written then
                   --  The callee never writes the parameter. An in out
@@ -3965,9 +4490,17 @@ package body Adalang_Analyzer.Flow_Interp is
                      end if;
                   end if;
                elsif Config.Verification_Mode
-                 and then (Written or else not Out_Only)
+                 and then (Written or else not (Out_Only or else Relaxed))
                then
                   Forget_Identifiers_In (Actual, State);
+               elsif Relaxed
+                 and then not Libadalang.Analysis.Is_Null
+                                (Target_Object (Actual))
+               then
+                  --  The object named can come back with parts that have no
+                  --  value. An object read by an index of it is not written.
+                  Forget_Identifiers_In (Actual, State);
+                  Flow_Havoc (State, Target_Object (Actual));
                else
                   Havoc_Identifiers_In (Actual, State);
                end if;
@@ -3977,6 +4510,8 @@ package body Adalang_Analyzer.Flow_Interp is
                then
                   Flow_Set_Initialized
                     (State, Flow_Referenced_Name (Actual), Bool_True);
+               elsif Written then
+                  Note_Part_Written (Actual, State);
                end if;
                if May_Write or else Written then
                   Forget_Designated_Values (Actual, State);
@@ -3988,6 +4523,77 @@ package body Adalang_Analyzer.Flow_Interp is
       when others =>
          Havoc_Identifiers_In (Call, State);
    end Havoc_Call_Actuals;
+
+   --  What a call of SPARK code leaves of the globals it writes: an object
+   --  that was initialized when the call was made still is, for every
+   --  value SPARK code stores is initialized, unless it is one that code
+   --  can leave with parts that have no value. Before is the state of the
+   --  call, After the state it left, whose values are gone.
+   procedure Keep_Initialized
+     (Call   : Libadalang.Analysis.Name'Class;
+      Before : Flow_State;
+      After  : in out Flow_State)
+   is
+   begin
+      if Config.Verification_Mode and then Callee_Keeps_SPARK_Rules (Call) then
+         for Index in 1 .. Binding_Count (Before) loop
+            declare
+               Key : constant Libadalang.Analysis.Ada_Node :=
+                 Binding_At (Before, Index).Decl;
+            begin
+               if Stored_Initialization (Before, Key) = Bool_True
+                 and then not Has_Relaxed_Initialization (Key)
+               then
+                  Flow_Set_Initialized (After, Key, Bool_True);
+               end if;
+            end;
+         end loop;
+      end if;
+   end Keep_Initialized;
+
+   --  Gives State that each object Walk visits for Callee, seen from Caller,
+   --  is initialized, but for those a contract says nothing of that way.
+   procedure Initialize_Objects
+     (Walk   : not null access procedure
+        (Callee : Libadalang.Analysis.Basic_Decl'Class;
+         Caller : Libadalang.Analysis.Ada_Node'Class;
+         Visit  : not null access procedure
+           (Object : Libadalang.Analysis.Defining_Name));
+      Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class;
+      State  : in out Flow_State)
+   is
+      procedure Initialize (Object : Libadalang.Analysis.Defining_Name) is
+         Key : constant Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.Ada_Node (Object);
+      begin
+         if not Has_Relaxed_Initialization (Key) then
+            Flow_Set_Initialized (State, Key, Bool_True);
+         end if;
+      end Initialize;
+   begin
+      Walk (Callee, Caller, Initialize'Access);
+   end Initialize_Objects;
+
+   --  A global the callee's contract lists as Output is initialized when
+   --  a call of SPARK code returns: that is the callee's own obligation,
+   --  raised at the aspect when its body is verified. The call has already
+   --  taken the value of the object away.
+   procedure Initialize_Global_Outputs
+     (Call  : Libadalang.Analysis.Name'Class;
+      State : in out Flow_State) is
+   begin
+      if Config.Verification_Mode and then Callee_Keeps_SPARK_Rules (Call) then
+         Initialize_Objects
+           (Adalang_Analyzer.Flow_Contracts.For_Each_Output'Access,
+            Call_Declaration (Call), Call, State);
+      end if;
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping the Output globals of a call: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Initialize_Global_Outputs;
 
    --  After the call of a subprogram that is SPARK code, a scalar object
    --  that is the actual of a parameter the callee can write holds a value
@@ -6795,7 +7401,7 @@ package body Adalang_Analyzer.Flow_Interp is
                   Record_Standing_Value
                     (Unit, Node, Key, State, False, Standing);
                   if not Standing then
-                     case Flow_Initialization (State, Key) is
+                     case Read_Initialization (Node, Key, State) is
                         when Bool_True =>
                            --  proof-path: initialization-live
                            Record_Proved_Safe
@@ -6869,8 +7475,8 @@ package body Adalang_Analyzer.Flow_Interp is
                   for Pair of Call.F_Name.P_Call_Params loop
                      if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
                        Libadalang.Common.Ada_Mode_Out
-                       or else Libadalang.Analysis.Actual (Pair).Kind /=
-                         Libadalang.Common.Ada_Identifier
+                       or else not Only_Names_Its_Target
+                                     (Libadalang.Analysis.Actual (Pair))
                      then
                         Scan_Expression_For_Flow_Bugs
                           (Unit, Libadalang.Analysis.Actual (Pair), State,
@@ -7299,6 +7905,8 @@ package body Adalang_Analyzer.Flow_Interp is
                           Implicit_Initialization (Decl, State);
                      begin
                         for Id of Decl.F_Ids loop
+                           Flow_Forget_Parts
+                             (State, Libadalang.Analysis.Ada_Node (Id));
                            Flow_Set_Initialized
                              (State, Libadalang.Analysis.Ada_Node (Id),
                               Initialized);
@@ -7835,6 +8443,7 @@ package body Adalang_Analyzer.Flow_Interp is
                   Flow_Bool_Set (Next, Target, Bool_Value);
                   Flow_Range_Set (Next, Target, Bounds);
                   Flow_Set_Initialized (Next, Target, Bool_True);
+                  Note_Part_Written (Assign.F_Dest, Next);
                end;
 
                return (State => Next, Terminated => False);
@@ -7848,7 +8457,9 @@ package body Adalang_Analyzer.Flow_Interp is
             begin
                Check_Call_Precondition (Unit, Call, State);
                Havoc_Global_Effects (Call, Next);
+               Keep_Initialized (Call, State, Next);
                Havoc_Call_Actuals (Call, Next);
+               Initialize_Global_Outputs (Call, Next);
                Apply_Call_Postcondition (Call, Next);
                Bound_Written_Actuals (Call, Next);
                return (State => Next, Terminated => False);
@@ -8465,8 +9076,10 @@ package body Adalang_Analyzer.Flow_Interp is
       --  object this model follows.
       procedure Finalize_Output_Globals is
          procedure Check_Item (Item : Libadalang.Analysis.Ada_Node'Class) is
+            --  Dotted, the name of a state abstraction or of an object.
             Key : constant Libadalang.Analysis.Ada_Node :=
-              Flow_Referenced_Name (Item);
+              Libadalang.Analysis.Ada_Node
+                (Item.As_Name.P_Referenced_Defining_Name);
          begin
             if not Boundary_Supported then
                Record_Unsupported
@@ -8574,6 +9187,9 @@ package body Adalang_Analyzer.Flow_Interp is
             Default : constant Libadalang.Analysis.Expr :=
               Decl.F_Default_Expr;
          begin
+            for Id of Decl.F_Ids loop
+               Flow_Forget_Parts (State, Libadalang.Analysis.Ada_Node (Id));
+            end loop;
             if Libadalang.Analysis.Is_Null (Default) then
                declare
                   Initialized : constant Abstract_Bool :=
@@ -10675,6 +11291,11 @@ package body Adalang_Analyzer.Flow_Interp is
                              Spec.F_Iter_Expr, Edge_State);
                      end if;
                   end;
+               elsif Node_Info.Kind = CFG.Loop_Header_Node
+                 and then Source.Kind = Libadalang.Common.Ada_For_Loop_Stmt
+                 and then Edge.Kind in CFG.False_Edge | CFG.Loop_Exit_Edge
+               then
+                  Note_Filled_Arrays (Source.As_For_Loop_Stmt, Edge_State);
                elsif Edge.Kind = CFG.Case_Edge
                  and then not Libadalang.Analysis.Is_Null (Edge.Source)
                  and then Edge.Source.Kind =
@@ -12905,6 +13526,100 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end Finalize_Precondition_At;
 
+      --  The objects a call takes as it finds it are to be initialized
+      --  where it is made: its body has been entered on that understanding
+      --  (Seed_Outside_Inputs). One obligation for each, at the call, with
+      --  the object for its subject. An object that is uninitialized here
+      --  is left unproved, not called an error: whether the callee reads
+      --  it on the way this call takes it is not known here.
+      procedure Finalize_Call_Inputs
+        (Call      : Libadalang.Analysis.Name'Class;
+         Container : CFG.Node_Id)
+      is
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Call_Declaration (Call);
+
+         procedure Check (Object : Libadalang.Analysis.Defining_Name) is
+            Name : constant String :=
+              Ada_Text.Node_Text (Decl.P_Defining_Name) & " reads " &
+              Ada_Text.Node_Text (Object);
+         begin
+            if Has_Relaxed_Initialization
+                 (Libadalang.Analysis.Ada_Node (Object))
+            then
+               --  Not taken on entry either (Initialize_Objects).
+               return;
+            elsif Unreached (Container) then
+               Record_Outcome
+                 (Unit, Call, Proof.Initialization_Check, Proof.Unreachable,
+                  Proof.Flow_Analysis,
+                  "the containing CFG node is unreachable",
+                  Operation => Name);
+            elsif Flow_Initialization
+                    (State_At (Container),
+                     Libadalang.Analysis.Ada_Node (Object)) = Bool_True
+            then
+               --  proof-path: call-input-initialization
+               Record_Proved_Safe
+                 (Unit, Call, Proof.Initialization_Check,
+                  Proof.Flow_Analysis,
+                  "object the call reads is initialized on every incoming " &
+                    "path",
+                  "initialization => true", Final => True, Operation => Name);
+            else
+               Record_Unproved
+                 (Unit, Call, Proof.Initialization_Check,
+                  Proof.Flow_Analysis,
+                  "object the call reads is not established as initialized",
+                  Imprecision =>
+                    "incoming paths disagree or object is external",
+                  Final => True, Operation => Name);
+            end if;
+            Proof.Set_Subject
+              (Unit, Call, Proof.Initialization_Check, Object, Name);
+         end Check;
+      begin
+         if Config.Verification_Mode
+           and then Boundary_Supported
+           and then In_SPARK_Code (Subprogram)
+           and then not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind /= Libadalang.Common.Ada_Enum_Literal_Decl
+           and then (In_SPARK_Code (Decl) or else Has_Aspect (Decl, "Global"))
+           and then not Adalang_Analyzer.Subprogram_Summaries
+                          .Passed_As_Actual (Decl)
+         then
+            Adalang_Analyzer.Flow_Contracts.For_Each_Input
+              (Decl, Call, Check'Access);
+         end if;
+      end Finalize_Call_Inputs;
+
+      --  True when Node, a name, is the call of a function with no actuals:
+      --  neither the name of a call with some, nor that of a call statement,
+      --  nor the last part of a dotted name, which is that name's business.
+      function Is_Bare_Call
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+         Parent : constant Libadalang.Analysis.Ada_Node := Node.Parent;
+      begin
+         return Node.Kind in Libadalang.Common.Ada_Identifier
+                           | Libadalang.Common.Ada_Dotted_Name
+           and then Parent.Kind /= Libadalang.Common.Ada_Call_Stmt
+           and then not
+             (Parent.Kind = Libadalang.Common.Ada_Call_Expr
+              and then Libadalang.Analysis.Ada_Node
+                         (Parent.As_Call_Expr.F_Name) =
+                       Libadalang.Analysis.Ada_Node (Node))
+           and then not
+             (Parent.Kind = Libadalang.Common.Ada_Dotted_Name
+              and then Libadalang.Analysis.Ada_Node
+                         (Parent.As_Dotted_Name.F_Suffix) =
+                       Libadalang.Analysis.Ada_Node (Node))
+           and then Node.As_Name.P_Is_Call;
+      exception
+         when others =>
+            return False;
+      end Is_Bare_Call;
+
       procedure Finalize_Precondition_Check
         (Call      : Libadalang.Analysis.Call_Expr;
          Container : CFG.Node_Id)
@@ -12928,6 +13643,7 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
 
          Decl := Call_Declaration (Operator);
+         Finalize_Call_Inputs (Operator, Container);
          if not Libadalang.Analysis.Is_Null (Decl)
            and then not Libadalang.Analysis.Is_Null
                           (Contract_Expression (Decl, "Pre"))
@@ -14158,11 +14874,17 @@ package body Adalang_Analyzer.Flow_Interp is
                        (Node.As_Call_Stmt.F_Call, Here);
                   end if;
                end;
+               Finalize_Call_Inputs (Node.As_Call_Stmt.F_Call, Here);
+            elsif Verified_In_SPARK and then Is_Bare_Call (Node) then
+               Finalize_Call_Inputs (Node.As_Name, Here);
             elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
                declare
                   Call : constant Libadalang.Analysis.Call_Expr :=
                     Node.As_Call_Expr;
                begin
+                  if Call.P_Kind = Libadalang.Common.Call then
+                     Finalize_Call_Inputs (Call, Here);
+                  end if;
                   case Call.P_Kind is
                      when Libadalang.Common.Type_Conversion =>
                         declare
@@ -14347,8 +15069,8 @@ package body Adalang_Analyzer.Flow_Interp is
                               Standing);
                            if not Standing then
                               Record_Final_Initialization
-                                (Node, Flow_Initialization
-                                         (State_At (Here), Key));
+                                (Node, Read_Initialization
+                                         (Node, Key, State_At (Here)));
                            end if;
                         end;
                      end if;
@@ -14408,8 +15130,8 @@ package body Adalang_Analyzer.Flow_Interp is
                      for Pair of Node.As_Call_Expr.F_Name.P_Call_Params loop
                         if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
                           Libadalang.Common.Ada_Mode_Out
-                          or else Libadalang.Analysis.Actual (Pair).Kind /=
-                            Libadalang.Common.Ada_Identifier
+                          or else not Only_Names_Its_Target
+                                        (Libadalang.Analysis.Actual (Pair))
                         then
                            Finalize_Node
                              (Libadalang.Analysis.Actual (Pair), Here);
@@ -14588,6 +15310,33 @@ package body Adalang_Analyzer.Flow_Interp is
                Occurrence => E);
       end Assume_Parameter_Predicates;
 
+      --  An object SPARK code takes from outside as it finds it has a value
+      --  when the subprogram is entered: having it is the business of the
+      --  caller, and Finalize_Call_Inputs raises that at each call. A
+      --  global of mode Output is not such an object, and nothing is taken
+      --  of a subprogram passed as an actual: it is called where the call
+      --  names a formal subprogram or an access value, and nothing is
+      --  raised there.
+      procedure Seed_Outside_Inputs (State : in out Flow_State) is
+      begin
+         if Config.Verification_Mode
+           and then In_SPARK_Code (Subprogram)
+           and then not Adalang_Analyzer.Subprogram_Summaries
+                          .Passed_As_Actual (Subprogram)
+         then
+            Initialize_Objects
+              (Adalang_Analyzer.Flow_Contracts.For_Each_Input'Access,
+               Subprogram, Subprogram, State);
+         end if;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Initialization_Check",
+               Operation  => "seed the inputs of the subprogram",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Seed_Outside_Inputs;
+
       Initial : Flow_State := Empty_Flow_State;
       Initial_Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
       --  Initial before the precondition is assumed, and what is known of
@@ -14605,6 +15354,7 @@ package body Adalang_Analyzer.Flow_Interp is
       Collect_Loop_Invariants (Subprogram);
       Collect_Effectful_Calls;
       Seed_Parameters (Initial);
+      Seed_Outside_Inputs (Initial);
       for Pair of Pairs loop
          Flow_Copy_Key (Initial, Pair.Body_Name, Pair.Spec_Name);
       end loop;

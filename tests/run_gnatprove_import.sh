@@ -111,11 +111,11 @@ def obligation(report, identifier):
     return found[0]
 
 
-# 3. GNATprove's own log: fourteen checks, eleven of them proved. Ten
+# 3. GNATprove's own log: eighteen checks, fifteen of them proved. Fourteen
 #    AdaLang proves too, and one it has an obligation for and leaves
 #    unproved.
-expect(real, "real", checks=14, proved=11, justified=0, notProved=3,
-       provedByBoth=10, provedByGnatproveOnObligation=1,
+expect(real, "real", checks=18, proved=15, justified=0, notProved=3,
+       provedByBoth=14, provedByGnatproveOnObligation=1,
        provedByGnatproveWithoutObligation=0,
        definiteErrorWhereGnatproveProved=0,
        provedSafeWhereGnatproveNotProved=0)
@@ -145,6 +145,18 @@ by_zero = check_at(real, "sample.adb", 11, 20, "divide by zero")
 zero = obligation(real, by_zero["obligation"])
 if (zero["status"], zero["gnatprove"]) != ("definite-error", "not-proved"):
     fail("the division by zero is " + str(zero))
+
+#    The initialization of a local is reported at its declaration and at
+#    its name in a Global aspect: the check at the aspect has the obligation
+#    there, though that obligation is about the object too.
+declared = check_at(real, "sample.adb", 16, 7, "initialization of")
+if declared["adalang"] != "proved-safe":
+    fail("the initialization of the local is " + str(declared))
+aspect = check_at(real, "sample.adb", 18, 48, "initialization of")
+if aspect["adalang"] != "proved-safe":
+    fail("the check at the aspect is " + str(aspect))
+if obligation(real, aspect["obligation"])["column"] != 48:
+    fail("the check at the aspect went to " + str(aspect))
 
 # 4. The ledger, given the same report and log, pairs every check alike.
 with open(f"{work}/rows.tsv") as rows:
@@ -207,7 +219,7 @@ if pathed["adalang"] != "proved-safe":
 
 # 6. Two logs are read as one: twenty-one checks, of which three are in
 #    both -- the same check at the same place.
-expect(both, "both", checks=18)
+expect(both, "both", checks=22)
 if len(both["gnatproveImport"]["logs"]) != 2:
     fail("two logs were not both recorded")
 PYTHON
@@ -218,9 +230,9 @@ PYTHON
   true
 grep -F "GNATprove verdicts (read from 1 log; not AdaLang's own results):" \
   "$work/text" >/dev/null
-grep -F 'Checks in the log : 14 (11 proved, 0 justified, 3 not proved)' \
+grep -F 'Checks in the log : 18 (15 proved, 0 justified, 3 not proved)' \
   "$work/text" >/dev/null
-grep -F 'proved by AdaLang too : 10' "$work/text" >/dev/null
+grep -F 'proved by AdaLang too : 14' "$work/text" >/dev/null
 grep -F "GNATprove's verdict alone, on an AdaLang obligation : 1" \
   "$work/text" >/dev/null
 grep -F "GNATprove's verdict alone, no AdaLang obligation : 0" \

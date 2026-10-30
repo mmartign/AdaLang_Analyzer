@@ -27,4 +27,8 @@ package Sample with SPARK_Mode is
    --  A division by zero, whatever a log says.
    procedure Divide_By_Zero (Result : out Integer);
 
+   --  The initialization of a local is reported at its declaration and at
+   --  its name in a Global aspect, and each check has an obligation.
+   procedure Through_Output (Result : out Integer);
+
 end Sample;

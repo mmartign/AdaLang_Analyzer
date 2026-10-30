@@ -1362,7 +1362,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
 
    function List_Always_Writes_Loop_Index
      (List     : Libadalang.Analysis.Ada_Node'Class;
-      Param    : Libadalang.Analysis.Param_Spec;
+      Object   : Libadalang.Analysis.Basic_Decl'Class;
       Name     : String;
       Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean;
 
@@ -1376,7 +1376,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
    --  conservatively not recognized as a qualifying write.
    function Statement_Always_Writes_Loop_Index
      (Node     : Libadalang.Analysis.Ada_Node'Class;
-      Param    : Libadalang.Analysis.Param_Spec;
+      Object   : Libadalang.Analysis.Basic_Decl'Class;
       Name     : String;
       Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean
    is
@@ -1407,7 +1407,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
                     Normalize_Rule_Name (Node_Text (Call.F_Name)) = Name
                     and then (Libadalang.Analysis.Is_Null (Prefix_Decl)
                       or else Prefix_Decl =
-                        Libadalang.Analysis.Basic_Decl (Param))
+                        Libadalang.Analysis.Basic_Decl (Object))
                     and then not Libadalang.Analysis.Is_Null (Index)
                     and then Index.Kind = Libadalang.Common.Ada_Identifier
                     and then Index.As_Name.P_Referenced_Decl
@@ -1422,15 +1422,15 @@ package body Adalang_Analyzer.SPARK_Readiness is
             begin
                if Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
                  or else not List_Always_Writes_Loop_Index
-                   (Stmt.F_Then_Stmts, Param, Name, Loop_Var)
+                   (Stmt.F_Then_Stmts, Object, Name, Loop_Var)
                  or else not List_Always_Writes_Loop_Index
-                   (Stmt.F_Else_Part.F_Stmts, Param, Name, Loop_Var)
+                   (Stmt.F_Else_Part.F_Stmts, Object, Name, Loop_Var)
                then
                   return False;
                end if;
                for Alt of Stmt.F_Alternatives loop
                   if not List_Always_Writes_Loop_Index
-                    (Alt.F_Stmts, Param, Name, Loop_Var)
+                    (Alt.F_Stmts, Object, Name, Loop_Var)
                   then
                      return False;
                   end if;
@@ -1448,7 +1448,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
                end if;
                for Alt of Stmt.F_Alternatives loop
                   if not List_Always_Writes_Loop_Index
-                    (Alt.F_Stmts, Param, Name, Loop_Var)
+                    (Alt.F_Stmts, Object, Name, Loop_Var)
                   then
                      return False;
                   end if;
@@ -1458,7 +1458,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
 
          when Libadalang.Common.Ada_Decl_Block =>
             return List_Always_Writes_Loop_Index
-              (Node.As_Decl_Block.F_Stmts.F_Stmts, Param, Name, Loop_Var);
+              (Node.As_Decl_Block.F_Stmts.F_Stmts, Object, Name, Loop_Var);
 
          when others =>
             --  Ada's own exhaustiveness rules make every other statement
@@ -1474,20 +1474,125 @@ package body Adalang_Analyzer.SPARK_Readiness is
 
    function List_Always_Writes_Loop_Index
      (List     : Libadalang.Analysis.Ada_Node'Class;
-      Param    : Libadalang.Analysis.Param_Spec;
+      Object   : Libadalang.Analysis.Basic_Decl'Class;
       Name     : String;
       Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean
    is
    begin
       for Index in 1 .. List.Children_Count loop
          if Statement_Always_Writes_Loop_Index
-           (List.Child (Index), Param, Name, Loop_Var)
+           (List.Child (Index), Object, Name, Loop_Var)
          then
             return True;
          end if;
       end loop;
       return False;
    end List_Always_Writes_Loop_Index;
+
+   procedure For_Each_Filled_Array
+     (Stmt  : Libadalang.Analysis.For_Loop_Stmt;
+      Visit : not null access procedure
+        (Target : Libadalang.Analysis.Name))
+   is
+      Spec     : constant Libadalang.Analysis.For_Loop_Spec :=
+        Stmt.F_Spec.As_For_Loop_Spec;
+      Loop_Var : constant Libadalang.Analysis.Basic_Decl :=
+        Libadalang.Analysis.Basic_Decl (Spec.F_Var_Decl);
+      Iter     : constant Libadalang.Analysis.Ada_Node := Spec.F_Iter_Expr;
+
+      --  True when Spec visits every index of Target, of the array type
+      --  Typ. The subtype is compared as it is declared, not by its
+      --  canonical type: a subtype of the type's index subtype covers
+      --  only part of an array of that type. Any array of the type has
+      --  its indices in the subtype the type is indexed by.
+      function Visits_Every_Index
+        (Target : Libadalang.Analysis.Name;
+         Typ    : Libadalang.Analysis.Base_Type_Decl) return Boolean is
+      begin
+         case Iter.Kind is
+            when Libadalang.Common.Ada_Attribute_Ref =>
+               return
+                 Normalize_Rule_Name
+                   (Node_Text (Iter.As_Attribute_Ref.F_Attribute)) = "range"
+                 and then Normalize_Rule_Name
+                   (Node_Text (Iter.As_Attribute_Ref.F_Prefix)) =
+                     Normalize_Rule_Name (Node_Text (Target));
+
+            when Libadalang.Common.Ada_Identifier
+               | Libadalang.Common.Ada_Dotted_Name =>
+               declare
+                  Domain : constant Libadalang.Analysis.Basic_Decl :=
+                    Iter.As_Name.P_Referenced_Decl;
+               begin
+                  return not Libadalang.Analysis.Is_Null (Domain)
+                    and then Domain.Kind in
+                      Libadalang.Common.Ada_Base_Type_Decl
+                    and then Domain =
+                      Libadalang.Analysis.Basic_Decl
+                        (Typ.P_Index_Type (Dim => 0));
+               end;
+
+            when others =>
+               return False;
+         end case;
+      end Visits_Every_Index;
+
+      procedure Consider (Target : Libadalang.Analysis.Name) is
+         Typ : constant Libadalang.Analysis.Base_Type_Decl :=
+           Target.P_Expression_Type;
+      begin
+         if not Libadalang.Analysis.Is_Null (Typ)
+           and then Typ.P_Is_Array_Type
+           and then Visits_Every_Index (Target, Typ)
+           and then List_Always_Writes_Loop_Index
+             (Stmt.F_Stmts, Target.P_Referenced_Decl,
+              Normalize_Rule_Name (Node_Text (Target)), Loop_Var)
+         then
+            Visit (Target);
+         end if;
+      end Consider;
+
+      --  Each assignment to an element at the loop parameter, anywhere in
+      --  the body; a target assigned twice is visited twice.
+      procedure Find (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+            declare
+               Dest : constant Libadalang.Analysis.Name :=
+                 Node.As_Assign_Stmt.F_Dest;
+            begin
+               if Dest.Kind = Libadalang.Common.Ada_Call_Expr then
+                  declare
+                     Index : constant Libadalang.Analysis.Expr :=
+                       Single_Index_Expression (Dest.As_Call_Expr.F_Suffix);
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Index)
+                       and then Index.Kind = Libadalang.Common.Ada_Identifier
+                       and then Index.As_Name.P_Referenced_Decl = Loop_Var
+                     then
+                        Consider (Dest.As_Call_Expr.F_Name);
+                     end if;
+                  end;
+               end if;
+            end;
+         elsif Node.Kind not in Libadalang.Common.Ada_Expr
+           and then Node.Kind not in Libadalang.Common.Ada_Basic_Decl
+         then
+            for Index in 1 .. Node.Children_Count loop
+               Find (Node.Child (Index));
+            end loop;
+         end if;
+      end Find;
+   begin
+      if Spec.F_Loop_Type.Kind = Libadalang.Common.Ada_Iter_Type_In
+        and then not Libadalang.Analysis.Is_Null (Iter)
+        and then not Contains_Loop_Escape (Stmt.F_Stmts)
+      then
+         Find (Stmt.F_Stmts);
+      end if;
+   end For_Each_Filled_Array;
 
    type Init_Result is record
       Can_Fall_Through : Boolean := True;
@@ -1653,7 +1758,8 @@ package body Adalang_Analyzer.SPARK_Readiness is
                   if Loop_Covers_Index_Range
                        (Spec, Index_Type, Param, Name)
                     and then List_Always_Writes_Loop_Index
-                       (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name,
+                       (Node.As_Base_Loop_Stmt.F_Stmts,
+                        Libadalang.Analysis.Basic_Decl (Param), Name,
                         Libadalang.Analysis.Basic_Decl (Spec.F_Var_Decl))
                   then
                      return (True, True);

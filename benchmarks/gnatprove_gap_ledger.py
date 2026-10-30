@@ -218,10 +218,18 @@ def pair(checks, obligations):
     # declaration; AdaLang checks every read, and an out parameter at the
     # subprogram's exit. The obligations about one declaration are taken
     # together, and the object is as good as the worst of them.
+    # One that GNATprove reports at a place of its own, at the name of a
+    # global in an aspect, is paired there first: such an obligation has the
+    # object for its subject too, and would leave the check at the aspect
+    # with nothing.
     by_subject = collections.defaultdict(list)
     for item in obligations:
         if item["kind"] == "initialization-check" and item["subject"]:
             by_subject[item["subject"]].append(item)
+    for check in checks:
+        if check["check"] == "initialization of" and (
+                check["file"], check["line"], check["column"]) not in by_subject:
+            check["match"] = take(check, True)
     for check in checks:
         if check["check"] == "initialization of":
             group = by_subject.get(
@@ -249,13 +257,15 @@ def pair(checks, obligations):
     for check in checks:
         match = check.get("match")
         check["reason"] = ""
-        if check["file"] not in files_with_obligations:
+        if match is not None:
+            # First: the obligations about an object can all be elsewhere,
+            # at the calls that read it.
+            check["adalang"] = match["status"]
+            check["reason"] = match["reason"]
+        elif check["file"] not in files_with_obligations:
             check["adalang"] = "file without any obligation"
         elif check["kind"] is None:
             check["adalang"] = "no such obligation kind"
-        elif match is not None:
-            check["adalang"] = match["status"]
-            check["reason"] = match["reason"]
         else:
             # Say how far off AdaLang is: the same kind a few lines away
             # (a different idea of where the check is), another kind on

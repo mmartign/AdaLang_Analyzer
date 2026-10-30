@@ -87,4 +87,30 @@ package Adalang_Analyzer.Flow_Contracts is
    --  end and touches none. A constant whose value depends on no variable
    --  is not such an object. False whenever the effects are not known.
 
+   procedure For_Each_Input
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class;
+      Visit  : not null access procedure
+        (Object : Libadalang.Analysis.Defining_Name));
+   --  Calls Visit for each object declared outside Callee that a call to
+   --  Callee made from Caller takes as it finds it: every global its
+   --  contract lists with a mode other than Output -- the Refined_Global
+   --  where Caller sees the body it is on -- or, with no Global aspect,
+   --  what its body and all it calls were followed to the end and found
+   --  only to read. Nothing is visited for an object such a body writes,
+   --  which it is not known to read first, nor for a parameter, which is
+   --  not the callers' to establish. What is visited for Callee with
+   --  Caller inside it is what its body assumes on entry; what is visited
+   --  for a call is what that call is then to establish, so the two go by
+   --  the same list.
+
+   procedure For_Each_Output
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class;
+      Visit  : not null access procedure
+        (Object : Libadalang.Analysis.Defining_Name));
+   --  Calls Visit for each global the contract of Callee, as Caller sees
+   --  it, lists as Output: the callee leaves it initialized, which is an
+   --  obligation of the callee's own body.
+
 end Adalang_Analyzer.Flow_Contracts;

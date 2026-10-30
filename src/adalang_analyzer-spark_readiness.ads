@@ -17,6 +17,16 @@ package Adalang_Analyzer.SPARK_Readiness is
      (Unit       : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body);
 
+   procedure For_Each_Filled_Array
+     (Stmt  : Libadalang.Analysis.For_Loop_Stmt;
+      Visit : not null access procedure
+        (Target : Libadalang.Analysis.Name));
+   --  Calls Visit for each array of one dimension that Stmt gives a value
+   --  to as a whole. The loop is "for I in A'Range" or "for I in S", where
+   --  S is the subtype the array's type is indexed by, and so visits every
+   --  index A has; it holds no exit, return, raise or goto; and on every
+   --  path through its body it assigns "A (I)". Target is the name A.
+
    function Effective_SPARK_Enabled
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
    --  False when Decl, or the nearest enclosing unit that says, has

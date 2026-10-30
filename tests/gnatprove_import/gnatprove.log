@@ -3,6 +3,9 @@ Phase 2 of 3: generation of Global contracts ...
 Phase 3 of 3: flow analysis and proof ...
 sample.adb:5:14: info: length check proved
 sample.adb:11:20: medium: divide by zero might fail [provers gave up before completing the proof]
+sample.adb:16:07: info: initialization of "Local" proved
+sample.adb:18:27: info: data dependencies proved
+sample.adb:18:48: info: initialization of "Local" proved
 sample.ads:9:13: info: implicit aspect Always_Terminates on "Half" has been proved, subprogram will terminate
 sample.ads:9:61: info: division check proved
 sample.ads:12:13: info: implicit aspect Always_Terminates on "Quotient" has been proved, subprogram will terminate
@@ -15,3 +18,4 @@ sample.ads:18:37: info: index check proved
 sample.ads:21:36: info: index check proved
 sample.ads:24:37: info: initialization of "Target" proved
 sample.ads:28:30: info: initialization of "Result" proved
+sample.ads:32:30: info: initialization of "Result" proved

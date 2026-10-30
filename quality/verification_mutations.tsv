@@ -362,3 +362,42 @@ result-split	tests/verification_translation_pieces.adb	postcondition	Bad_Split'R
 mask-not-low-bits	tests/verification_translation_pieces.adb	range-check	Y and 16#1F0#	unproved	a mask that is not of low bits keeps bits above 255
 shift-right-short	tests/verification_translation_pieces.adb	range-check	Shift_Right (Y, 16)	unproved	sixteen bits are left above 255
 fp131-formal-object	tests/verification_fp131_formal_object.adb	assertion	not Whole'Constrained	definite-error	a formal object of mode in is a constant: X'Constrained is True
+outside-call-before-output	tests/verification_mutation_outside_objects.adb	initialization-check	Read_Before_Call reads Before_Call	unproved	a call reads a global its caller has as Output before it writes it
+outside-call-one-path	tests/verification_mutation_outside_objects.adb	initialization-check	Read_One_Path reads One_Path	unproved	a call reads a global written on one path only
+outside-bare-call	tests/verification_mutation_outside_objects.adb	initialization-check	Read_Bare reads Bare	unproved	a function called with no actuals reads a global not yet written
+outside-expanded-call	tests/verification_mutation_outside_objects.adb	initialization-check	Read_Expanded reads Expanded	unproved	the same through an expanded name
+outside-operator	tests/verification_mutation_outside_objects.adb	initialization-check	\"+\" reads Operator	unproved	a declared operator reads a global not yet written
+outside-contract	tests/verification_mutation_outside_objects.adb	initialization-check	Read_In_Contract reads In_Contract	unproved	a precondition reads an Output global through a function
+outside-in-out	tests/verification_mutation_outside_objects.adb	initialization-check	Keep_In_Out reads In_Out_Early	unproved	an In_Out global of the callee is an input of the call
+outside-declaration	tests/verification_mutation_outside_objects.adb	initialization-check	Read_In_Declaration reads In_Declaration	unproved	a call in a declaration reads a global not yet written
+outside-assertion	tests/verification_mutation_outside_objects.adb	initialization-check	Read_In_Assertion reads In_Assertion	unproved	a call in an assertion reads a global not yet written
+outside-nested-local	tests/verification_mutation_outside_objects.adb	initialization-check	Inner reads Unset_Local	unproved	a nested subprogram reads a local not yet written
+outside-nested-generated	tests/verification_mutation_outside_objects.adb	initialization-check	Inner reads Unset_Read	unproved	the same with no Global aspect: what the body reads
+outside-nested-branch	tests/verification_mutation_outside_objects.adb	initialization-check	Inner reads Branch_Local	unproved	a local written on one path only
+part-missing	tests/verification_mutation_outside_objects.adb	initialization-check	Short	unproved	a component is never written
+part-one-path	tests/verification_mutation_outside_objects.adb	initialization-check	Branch	unproved	a component is written on one path only
+part-nested-missing	tests/verification_mutation_outside_objects.adb	initialization-check	Deep	unproved	a component of a component is never written
+part-same-name	tests/verification_mutation_outside_objects.adb	initialization-check	Doubled	unproved	a component written under the other component of the same name
+part-default	tests/verification_mutation_outside_objects.adb	initialization-check	Default	unproved	a default is not taken for an out parameter
+part-variant	tests/verification_mutation_outside_objects.adb	initialization-check	Choice	unproved	the components common to every variant do not make the record whole
+part-hidden-parent	tests/verification_mutation_outside_objects.adb	initialization-check	Child_Part	unproved	the part of a record it inherits is never written
+part-other-component	tests/verification_mutation_outside_objects.adb	initialization-check	Partly	unproved	a read of a component other than the one written
+part-other-object	tests/verification_mutation_outside_objects.adb	initialization-check	Never	unproved	a read of the component of another object of the type
+fill-short-range	tests/verification_mutation_outside_objects.adb	initialization-check	Short_Range	unproved	the loop does not reach the last element
+fill-subtype	tests/verification_mutation_outside_objects.adb	initialization-check	Sub_Range	unproved	the loop's subtype is narrower than the array
+fill-conditional	tests/verification_mutation_outside_objects.adb	initialization-check	Guarded	unproved	the element is written on one path through the body
+fill-exit	tests/verification_mutation_outside_objects.adb	initialization-check	Left_Early	unproved	the loop can be left early
+fill-other-index	tests/verification_mutation_outside_objects.adb	initialization-check	Other_Index	unproved	the index is not the loop parameter itself
+fill-element-wise	tests/verification_mutation_outside_objects.adb	initialization-check	Each	unproved	each element by name is not the array as a whole
+relaxed-output-object	tests/verification_mutation_outside_objects.adb	initialization-check	Relaxed_Global	unproved	an Output global with Relaxed_Initialization need not be given a value
+relaxed-output-type	tests/verification_mutation_outside_objects.adb	initialization-check	Soft_Global	unproved	the same through the aspect of its type
+relaxed-output-after-set	tests/verification_mutation_outside_objects.adb	initialization-check	Second_Relaxed	unproved	an Output call can take the value such a global had
+relaxed-out-formal	tests/verification_mutation_outside_objects.adb	initialization-check	Soft_Cells	unproved	an out parameter the subprogram's aspect names need not be given a value
+relaxed-out-component	tests/verification_mutation_outside_objects.adb	initialization-check	Soft_Holder	unproved	an out parameter of a type with such a component need not be given a value (FP-133)
+relaxed-parts-then-out	tests/verification_mutation_outside_objects.adb	initialization-check	Soft_Parts	unproved	parts given a value are not kept across an out parameter of such a type
+relaxed-slice-target	tests/verification_mutation_outside_objects.adb	assertion	Soft_Slice (2) = Soft_Slice (2)	unproved	the object a slice actual names is what such a parameter can leave without a value
+relaxed-component-slice-target	tests/verification_mutation_outside_objects.adb	assertion	Soft_Whole.D (2) = Soft_Whole.D (2)	unproved	the same through a component of the object
+relaxed-second-listed	tests/verification_mutation_outside_objects.adb	initialization-check	Second_Listed	unproved	every name the aspect lists is such a parameter, not the first alone
+outside-generic-actual	tests/verification_mutation_outside_objects.adb	initialization-check	Unset_Actual	unproved	a subprogram passed as a generic actual is called where no call says what it reads
+fp134-first	tests/verification_fp134_several_names.adb	division-by-zero	(First - 5)	unproved	the first name of a declaration of two: a call writes it
+fp134-second	tests/verification_fp134_several_names.adb	division-by-zero	(Second - 5)	unproved	the second name of a declaration of two: a call writes it

@@ -48,6 +48,8 @@ status=0
   tests/verification_loop_branch_ite_precision.adb \
   tests/verification_loop_array_write_clean.adb \
   tests/verification_output_initialization.adb \
+  tests/verification_outside_objects.ads \
+  tests/verification_outside_objects.adb \
   tests/verification_slice_bounds.adb \
   tests/verification_guarded_operand.adb \
   tests/verification_declared_constraint.adb \
@@ -81,7 +83,7 @@ cat "$gnatprove_log"
 grep -F 'Success: all checks proved' "$gnatprove_log" >/dev/null
 
 summary=obj/verification_differential/gnatprove/gnatprove.out
-grep -F 'Analyzed 31 units' "$summary" >/dev/null
+grep -F 'Analyzed 32 units' "$summary" >/dev/null
 if grep -F ' skipped;' "$summary" >/dev/null; then
    echo "GNATprove skipped part of the differential corpus" >&2
    exit 1
@@ -109,6 +111,10 @@ status=0
   tests/verification_loop_branch_case_vc_broken.adb \
   tests/verification_loop_branch_ite_unsafe.adb \
   tests/verification_mutation_output_initialization.adb \
+  tests/verification_mutation_outside_objects.ads \
+  tests/verification_mutation_outside_objects.adb \
+  tests/verification_fp134_several_names.ads \
+  tests/verification_fp134_several_names.adb \
   tests/verification_mutation_slice_bounds.adb \
   tests/verification_mutation_guarded_operand.adb \
   tests/verification_mutation_declared_constraint.adb \
@@ -137,7 +143,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 43 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 45 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -149,6 +155,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_loop_branch_case_vc_broken \
   verification_loop_branch_ite_unsafe \
   verification_mutation_output_initialization \
+  verification_mutation_outside_objects \
+  verification_fp134_several_names \
   verification_mutation_slice_bounds \
   verification_mutation_guarded_operand \
   verification_mutation_declared_constraint \

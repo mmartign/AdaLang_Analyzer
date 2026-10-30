@@ -450,7 +450,8 @@ package body Adalang_Analyzer.Proof_Obligations is
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Node    : Libadalang.Analysis.Ada_Node'Class;
       Kind    : Obligation_Kind;
-      Subject : Libadalang.Analysis.Ada_Node'Class)
+      Subject : Libadalang.Analysis.Ada_Node'Class;
+      Operation : String := "")
    is
    begin
       if Libadalang.Analysis.Is_Null (Subject) then
@@ -458,7 +459,8 @@ package body Adalang_Analyzer.Proof_Obligations is
       end if;
 
       declare
-         Index : constant Natural := Find (Stable_Id_For (Unit, Node, Kind));
+         Index : constant Natural :=
+           Find (Stable_Id_For (Unit, Node, Kind, Operation));
          Item  : Obligation;
       begin
          if Index /= 0 then

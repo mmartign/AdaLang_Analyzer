@@ -549,7 +549,75 @@ package body Adalang_Analyzer.Flow_Domain is
          Source.Decl := To;
          State.Bindings.Append (Source);
       end if;
+
+      declare
+         Known : constant Flow_Part_Vectors.Vector := State.Parts;
+      begin
+         Flow_Forget_Parts (State, To);
+         for Part of Known loop
+            if Part.Decl = From then
+               State.Parts.Append ((Decl => To, Path => Part.Path));
+            end if;
+         end loop;
+      end;
    end Flow_Copy_Key;
+
+   procedure Flow_Set_Part_Initialized
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node;
+      Path  : String) is
+   begin
+      if not Libadalang.Analysis.Is_Null (Key)
+        and then not Flow_Part_Initialized (State, Key, Path)
+      then
+         State.Parts.Append
+           ((Decl => Key,
+             Path => Ada.Strings.Unbounded.To_Unbounded_String (Path)));
+      end if;
+   end Flow_Set_Part_Initialized;
+
+   function Flow_Part_Initialized
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node;
+      Path  : String) return Boolean
+   is
+      use type Ada.Strings.Unbounded.Unbounded_String;
+   begin
+      for Part of State.Parts loop
+         if Part.Decl = Key and then Part.Path = Path then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Flow_Part_Initialized;
+
+   procedure Flow_Forget_Parts
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node) is
+   begin
+      for I in reverse 1 .. Natural (State.Parts.Length) loop
+         if State.Parts (I).Decl = Key then
+            State.Parts.Delete (I);
+         end if;
+      end loop;
+   end Flow_Forget_Parts;
+
+   --  The parts both states have.
+   function Common_Parts
+     (Left, Right  --  adalang-analyzer: ignore Swappable_Parameters
+        : Flow_State) return Flow_Part_Vectors.Vector
+   is
+      Result : Flow_Part_Vectors.Vector;
+   begin
+      for Part of Left.Parts loop
+         if Flow_Part_Initialized
+              (Right, Part.Decl, Ada.Strings.Unbounded.To_String (Part.Path))
+         then
+            Result.Append (Part);
+         end if;
+      end loop;
+      return Result;
+   end Common_Parts;
 
    procedure Flow_Bool_Set_Stored
      (State      : in out Flow_State;
@@ -684,12 +752,17 @@ package body Adalang_Analyzer.Flow_Domain is
          end;
       end loop;
 
+      Result.Parts := Common_Parts (Left, Right);
       return Result;
    end Flow_Join;
 
    function Flow_Equal (Left, Right : Flow_State) return Boolean is
+      use type Ada.Containers.Count_Type;
    begin
-      if Binding_Count (Left) /= Binding_Count (Right) then
+      if Binding_Count (Left) /= Binding_Count (Right)
+        or else Left.Parts.Length /= Right.Parts.Length
+        or else Common_Parts (Left, Right).Length /= Left.Parts.Length
+      then
          return False;
       end if;
 
@@ -773,6 +846,7 @@ package body Adalang_Analyzer.Flow_Domain is
             end if;
          end;
       end loop;
+      Result.Parts := Common_Parts (Previous, Next);
       return Result;
    end Flow_Widen;
 

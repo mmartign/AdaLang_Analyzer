@@ -623,6 +623,20 @@ package body Adalang_Analyzer.Gnatprove_Import is
          end;
       end loop;
 
+      --  GNATprove reports the initialization of a global of mode Output at
+      --  its name in the aspect too. The obligation there has the object
+      --  for its subject, and goes to that check first: the check at the
+      --  declaration of the object is left the others, which it takes
+      --  whatever was taken.
+      for Position in Checks.First_Index .. Checks.Last_Index loop
+         if To_String (Checks (Position).Label) = Object_Initialization
+           and then not By_Subject.Contains
+                          (Image (Place_Of (Checks (Position))))
+         then
+            Take (Position, Exact => True);
+         end if;
+      end loop;
+
       for Position in Checks.First_Index .. Checks.Last_Index loop
          if To_String (Checks (Position).Label) = Object_Initialization then
             Take_Object (Position);

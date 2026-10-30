@@ -106,23 +106,37 @@ package body Adalang_Analyzer.Flow_Contracts is
       end if;
    end Give_Up;
 
-   function Is_Inside
+   --  True when Node is written inside Scope. By place, not by "=", which
+   --  compares entities: a subprogram reached as a primitive or through an
+   --  instance is not the entity its own children lead up to.
+   function Within
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Scope : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
-      Current : Libadalang.Analysis.Ada_Node := Node.As_Ada_Node;
+      use type Langkit_Support.Slocs.Line_Number;
+      use type Langkit_Support.Slocs.Column_Number;
+
+      Inner : Langkit_Support.Slocs.Source_Location_Range;
+      Outer : Langkit_Support.Slocs.Source_Location_Range;
    begin
-      if Libadalang.Analysis.Is_Null (Scope) then
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Libadalang.Analysis.Is_Null (Scope)
+        or else Node.Unit.Get_Filename /= Scope.Unit.Get_Filename
+      then
          return False;
       end if;
-      while not Libadalang.Analysis.Is_Null (Current) loop
-         if Current = Scope.As_Ada_Node then
-            return True;
-         end if;
-         Current := Current.Parent;
-      end loop;
-      return False;
-   end Is_Inside;
+      Inner := Node.Sloc_Range;
+      Outer := Scope.Sloc_Range;
+      return (Outer.Start_Line < Inner.Start_Line
+              or else (Outer.Start_Line = Inner.Start_Line
+                       and then Outer.Start_Column <= Inner.Start_Column))
+        and then (Inner.End_Line < Outer.End_Line
+                  or else (Inner.End_Line = Outer.End_Line
+                           and then Inner.End_Column <= Outer.End_Column));
+   exception
+      when others =>
+         return False;
+   end Within;
 
    function Aspect_Expression
      (Decl : Libadalang.Analysis.Basic_Decl'Class;
@@ -729,6 +743,54 @@ package body Adalang_Analyzer.Flow_Contracts is
          return False;
    end Is_Pure_Unit;
 
+   --  The body of the subprogram Decl declares; null when there is none to
+   --  look at.
+   function Completion_Of
+     (Decl : Libadalang.Analysis.Basic_Decl'Class)
+      return Libadalang.Analysis.Ada_Node
+   is (if Decl.Kind in Libadalang.Common.Ada_Subp_Body
+          | Libadalang.Common.Ada_Expr_Function
+       then Decl.As_Ada_Node
+       elsif Decl.Kind in Libadalang.Common.Ada_Formal_Subp_Decl
+       then Libadalang.Analysis.No_Ada_Node
+       elsif Decl.Kind = Libadalang.Common.Ada_Subp_Body_Stub
+       then Decl.P_Next_Part_For_Decl.As_Ada_Node
+       else Decl.P_Body_Part_For_Decl.As_Ada_Node);
+
+   --  The Refined_Global aspect of the body Next. The refinement is the
+   --  caller's business only inside the package body that holds it; null
+   --  outside, or when there is none.
+   function Visible_Refinement
+     (Next   : Libadalang.Analysis.Ada_Node'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Expr
+   is
+   begin
+      if Libadalang.Analysis.Is_Null (Next)
+        or else Next.Kind not in Libadalang.Common.Ada_Subp_Body
+                               | Libadalang.Common.Ada_Expr_Function
+      then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+
+      declare
+         Refined : constant Libadalang.Analysis.Expr :=
+           Aspect_Expression (Next.As_Basic_Decl, "Refined_Global");
+         Scope   : Libadalang.Analysis.Ada_Node := Next.Parent;
+      begin
+         if not Libadalang.Analysis.Is_Null (Refined) then
+            while not Libadalang.Analysis.Is_Null (Scope) loop
+               if Scope.Kind = Libadalang.Common.Ada_Package_Body then
+                  return (if Within (Caller, Scope) then Refined
+                          else Libadalang.Analysis.No_Expr);
+               end if;
+               Scope := Scope.Parent;
+            end loop;
+         end if;
+      end;
+      return Libadalang.Analysis.No_Expr;
+   end Visible_Refinement;
+
    --  What a call to Decl may touch: what its Global aspect says, or what
    --  its body shows when it has none.
    function Callee_Effects
@@ -820,39 +882,11 @@ package body Adalang_Analyzer.Flow_Contracts is
                Global  : constant Libadalang.Analysis.Expr :=
                  Contract (Decl, "Global");
                Next    : constant Libadalang.Analysis.Ada_Node :=
-                 (if Decl.Kind in Libadalang.Common.Ada_Subp_Body
-                       | Libadalang.Common.Ada_Expr_Function
-                  then Decl.As_Ada_Node
-                  elsif Decl.Kind in Libadalang.Common.Ada_Formal_Subp_Decl
-                  then Libadalang.Analysis.No_Ada_Node
-                  elsif Decl.Kind = Libadalang.Common.Ada_Subp_Body_Stub
-                  then Decl.P_Next_Part_For_Decl.As_Ada_Node
-                  else Decl.P_Body_Part_For_Decl.As_Ada_Node);
+                 Completion_Of (Decl);
                Refined : constant Libadalang.Analysis.Expr :=
-                 (if not Libadalang.Analysis.Is_Null (Next)
-                    and then Next.Kind in Libadalang.Common.Ada_Subp_Body
-                      | Libadalang.Common.Ada_Expr_Function
-                  then Aspect_Expression
-                         (Next.As_Basic_Decl, "Refined_Global")
-                  else Libadalang.Analysis.No_Expr);
-
-               --  The refinement is the caller's business only inside the
-               --  package body that holds the callee's body.
-               function Refinement_Visible return Boolean is
-                  Scope : Libadalang.Analysis.Ada_Node := Next.Parent;
-               begin
-                  while not Libadalang.Analysis.Is_Null (Scope) loop
-                     if Scope.Kind = Libadalang.Common.Ada_Package_Body then
-                        return Is_Inside (Caller, Scope);
-                     end if;
-                     Scope := Scope.Parent;
-                  end loop;
-                  return False;
-               end Refinement_Visible;
+                 Visible_Refinement (Next, Caller);
             begin
-               if not Libadalang.Analysis.Is_Null (Refined)
-                 and then Refinement_Visible
-               then
+               if not Libadalang.Analysis.Is_Null (Refined) then
                   From_Contract (Refined);
                elsif not Libadalang.Analysis.Is_Null (Global) then
                   From_Contract (Global);
@@ -962,8 +996,8 @@ package body Adalang_Analyzer.Flow_Contracts is
    is
       function Is_Local
         (Object : Libadalang.Analysis.Defining_Name'Class) return Boolean
-      is (Is_Inside (Object, Subprogram)
-          or else Is_Inside (Object, Declaration));
+      is (Within (Object, Subprogram)
+          or else Within (Object, Declaration));
 
       procedure Use_Object
         (Object : Libadalang.Analysis.Defining_Name'Class;
@@ -1388,6 +1422,107 @@ package body Adalang_Analyzer.Flow_Contracts is
          return False;
    end Touches_Nothing_Outside;
 
+   --  The Global contract a call of Decl from Caller goes by; null when
+   --  it has none.
+   function Seen_Contract
+     (Decl   : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class;
+      Depth  : Natural := 0) return Libadalang.Analysis.Expr
+   is
+      Max_Renamings : constant := 8;
+   begin
+      if Libadalang.Analysis.Is_Null (Decl) or else Depth > Max_Renamings then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+
+      case Decl.Kind is
+         when Libadalang.Common.Ada_Subp_Decl
+            | Libadalang.Common.Ada_Generic_Subp_Internal
+            | Libadalang.Common.Ada_Subp_Body
+            | Libadalang.Common.Ada_Expr_Function
+            | Libadalang.Common.Ada_Subp_Body_Stub =>
+            declare
+               Refined : constant Libadalang.Analysis.Expr :=
+                 Visible_Refinement (Completion_Of (Decl), Caller);
+            begin
+               return (if Libadalang.Analysis.Is_Null (Refined)
+                       then Contract (Decl, "Global") else Refined);
+            end;
+
+         when Libadalang.Common.Ada_Subp_Renaming_Decl =>
+            declare
+               Renamed : constant Libadalang.Analysis.Name :=
+                 Decl.As_Subp_Renaming_Decl.F_Renames.F_Renamed_Object;
+            begin
+               return
+                 (if Renamed.Kind = Libadalang.Common.Ada_Attribute_Ref
+                  then Libadalang.Analysis.No_Expr
+                  else Seen_Contract
+                         (Renamed.P_Referenced_Decl, Caller, Depth + 1));
+            end;
+
+         when Libadalang.Common.Ada_Generic_Subp_Instantiation =>
+            return Generic_Contract (Decl, "Global");
+
+         when others =>
+            return Libadalang.Analysis.No_Expr;
+      end case;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Seen_Contract;
+
+   procedure For_Each_Input
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class;
+      Visit  : not null access procedure
+        (Object : Libadalang.Analysis.Defining_Name))
+   is
+      Seen : constant Libadalang.Analysis.Expr :=
+        Seen_Contract (Callee, Caller);
+   begin
+      if not Libadalang.Analysis.Is_Null (Seen) then
+         for Item of Parse_Global (Seen).Items loop
+            if Item.Mode /= Output then
+               Visit (Item.Site);
+            end if;
+         end loop;
+      else
+         declare
+            Touched : constant Effects := Callee_Effects (Callee, Caller);
+         begin
+            if Touched.Complete then
+               for Item of Touched.Objects loop
+                  if Item.Kind /= Write
+                    and then Item.Site.P_Basic_Decl.Kind /=
+                               Libadalang.Common.Ada_Param_Spec
+                  then
+                     Visit (Item.Site);
+                  end if;
+               end loop;
+            end if;
+         end;
+      end if;
+   end For_Each_Input;
+
+   procedure For_Each_Output
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class;
+      Visit  : not null access procedure
+        (Object : Libadalang.Analysis.Defining_Name))
+   is
+      Seen : constant Libadalang.Analysis.Expr :=
+        Seen_Contract (Callee, Caller);
+   begin
+      if not Libadalang.Analysis.Is_Null (Seen) then
+         for Item of Parse_Global (Seen).Items loop
+            if Item.Mode = Output then
+               Visit (Item.Site);
+            end if;
+         end loop;
+      end if;
+   end For_Each_Output;
+
    ------------------------------------------------------------------
    --  Obligations
    ------------------------------------------------------------------
@@ -1652,38 +1787,6 @@ package body Adalang_Analyzer.Flow_Contracts is
       end loop;
       return "";
    end Enclosing_Path;
-
-   --  True when Node is written inside Scope. Compared by place in the
-   --  source: the same text reached through two instances of a generic is
-   --  two nodes.
-   function Within
-     (Node  : Libadalang.Analysis.Ada_Node'Class;
-      Scope : Libadalang.Analysis.Ada_Node'Class) return Boolean
-   is
-      use type Langkit_Support.Slocs.Line_Number;
-      use type Langkit_Support.Slocs.Column_Number;
-
-      Inner : Langkit_Support.Slocs.Source_Location_Range;
-      Outer : Langkit_Support.Slocs.Source_Location_Range;
-   begin
-      if Libadalang.Analysis.Is_Null (Node)
-        or else Libadalang.Analysis.Is_Null (Scope)
-        or else Node.Unit.Get_Filename /= Scope.Unit.Get_Filename
-      then
-         return False;
-      end if;
-      Inner := Node.Sloc_Range;
-      Outer := Scope.Sloc_Range;
-      return (Outer.Start_Line < Inner.Start_Line
-              or else (Outer.Start_Line = Inner.Start_Line
-                       and then Outer.Start_Column <= Inner.Start_Column))
-        and then (Inner.End_Line < Outer.End_Line
-                  or else (Inner.End_Line = Outer.End_Line
-                           and then Inner.End_Column <= Outer.End_Column));
-   exception
-      when others =>
-         return False;
-   end Within;
 
    function Is_Formal (Key : String) return Boolean is
       Name : constant Libadalang.Analysis.Defining_Name := Name_Of (Key);

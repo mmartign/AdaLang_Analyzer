@@ -311,14 +311,89 @@ that always holds a value (see "Objects that always hold a value") is
 - Tracked scalar objects and documented composite write summaries, at each
   read.
 - Each `out` parameter at the subprogram's normal exit, proved when every
-  path that returns has assigned the whole parameter or passed it to a
-  callee that always writes it. An `out` parameter assigned component by
-  component is `Unproved`.
+  path that returns has assigned the whole parameter, passed it to a callee
+  that always writes it, or given a value to each of its parts (see "Parts
+  of a record and of an array").
 - A global of mode `Output` in a `Global` or `Refined_Global` aspect has the
   same obligation as an `out` parameter, at its name in the aspect: proved
   when the state at the normal exit has the whole object initialized,
-  `Unproved` for a state abstraction and when the object is written by a
-  callee only.
+  whether the body assigned it or a call did. A state abstraction is proved
+  through the calls that name it as an `Output`; its `Output` in a `Global`
+  aspect whose body has a `Refined_Global` stays `Unproved`, the obligations
+  being at the constituents.
+- Each object a call takes as it finds it, at the call (below).
+
+**What comes from outside.** In SPARK code an object declared outside a
+subprogram and read by it is the business of its callers, as it is for
+GNATprove. On entry to a subprogram that is SPARK code, `--verify` takes as
+initialized every object its contract lists with a mode other than `Output`
+-- the `Refined_Global` where the body has one -- and, with no `Global`
+aspect, every object the body and all it calls were followed to the end and
+found only to read; nothing is taken of an object such a body writes, which
+it is not known to read first, nor when the body was not followed to the end.
+The same list, as the caller sees it, is raised at each call as one
+`initialization-check` per object, whose operation reads "`P` reads `G`"
+and whose subject is the object: at a call statement, a call in an
+expression, a function called with no actuals, and an operator a declaration
+defines, in a declaration, an assertion or a contract alike. A callee that is
+not SPARK code and has no `Global` aspect is not asked about: its body was
+not entered on any understanding. Such an obligation that does not hold is
+`Unproved`, never a definite error: whether the callee reads the object on
+the way this call takes it is not known at the call.
+
+Nothing is taken on entry to a subprogram passed as a generic actual, or by
+`'Access`: it is called where the call names something else, and no call says
+what it reads. Its reads stay `Unproved`.
+
+This is an assumption of a verdict, and these are its limits. A call made
+while a package is elaborated is not verified, so nothing is raised there,
+and the objects a main subprogram reads are not checked against what
+elaboration initializes, which GNATprove does; a body with `SPARK_Mode => Off`
+that calls SPARK code raises nothing either.
+
+**`Relaxed_Initialization`.** SPARK code can leave such an object with parts
+that have no value: for GNATprove its initialization is a matter of proof, and
+an `Output` or an `out` parameter says nothing of it. So an object with that
+aspect, or of a type that has it or is made of something that has it, or a
+parameter the aspect of its subprogram names, is left out of all of the above:
+it is not taken as initialized on entry, a call neither initializes it nor
+keeps it initialized, and it is not followed part by part. The other parameters
+of that subprogram are not concerned, nor is an object an index or a slice bound
+of the actual reads. Its reads after a call are `Unproved`, some of them proved
+by GNATprove, which proves the initialization of a scalar of such a type after
+an `out` parameter, and reads a `Post` that says `X'Initialized`. A state
+abstraction is not such an object: GNATprove takes one as initialized by its
+`Output`, whatever its constituents.
+
+**What a call leaves of the globals it writes.** After a call of SPARK code
+-- a formal subprogram of a generic that is SPARK code and an instance
+included -- a global its contract lists as `Output` is initialized, which is
+the callee's own obligation, raised at the aspect when its body is verified.
+An object that was initialized before such a call still is: every value SPARK
+code stores is one. Its value is gone, as it was.
+
+**Parts of a record and of an array.** In SPARK code the components of a
+record are followed one by one, at any depth, as GNATprove follows them: a
+component is given a value by an assignment and as the actual of an `out` or
+`in out` parameter of a call of SPARK code, for which naming it is no read. A
+read of a component is proved where that component has a value, and the object
+is initialized once every component has. A join keeps what every path gave a
+value to. That needs one shape and every component in sight: a record with a
+variant part is not followed through a branch on its discriminant, and one with
+a private ancestor is not complete, the components of that ancestor being out
+of sight. A default is not taken for a component, as GNATprove does not take
+it for an `out` parameter. A discriminant has a value wherever the object has
+been elaborated, and `X'Constrained` reads no value.
+
+An array is followed as a whole. A `for` loop gives one a value as a whole when
+it visits every index of the array, `for I in A'Range` or `for I in S` where
+`S` is the subtype the array's type is indexed by -- by that declaration, not
+another subtype of the same type; it holds no `exit`, `return`, `raise` or
+`goto`; and on every path through its body it assigns `A (I)`, with `I` the
+loop parameter itself. `A` can be a component. GNATprove goes further on some
+loops: a range with the static bounds of the array, a second array of the
+loop, a nested loop. Those stay `Unproved`. Elements assigned by name do not
+make the array initialized.
 
 ### Preconditions and postconditions
 

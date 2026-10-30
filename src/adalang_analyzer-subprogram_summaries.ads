@@ -39,6 +39,16 @@ package Adalang_Analyzer.Subprogram_Summaries is
    function Callee_Global_Write_Count
      (Call : Libadalang.Analysis.Ada_Node'Class) return Natural;
 
+   function Object_Key
+     (Decl : Libadalang.Analysis.Basic_Decl;
+      Name : String) return String;
+   --  The key Callee_Global_Write gives the object Name, in lower case, of
+   --  the declaration Decl. Every other user of those keys makes them here:
+   --  a declaration of several names has no name of its own to go by, and
+   --  two ways of spelling the key lose the writes to such an object
+   --  (FP-134). Two objects of that kind with one name share a key, and
+   --  are forgotten together.
+
    function Callee_Global_Write
      (Call  : Libadalang.Analysis.Ada_Node'Class;
       Index : Positive) return String;
@@ -86,6 +96,12 @@ package Adalang_Analyzer.Subprogram_Summaries is
    --  of this run, and every one of its instantiations there is under an
    --  explicit SPARK_Mode or part of a generic unit of which the same
    --  holds.
+
+   function Passed_As_Actual
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
+   --  True when Decl, a subprogram, is the actual of a generic formal
+   --  subprogram in the units of this run, or the prefix of 'Access: it
+   --  can then be called where the call names something else.
 
    procedure For_Each_Instantiation
      (Key   : String;

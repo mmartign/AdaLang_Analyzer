@@ -13,6 +13,7 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Containers.Vectors;
+with Ada.Strings.Unbounded;
 
 with Libadalang.Analysis;
 
@@ -173,6 +174,27 @@ package Adalang_Analyzer.Flow_Domain is
       Key         : Libadalang.Analysis.Ada_Node;
       Initialized : Abstract_Bool);
 
+   --  The parts of a record that have been given a value while the object
+   --  as a whole is not known to have one. Path names a component from the
+   --  object down, in lower case and with dots ("state.rate"). They are
+   --  recorded for SPARK code only, where a value once stored stays
+   --  initialized: no havoc takes them away, and only the elaboration of
+   --  the object starts it again. A join keeps what both sides have.
+
+   procedure Flow_Set_Part_Initialized
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node;
+      Path  : String);
+
+   function Flow_Part_Initialized
+     (State : Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node;
+      Path  : String) return Boolean;
+
+   procedure Flow_Forget_Parts
+     (State : in out Flow_State;
+      Key   : Libadalang.Analysis.Ada_Node);
+
    procedure Flow_Set
      (State : in out Flow_State;
       Key   : Libadalang.Analysis.Ada_Node;
@@ -242,11 +264,21 @@ private
    package Flow_Binding_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Flow_Binding);
 
+   type Flow_Part is record
+      Decl : Libadalang.Analysis.Ada_Node := Libadalang.Analysis.No_Ada_Node;
+      Path : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Flow_Part_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Flow_Part);
+
    type Flow_State is record
       Bindings : Flow_Binding_Vectors.Vector;
+      Parts    : Flow_Part_Vectors.Vector;
    end record;
 
    Empty_Flow_State : constant Flow_State :=
-     (Bindings => Flow_Binding_Vectors.Empty_Vector);
+     (Bindings => Flow_Binding_Vectors.Empty_Vector,
+      Parts    => Flow_Part_Vectors.Empty_Vector);
 
 end Adalang_Analyzer.Flow_Domain;
