@@ -50,6 +50,8 @@ status=0
   tests/verification_output_initialization.adb \
   tests/verification_outside_objects.ads \
   tests/verification_outside_objects.adb \
+  tests/verification_parts_kept.ads \
+  tests/verification_parts_kept.adb \
   tests/verification_slice_bounds.adb \
   tests/verification_guarded_operand.adb \
   tests/verification_declared_constraint.adb \
@@ -83,7 +85,7 @@ cat "$gnatprove_log"
 grep -F 'Success: all checks proved' "$gnatprove_log" >/dev/null
 
 summary=obj/verification_differential/gnatprove/gnatprove.out
-grep -F 'Analyzed 32 units' "$summary" >/dev/null
+grep -F 'Analyzed 33 units' "$summary" >/dev/null
 if grep -F ' skipped;' "$summary" >/dev/null; then
    echo "GNATprove skipped part of the differential corpus" >&2
    exit 1
@@ -143,7 +145,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 45 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 47 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -157,6 +159,8 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_mutation_output_initialization \
   verification_mutation_outside_objects \
   verification_fp134_several_names \
+  verification_fp135_sliding_formal \
+  verification_mutation_parts_kept \
   verification_mutation_slice_bounds \
   verification_mutation_guarded_operand \
   verification_mutation_declared_constraint \
@@ -1184,6 +1188,95 @@ if ("verification_translation_pieces.adb", aliased, "precondition") \
 print(f"translation pieces: {agreed} checks proved here, each proved by "
       f"GNATprove; GNATprove refuses the {len(bad)} claims of the Bad_* "
       "subprograms but Bad_Aliased")
+PYTHON
+
+#  What a statement leaves known. Nothing proved in these two fixtures is
+#  refused by GNATprove, and it refuses each claim the mutations seed, by
+#  the line the manifest gives its operation on. Each was refused here first:
+#  FP-135 is a formal read as its actual where the actual slides, FP-136 a
+#  function of an access value kept across a write through it.
+kept_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-kept.XXXXXX")
+kept_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-kept.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$pieces_results" "$pieces_log" "$kept_results" "$kept_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$kept_results" \
+  tests/verification_fp135_sliding_formal.ads \
+  tests/verification_fp135_sliding_formal.adb \
+  tests/verification_mutation_parts_kept.ads \
+  tests/verification_mutation_parts_kept.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer parts kept run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_fp135_sliding_formal.adb \
+  verification_mutation_parts_kept.adb >"$kept_log" 2>&1 || true
+
+python3 - "$kept_results" "$kept_log" quality/verification_mutations.tsv <<'PYTHON'
+import json
+import os
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = {"assertion": "assertion", "precondition": "precondition"}
+units = ("verification_fp135_sliding_formal",
+         "verification_mutation_parts_kept")
+
+
+def fail(message):
+    print("gnatprove differential: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+proved, refused = set(), set()
+for line in log:
+    found = re.match(r"(verification_[a-z0-9_]+\.ad[bs]):(\d+):\d+: (.*)", line)
+    if not found:
+        continue
+    place = (found.group(1), int(found.group(2)))
+    text = found.group(3)
+    for kind, words in kinds.items():
+        if words in text:
+            if text.startswith("info: "):
+                proved.add(place + (kind,))
+            else:
+                refused.add(place + (kind,))
+
+where = {}
+agreed = 0
+for item in report["proofObligations"]:
+    name = os.path.basename(item["file"])
+    if not name.startswith(units) or item["kind"] not in kinds:
+        continue
+    key = (name, item["line"], item["kind"])
+    where.setdefault((item["kind"], item["operation"]), key)
+    if item["status"] == "proved-safe":
+        if key in refused:
+            fail(f"parts kept: proved here, refused by GNATprove: {key}")
+        if key in proved:
+            agreed += 1
+
+seeded = 0
+for row in open(sys.argv[3]):
+    field = row.rstrip("\n").split("\t")
+    if row.startswith("#") or len(field) < 5 or field[1] not in \
+       tuple("tests/" + unit + ".adb" for unit in units):
+        continue
+    if field[2] not in kinds:
+        continue
+    key = where.get((field[2], field[3]))
+    if key is None:
+        fail(f"parts kept: no obligation for {field[0]}")
+    if key not in refused:
+        fail(f"parts kept: GNATprove does not refuse {field[0]}: {key}")
+    seeded += 1
+print(f"parts kept: {agreed} checks proved here, each proved by GNATprove; "
+      f"GNATprove refuses the {seeded} claims the mutations seed")
 PYTHON
 
 echo "GNATprove differential tests passed"

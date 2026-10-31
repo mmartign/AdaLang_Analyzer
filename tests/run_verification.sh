@@ -150,6 +150,8 @@ dereferences_ada=$(mktemp "${TMPDIR:-/tmp}/adalang-dereferences-ada.XXXXXX")
 translation_pieces=$(mktemp "${TMPDIR:-/tmp}/adalang-translation-pieces.XXXXXX")
 fp131=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp131.XXXXXX")
 outside_objects=$(mktemp "${TMPDIR:-/tmp}/adalang-outside-objects.XXXXXX")
+parts_kept=$(mktemp "${TMPDIR:-/tmp}/adalang-parts-kept.XXXXXX")
+fp135=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp135.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
 global_aspect_guard=$(mktemp "${TMPDIR:-/tmp}/adalang-global-aspect-guard.XXXXXX")
 aborted_fixpoint=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-aborted-fixpoint.XXXXXX")
@@ -3174,5 +3176,32 @@ do
    must_prove "$outside_objects" initialization-check "$operation" \
      flow-analysis "parts of an object"
 done
+
+#  What a statement does not touch stays known, and what names a value says
+#  what is known of it (verification_parts_kept). The claims that do not
+#  follow are verification_mutation_parts_kept.
+run_json_pair "$parts_kept" tests/verification_parts_kept
+for operation in 'Ctx.First = 3' 'Ctx.Cursor (F_B).State = 7' 'Tmp.X = 1'; do
+   must_prove "$parts_kept" assertion "$operation" external-prover \
+     "parts kept"
+done
+for operation in 'Needs_B (F)' 'Needs_Late (F)' 'Needs_Small (N)' \
+  'Needs_Other (N)' + - 'Ready (Ctx.Cursor)' 'Log (S (2 .. 5))' \
+  'Log_Nothing (S (1 .. 0))'
+do
+   must_prove "$parts_kept" precondition "$operation" external-prover \
+     "parts kept"
+done
+
+#  FP-135: a formal of a constrained array subtype slides its actual to its
+#  own bounds. Nothing of the elements of the one is known of the elements
+#  of the other with the same indexes, but where the actual is of that very
+#  subtype.
+run_json_pair "$fp135" tests/verification_fp135_sliding_formal
+must_not_prove "$fp135" assertion 'First_Of (Slid) = 20' FP-135
+must_not_prove "$fp135" assertion 'Slid (1) = 20' FP-135
+must_not_prove "$fp135" precondition 'Needs_Twenty (Slid)' FP-135
+must_prove "$fp135" assertion 'First_Of (A) = 20' external-prover FP-135
+must_prove "$fp135" precondition 'Needs_Twenty (A)' external-prover FP-135
 
 echo "bounded verification tests passed"

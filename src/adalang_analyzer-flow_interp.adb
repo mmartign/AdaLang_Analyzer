@@ -265,8 +265,10 @@ package body Adalang_Analyzer.Flow_Interp is
    --  Value. A scalar value is VC.Assign's to state. A record or an array
    --  has no term: the object gets a value of its own, and what is known
    --  of every other object stands, with the bounds of an array object,
-   --  which no assignment changes -- unless another name may denote the
-   --  object, which VC.Assign has the state forget everything for.
+   --  which no assignment changes, and what is known of the parts of a
+   --  record Value names is known of Key's -- unless another name may
+   --  denote the object, which VC.Assign has the state forget everything
+   --  for.
    function Assign_Value
      (Symbols : VC.Symbolic_State;
       Writer  : Libadalang.Analysis.Ada_Node'Class;
@@ -290,7 +292,9 @@ package body Adalang_Analyzer.Flow_Interp is
          if not Libadalang.Analysis.Is_Null (Typ)
            and then (Typ.P_Is_Array_Type or else Typ.P_Is_Record_Type)
          then
-            return VC.Forget_Object (Symbols, Writer, Key, After);
+            return VC.With_Parts_Of
+              (VC.Forget_Object (Symbols, Writer, Key, After), Symbols, Key,
+               Value, Before);
          end if;
       end if;
       return VC.Assign (Symbols, Key, Value, Before);
@@ -2290,8 +2294,14 @@ package body Adalang_Analyzer.Flow_Interp is
             return False;
          end if;
 
+         --  What an access value designates is no value the function is
+         --  given, and a write through it leaves the access value as it
+         --  is (FP-136).
          for Pair of Call.P_Call_Params loop
-            if Formal_Is_Writable (Libadalang.Analysis.Param (Pair)) then
+            if Formal_Is_Writable (Libadalang.Analysis.Param (Pair))
+              or else Libadalang.Analysis.Actual (Pair).P_Expression_Type
+                        .P_Is_Access_Type
+            then
                return False;
             end if;
          end loop;
@@ -2318,6 +2328,36 @@ package body Adalang_Analyzer.Flow_Interp is
       Decide_Function_Of_Arguments (Call, Answer);
       return Answer;
    end Is_Function_Of_Arguments;
+
+   --  True for a name of what an access value designates, or of elements
+   --  of it: "P.all", "R.P.all (1 .. N)", "P (I)".
+   function Through_Access
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+   begin
+      if Node.Kind = Libadalang.Common.Ada_Explicit_Deref then
+         return True;
+      elsif Node.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Node.As_Call_Expr.P_Kind in
+          Libadalang.Common.Array_Index | Libadalang.Common.Array_Slice
+      then
+         return Node.As_Call_Expr.F_Name.P_Expression_Type.P_Is_Access_Type
+           or else Through_Access (Node.As_Call_Expr.F_Name);
+      end if;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Through_Access;
+
+   --  The state after Writer has written Dest, elements of an array that
+   --  is not known to be one object.
+   function Forget_Written_Elements
+     (Symbols : VC.Symbolic_State;
+      Writer  : Libadalang.Analysis.Ada_Node'Class;
+      Dest    : Libadalang.Analysis.Name) return VC.Symbolic_State
+   is (if Verified_Keeps_Parts and then Through_Access (Dest)
+       then VC.Forget_Designated (Symbols, Writer)
+       else Forget_Element_Values (Symbols, Writer));
 
    --  What Symbols still says once the procedure call Stmt has returned,
    --  After being the flow state then. Where the callee's effects on
@@ -2421,6 +2461,11 @@ package body Adalang_Analyzer.Flow_Interp is
               and then not Verified_Keeps_To_Itself
             then
                return VC.Havoc;
+            elsif Verified_Keeps_Parts
+              and then Through_Access (Libadalang.Analysis.Actual (Pair))
+            then
+               --  What it designates, which no part of any object is.
+               Result := VC.Forget_Designated (Result, Stmt);
             elsif Verified_Keeps_Parts
               and then Selected_Components_Only
                          (Libadalang.Analysis.Actual (Pair))
@@ -3283,6 +3328,28 @@ package body Adalang_Analyzer.Flow_Interp is
    function Contains_VC_Arithmetic
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
 
+   --  The actual of the Position-th formal of Call. The call of an operator
+   --  names none: its operands are the actuals, in the order of the formals.
+   function Given_Actual
+     (Call     : Libadalang.Analysis.Name'Class;
+      Pair     : Libadalang.Analysis.Param_Actual;
+      Position : Positive) return Libadalang.Analysis.Expr'Class is
+   begin
+      if Call.Kind in Libadalang.Common.Ada_Op
+        and then not Libadalang.Analysis.Is_Null (Call.Parent)
+      then
+         if Call.Parent.Kind = Libadalang.Common.Ada_Un_Op then
+            return Call.Parent.As_Un_Op.F_Expr;
+         elsif Call.Parent.Kind in Libadalang.Common.Ada_Bin_Op_Range then
+            if Position = 1 then
+               return Call.Parent.As_Bin_Op.F_Left;
+            end if;
+            return Call.Parent.As_Bin_Op.F_Right;
+         end if;
+      end if;
+      return Libadalang.Analysis.Actual (Pair);
+   end Given_Actual;
+
    procedure Check_Call_Precondition
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Call    : Libadalang.Analysis.Name'Class;
@@ -3336,19 +3403,24 @@ package body Adalang_Analyzer.Flow_Interp is
          Seed_Formal_Values
            (Call, State, Include_Outputs => True,
             Contract_State => Contract_State);
-         for Pair of Call.P_Call_Params loop
-            Contract_Symbols :=
-              VC.Bind_Actual
-                (Contract_Symbols,
-                 Libadalang.Analysis.Ada_Node
-                   (Libadalang.Analysis.Param (Pair)),
-                 Libadalang.Analysis.Actual (Pair), State);
-            VC.Bind_Record
-              (Contract_Frame,
-               Libadalang.Analysis.Ada_Node
-                 (Libadalang.Analysis.Param (Pair)),
-               Libadalang.Analysis.Actual (Pair), Symbols, State);
-         end loop;
+         declare
+            Position : Natural := 0;
+         begin
+            for Pair of Call.P_Call_Params loop
+               Position := Position + 1;
+               Contract_Symbols :=
+                 VC.Bind_Actual
+                   (Contract_Symbols,
+                    Libadalang.Analysis.Ada_Node
+                      (Libadalang.Analysis.Param (Pair)),
+                    Given_Actual (Call, Pair, Position), State);
+               VC.Bind_Record
+                 (Contract_Frame,
+                  Libadalang.Analysis.Ada_Node
+                    (Libadalang.Analysis.Param (Pair)),
+                  Given_Actual (Call, Pair, Position), Symbols, State);
+            end loop;
+         end;
 
          --  When the call resolves to a completion (a body, a null
          --  procedure, an expression function), the precondition is written
@@ -3360,28 +3432,34 @@ package body Adalang_Analyzer.Flow_Interp is
               Contract_Part (Decl);
          begin
             if not Libadalang.Analysis.Is_Null (Part) then
-               for Pair of Call.P_Call_Params loop
-                  declare
-                     Formal : constant Libadalang.Analysis.Ada_Node :=
-                       Libadalang.Analysis.Ada_Node
-                         (Libadalang.Analysis.Param (Pair));
-                     Twin   : constant Libadalang.Analysis.Ada_Node :=
-                       Formal_Named (Part, Normalized_Text (Formal));
-                  begin
-                     if not Libadalang.Analysis.Is_Null (Twin)
-                       and then Twin /= Formal
-                     then
-                        Flow_Copy_Key (Contract_State, Formal, Twin);
-                        Contract_Symbols :=
-                          VC.Bind_Actual
-                            (Contract_Symbols, Twin,
-                             Libadalang.Analysis.Actual (Pair), State);
-                        VC.Bind_Record
-                          (Contract_Frame, Twin,
-                           Libadalang.Analysis.Actual (Pair), Symbols, State);
-                     end if;
-                  end;
-               end loop;
+               declare
+                  Position : Natural := 0;
+               begin
+                  for Pair of Call.P_Call_Params loop
+                     Position := Position + 1;
+                     declare
+                        Formal : constant Libadalang.Analysis.Ada_Node :=
+                          Libadalang.Analysis.Ada_Node
+                            (Libadalang.Analysis.Param (Pair));
+                        Twin   : constant Libadalang.Analysis.Ada_Node :=
+                          Formal_Named (Part, Normalized_Text (Formal));
+                     begin
+                        if not Libadalang.Analysis.Is_Null (Twin)
+                          and then Twin /= Formal
+                        then
+                           Flow_Copy_Key (Contract_State, Formal, Twin);
+                           Contract_Symbols :=
+                             VC.Bind_Actual
+                               (Contract_Symbols, Twin,
+                                Given_Actual (Call, Pair, Position), State);
+                           VC.Bind_Record
+                             (Contract_Frame, Twin,
+                              Given_Actual (Call, Pair, Position), Symbols,
+                              State);
+                        end if;
+                     end;
+                  end loop;
+               end;
             end if;
          end;
 
@@ -7325,6 +7403,11 @@ package body Adalang_Analyzer.Flow_Interp is
                           Parent.Parent, State)
             then
                Dead := True;
+            elsif Is_Operand (Parent.As_Case_Expr_Alternative.F_Expr) then
+               Symbols :=
+                 VC.Assume_Alternative
+                   (Symbols, Parent.Parent.Parent.As_Case_Expr.F_Expr,
+                    Parent, Parent.Parent, State);
             end if;
 
          when Libadalang.Common.Ada_Quantified_Expr =>
@@ -11078,7 +11161,8 @@ package body Adalang_Analyzer.Flow_Interp is
                                      .As_Object_Decl.F_Renaming_Clause))
                            then
                               Output_Symbols :=
-                                Forget_Element_Values (Input_Symbols, Source);
+                                Forget_Written_Elements
+                                  (Input_Symbols, Source, Dest);
                            else
                               Output_Symbols :=
                                 VC.Forget_Elements
@@ -11836,7 +11920,8 @@ package body Adalang_Analyzer.Flow_Interp is
                                  Symbols := VC.Havoc;
                               else
                                  Symbols :=
-                                   Forget_Element_Values (Symbols, Source);
+                                   Forget_Written_Elements
+                                     (Symbols, Source, Dest);
                               end if;
                               State := After;
                            end;

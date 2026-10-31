@@ -9,6 +9,26 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `--verify` keeps more of what is known across a statement, and reads more of
+  what a call says. On the five corpora of the gap ledger it proves 9,933 of the
+  15,043 checks GNATprove proves (was 9,729), none that GNATprove does not, with
+  no obligation added or removed and no finding changed. Most of them are
+  preconditions that RecordFlux generates:
+  - in SPARK code that takes no `'Access` or `'Address` of anything, a write
+    through an access value, or a call given what one designates, reaches no
+    named part of any object: `Ctx.Buffer.all (1 .. N) := Data` leaves what is
+    known of `Ctx.Cursors (F).State`;
+  - an alternative of a `case` expression is checked with what selects among
+    its choices, as a branch of an `if` expression is under its condition;
+  - the precondition of an operator a declaration defines is read with the
+    operands for its formals, which were left free, so that it could not be
+    proved;
+  - a record given the value of a record a name locates says what that record
+    says, in `Tmp : Context := Ctx.P.Request` and back;
+  - an array formal of a constrained subtype that is also the subtype of its
+    actual reads the actual, as a record formal does;
+  - a slice given as an actual has the bounds it is written with. A precondition
+    that a slice breaks is now a definite error where it was unproved.
 - The GNATprove benchmarks share one matcher, `benchmarks/compare.awk`, in
   place of seven near-identical copies.
 
@@ -22,6 +42,28 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   mistake, this file each release, and the Git history those documents.
 
 ### Fixed
+
+- `FP-135`: a formal of a constrained array subtype was read as its actual,
+  element by element, although the actual slides to the bounds of the formal.
+  With `function First_Of (X : From_One) return Integer is (X (1))` and `A` of
+  bounds `0 .. 2`, `if A (1) = 20 then pragma Assert (First_Of (A) = 20)` was
+  proved safe and fails at run time, `X (1)` being `A (0)`. GNATprove refuses it.
+  The same held of a fact taken from the function, of a callee's precondition and
+  of its postcondition. An array formal now stands for its actual only where its
+  subtype is unconstrained or is the actual's. Present in 1.12.0 and, by the
+  history of the code, since 1.8.6 for expression functions; releases were not
+  built to confirm it. It concerns code that passes an array to a formal of
+  another constrained subtype with other bounds: re-check a `Proved_Safe`
+  obligation that reads such an element across the call. No check of the ledger
+  corpora rested on it.
+
+- `FP-136`: a function given an access value was taken for a function of its
+  arguments, although it reads what the value designates, and a write through
+  the access value leaves the value as it is: `if Head (P) = 0 then P (1) := V;
+  pragma Assert (Head (P) = 0)` was proved safe. GNATprove refuses it. Present in
+  1.12.0 and, by the history of the code, since 1.11.0, when an access value
+  began to outlast a write to elements. No check of the ledger corpora rested on
+  it.
 
 - Saatana's GNATprove agreement report was headed "CubedOS".
 - Figures in `README.md`, `benchmarks/README.md` and `quality/README.md` that

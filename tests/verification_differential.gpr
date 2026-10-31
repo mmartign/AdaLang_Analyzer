@@ -33,6 +33,8 @@ project Verification_Differential is
       "verification_actual_range.adb",
       "verification_termination.adb",
       "verification_flow_contracts.adb",
-      "verification_expression_functions.adb");
+      "verification_expression_functions.adb",
+      "verification_parts_kept.ads",
+      "verification_parts_kept.adb");
    for Object_Dir use "../obj/verification_differential";
 end Verification_Differential;

@@ -106,6 +106,18 @@ package Adalang_Analyzer.VC_Prover is
       Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
       return Symbolic_State;
 
+   function Assume_Alternative
+     (State        : Symbolic_State;
+      Selector     : Libadalang.Analysis.Expr'Class;
+      Alternative  : Libadalang.Analysis.Ada_Node'Class;
+      Alternatives : Libadalang.Analysis.Ada_Node'Class;
+      Flow         : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State, with Selector, that of a case expression, one of the choices
+   --  of Alternative, an element of the list Alternatives; for "others",
+   --  none of the choices of the rest. State when a choice is not a value
+   --  or a range the translation has a term for: nothing is assumed of it.
+
    function Assume_Predicate
      (State     : Symbolic_State;
       Object    : Libadalang.Analysis.Ada_Node'Class;
@@ -221,7 +233,8 @@ package Adalang_Analyzer.VC_Prover is
    --  Formal stands for the value Actual has in State: its term when the
    --  formal is a scalar, the object it names otherwise, or the component
    --  of a record object, and so on inwards. Blocked when Actual has
-   --  neither. It is for the caller to bind a formal only where
+   --  neither, or when the formal is an array Actual slides to the bounds
+   --  of (FP-135). It is for the caller to bind a formal only where
    --  the value of Actual in State is the value the formal has where the
    --  condition is evaluated.
 
@@ -240,17 +253,22 @@ package Adalang_Analyzer.VC_Prover is
       Actual : Libadalang.Analysis.Expr'Class;
       State  : Symbolic_State;
       Flow   : Adalang_Analyzer.Flow_Domain.Flow_State);
-   --  Formal, a parameter of a record type, stands for the object Actual
-   --  names, or for the part of one that the name settles, where that
-   --  object is initialized in Flow: a component read through Formal is
-   --  then the component of that object, known or not when the call is
-   --  made. Frame is left as it is for any other formal or actual. It is
-   --  for the caller to bind a formal only where the condition is evaluated
-   --  with Actual holding the value it has in State.
+   --  Formal, a parameter of a record type, or of a constrained array
+   --  subtype that Actual is of too, stands for the object Actual names, or
+   --  for the part of one that the name settles, where that object is
+   --  initialized in Flow: a part read through Formal is then the part of
+   --  that object, known or not when the call is made. Frame is left as it
+   --  is for any other formal or actual: an array of another subtype slides
+   --  to the bounds of its own (FP-135), and one with the bounds of its
+   --  actual has them from Bind_Actual. It is for the caller to bind a
+   --  formal only where the condition is evaluated with Actual holding the
+   --  value it has in State.
 
    --  A call the translation cannot look into is still a term when it is
    --  to a function of its arguments: one with no side effect whose result
-   --  depends on nothing but the values it is given. Two such calls with
+   --  depends on nothing but the values it is given, which an access value
+   --  is not: what it designates is read, and can change while it stands
+   --  (FP-136). Two such calls with
    --  the same arguments have the same result, which is all the term says:
    --  "Has_Buffer (Ctx)" known on entry proves the "Has_Buffer (Ctx)" a
    --  callee requires, as long as Ctx has not changed in between. An
@@ -310,6 +328,17 @@ package Adalang_Analyzer.VC_Prover is
    --  Forget_Composite_Values for the object and for every object that
    --  renames another, what State says of the other objects standing.
 
+   function Forget_Designated
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class) return Symbolic_State;
+   --  State after Writer has written through an access value, in code where
+   --  what an access value designates is no object with a name of its own
+   --  (SPARK code that takes no 'Access or 'Address of anything): as
+   --  Forget_Element_Values, what State says of a scalar in an element of an
+   --  object standing too. A write there reaches no named part of any
+   --  object. A value that is not a scalar gets a value of its own: a
+   --  function given it may read through an access value it holds.
+
    function Forget_Unowned_Values
      (State      : Symbolic_State;
       Writer     : Libadalang.Analysis.Ada_Node'Class;
@@ -354,12 +383,26 @@ package Adalang_Analyzer.VC_Prover is
    --  dereference, no index whose value is not known), declared as an
    --  object or a parameter, Flow being the state before: the part written
    --  and every part that shares storage with it gets a value of its own,
-   --  the component the value's term when it is a scalar, and what State
-   --  says of the other parts of the object stands. Shared when another
+   --  the component the value's term when it is a scalar, the parts of a
+   --  record what State says of those of the record Value names (With_Parts_
+   --  Of), and what State says of the other parts of the object stands.
+   --  Shared when another
    --  name may denote the object -- two parameters passed by reference, a
    --  parameter and a global, outside SPARK code: then every part of every
    --  other object gets a value of its own too. Havoc for any other
    --  destination.
+
+   function With_Parts_Of
+     (State  : Symbolic_State;
+      Prior  : Symbolic_State;
+      Target : Libadalang.Analysis.Ada_Node;
+      Value  : Libadalang.Analysis.Expr'Class;
+      Flow   : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State, in which the object Target has just been given Value and holds
+   --  a value of its own, with what Prior, the state before, says of the
+   --  parts of the record Value names said of the parts of Target as well:
+   --  the two are equal, component by component. State for any other Value.
 
    function Settled_Object
      (Part : Libadalang.Analysis.Ada_Node'Class;

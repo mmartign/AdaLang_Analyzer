@@ -765,7 +765,10 @@ lasts as long as that token does: an assignment to the object ends it, and
 so does a call. A write to elements of an array does not, unless the
 access value is in one of those elements: that write changes what an
 access value may designate, never the access value. The token of a record
-or an array, which such a write may change, is renewed there.
+or an array, which such a write may change, is renewed there. What the token
+of an access value says is said of the access value alone, not of what it
+designates: a function given one is no function of its arguments (see
+"Calls as terms").
 
 ### Operators that a declaration defines
 
@@ -776,7 +779,8 @@ of the program, in the place of a predefined operator of `Integer` or
 function -- the operation is a call of that function: the interval
 analysis knows no value of it, a condition written with it says nothing of
 its operands, and it has no division or overflow check of its own, its
-precondition being the obligation. In the scalar VC language the call is
+precondition being the obligation, read with the operands for its formals.
+In the scalar VC language the call is
 read through the expression of the function where it is an expression
 function, as any call is (the operands are its arguments, in order), and is
 otherwise unknown. What it returns is within the subtype of its result.
@@ -878,9 +882,13 @@ the first value of the index subtype and the length of the literal; and
 those of the subtype for the result of a function, a conversion or a
 qualified expression of a constrained array subtype. `Text'First = 1` is
 proved of a string literal, of a constant of `String (1 .. 80)`, and of a
-call of a function that returns such a subtype. Nothing is known of the
-bounds of a slice, a concatenation, an aggregate or a component as an
-actual. Where a formal stands for an object, in a postcondition taken
+call of a function that returns such a subtype. A slice written with two
+bounds has those, and the length they give: `Log (S (2 .. 5))` proves
+`Text'First = 2` and `Text'Length = 4`, and a precondition that says
+otherwise is a definite error. Nothing is known of the bounds of a slice
+given by a subtype name or a `'Range`, a concatenation, an aggregate or a
+component as an actual. A formal of a constrained subtype has the bounds of
+that subtype, whatever the actual. Where a formal stands for an object, in a postcondition taken
 after a call, it has the bounds a declaration fixes for that object. Facts that mention
 only such symbols are kept at the entry of a loop body, where every fact
 about a variable is dropped, and so are those that mention, besides them,
@@ -997,10 +1005,33 @@ says of the elements of another array then stands. A call renews them
 as it renews the components of records (see "Objects and effects the
 analysis does not follow").
 
+In that same code, a write through an access value reaches no named part of
+any object: what an access value designates is not one. After
+`Ctx.Buffer.all (1 .. N) := Data`, `P (I) := X`, or a call given
+`Ctx.Buffer.all` to write, what is known of `Ctx.Cursors (F).State` stands,
+in an element as anywhere else. The value of every object that is not a
+scalar is renewed: a function given `Ctx` may read through the access value
+it holds.
+
+A record that is given the value of a record such a name locates is equal to
+it, component by component: after `Tmp : Context := Ctx.P.Request` and after
+`Ctx.P.Request := Tmp`, what was known of the parts of the one is known of
+the parts of the other, the value of the record among them, until either is
+written. An array is not followed so: it slides, and what is known of its
+elements is not known of those with the same indexes in the other. A delta
+aggregate gives the object a value of which nothing is known, and `X'Update`
+drops the symbolic state.
+
 A record or array parameter of an expression function that is inlined
 stands for the part of the caller's object that is its actual, where the
 actual is such a name: in `Well_Formed (Cursors (F_Version))`, the
-function's `Cursor.State` is the component `State` of that element. A part
+function's `Cursor.State` is the component `State` of that element. An array
+formal does so where it has the bounds of its actual: its subtype is
+unconstrained, or it is the very subtype of the actual. A formal of any other
+constrained subtype slides the actual to its own bounds, so that `X (1)` of
+a formal over `1 .. 3` is `A (0)` of an actual over `0 .. 2`: it stands for
+no part of the object, in the body of the function as in a contract, and what
+is known of one says nothing of the other (FP-135). A part
 that is not a scalar -- a record, an access value -- is read the same way:
 in `Free (Ctx.P.Slots)`, the function's `S.S1 = null` is `Ctx.P.Slots.S1 =
 null`, one fact whichever of the two names states it. A
@@ -1427,7 +1458,10 @@ A function of its arguments is one that
   the declaration, an enclosing unit or the project, or part of a generic
   unit that is SPARK code wherever it is instantiated; and has neither the
   `Side_Effects` nor the `Volatile_Function` aspect;
-- has no `out` or `in out` parameter; and
+- has no `out` or `in out` parameter;
+- is given no access value, which says nothing of what it designates: that
+  can change while the value stands, a write through it leaving the value as
+  it is (FP-136); and
 - is known to read and write no object declared outside it: its `Global`
   aspect is `null`, or it has none and its body, with everything it calls,
   was followed to the end and touches none. A constant whose value depends
@@ -1459,7 +1493,8 @@ anything of the new one:
 - an assignment to an element or a slice of *any* array, and a call in an
   expression to a function that is not a literal, a predefined operation or
   SPARK code, give every object that is not a scalar a
-  new value. Which objects an element belongs to, or is reached from
+  new value (the array may be known to be one object, or what an access value
+  designates: see "Parts of an object"). Which objects an element belongs to, or is reached from
   through an access value, is not worked out, and two parameters passed by
   reference may be one object. The assignment leaves an access value as it
   was, unless the access value is in an element of an array (see "Access
@@ -1655,7 +1690,10 @@ Within an expression, an operand that is evaluated only under a condition
 is checked in the state that condition leaves: the right operand of
 `and then` where the left one is true and of `or else` where it is false,
 each dependent expression of an `if` expression where the conditions before
-it came out as they must to reach it. In `Divisor > 0 and then Total /
+it came out as they must to reach it, and each dependent expression of a
+`case` expression with what selects among its choices, where those are
+values or ranges: a choice that is a subtype, or anything else, adds nothing
+to the alternative it is in. In `Divisor > 0 and then Total /
 Divisor > 1` the division is checked with a positive divisor. Where the
 state says the operand is never evaluated its obligations are `Unreachable`;
 so are those of a dependent expression of a `case` expression that no value

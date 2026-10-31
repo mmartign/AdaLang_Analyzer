@@ -259,7 +259,7 @@ call-outside-object	tests/verification_mutation_call_actuals.adb	division-by-zer
 call-handed-local-code	tests/verification_mutation_call_actuals.adb	division-by-zero	Reached	unproved	a callee declared outside is handed a nested procedure that clears the local object
 widened-past-index	tests/verification_mutation_call_actuals.adb	index-check	Far	unproved	a loop takes the object past the index range, within its own subtype
 call-given-address	tests/verification_mutation_call_actuals.adb	assertion	Counted = 0	unproved	a callee given the address of a local object writes it without naming it
-actual-bounds-slice	tests/verification_mutation_array_bounds.adb	precondition	Log (Whole (2 .. 5))	unproved	a slice has the bounds it is given, not those of a whole array
+actual-bounds-slice	tests/verification_mutation_array_bounds.adb	precondition	Log (Whole (2 .. 5))	definite-error	a slice has the bounds it is given, not those of a whole array
 actual-bounds-declared-elsewhere	tests/verification_mutation_array_bounds.adb	precondition	Log (Moved)	definite-error	an object declared from 5 does not start at 1
 actual-bounds-unconstrained-result	tests/verification_mutation_array_bounds.adb	precondition	Log (Got)	unproved	nothing fixes the bounds of the result of a function of an unconstrained subtype
 actual-bounds-unconstrained-formal	tests/verification_mutation_array_bounds.adb	precondition	Log (Passed)	unproved	nothing fixes the bounds of a formal of an unconstrained subtype
@@ -401,3 +401,31 @@ relaxed-second-listed	tests/verification_mutation_outside_objects.adb	initializa
 outside-generic-actual	tests/verification_mutation_outside_objects.adb	initialization-check	Unset_Actual	unproved	a subprogram passed as a generic actual is called where no call says what it reads
 fp134-first	tests/verification_fp134_several_names.adb	division-by-zero	(First - 5)	unproved	the first name of a declaration of two: a call writes it
 fp134-second	tests/verification_fp134_several_names.adb	division-by-zero	(Second - 5)	unproved	the second name of a declaration of two: a call writes it
+fp135-inlined	tests/verification_fp135_sliding_formal.adb	assertion	First_Of (Slid) = 20	unproved	reading the body of a function: X (1) is the element at 0 of an actual that slides
+fp135-assumed	tests/verification_fp135_sliding_formal.adb	assertion	Slid (1) = 20	unproved	a fact taken from the function, and the postcondition of a callee: neither is about the element with that index
+fp135-called	tests/verification_fp135_sliding_formal.adb	precondition	Needs_Twenty (Slid)	unproved	what is known of the object is not known of a formal it slides to
+fp136-function-of-access	tests/verification_mutation_parts_kept.adb	assertion	Head (Ctx.Buffer) = 0	unproved	a function of an access value reads what it designates, which a write changes while the access value stands
+parts-designated-element	tests/verification_mutation_parts_kept.adb	assertion	Ctx.Buffer (1) = 0	unproved	the element written through the access value is the one read
+parts-designated-slice	tests/verification_mutation_parts_kept.adb	assertion	Ctx.Buffer (2) = 0	unproved	an element of the slice written through the access value
+parts-function-of-holder	tests/verification_mutation_parts_kept.adb	assertion	First_Byte (Ctx) = 0	unproved	a function of the record reads through the access value it holds
+parts-named-element	tests/verification_mutation_parts_kept.adb	assertion	Ctx.Cursor (F_B).State = 0	unproved	a write to a named element is no write through an access value
+parts-case-two-choices	tests/verification_mutation_parts_kept.adb	precondition	Needs_B (F)	unproved	the alternative has two choices and the callee takes one; a read after the case expression has neither
+parts-case-others	tests/verification_mutation_parts_kept.adb	precondition	Needs_Late (F)	unproved	others is three values, the excluded one among them
+parts-case-range-end	tests/verification_mutation_parts_kept.adb	precondition	Needs_Small (N)	unproved	the last value of the range is not one the callee takes
+parts-case-others-below	tests/verification_mutation_parts_kept.adb	precondition	Needs_Big (N)	unproved	others is below the range as well as above it
+parts-operator-sum	tests/verification_mutation_parts_kept.adb	precondition	+	unproved	the operands of a declared operator that its precondition does not hold of
+parts-operator-order	tests/verification_mutation_parts_kept.adb	precondition	-	unproved	the operands the other way round, and a unary operator of zero
+parts-copy-source	tests/verification_mutation_parts_kept.adb	assertion	Tmp.X = V	unproved	the source is written after the copy
+parts-copy-source-forgets	tests/verification_mutation_parts_kept.adb	assertion	H.P.X = Tmp.X	unproved	what is known of the copy is no longer known of the source once it is written
+parts-copy-target	tests/verification_mutation_parts_kept.adb	assertion	H.P.X = V	unproved	the copy is written after it is made
+parts-copy-target-forgets	tests/verification_mutation_parts_kept.adb	assertion	Tmp.X = H.P.X	unproved	what is known of the source is no longer known of a copy that is written
+parts-copy-other-component	tests/verification_mutation_parts_kept.adb	assertion	Tmp.Y = 1	unproved	nothing is known of the other component of the source
+parts-copy-other-part	tests/verification_mutation_parts_kept.adb	assertion	H.Q.X = 1	unproved	the copy is of one part of the object
+parts-copy-whole	tests/verification_mutation_parts_kept.adb	assertion	B.X = 3	definite-error	a whole record copied, then written: the copy keeps the old value
+parts-copy-function	tests/verification_mutation_parts_kept.adb	assertion	Sum (B) = Sum (A)	definite-error	the function of the copy and of the written source
+parts-copy-element	tests/verification_mutation_parts_kept.adb	assertion	B.Data (2) = 9	unproved	an element of an array in the record is written after the copy
+parts-assigned-over	tests/verification_mutation_parts_kept.adb	assertion	H.P.X = 1	unproved	a component given a record of which nothing is known
+parts-slice-length	tests/verification_mutation_parts_kept.adb	precondition	Log (S (2 .. 6))	definite-error	a slice as long as its bounds say
+parts-slice-first	tests/verification_mutation_parts_kept.adb	precondition	Log_First (S (2 .. 5))	definite-error	a slice starts where it is written to
+parts-slice-empty	tests/verification_mutation_parts_kept.adb	precondition	Log_Empty (S (1 .. 0))	definite-error	an empty slice has no length
+parts-slice-slid	tests/verification_mutation_parts_kept.adb	precondition	Log_Four (S (2 .. 5))	definite-error	a formal that fixes its bounds does not take those of the slice
