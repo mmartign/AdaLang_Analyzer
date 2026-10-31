@@ -7,13 +7,28 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-10-31
+
+A `--verify` release that keeps more of what is known across a statement, reads
+more of what a call says, and proves 204 more of the checks GNATprove proves. It
+corrects two false-safes, `FP-135` and `FP-136`: **re-check the `Proved_Safe`
+verdicts they name.** No obligation is added or removed on the ten benchmark
+corpora and no finding changes.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves 9,933
+of the 15,043 checks GNATprove proves (was 9,729), 172 of the 204 in CoAP-SPARK,
+17 in libkeccak and 15 in SPARKNaCl: 189 preconditions, 7 overflow checks, 6
+range checks, a postcondition and a dereference check. It proves none that
+GNATprove does not, and the checks without an AdaLang obligation stay at 1,478.
+On all ten corpora, every preset, findings are identical, no proof is lost, and
+no definite error is new or gone; 8 obligations of AWS are proved as well. A run
+takes what it took, within 3% of CPU time.
+
 ### Changed
 
 - `--verify` keeps more of what is known across a statement, and reads more of
-  what a call says. On the five corpora of the gap ledger it proves 9,933 of the
-  15,043 checks GNATprove proves (was 9,729), none that GNATprove does not, with
-  no obligation added or removed and no finding changed. Most of them are
-  preconditions that RecordFlux generates:
+  what a call says. Most of what it adds are preconditions that RecordFlux
+  generates:
   - in SPARK code that takes no `'Access` or `'Address` of anything, a write
     through an access value, or a call given what one designates, reaches no
     named part of any object: `Ctx.Buffer.all (1 .. N) := Data` leaves what is
