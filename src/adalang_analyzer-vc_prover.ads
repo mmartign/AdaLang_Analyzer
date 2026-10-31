@@ -576,16 +576,6 @@ package Adalang_Analyzer.VC_Prover is
    --  variant must strictly increase. Bounds make the mathematical-integer
    --  translation conservative with respect to Ada overflow.
 
-   procedure Dump_Symbolic_Diagnostics;
-   --  Phase 0 v2 measurement scaffolding (diagnostic only): when
-   --  ADALANG_VERIFY_SYMBOLIC_DIAGNOSTICS is set, prints tallies of why
-   --  Assign/Assume/Join/Include_Root discarded symbolic facts during this
-   --  run, to stderr. A no-op otherwise. Intended to be called once, after
-   --  a full analysis run, to identify which discard mechanism dominates
-   --  before any of them is redesigned -- see
-   --  quality/external_corpus_findings.md's "Relational fallback for
-   --  --verify" section for why this question matters.
-
    function Evidence return String;
 
 private

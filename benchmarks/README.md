@@ -28,7 +28,8 @@ authored Ada/SPARK codebases — not the hand-constructed fixtures in
 
 Every benchmark here is a `run.sh` + `README.md` (setup, toolchain notes,
 pinned revision) + a dated `RESULTS_*.md` (the actual numbers, latest run
-only — see `git log` for prior snapshots).
+only — see `git log` for prior snapshots). The GNATprove corpora share one
+matcher, `compare.awk`.
 
 ## Independent-oracle comparisons (GNATprove as ground truth)
 
@@ -145,11 +146,8 @@ that the work turned up on the way (`FP-104`, `FP-106` to `FP-122`,
 ## GNATcheck oracle comparison
 
 GNATcheck has no Alire package and no prebuilt download; the binary used
-here was built from source and exists only on the machine it was built on
-(rebuilding it is a real undertaking on its own — see
-`quality/known_analysis_issues.tsv` and this project's own notes for
-anyone repeating this). Shared infrastructure for every corpus's GNATcheck
-lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
+here was built from source and exists only on the machine it was built on.
+Shared infrastructure for every corpus's GNATcheck lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 `benchmarks/gnatcheck_compare.awk` (the comparator, matching on
 `(basename(file), line, rule pair)`).
 
@@ -167,11 +165,8 @@ lane: `benchmarks/gnatcheck_rule_map.tsv` (the rule-pair map) and
 | [tokeneer](tokeneer/RESULTS_gnatcheck_2026-10-05.md) | 6804 | 6620 (97.3%) | 7856 | 6620 (84.3%) |
 
 These totals include the 158 rule pairs of the opt-in coding-standard
-checks: 153 added to the lane on 2026-10-04 and five on 2026-10-05 (the
-other 17 coding-standard checks report nothing until configured and are not
-in the rule map). Each results
-file also shows the totals for the pairs that were already compared on
-2026-09-24, next to the numbers of that run.
+checks (the other 17 coding-standard checks report nothing until configured
+and are not in the rule map).
 
 For the coding-standard checks alone, counted over the files both tools
 analysed:
@@ -212,58 +207,25 @@ results files:
 - **Different file sets.** GNATcheck analyses the closure it loads, AdaLang
   the root project's sources; the table above counts shared files only.
 
-The first run of these pairs exposed `FP-102`: with a project file,
-AdaLang resolved names only among the root project's own sources, so on a
-corpus whose root project imports another, everything that depended on an
-imported unit went unresolved. Before the fix the same table read 83,101
-matched of 92,293 GNATcheck findings (90.0%); gnatcoll-core alone went from
-13,007 to 19,903 of 19,916, and CubedOS from 922 to 1,576 of 1,577. The fix
-adds the sources of imported projects to the name lookup without analysing
-them. It also changes the pairs compared earlier on those corpora, in both
-directions: more calls resolve, so checks such as `Dead_Store`,
-`Exception_Propagation` and `Missing_Global_Contract` report more, and
-`Floating_Equality` now matches GNATcheck where it used to miss. The
-same fix gave CubedOS, gnatcoll-core and AWS verdicts for obligations that
-were `Unsupported` while names went unresolved; the GNATprove comparisons
-in the first section are of runs made with it.
-
-The 2026-10-05 refresh closed a second gap, `FP-103`: a source that uses
-the GNAT preprocessor did not parse, so nothing was reported for it. All
-271 GNATcheck-only findings on Tokeneer were in four such files; with the
-project's preprocessing switches applied, Tokeneer matches on every one of
-its 6,007 coding-standard findings.
-
-The run also found four defects in the new checks, all fixed before these
-numbers were taken: `Outside_Reference_From_Subprogram` reported inside
-generic bodies, `Global_Variable` reported renamings of constants,
-`Uninitialized_Global_Variable` reported locals whose scope was not
-resolved, and `Deriving_From_Predefined_Type` covered the children of
-`Ada`, `System` and `Interfaces`.
-
-GNATcheck worker crashes were frequent with about 185 plain rules in one
+GNATcheck worker crashes are frequent with about 185 plain rules in one
 invocation, to the point of never completing on the larger corpora. For
-this refresh each GNATcheck invocation was repeated until it finished
+these results each GNATcheck invocation was repeated until it finished
 without a crash, and the plain rules were run in batches of at most 25
 (split further when a batch kept crashing); no rule had to be left out.
 The runner scripts in this directory do not do this themselves yet.
 
 Each corpus keeps one current results file, `RESULTS_gnatcheck_2026-10-05.md`
 (earlier runs are in the Git history), with per-rule tables for both
-tools and the known, explained differences. The 2026-09-24 refresh
-corrected two harness defects: the Ada_Drivers_Library runner had split
-every extra GNATcheck pass at spaces (an indented `IFS`), so the fourteen
-pairs added on 2026-09-23 were never checked on that corpus; and
-GNATcheck's `Duplicate_Branches` ignores branches under 4 statements or 14
-tokens by default, which hid every pair on all ten corpora. It now runs
-with `min_stmt=1,min_size=1` and, like `Same_Tests`, is matched on the
-line it names as the duplicate (the one AdaLang reports). Across the ten
-corpora, GNATcheck confirms 26 of AdaLang's 50 `Identical_Branches`/
-`Identical_Case_Alternative` findings; every other one is a later member
+tools and the known, explained differences. GNATcheck's
+`Duplicate_Branches` ignores branches under 4 statements or 14 tokens by
+default, so it runs here with `min_stmt=1,min_size=1` and, like
+`Same_Tests`, is matched on the line it names as the duplicate (the one
+AdaLang reports). Across the ten corpora, GNATcheck confirms 26 of AdaLang's
+50 `Identical_Branches`/`Identical_Case_Alternative` findings; every other
+one is a later member
 of a run of identical adjacent branches, which GNATcheck reports once per
 construct (20 of them in a single coap_spark lookup-style case
 expression).
-Investigating the pair found `FP-079`-`FP-082` (see
-`quality/known_analysis_issues.tsv`).
 
 **Reading the "unmatched" gap.** Most of it is not disagreement — it's the
 comparator's exact-line matching meeting real, explainable conventions:
@@ -284,7 +246,7 @@ real run-to-run variance on this from-source build (an intermittent
 single-worker stack-overflow crash, not corpus-specific); treat exact
 counts as approximate, the qualitative agreement as the reliable part.
 
-## Compiler-warning and style-check pairs (2026-09-23)
+## Compiler-warning and style-check pairs
 
 GNATcheck's `Warnings` and `Style_Checks` rules pass GNAT's own compiler
 warnings and `-gnaty` style checks through, tagged by switch letter
@@ -294,10 +256,8 @@ independent oracle for twelve more AdaLang checks: `Unused_With_Clause`,
 `Overwritten_Assignment`, `Dead_Store`, `Redundant_Type_Conversion`,
 `Self_Assignment`, `Duplicate_With_Clause`, `Constant_Condition`,
 `Long_Line` and `Trailing_Whitespace`. `No_Pragma` (`Forbidden_Pragmas:ALL`)
-and `Missing_Overriding_Indicator` (`Overriding_Indicators`) were added in
-the same refresh: `quality/tool_function_evidence.tsv` already credited
-both with a GNATcheck oracle that the benchmark lane never ran, a gap
-`tests/run_tool_function_evidence.sh` now rejects.
+and `Missing_Overriding_Indicator` (`Overriding_Indicators`) run in the same
+lane.
 
 How it works:
 
@@ -310,18 +270,18 @@ How it works:
   always True/False" against validity-based `-gnatwc` warnings AdaLang does
   not model; a with repeated in one context clause against one repeated
   from the spec). Unpaired messages are ignored.
-- GNATcheck runs in separate passes: the original rules with `-r` exactly
-  as before, then one pass for the compiler-driven options and one for each
-  other option. In a single invocation the new options made this
-  from-source GNATcheck's workers overflow their stack and drop thousands
-  of findings on 8 of the 10 corpora. Every corpus was then retried until
-  its output contained no worker-crash line.
+- GNATcheck runs in separate passes: the plain rules with `-r`, then one
+  pass for the compiler-driven options and one for each other option. In a
+  single invocation these options make this from-source GNATcheck's workers
+  overflow their stack and drop thousands of findings on 8 of the 10
+  corpora. Every corpus was retried until its output contained no
+  worker-crash line.
 - On Ada_Drivers_Library, GNATcheck cannot compile the units (its variant
   projects lack dependencies such as `stm32_svd.ads`), so the compiler-
   driven pairs have no GNAT side there; that corpus says nothing about
   them either way.
 
-Cross-corpus totals for the new pairs:
+Cross-corpus totals for these pairs:
 
 | AdaLang rule | AdaLang | AdaLang-only | GNAT | GNAT-only | Reading |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -339,66 +299,14 @@ Cross-corpus totals for the new pairs:
 | Duplicate_With_Clause | 0 | 0 | 1 | 1 | |
 | Missing_Overriding_Indicator, Self_Assignment | 0 | 0 | 0 | 0 | |
 
-Triaging the gaps found twelve analyzer defects, `FP-067`-`FP-078` in
-`quality/known_analysis_issues.tsv` (the corpus-found ones are in the table
-below; `FP-067` and `FP-068` came from probe fixtures written while
-establishing the pairs). All are fixed with regression tests. The remaining
-differences are the policy choices and coverage gaps in the "Reading"
+The differences are the policy choices and coverage gaps in the "Reading"
 column, not defects.
 
-## What these benchmarks have found, in total
+## What these benchmarks have found
 
-Thirty-one real analyzer bugs, all discovered by running against
-independently authored code no one on this project wrote or reviewed for
-analyzer blind spots — the value external-corpus validation is meant to
-deliver (`quality/external_corpus_findings.md`), each fixed, with a
-regression test wherever the failure can be reproduced outside the real
-corpus (`FP-078`, `FP-080` and `FP-082` need a real Libadalang resolution
-failure and are verified on the corpus instead):
-
-| ID | Corpus that found it | Bug |
-| --- | --- | --- |
-| `FP-019` | aws | Unresolved cross-project call actual misread as a definite prior write |
-| `FP-020` | aws | Renamings, `Unbounded_String`/`File_Type` defaults misread as uninitialized |
-| `FP-039` | sparknacl | A `Global` aspect's own text misread as an executable read |
-| `FP-040` | cubedos | A Libadalang property failure escaped its containing function, aborting whole-file analysis |
-| `FP-042` | ada_drivers_library | `limited with` misread as an ordinary circular-dependency edge |
-| `FP-043` | gnatcoll | A `pragma Unreferenced` argument misread as a value read, in a second initialization walk `Checks.Data_Flow`'s own guard didn't cover |
-| `FP-044` | gnatcoll | A gap in the overload-arity fallback `FP-021` added: a wrong same-named-overload resolution could still be trusted when it coincidentally had a formal at the queried position |
-| `FP-045` | gnatcoll | Ada's `Low .. Low - 1` empty-array idiom flagged as a reversed range |
-| `FP-051` | aws | `Reraise_Discards_Occurrence` flagged `raise Foo with "<context>";` (a deliberate enrich-and-reraise idiom) the same as a bare `raise Foo;` (accidental occurrence loss) |
-| `FP-052` | ada_drivers_library | `Duplicate_Subprogram`'s matched-location message dropped the directory, so two files sharing a simple name in different directories read as a body reported as a duplicate of itself |
-| `FP-059` | ada_drivers_library | `Empty_Else_Body` (and, by the same shared helper, `Empty_If_Body`/`Empty_Elsif_Body`/`Empty_Then_Body`/`Null_Case_Alternative`) treated a branch containing only `pragma Assert (False);` as having no effect, the same as a bare `null;` |
-| `FP-061` | sparknacl | `'Succ`/`'Pred`-based loop-variant progress collapsed to a tautological SMT goal on an untranslated RHS, misread as a proven `Definite_Error` instead of `Unsupported` |
-| `FP-064` | spark_testsuite | `--verify` proved an index into an array *slice* (`Items (1 .. Last) (1)`) safe against the array type's index subtype, missing that the slice bounds `1 .. Last` are empty when `Last = 0` — a possible unsoundness |
-| `FP-065` | spark_testsuite | `--verify` reported `pragma Assert (False)` as a definite error on a branch whose guard it could not evaluate, where the branch is in fact unreachable (the guard line itself always raises) |
-| `FP-066` | aws | `Null_Statement` flagged every `null;` unconditionally, including the sole-statement idiom (`exception when X => null;`, a no-op case alternative) GNATcheck's own `Redundant_Null_Statements` rule deliberately exempts — found via GNATcheck oracle-comparison triage rather than a fresh run |
-| `FP-069` | gnatcoll | `Unused_With_Clause` flagged used withs of package renamings (`GNAT.OS_Lib`), generic instances, and units whose use-visible names Libadalang failed to resolve (22 findings on gnatcoll-core, 2 after) |
-| `FP-070` | gnatcoll | `Dead_Store` treated a write through an access-typed local (`S (1) := ...`, the very write `Capitalize` exists to make) as a write to the local |
-| `FP-071` | gnatcoll | `Dead_Store`/`Overwritten_Assignment` missed reads by nested subprograms (up-level references) |
-| `FP-072` | sparknacl | `Dead_Store` flagged `Sanitize (Key);` key wipes that `pragma Inspection_Point` makes observable |
-| `FP-073` | sparknacl | `Dead_Store` treated `Key (I)` as a different component from a written `Key (0 .. 31)` |
-| `FP-074` | gnatcoll | `Missing_Overriding_Indicator` flagged a body whose separate declaration already says `overriding` |
-| `FP-075` | ada_drivers_library, tokeneer, coap_spark | `Dead_Store`/`Overwritten_Assignment` flagged deliberate sinks (`Dummy := Periph.DR;`, `Success => Ignored`), which GNAT's own convention exempts |
-| `FP-076` | ada_drivers_library | `Wrong_Parameter_Mode` missed writes through a `for Pin of Pins` element (`Pin.Set;`) |
-| `FP-077` | ada_drivers_library, cubedos | `Wrong_Parameter_Mode` advised changing modes fixed by overriding or by an `'Access` binding (AUnit test routines) |
-| `FP-078` | aws | Enabling `Unused_With_Clause` abandoned three whole files on an unguarded Libadalang property error, losing every check's findings there |
-| `FP-079` | coap_spark | `Identical_Case_Alternative` checked case statements but never case expressions |
-| `FP-080` | cubedos | Twelve helpers resolved names in their declarations, outside their own exception handler; with `Non_Short_Circuit_Condition` enabled, a resolution failure dropped every other check on the `if` statement |
-| `FP-081` | gnatcoll | Any call with a positional argument made `Non_Short_Circuit_Condition` and `No_Dispatching_Call` raise on a null child, silently skipping every later check on the statement or call (thousands of locations on gnatcoll-core) |
-| `FP-082` | gnatcoll | One check's resolution failure skipped every later check on the same node; each check now has its own handler (114 findings recovered on gnatcoll-core with all checks enabled) |
-| `FP-099` | aws | `--verify` reported a read of the `out` actual of a function called in a condition (`if Decode_Bit (Iter, Bit, C) then Result (I) := C;`) as a definite uninitialized read (introduced in 1.6.1) |
-| `FP-100` | spark_testsuite | `--verify` reported a second definite error, for the range check, on an initial value whose computation always overflows and so never reaches that check (introduced in 1.6.1) |
-
-`FP-044`'s own two originating findings (gnatcoll-buffer.adb's
-`Current_Text_Position`) persist despite the fix, unlike every other row
-above: they sit behind a separate, still-open Property_Error (`FP-029`'s
-general class) that keeps the fixed code path from ever being reached for
-them in this environment — see `quality/known_analysis_issues.tsv` for the
-full trace.
-
-Every fix is closed, regression-tested, and confirmed not to blunt genuine
-detection nearby. No benchmark run since has reopened any of them.
+Running against independently authored code keeps finding analyzer mistakes
+that no hand-written fixture exposed. Each confirmed one is registered in
+`quality/known_analysis_issues.tsv`, with its status and regression test.
 
 ## Bottom line: does this evidence support using AdaLang Analyzer?
 
@@ -408,7 +316,7 @@ no-setup-required
 first pass.
 
 **Where the evidence is strong.** Zero false positives and zero possible
-unsoundness across 3,623 matched proof obligations spanning five
+unsoundness across 3,625 matched proof obligations spanning five
 independently-authored, fully-proved SPARK corpora — a hash family, two
 crypto primitives, a protocol parser, a security-critical access-control
 system — is the property that matters most for trusting a tool's output,

@@ -375,10 +375,9 @@ Redundant_Unary_Minus, Use_After_Free, Double_Free, Unclosed_File_Handle.
 warning. The checks that GNAT's warnings do cover -- Unused_Parameter,
 Unused_Variable, Unused_With_Clause, Duplicate_With_Clause,
 Wrong_Parameter_Mode, Dead_Store, Overwritten_Assignment,
-Redundant_Type_Conversion, Self_Assignment, Constant_Condition -- were
-listed here until 2026-09-23 and are now paired through GNATcheck's
-`Warnings` rule in the table above. `Missing_Overriding_Indicator` was
-formerly listed here too, but is a `Direct` match on
+Redundant_Type_Conversion, Self_Assignment, Constant_Condition -- are
+paired through GNATcheck's `Warnings` rule in the table above.
+`Missing_Overriding_Indicator` is a `Direct` match on
 `Overriding_Indicators`.)
 
 ## GNATcheck rules with no AdaLang Analyzer counterpart
@@ -424,8 +423,7 @@ name is: `-checks=positional_parameters`, `+RPositional_Parameters` and
 several AdaLang checks, the rule name selects them all; where a pairing
 goes through a `-gnatw` or `-gnaty` letter of GNATcheck's `warnings` or
 `style_checks` rule, the check has no rule name of its own and is selected
-by its AdaLang name. `quality/check_catalogue_audit.md` lists how each
-AdaLang name relates to GNATcheck's and which checks overlap.
+by its AdaLang name.
 
 ## Reading this comparison
 

@@ -20,7 +20,7 @@ if [ "$actual_revision" != "$expected_revision" ]; then
 fi
 
 project=$project_bias_root/project_bias.gpr
-comparison_script=$repository_root/benchmarks/sparknacl/compare.awk
+comparison_script=$repository_root/benchmarks/compare.awk
 mkdir -p "$results_dir"
 
 run_adalang () {

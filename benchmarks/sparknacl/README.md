@@ -63,7 +63,7 @@ SPARKNACL_ROOT=/private/tmp/adalang-sparknacl-benchmark sh benchmarks/sparknacl/
   (`--level=4`, `--prover=z3,cvc5,altergo`, `--timeout=60`,
   `--steps=140000`) rather than a weaker ad hoc setting, since that
   configuration is what backs SPARKNaCl's own "fully proved" claim;
-- `compare.awk` over both outputs, writing `comparison.txt` to the results
+- `benchmarks/compare.awk` over both outputs, writing `comparison.txt` to the results
   directory (default `benchmark-results/sparknacl/`, override with
   `RESULTS_DIR`).
 
@@ -75,7 +75,7 @@ normalized check kind)` — not column, since the two tools can point at
 different sub-tokens of the same logical check. The kind-vocabulary mapping
 (AdaLang's `Kind_Name` values from
 `src/adalang_analyzer-proof_obligations.adb` → substrings in GNATprove's
-message text) is documented at the top of `compare.awk`.
+message text) is documented in `benchmarks/compare.awk`.
 
 If a bucket has more than one obligation on either side (e.g. two index
 checks on the same line), it is **not** auto-paired — `compare.awk` reports
@@ -125,5 +125,5 @@ against GNATcheck's, for the rule pairs in `benchmarks/gnatcheck_rule_map.tsv`.
 Needs `GNATCHECK` or `GNATCHECK_ENV` set (see `benchmarks/README.md`'s
 GNATcheck section — there is no Alire package for it, so this is a
 separately-built local binary, not something `alr exec` resolves on its
-own). See `RESULTS_gnatcheck_2026-09-24.md` for the current results and
+own). See `RESULTS_gnatcheck_*.md` for the current results and
 their caveats.

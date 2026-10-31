@@ -4,8 +4,8 @@
 For each check message of a GNATprove "--mode=prove --output=oneline" log,
 this records what AdaLang Analyzer's "--verify" run did at the same place:
 proved it, left it unproved, called it unsupported, or raised no obligation
-at all. Unlike the per-corpus compare.awk scripts, which only count the
-locations where both tools have exactly one obligation of a kind, nothing is
+at all. Unlike benchmarks/compare.awk, which only counts the locations where
+both tools have exactly one obligation of a kind, nothing is
 left out here: a check that cannot be paired is a row of its own.
 
 Usage:

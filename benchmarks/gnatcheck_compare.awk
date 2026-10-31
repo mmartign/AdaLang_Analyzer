@@ -13,7 +13,7 @@
 # AdaLang false positive; a GNATcheck finding with no corresponding
 # AdaLang finding is a potential AdaLang false negative (miss). Rule pairs
 # are "direct"/"close" name-level matches, not proven semantic
-# equivalence -- see GNATCHECK_RULE_COMPARISON.md and the per-corpus
+# equivalence -- see docs/src/gnatcheck-rule-comparison.md and the per-corpus
 # README for caveats.
 
 function basename(path,    n, parts) {

@@ -149,7 +149,7 @@ Its regression and quality gates include a growing boundary-case corpus,
 adversarial verification mutations, proof-path evidence, self-analysis, and
 comparisons on independently authored Ada/SPARK projects.
 
-Across **3,623 proof obligations** that AdaLang Analyzer and GNATprove could
+Across **3,625 proof obligations** that AdaLang Analyzer and GNATprove could
 both evaluate at the same location in five independently authored,
 fully-proved corpora, the recorded comparisons contain:
 
@@ -261,12 +261,12 @@ sh tests/run_all.sh
 
 The gate builds the current sources and runs all regression, reporting,
 quality, model, performance, and verification suites. Its differential stage
-runs 31 clean and 25 deliberately broken units through GNATprove when that tool
+runs 32 clean and 45 deliberately broken units through GNATprove when that tool
 is installed, compares three of them with it check by check, and reports an
 explicit skip otherwise. A separate seeded
-mutation campaign guards all 16 enumerated obligation families against
-false-safe regressions. A proof-path evidence gate maps 93 abstract, flow,
-contract-transfer, and external-prover routes to every one of the 35 current
+mutation campaign guards all 18 enumerated obligation families against
+false-safe regressions. A proof-path evidence gate maps 94 abstract, flow,
+contract-transfer, and external-prover routes to every one of the 36 current
 `Proved_Safe` producer sites, including adversarial and solver-boundary cases.
 
 ## Commercial support from Spazio IT

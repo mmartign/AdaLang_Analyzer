@@ -8,7 +8,6 @@
 
 with Ada.Containers.Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Maps;
-with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
 with Ada.Environment_Variables;
 with Ada.Strings.Fixed;
@@ -41,45 +40,6 @@ package body Adalang_Analyzer.VC_Prover is
 
    package Domain renames Adalang_Analyzer.Flow_Domain;
    package Eval renames Adalang_Analyzer.Flow_Eval;
-
-   --  Phase 0 v2 measurement scaffolding (diagnostic only, see
-   --  Dump_Symbolic_Diagnostics): tallies of why Assign/Assume/Join/
-   --  Include_Root discarded a symbolic fact, kept only for the lifetime of
-   --  one process. Reading Symbolic_Diagnostics_Enabled costs a hash
-   --  lookup; every increment site is gated by it so the counters (and the
-   --  Value.Kind'Image call feeding the by-kind maps) cost nothing when
-   --  unset.
-   function Symbolic_Diagnostics_Enabled return Boolean is
-     (Ada.Environment_Variables.Exists
-        ("ADALANG_VERIFY_SYMBOLIC_DIAGNOSTICS"));
-
-   package Kind_Tally_Maps is new Ada.Containers.Indefinite_Ordered_Maps
-     (Key_Type => String, Element_Type => Natural);
-
-   Assign_Havoc_By_Kind      : Kind_Tally_Maps.Map;
-   Assume_Havoc_By_Kind      : Kind_Tally_Maps.Map;
-   Join_Havoc_Count          : Natural := 0;
-   Join_Merge_Survived_Count : Natural := 0;
-   Join_Merge_Fresh_Count    : Natural := 0;
-   Include_Root_Poison_Count : Natural := 0;
-
-   procedure Tally (Map : in out Kind_Tally_Maps.Map; Key : String) is
-      Cursor : constant Kind_Tally_Maps.Cursor := Map.Find (Key);
-   begin
-      if Kind_Tally_Maps.Has_Element (Cursor) then
-         Map.Replace_Element (Cursor, Kind_Tally_Maps.Element (Cursor) + 1);
-      else
-         Map.Insert (Key, 1);
-      end if;
-   end Tally;
-
-   --  Join is a function, so its own Join_Havoc_Count increment must go
-   --  through a procedure call rather than a direct assignment statement,
-   --  or it trips this project's own Function_Side_Effect check.
-   procedure Bump (Counter : in out Natural) is
-   begin
-      Counter := Counter + 1;
-   end Bump;
 
    --  Scalar formals are substituted with SMT terms. Composite objects
    --  need a different kind of substitution: record-component symbols are
@@ -4758,21 +4718,14 @@ package body Adalang_Analyzer.VC_Prover is
       Sort_Info : constant Sort_Resolution := Expression_Sort (Value);
       Term      : Unbounded_String;
    begin
+      --  An untracked destination is a write the symbolic state must not
+      --  turn into a fact about the destination, and that may change what
+      --  other names denote.
       if Libadalang.Analysis.Is_Null (Destination)
         or else Libadalang.Analysis.Is_Null (Value)
+        or else Domain.Classify (Destination) /= Domain.Tracked
+        or else not Sort_Info.Supported
       then
-         if Symbolic_Diagnostics_Enabled then
-            Tally (Assign_Havoc_By_Kind, "null-node");
-         end if;
-         return Havoc;
-      elsif Domain.Classify (Destination) /= Domain.Tracked then
-         --  A write the symbolic state must not turn into a fact about the
-         --  destination, and that may change what other names denote.
-         return Havoc;
-      elsif not Sort_Info.Supported then
-         if Symbolic_Diagnostics_Enabled then
-            Tally (Assign_Havoc_By_Kind, Value.Kind'Image);
-         end if;
          return Havoc;
       end if;
 
@@ -4786,10 +4739,6 @@ package body Adalang_Analyzer.VC_Prover is
             return Havoc;
       end case;
       if not Context.Supported or else Length (Term) = 0 then
-         if Symbolic_Diagnostics_Enabled then
-            Tally (Assign_Havoc_By_Kind, Value.Kind'Image);
-         end if;
-
          --  The value has no term, but its sort is known: the destination
          --  now holds some value of that sort, which is all that needs
          --  saying. It gets a symbol of its own, named after the
@@ -4821,9 +4770,6 @@ package body Adalang_Analyzer.VC_Prover is
       return Context.Symbols;
    exception
       when others =>
-         if Symbolic_Diagnostics_Enabled then
-            Tally (Assign_Havoc_By_Kind, "exception");
-         end if;
          return Havoc;
    end Assign;
 
@@ -5191,9 +5137,6 @@ package body Adalang_Analyzer.VC_Prover is
          if not Context.Supported or else Length (Term) = 0
            or else Reads_Blocked (Term, Context, Frame)
          then
-            if Symbolic_Diagnostics_Enabled then
-               Tally (Assume_Havoc_By_Kind, Node.Kind'Image);
-            end if;
             return;
          end if;
 
@@ -5500,9 +5443,6 @@ package body Adalang_Analyzer.VC_Prover is
       return (if Any then Result else Havoc);
    exception
       when others =>
-         if Symbolic_Diagnostics_Enabled then
-            Tally (Assume_Havoc_By_Kind, "exception");
-         end if;
          return Havoc;
    end Assume;
 
@@ -6767,9 +6707,6 @@ package body Adalang_Analyzer.VC_Prover is
             Current : Symbol_Root := State.Roots.Element (Index);
          begin
             if Current.Key /= Item.Key or else Current.Sort /= Item.Sort then
-               if Symbolic_Diagnostics_Enabled then
-                  Include_Root_Poison_Count := Include_Root_Poison_Count + 1;
-               end if;
                State.Supported := False;
                return;
             end if;
@@ -6921,14 +6858,8 @@ package body Adalang_Analyzer.VC_Prover is
            and then Right.Bindings.Element (Other_Index).Sort = Item.Sort
            and then Right.Bindings.Element (Other_Index).Term = Item.Term
          then
-            if Symbolic_Diagnostics_Enabled then
-               Join_Merge_Survived_Count := Join_Merge_Survived_Count + 1;
-            end if;
             Set_Binding (Result, Item);
          else
-            if Symbolic_Diagnostics_Enabled then
-               Join_Merge_Fresh_Count := Join_Merge_Fresh_Count + 1;
-            end if;
             declare
                Name : constant String :=
                  Root_Name (Item.Key, "j" & Natural_Image (Merge_Tag) & "_");
@@ -6981,9 +6912,6 @@ package body Adalang_Analyzer.VC_Prover is
       Right_Renamed : String_Sets.Map;
    begin
       if not Left.Supported or else not Right.Supported then
-         if Symbolic_Diagnostics_Enabled then
-            Bump (Join_Havoc_Count);
-         end if;
          return Havoc;
       end if;
 
@@ -9064,49 +8992,6 @@ package body Adalang_Analyzer.VC_Prover is
 
    function Inline_Path (Outcome : VC_Outcome) return String is
      (To_String (Outcome.Provenance.Inline_Path));
-
-   procedure Dump_Symbolic_Diagnostics is
-      use Ada.Text_IO;
-
-      function Natural_Text (Value : Natural) return String is
-        (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
-   begin
-      if not Symbolic_Diagnostics_Enabled then
-         return;
-      end if;
-
-      Put_Line
-        (Standard_Error,
-         "symbolic-diagnostics join-havoc=" &
-           Natural_Text (Join_Havoc_Count));
-      Put_Line
-        (Standard_Error,
-         "symbolic-diagnostics join-merge-survived=" &
-           Natural_Text (Join_Merge_Survived_Count));
-      Put_Line
-        (Standard_Error,
-         "symbolic-diagnostics join-merge-fresh=" &
-           Natural_Text (Join_Merge_Fresh_Count));
-      Put_Line
-        (Standard_Error,
-         "symbolic-diagnostics include-root-poison=" &
-           Natural_Text (Include_Root_Poison_Count));
-
-      for Cursor in Assign_Havoc_By_Kind.Iterate loop
-         Put_Line
-           (Standard_Error,
-            "symbolic-diagnostics assign-havoc kind=" &
-              Kind_Tally_Maps.Key (Cursor) & " count=" &
-              Natural_Text (Kind_Tally_Maps.Element (Cursor)));
-      end loop;
-      for Cursor in Assume_Havoc_By_Kind.Iterate loop
-         Put_Line
-           (Standard_Error,
-            "symbolic-diagnostics assume-havoc kind=" &
-              Kind_Tally_Maps.Key (Cursor) & " count=" &
-              Natural_Text (Kind_Tally_Maps.Element (Cursor)));
-      end loop;
-   end Dump_Symbolic_Diagnostics;
 
    procedure Forget_Declared_Facts is
    begin

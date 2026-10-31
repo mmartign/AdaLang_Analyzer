@@ -53,9 +53,8 @@ gc_option_args=$(awk -v part=options -f "$repository_root/benchmarks/gnatcheck_r
 #  GPR_PROJECT_PATH pointing at its configured project_dir; sourcing
 #  GNATCHECK_ENV before this point would leak the from-source GNATcheck
 #  build's GPR_PROJECT_PATH in too (it carries its own trimmed
-#  gnatcoll/xmlada .gpr stubs, built runtime-only -- see
-#  project_gnatcheck_acquisition.md -- which silently shadow the full,
-#  properly-configured ones AWS/AdaLang actually need and break project
+#  gnatcoll/xmlada .gpr stubs, built runtime-only, which silently shadow the
+#  full, properly-configured ones AWS/AdaLang actually need and break project
 #  loading with confusing "source file ... not found" errors).
 GPR_PROJECT_PATH="$project_dir${GPR_PROJECT_PATH:+:$GPR_PROJECT_PATH}"
 export GPR_PROJECT_PATH

@@ -14,7 +14,7 @@
       explains and justifies it.
 - [ ] For a new or broader `Proved_Safe` path: updated the supported-subset
       contract and added both positive and seeded-defect evidence.
-- [ ] For a false-safe fix: followed `FALSE_SAFE_RESPONSE.md`, including the
+- [ ] For a false-safe fix: followed `docs/src/false-safe-response.md`, including the
       sibling-path audit and known-issue record.
 
 ## Observable behavior changes

@@ -24,7 +24,7 @@ with Adalang_Analyzer.Rules;
 --  analyses of source code) activity categories. ISO 26262 and EN 50128
 --  objective identifiers are each AdaLang's own thematic grouping of the
 --  --automotive preset, in the same non-normative style already used by
---  AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md's "Coverage summary" section --
+--  docs/src/automotive-compliance-matrix.md's "Coverage summary" section --
 --  general safety-relevant themes (restricted control flow, storage and
 --  aliasing discipline, and so on), not a reference to any ISO 26262 or
 --  EN 50128 Part, clause, or table number. Neither is a reproduction of the

@@ -3,10 +3,9 @@
 # Matches AdaLang Analyzer's --verify proof obligations (arg 1: the
 # --format=json report) against GNATprove's --mode=prove --output=oneline
 # log (arg 2), by (basename(file), line, normalized check kind), and
-# reports per-bucket agreement counts. See benchmarks/cubedos/README.md
-# for the matching design and its caveats. Identical to
-# benchmarks/sparknacl/compare.awk; kept as a separate copy so each
-# benchmark directory is self-contained and independently runnable.
+# reports per-bucket agreement counts. Every benchmark's run.sh calls it
+# with -v corpus_label=NAME, the name in the report's heading. See
+# benchmarks/sparknacl/README.md for the matching design and its caveats.
 
 function basename(path,    n, parts) {
    n = split(path, parts, "/")
@@ -171,8 +170,10 @@ END {
       }
    }
 
-   print "CubedOS / GNATprove agreement report"
-   print "====================================="
+   heading = corpus_label " / GNATprove agreement report"
+   print heading
+   for (i = 1; i <= length(heading); i++) printf "="
+   print ""
    print ""
    printf "AdaLang proof obligations parsed:      %d\n", a_total
    printf "GNATprove prove-mode messages parsed:  %d\n", g_total

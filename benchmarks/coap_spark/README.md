@@ -164,8 +164,7 @@ may differ; check what `alr get` actually named it under
 - AdaLang `--verify` against `coap_spark.gpr`, `--format=json`;
 - GNATprove `--mode=prove --output=oneline` against the same project, with
   the toolchain overrides described above;
-- `compare.awk` (identical to the other four benchmarks' copies) over both
-  outputs, writing `comparison.txt` to the results directory (default
+- `benchmarks/compare.awk` over both outputs, writing `comparison.txt` to the results directory (default
   `benchmark-results/coap_spark/`, override with `RESULTS_DIR`).
 
 ## Matching design

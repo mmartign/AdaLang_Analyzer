@@ -119,7 +119,7 @@ while IFS=$(printf '\t') read -r test class n_src loc kinds; do
       grep "^$b:" "$d/gnatprove-prove.oneline" >>"$d/gnatprove-prove.scoped" || true
    done
 
-   awk -f "$benchmark_dir/compare.awk" -v corpus_label="spark_testsuite/$test" \
+   awk -f "$repository_root/benchmarks/compare.awk" -v corpus_label="spark_testsuite/$test" \
       "$d/adalang-verify.json" "$d/gnatprove-prove.scoped" \
       >"$per_test/$test.txt"
    count=$((count + 1))

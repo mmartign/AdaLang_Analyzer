@@ -169,7 +169,7 @@ if [ -n "$gnatprove_summary" ] && [ -f "$gnatprove_summary" ]; then
    cp "$gnatprove_summary" "$results_dir/gnatprove.out"
 fi
 
-awk -f "$benchmark_dir/compare.awk" \
+awk -v corpus_label=coap_spark -f "$repository_root/benchmarks/compare.awk" \
   "$results_dir/adalang-verify.json" \
   "$results_dir/gnatprove-prove.oneline" \
   >"$results_dir/comparison.txt"

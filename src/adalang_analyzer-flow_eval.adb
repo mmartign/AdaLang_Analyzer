@@ -393,10 +393,6 @@ package body Adalang_Analyzer.Flow_Eval is
       Ambiguous.Clear;
    end Clear_Formal_Bindings;
 
-   function Has_Formal_Bindings return Boolean
-   is (not Formal_Values.Is_Empty or else not Formal_Packages.Is_Empty
-       or else not Formal_Types.Is_Empty);
-
    --  The actual subtype an instance pass gives the formal type Typ, seen
    --  from its generic unit, directly or through subtypes of it that add
    --  no constraint; No_Base_Type_Decl if none.

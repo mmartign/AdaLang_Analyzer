@@ -82,8 +82,7 @@ LIBKECCAK_ROOT=/private/tmp/adalang-libkeccak-benchmark sh benchmarks/libkeccak/
 - GNATprove `--mode=prove --output=oneline` against the same project, with
   one explicit override of libkeccak's own `Prove` package switches (see
   "Toolchain override" below);
-- `compare.awk` (identical to the other three benchmarks' copies) over both
-  outputs, writing `comparison.txt` to the results directory (default
+- `benchmarks/compare.awk` over both outputs, writing `comparison.txt` to the results directory (default
   `benchmark-results/libkeccak/`, override with `RESULTS_DIR`).
 
 ## Toolchain override

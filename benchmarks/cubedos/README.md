@@ -78,8 +78,7 @@ CUBEDOS_ROOT=/private/tmp/adalang-cubedos-benchmark sh benchmarks/cubedos/run.sh
   `--level=4 --prover=z3,cvc5,altergo --timeout=60` explicitly, matching
   SPARKNaCl's configuration for methodological consistency across both
   corpora rather than reusing an unset default;
-- `compare.awk` (identical to `benchmarks/sparknacl/compare.awk`) over both
-  outputs, writing `comparison.txt` to the results directory (default
+- `benchmarks/compare.awk` over both outputs, writing `comparison.txt` to the results directory (default
   `benchmark-results/cubedos/`, override with `RESULTS_DIR`).
 
 ## Matching design

@@ -143,7 +143,6 @@ package Adalang_Analyzer.Flow_Eval is
    --  A formal scalar type is then its actual subtype for its range and
    --  modulus.
    procedure Clear_Formal_Bindings;
-   function Has_Formal_Bindings return Boolean;
    function Formal_Bindings_Image return String;
    --  The formals given a value or an instance, and what, in an order of
    --  their own: two passes that give the same are the same.

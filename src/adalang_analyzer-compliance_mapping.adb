@@ -135,7 +135,7 @@ package body Adalang_Analyzer.Compliance_Mapping is
    --  Enable_Automotive_Preset actually enables, drawn from
    --  Rules.Automotive_Rules. These ten thematic categories are AdaLang's
    --  own grouping of that list, extending
-   --  AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md's existing "Coverage summary"
+   --  docs/src/automotive-compliance-matrix.md's "Coverage summary"
    --  prose into a strict one-rule-one-category partition. They cite no
    --  ISO 26262 Part, clause, or table number. EN_50128_Objectives below
    --  reuses these same ten Rule_List constants under EN 50128 Annex A

@@ -5,6 +5,28 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The GNATprove benchmarks share one matcher, `benchmarks/compare.awk`, in
+  place of seven near-identical copies.
+
+### Removed
+
+- The undocumented `ADALANG_VERIFY_SYMBOLIC_DIAGNOSTICS` measurement switch.
+- `quality/external_corpus_findings.md`, `quality/check_catalogue_audit.md`,
+  `quality/precision_corpus_notes.md`, `quality/recommended_preset_notes.md`
+  and the precision regression index of `quality/README.md`, which recorded
+  past campaigns only. `quality/known_analysis_issues.tsv` keeps each confirmed
+  mistake, this file each release, and the Git history those documents.
+
+### Fixed
+
+- Saatana's GNATprove agreement report was headed "CubedOS".
+- Figures in `README.md`, `benchmarks/README.md` and `quality/README.md` that
+  had fallen behind the data, and references to files that no longer exist.
+
 ## [1.12.0] - 2026-10-30
 
 A `--verify` release that follows initialization through contracts and through

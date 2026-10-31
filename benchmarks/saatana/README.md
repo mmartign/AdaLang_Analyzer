@@ -50,9 +50,7 @@ SAATANA_ROOT=/private/tmp/adalang-saatana-benchmark sh benchmarks/saatana/run.sh
   three explicit overrides of Saatana's own `Prove` package switches (see
   "Toolchain overrides" below) rather than the project's switches unmodified,
   unlike `benchmarks/sparknacl/`;
-- `compare.awk` (identical to `benchmarks/sparknacl/compare.awk` and
-  `benchmarks/cubedos/compare.awk`) over both outputs, writing
-  `comparison.txt` to the results directory (default
+- `benchmarks/compare.awk` over both outputs, writing `comparison.txt` to the results directory (default
   `benchmark-results/saatana/`, override with `RESULTS_DIR`).
 
 ## Toolchain overrides

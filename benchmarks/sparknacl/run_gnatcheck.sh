@@ -30,9 +30,8 @@ gc_rule_args=$(awk -v part=rules -f "$repository_root/benchmarks/gnatcheck_rule_
 gc_option_args=$(awk -v part=options -f "$repository_root/benchmarks/gnatcheck_rule_args.awk" "$rule_map")
 
 #  Run the AdaLang lane FIRST, before GNATCHECK_ENV is sourced below: that
-#  env carries its own trimmed, runtime-only GPR_PROJECT_PATH (see
-#  project_gnatcheck_acquisition.md) which can silently shadow whatever
-#  project-dependency .gpr files AdaLang's own `-P` parsing needs to
+#  env carries its own trimmed, runtime-only GPR_PROJECT_PATH, which can
+#  silently shadow whatever project-dependency .gpr files AdaLang's own `-P` parsing needs to
 #  resolve, on corpora that (unlike this self-contained one) actually have
 #  external project dependencies -- see benchmarks/aws/run_gnatcheck.sh's
 #  comment for the failure mode this caused there.
@@ -46,9 +45,7 @@ if [ "$status" -gt 1 ]; then
 fi
 
 #  gnatcheck has no Alire package and no prebuilt download; it must be built
-#  from source (see project_gnatcheck_acquisition.md in this session's
-#  memory, or docs/src/gnatcheck-rule-comparison.md's intro, for the full
-#  bootstrap).
+#  from source.
 #  GNATCHECK_ENV, if set, is sourced to bring the built binary's runtime
 #  dependencies (PATH, GPR_PROJECT_PATH, JAVA_HOME, a raised `ulimit -s` --
 #  the Ada driver stack-overflows on -P project mode without it -- etc.)

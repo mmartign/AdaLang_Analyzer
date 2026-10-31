@@ -58,7 +58,7 @@ as GNATcoverage, not evidence that coverage was achieved.
 ## How to read the matrix
 
 The alignment labels measure similarity of safety intent, not standards
-coverage — the same three labels `AUTOMOTIVE_ADA_COMPLIANCE_MATRIX.md` uses,
+coverage — the same three labels the [automotive matrix](automotive-compliance-matrix.md) uses,
 since 42 of the 46 checks below are shared with the `--automotive` preset and
 carry the same underlying Ada/SPARK rationale regardless of which profile
 enables them:

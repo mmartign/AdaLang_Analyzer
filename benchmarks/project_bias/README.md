@@ -59,9 +59,8 @@ environment, then runs:
   compact summaries;
 - GNATprove `--mode=prove` with Z3, CVC5, and Alt-Ergo, a 16,000-step limit,
   a 10-second per-check timeout, and statistics reporting;
-- the canonical `benchmarks/sparknacl/compare.awk` matcher over AdaLang's
-  verify report and GNATprove's oneline report, with a corpus-specific report
-  heading supplied through the matcher's `corpus_label` option.
+- `benchmarks/compare.awk` over AdaLang's verify report and GNATprove's
+  oneline report.
 
 Outputs go to `benchmark-results/project_bias/` by default; override this with
 `RESULTS_DIR`.
@@ -80,4 +79,4 @@ Outputs go to `benchmark-results/project_bias/` by default; override this with
 - Apache-2.0 permits this pinned external use. The corpus remains an external
   checkout; none of its source is vendored here.
 
-See [RESULTS_2026-10-24.md](RESULTS_2026-10-24.md) for the current recorded run.
+See the latest `RESULTS_*.md` in this directory for the current recorded run.
