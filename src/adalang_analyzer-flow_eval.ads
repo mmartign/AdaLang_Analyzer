@@ -142,6 +142,16 @@ package Adalang_Analyzer.Flow_Eval is
       Actual : Libadalang.Analysis.Base_Type_Decl'Class);
    --  A formal scalar type is then its actual subtype for its range and
    --  modulus.
+   procedure Bind_Formal_Subprogram
+     (Formal : Libadalang.Analysis.Defining_Name'Class;
+      Actual : Libadalang.Analysis.Basic_Decl'Class);
+   --  A formal subprogram is then Actual, null when what the instance gives
+   --  it could not be read.
+   function Bound_Subprogram
+     (Formal : Libadalang.Analysis.Basic_Decl'Class)
+      return Libadalang.Analysis.Basic_Decl;
+   --  The subprogram the pass gives the formal subprogram Formal, or
+   --  No_Basic_Decl.
    procedure Clear_Formal_Bindings;
    function Formal_Bindings_Image return String;
    --  The formals given a value or an instance, and what, in an order of

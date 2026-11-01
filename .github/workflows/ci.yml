@@ -89,7 +89,9 @@ jobs:
         # relax the performance smoke test's threshold to avoid flaky
         # failures unrelated to an actual regression. The test runs every
         # check: 30 s covered 127 of them (23 s on macOS); the 294 of 1.8.0
-        # took 54 to 70 s there, and more have been added since.
+        # took 54 to 70 s there, and more have been added since. macOS runners
+        # went 110, 125, 118, 135, 139, 158 and 140 s across the 1.12 releases
+        # with the same 94 s locally: 150 s left no margin for runner noise.
         env:
-          ADALANG_MAX_SMOKE_SECONDS: 150
+          ADALANG_MAX_SMOKE_SECONDS: 180
         run: sh tests/run_all.sh

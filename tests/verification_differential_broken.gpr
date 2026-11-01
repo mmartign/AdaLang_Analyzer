@@ -69,6 +69,8 @@ project Verification_Differential_Broken is
       "verification_fp135_sliding_formal.ads",
       "verification_fp135_sliding_formal.adb",
       "verification_mutation_parts_kept.ads",
-      "verification_mutation_parts_kept.adb");
+      "verification_mutation_parts_kept.adb",
+      "verification_mutation_formal_contracts.ads",
+      "verification_mutation_formal_contracts.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;

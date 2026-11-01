@@ -52,6 +52,8 @@ status=0
   tests/verification_outside_objects.adb \
   tests/verification_parts_kept.ads \
   tests/verification_parts_kept.adb \
+  tests/verification_formal_contracts.ads \
+  tests/verification_formal_contracts.adb \
   tests/verification_slice_bounds.adb \
   tests/verification_guarded_operand.adb \
   tests/verification_declared_constraint.adb \
@@ -85,7 +87,7 @@ cat "$gnatprove_log"
 grep -F 'Success: all checks proved' "$gnatprove_log" >/dev/null
 
 summary=obj/verification_differential/gnatprove/gnatprove.out
-grep -F 'Analyzed 33 units' "$summary" >/dev/null
+grep -F 'Analyzed 34 units' "$summary" >/dev/null
 if grep -F ' skipped;' "$summary" >/dev/null; then
    echo "GNATprove skipped part of the differential corpus" >&2
    exit 1
@@ -145,7 +147,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 47 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 48 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -161,6 +163,7 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_fp134_several_names \
   verification_fp135_sliding_formal \
   verification_mutation_parts_kept \
+  verification_mutation_formal_contracts \
   verification_mutation_slice_bounds \
   verification_mutation_guarded_operand \
   verification_mutation_declared_constraint \
@@ -1205,7 +1208,9 @@ status=0
   tests/verification_fp135_sliding_formal.ads \
   tests/verification_fp135_sliding_formal.adb \
   tests/verification_mutation_parts_kept.ads \
-  tests/verification_mutation_parts_kept.adb || status=$?
+  tests/verification_mutation_parts_kept.adb \
+  tests/verification_mutation_formal_contracts.ads \
+  tests/verification_mutation_formal_contracts.adb || status=$?
 if [ "$status" -gt 1 ]; then
    echo "AdaLang Analyzer parts kept run failed with status $status" >&2
    exit "$status"
@@ -1213,7 +1218,8 @@ fi
 "$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
   --level=2 --report=all --output=oneline \
   -u verification_fp135_sliding_formal.adb \
-  verification_mutation_parts_kept.adb >"$kept_log" 2>&1 || true
+  verification_mutation_parts_kept.adb \
+  verification_mutation_formal_contracts.adb >"$kept_log" 2>&1 || true
 
 python3 - "$kept_results" "$kept_log" quality/verification_mutations.tsv <<'PYTHON'
 import json
@@ -1225,7 +1231,8 @@ report = json.load(open(sys.argv[1]))
 log = open(sys.argv[2]).read().split("\n")
 kinds = {"assertion": "assertion", "precondition": "precondition"}
 units = ("verification_fp135_sliding_formal",
-         "verification_mutation_parts_kept")
+         "verification_mutation_parts_kept",
+         "verification_mutation_formal_contracts")
 
 
 def fail(message):

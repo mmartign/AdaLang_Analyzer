@@ -938,6 +938,51 @@ package body Adalang_Analyzer.Flow_Interp is
          return Libadalang.Analysis.No_Ada_Node;
    end Formal_Named;
 
+   --  Where the formal of Subprogram spelled Name (in normalized form) comes
+   --  among its formals, each name of a specification counted; 0 if none.
+   function Formal_Position
+     (Subprogram : Libadalang.Analysis.Basic_Decl;
+      Name       : String) return Natural
+   is
+      Position : Natural := 0;
+   begin
+      for Param of Subprogram.P_Subp_Spec_Or_Null.P_Params loop
+         for Id of Param.F_Ids loop
+            Position := Position + 1;
+            if Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Id)) = Name
+            then
+               return Position;
+            end if;
+         end loop;
+      end loop;
+      return 0;
+   exception
+      when others =>
+         return 0;
+   end Formal_Position;
+
+   --  The defining name of the formal of Subprogram at Position, counted as
+   --  Formal_Position counts, or No_Ada_Node.
+   function Formal_At
+     (Subprogram : Libadalang.Analysis.Basic_Decl;
+      Position   : Natural) return Libadalang.Analysis.Ada_Node
+   is
+      Count : Natural := 0;
+   begin
+      for Param of Subprogram.P_Subp_Spec_Or_Null.P_Params loop
+         for Id of Param.F_Ids loop
+            Count := Count + 1;
+            if Count = Position then
+               return Libadalang.Analysis.Ada_Node (Id);
+            end if;
+         end loop;
+      end loop;
+      return Libadalang.Analysis.No_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Formal_At;
+
    function Has_Aspect
      (Decl : Libadalang.Analysis.Basic_Decl'Class;
       Name : String) return Boolean
@@ -3350,6 +3395,127 @@ package body Adalang_Analyzer.Flow_Interp is
       return Libadalang.Analysis.Actual (Pair);
    end Given_Actual;
 
+   function Place_Key (Node : Libadalang.Analysis.Ada_Node'Class) return String
+   is (Node.Unit.Get_Filename & ":"
+       & Langkit_Support.Slocs.Image
+           (Langkit_Support.Slocs.Start_Sloc (Node.Sloc_Range)));
+
+   --  The subprogram the generic actual Actual gives, past renamings and,
+   --  for a formal subprogram of an enclosing unit, what the pass gives that.
+   --  No_Basic_Decl unless what it asks of a caller can be read off it: the
+   --  contract of a generic subprogram is on the unit, not on an instance.
+   function Subprogram_Of_Actual
+     (Actual : Libadalang.Analysis.Expr'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is
+      Max_Renamings : constant := 8;
+      Decl          : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Actual)
+        or else Actual.Kind not in Libadalang.Common.Ada_Name
+      then
+         return Libadalang.Analysis.No_Basic_Decl;
+      end if;
+      Decl := Actual.As_Name.P_Referenced_Decl;
+      for Count in 1 .. Max_Renamings loop
+         if Libadalang.Analysis.Is_Null (Decl) then
+            return Libadalang.Analysis.No_Basic_Decl;
+         elsif Decl.Kind = Libadalang.Common.Ada_Subp_Renaming_Decl then
+            Decl := Decl.As_Subp_Renaming_Decl.F_Renames.F_Renamed_Object
+              .P_Referenced_Decl;
+         elsif Decl.Kind in Libadalang.Common.Ada_Formal_Subp_Decl then
+            Decl := Bound_Subprogram (Decl);
+         elsif Decl.Kind not in
+           Libadalang.Common.Ada_Subp_Decl
+             | Libadalang.Common.Ada_Subp_Body
+             | Libadalang.Common.Ada_Null_Subp_Decl
+             | Libadalang.Common.Ada_Expr_Function
+             | Libadalang.Common.Ada_Enum_Literal_Decl
+             | Libadalang.Common.Ada_Synthetic_Subp_Decl
+           or else Has_Aspect (Decl, "Pre'Class")
+           or else Has_Aspect (Decl, "Precondition")
+         then
+            return Libadalang.Analysis.No_Basic_Decl;
+         else
+            return Decl;
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Basic_Decl;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Subprogram_Of_Actual;
+
+   package Formal_Answer_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Boolean,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+   Formal_Answers : Formal_Answer_Maps.Map;
+
+   --  True when some instantiation of its generic unit in this run gives
+   --  the generic formal subprogram Formal a subprogram with a precondition.
+   function Actual_Has_Precondition
+     (Formal : Libadalang.Analysis.Basic_Decl'Class;
+      Depth  : Natural := 0) return Boolean
+   is
+      Max_Depth : constant := 4;
+      Wanted    : constant String := Place_Key (Formal.P_Defining_Name);
+      Unit      : constant String :=
+        Subprogram_Summaries.Generic_Unit_Key (Formal);
+      Found     : Boolean := False;
+      Lost      : Boolean;
+
+      procedure Visit (Node : Libadalang.Analysis.Generic_Instantiation) is
+      begin
+         for Pair of Node.P_Inst_Params loop
+            if Place_Key (Libadalang.Analysis.Param (Pair)) = Wanted
+              and then Libadalang.Analysis.Actual (Pair).Kind in
+                Libadalang.Common.Ada_Name
+            then
+               declare
+                  Target : constant Libadalang.Analysis.Basic_Decl :=
+                    Libadalang.Analysis.Actual (Pair).As_Name
+                      .P_Referenced_Decl;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Target) then
+                     Found := Found
+                       or else
+                         (if Target.Kind in
+                            Libadalang.Common.Ada_Formal_Subp_Decl
+                          then Actual_Has_Precondition (Target, Depth + 1)
+                          else not Libadalang.Analysis.Is_Null
+                            (Contract_Expression (Target, "Pre")));
+                  end if;
+               end;
+            end if;
+         end loop;
+      end Visit;
+   begin
+      if Formal_Answers.Contains (Wanted) then
+         return Formal_Answers.Element (Wanted);
+      elsif Unit = "" or else Depth > Max_Depth then
+         return False;
+      end if;
+      Subprogram_Summaries.For_Each_Instantiation
+        (Unit, Formal, Visit'Access, Lost);
+      Formal_Answers.Include (Wanted, Found);
+      return Found;
+   exception
+      when others =>
+         return False;
+   end Actual_Has_Precondition;
+
+   --  True when a call of Decl has a precondition to meet: its own, or that
+   --  of what an instance gives it, when it is a formal subprogram.
+   function Asks_Of_Caller
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is (not Libadalang.Analysis.Is_Null (Contract_Expression (Decl, "Pre"))
+       or else
+         (Config.Verification_Mode
+          and then Decl.Kind in Libadalang.Common.Ada_Formal_Subp_Decl
+          and then Actual_Has_Precondition (Decl)));
+
    procedure Check_Call_Precondition
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Call    : Libadalang.Analysis.Name'Class;
@@ -3357,14 +3523,45 @@ package body Adalang_Analyzer.Flow_Interp is
       Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
       Final   : Boolean := False)
    is
-      Decl : constant Libadalang.Analysis.Basic_Decl :=
+      Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call_Declaration (Call);
+      --  What a formal subprogram asks of its caller is what the subprogram
+      --  given to it asks: each instance has its own.
+      Per_Instance : constant Boolean :=
+        Config.Verification_Mode
+        and then not Libadalang.Analysis.Is_Null (Callee)
+        and then Callee.Kind in Libadalang.Common.Ada_Formal_Subp_Decl
+        and then Libadalang.Analysis.Is_Null
+          (Contract_Expression (Callee, "Pre"))
+        and then Actual_Has_Precondition (Callee);
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        (if Per_Instance then Bound_Subprogram (Callee) else Callee);
    begin
       if Config.Rule_States (Rules.Known_Precondition_Failure) /=
            Config.Enabled
-        or else Libadalang.Analysis.Is_Null (Decl)
-        or else not Effective_SPARK_Enabled (Decl)
+        or else Libadalang.Analysis.Is_Null (Callee)
+        or else not Effective_SPARK_Enabled (Callee)
       then
+         return;
+      elsif Per_Instance and then Libadalang.Analysis.Is_Null (Decl) then
+         Record_Unproved
+           (Unit, Call, Proof.Precondition_Check, Proof.Contract_Transfer,
+            "the precondition of this call is that of the subprogram each " &
+              "instance gives the formal",
+            Imprecision =>
+              "the actual of the formal subprogram is given by each instance",
+            Final => Final);
+         return;
+      elsif Per_Instance
+        and then Libadalang.Analysis.Is_Null (Contract_Expression (Decl, "Pre"))
+      then
+         --  proof-path: precondition-actual-without-one
+         Record_Proved_Safe
+           (Unit, Call, Proof.Precondition_Check, Proof.Contract_Transfer,
+            "the subprogram this instance gives the formal has no " &
+              "precondition",
+            "actual subprogram => no precondition",
+            Final => Final);
          return;
       end if;
 
@@ -3426,40 +3623,62 @@ package body Adalang_Analyzer.Flow_Interp is
          --  procedure, an expression function), the precondition is written
          --  on the earlier declaration and names that declaration's
          --  formals, which are other defining names than the completion's.
-         --  Each gets what its namesake was just given.
+         --  Each gets what its namesake was just given. So do the formals of
+         --  the subprogram an instance gives a formal subprogram, which a
+         --  precondition names just the same; those go by position, as
+         --  instantiation matches them.
          declare
             Part : constant Libadalang.Analysis.Basic_Decl :=
               Contract_Part (Decl);
+            Position : Natural := 0;
+
+            procedure Give
+              (Twin   : Libadalang.Analysis.Ada_Node;
+               Formal : Libadalang.Analysis.Ada_Node;
+               Pair   : Libadalang.Analysis.Param_Actual) is
+            begin
+               if not Libadalang.Analysis.Is_Null (Twin)
+                 and then Twin /= Formal
+               then
+                  Flow_Copy_Key (Contract_State, Formal, Twin);
+                  Contract_Symbols :=
+                    VC.Bind_Actual
+                      (Contract_Symbols, Twin,
+                       Given_Actual (Call, Pair, Position), State);
+                  VC.Bind_Record
+                    (Contract_Frame, Twin,
+                     Given_Actual (Call, Pair, Position), Symbols,
+                     State);
+               end if;
+            end Give;
          begin
-            if not Libadalang.Analysis.Is_Null (Part) then
-               declare
-                  Position : Natural := 0;
-               begin
-                  for Pair of Call.P_Call_Params loop
-                     Position := Position + 1;
-                     declare
-                        Formal : constant Libadalang.Analysis.Ada_Node :=
-                          Libadalang.Analysis.Ada_Node
-                            (Libadalang.Analysis.Param (Pair));
-                        Twin   : constant Libadalang.Analysis.Ada_Node :=
-                          Formal_Named (Part, Normalized_Text (Formal));
-                     begin
-                        if not Libadalang.Analysis.Is_Null (Twin)
-                          and then Twin /= Formal
-                        then
-                           Flow_Copy_Key (Contract_State, Formal, Twin);
-                           Contract_Symbols :=
-                             VC.Bind_Actual
-                               (Contract_Symbols, Twin,
-                                Given_Actual (Call, Pair, Position), State);
-                           VC.Bind_Record
-                             (Contract_Frame, Twin,
-                              Given_Actual (Call, Pair, Position), Symbols,
-                              State);
-                        end if;
-                     end;
-                  end loop;
-               end;
+            if Per_Instance
+              or else not Libadalang.Analysis.Is_Null (Part)
+            then
+               for Pair of Call.P_Call_Params loop
+                  Position := Position + 1;
+                  declare
+                     Formal : constant Libadalang.Analysis.Ada_Node :=
+                       Libadalang.Analysis.Ada_Node
+                         (Libadalang.Analysis.Param (Pair));
+                     Place  : constant Natural :=
+                       (if Per_Instance
+                        then Formal_Position
+                               (Callee, Normalized_Text (Formal))
+                        else 0);
+                  begin
+                     if Per_Instance then
+                        Give (Formal_At (Decl, Place), Formal, Pair);
+                     end if;
+                     if not Libadalang.Analysis.Is_Null (Part) then
+                        Give
+                          ((if Per_Instance then Formal_At (Part, Place)
+                            else Formal_Named
+                                   (Part, Normalized_Text (Formal))),
+                           Formal, Pair);
+                     end if;
+                  end;
+               end loop;
             end if;
          end;
 
@@ -13730,8 +13949,7 @@ package body Adalang_Analyzer.Flow_Interp is
          Decl := Call_Declaration (Operator);
          Finalize_Call_Inputs (Operator, Container);
          if not Libadalang.Analysis.Is_Null (Decl)
-           and then not Libadalang.Analysis.Is_Null
-                          (Contract_Expression (Decl, "Pre"))
+           and then Asks_Of_Caller (Decl)
          then
             Finalize_Precondition_At (Operator, Container);
          end if;
@@ -14952,8 +15170,7 @@ package body Adalang_Analyzer.Flow_Interp is
                     Call_Declaration (Node.As_Call_Stmt.F_Call);
                begin
                   if not Libadalang.Analysis.Is_Null (Decl)
-                    and then not Libadalang.Analysis.Is_Null
-                      (Contract_Expression (Decl, "Pre"))
+                    and then Asks_Of_Caller (Decl)
                   then
                      Finalize_Precondition_At
                        (Node.As_Call_Stmt.F_Call, Here);
@@ -15058,8 +15275,7 @@ package body Adalang_Analyzer.Flow_Interp is
                              Call_Declaration (Call.F_Name);
                         begin
                            if not Libadalang.Analysis.Is_Null (Decl)
-                             and then not Libadalang.Analysis.Is_Null
-                               (Contract_Expression (Decl, "Pre"))
+                             and then Asks_Of_Caller (Decl)
                            then
                               Finalize_Precondition_Check (Call, Here);
                            end if;
@@ -15819,11 +16035,6 @@ package body Adalang_Analyzer.Flow_Interp is
       Hash            => Ada.Strings.Hash,
       Equivalent_Keys => "=");
 
-   function Place_Key (Node : Libadalang.Analysis.Ada_Node'Class) return String
-   is (Node.Unit.Get_Filename & ":"
-       & Langkit_Support.Slocs.Image
-           (Langkit_Support.Slocs.Start_Sloc (Node.Sloc_Range)));
-
    --  The instantiation of a generic package Name names, directly or by
    --  renamings; No_Generic_Instantiation if none.
    function Instance_Named
@@ -15949,6 +16160,10 @@ package body Adalang_Analyzer.Flow_Interp is
                      Bind_Formal_Package (Formal, Given);
                   end if;
                end;
+            elsif Decl.Kind in Libadalang.Common.Ada_Formal_Subp_Decl
+              and then Actual_Has_Precondition (Decl)
+            then
+               Bind_Formal_Subprogram (Formal, Subprogram_Of_Actual (Actual));
             end if;
          exception
             when others =>
@@ -16093,13 +16308,17 @@ package body Adalang_Analyzer.Flow_Interp is
              and then not Any_Contains (Excluded, File, Place));
 
          --  The generic units declared in the unit, and their bodies: their
-         --  obligations are for their own instances.
+         --  obligations are for their own instances. A generic unit that the
+         --  unit is itself declared in is not one of them.
          procedure Find_Nested (Node : Libadalang.Analysis.Ada_Node'Class) is
          begin
             if Libadalang.Analysis.Is_Null (Node) then
                return;
             elsif Node.Kind in Libadalang.Common.Ada_Generic_Decl
               and then Place_Key (Node) /= Place_Key (Item.Decl)
+              and then not Contains
+                (Region_Of (Node), Item.Decl.Unit.Get_Filename,
+                 Langkit_Support.Slocs.Start_Sloc (Item.Decl.Sloc_Range))
             then
                Excluded.Append (Region_Of (Node));
                declare

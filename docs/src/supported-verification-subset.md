@@ -1275,8 +1275,20 @@ range, its modulus and its size:
 - An actual has a value when it is written as a named number has one (see
   "Names and named numbers"). A formal given two values, or one of a type
   that is not an integer type, has none.
+- A formal subprogram is the subprogram it is given, when some instance in
+  the run gives it one with an aspect `Pre`: a call of it then has a
+  precondition obligation, which the first analysis leaves unproved. Each
+  instance decides it with the precondition of its own actual, the formals
+  of that actual going by position, as instantiation matches them, not by
+  name. An actual without a precondition asks nothing. An actual that does
+  not show what it asks leaves the obligation unproved: one with `Pre'Class`
+  or `pragma Precondition`, an instance of a generic subprogram, an attribute,
+  and a formal for which an instance takes the default. What the actual
+  promises is not read: its postcondition is not assumed after the call.
 
-Instances that give the same values are analyzed once. An obligation of
+Instances that give the same values and the same subprograms are analyzed
+once; `L3.F` and `L9.F` of two instances of one generic unit are two
+subprograms. An obligation of
 the generic unit that the first analysis left unproved -- outside the
 generic units it declares, which have instances of their own -- is proved
 when the analysis of every instance proves it or finds it unreachable, and

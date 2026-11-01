@@ -59,10 +59,11 @@ package Adalang_Analyzer.Flow_Interp is
    --  Run once Verify_Unit has run for every unit of Files. Analyses each
    --  generic unit once more for each instance of it in those units, its
    --  formal objects having the values of the actuals of the instance (see
-   --  Flow_Eval.Bind_Formal_Object), and takes an obligation of the unit
-   --  that the first analysis left unproved as proved when it is proved
-   --  for every instance. A generic unit that is also instantiated inside
-   --  a generic unit, or nowhere, is left as it is. A no-op unless
+   --  Flow_Eval.Bind_Formal_Object) and its formal subprograms the
+   --  subprograms given to them, and takes an obligation of the unit that
+   --  the first analysis left unproved as proved when it is proved for every
+   --  instance. A generic unit that is also instantiated inside a generic
+   --  unit, or nowhere, is left as it is. A no-op unless
    --  Config.Verification_Mode is enabled.
 
 end Adalang_Analyzer.Flow_Interp;

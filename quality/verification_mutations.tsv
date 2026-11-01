@@ -429,3 +429,16 @@ parts-slice-length	tests/verification_mutation_parts_kept.adb	precondition	Log (
 parts-slice-first	tests/verification_mutation_parts_kept.adb	precondition	Log_First (S (2 .. 5))	definite-error	a slice starts where it is written to
 parts-slice-empty	tests/verification_mutation_parts_kept.adb	precondition	Log_Empty (S (1 .. 0))	definite-error	an empty slice has no length
 parts-slice-slid	tests/verification_mutation_parts_kept.adb	precondition	Log_Four (S (2 .. 5))	definite-error	a formal that fixes its bounds does not take those of the slice
+formal-contract-one-instance	tests/verification_mutation_formal_contracts.adb	precondition	Some_Hold (V, 5)	unproved	holds for the actual that asks for 9 and fails for the one that asks for 3: one instance proves nothing of another
+formal-contract-open	tests/verification_mutation_formal_contracts.adb	precondition	Some_Hold (V, K)	unproved	nothing bounds K, for either actual
+formal-contract-free-beside	tests/verification_mutation_formal_contracts.adb	precondition	Free_Beside (V, K)	unproved	an actual with no precondition must not stand for the one with
+formal-contract-crossed-names	tests/verification_mutation_formal_contracts.adb	precondition	Cross (0, K)	unproved	the actual names its second formal X: read by name, X would be the 0 given to the formal X
+formal-contract-overload	tests/verification_mutation_formal_contracts.adb	precondition	Picked (V, 3)	unproved	the profile of the formal picks the overload that asks; the first one by name asks nothing
+formal-contract-pragma	tests/verification_mutation_formal_contracts.adb	precondition	By_Other (V, 2)	unproved	an actual with pragma Precondition has no aspect Pre and still asks
+formal-contract-class	tests/verification_mutation_formal_contracts.adb	precondition	By_Class (V, 2)	unproved	an actual with Pre'Class has no aspect Pre and still asks
+formal-contract-generic-subprogram	tests/verification_mutation_formal_contracts.adb	precondition	By_Instance (V, 2)	unproved	the contract of an instance of a generic subprogram is on the generic unit
+formal-contract-two-instances	tests/verification_mutation_formal_contracts.adb	precondition	Twice (V, 5)	unproved	F of two instances of one generic unit is at one place: the two must stay two passes
+formal-contract-procedure	tests/verification_mutation_formal_contracts.adb	precondition	Step (V, 7)	unproved	a call statement, the form that goes through the name
+formal-contract-nested-steps	tests/verification_mutation_formal_contracts.adb	precondition	Rot (V, Steps)	unproved	generic inside a generic: 9 steps meet the outer actual that asks for 9, not the one that asks for 3
+formal-contract-nested-outer	tests/verification_mutation_formal_contracts.adb	precondition	Rot (V, 7)	unproved	generic inside a generic, a call that does not depend on the inner formal
+formal-contract-default	tests/verification_mutation_formal_contracts.adb	precondition	Default (V, 2)	unproved	an instance that takes the default gives no actual to read

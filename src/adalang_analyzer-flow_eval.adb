@@ -319,10 +319,18 @@ package body Adalang_Analyzer.Flow_Eval is
       Equivalent_Keys => "=",
       "="             => Libadalang.Analysis."=");
 
-   Formal_Values   : Formal_Value_Maps.Map;
-   Formal_Packages : Formal_Package_Maps.Map;
-   Formal_Types    : Formal_Type_Maps.Map;
-   Ambiguous       : Key_Sets.Set;
+   package Formal_Subprogram_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Libadalang.Analysis.Basic_Decl,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=",
+      "="             => Libadalang.Analysis."=");
+
+   Formal_Values      : Formal_Value_Maps.Map;
+   Formal_Packages    : Formal_Package_Maps.Map;
+   Formal_Types       : Formal_Type_Maps.Map;
+   Formal_Subprograms : Formal_Subprogram_Maps.Map;
+   Ambiguous          : Key_Sets.Set;
 
    function Formal_Key (Name : Libadalang.Analysis.Ada_Node'Class) return String
    is (Name.Unit.Get_Filename & ":"
@@ -385,11 +393,63 @@ package body Adalang_Analyzer.Flow_Eval is
       Formal_Types.Insert (Key, Libadalang.Analysis.Base_Type_Decl (Actual));
    end Bind_Formal_Type;
 
+   --  What tells the subprogram Actual from any other: its place, which two
+   --  instances of one generic unit share, and the instances it is seen
+   --  through.
+   function Subprogram_Key
+     (Actual : Libadalang.Analysis.Basic_Decl'Class) return String
+   is
+      Result : Ada.Strings.Unbounded.Unbounded_String;
+   begin
+      if Libadalang.Analysis.Is_Null (Actual) then
+         return "?";
+      end if;
+      Ada.Strings.Unbounded.Append (Result, Formal_Key (Actual));
+      for Instance of Actual.P_Generic_Instantiations loop
+         Ada.Strings.Unbounded.Append (Result, " in " & Formal_Key (Instance));
+      end loop;
+      return Ada.Strings.Unbounded.To_String (Result);
+   end Subprogram_Key;
+
+   procedure Bind_Formal_Subprogram
+     (Formal : Libadalang.Analysis.Defining_Name'Class;
+      Actual : Libadalang.Analysis.Basic_Decl'Class)
+   is
+      Key : constant String := Formal_Key (Formal);
+   begin
+      if Ambiguous.Contains (Key) then
+         return;
+      elsif Formal_Subprograms.Contains (Key) then
+         if Subprogram_Key (Formal_Subprograms.Element (Key)) /=
+           Subprogram_Key (Actual)
+         then
+            Formal_Subprograms.Delete (Key);
+            Ambiguous.Insert (Key);
+         end if;
+         return;
+      end if;
+      Formal_Subprograms.Insert
+        (Key, Libadalang.Analysis.Basic_Decl (Actual));
+   end Bind_Formal_Subprogram;
+
+   function Bound_Subprogram
+     (Formal : Libadalang.Analysis.Basic_Decl'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is
+      Key : constant String := Formal_Key (Formal.P_Defining_Name);
+   begin
+      if Formal_Subprograms.Contains (Key) then
+         return Formal_Subprograms.Element (Key);
+      end if;
+      return Libadalang.Analysis.No_Basic_Decl;
+   end Bound_Subprogram;
+
    procedure Clear_Formal_Bindings is
    begin
       Formal_Values.Clear;
       Formal_Packages.Clear;
       Formal_Types.Clear;
+      Formal_Subprograms.Clear;
       Ambiguous.Clear;
    end Clear_Formal_Bindings;
 
@@ -456,6 +516,11 @@ package body Adalang_Analyzer.Flow_Eval is
          Items.Append
            (Formal_Type_Maps.Key (Position) & ":="
             & Formal_Key (Formal_Type_Maps.Element (Position)));
+      end loop;
+      for Position in Formal_Subprograms.Iterate loop
+         Items.Append
+           (Formal_Subprogram_Maps.Key (Position) & "->"
+            & Subprogram_Key (Formal_Subprogram_Maps.Element (Position)));
       end loop;
       Sort.Sort (Items);
       for Item of Items loop
