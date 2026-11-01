@@ -9,7 +9,7 @@ codebases. Find defects, enforce engineering policy, and expose proof-readiness
 gaps while they are still inexpensive to fix.**
 
 [![CI](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mmartign/AdaLang_Analyzer/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.12.1-5b4ee5.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.12.2-5b4ee5.svg)](CHANGELOG.md)
 [![Checks](https://img.shields.io/badge/checks-302-0f766e.svg)](https://mmartign.github.io/AdaLang_Analyzer/checks.html)
 [![Docs](https://img.shields.io/badge/docs-site-1f6feb.svg)](https://mmartign.github.io/AdaLang_Analyzer/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
@@ -261,7 +261,7 @@ sh tests/run_all.sh
 
 The gate builds the current sources and runs all regression, reporting,
 quality, model, performance, and verification suites. Its differential stage
-runs 33 clean and 47 deliberately broken units through GNATprove when that tool
+runs 34 clean and 48 deliberately broken units through GNATprove when that tool
 is installed, compares three of them with it check by check, and reports an
 explicit skip otherwise. A separate seeded
 mutation campaign guards all 18 enumerated obligation families against

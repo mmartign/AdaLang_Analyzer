@@ -7,6 +7,48 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.2] - 2026-11-01
+
+A `--verify` release that checks a precondition nothing checked before, that of
+the subprogram an instance gives a generic formal subprogram, and that reaches
+the generic units declared inside generic units with the actuals of their
+instances. It proves 93 more of the checks GNATprove proves. No verdict of
+1.12.1 needs a second look.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves 10,026
+of the 15,043 checks GNATprove proves (was 9,933), all 93 of them preconditions
+in libkeccak, and the checks without an AdaLang obligation go from 1,478 to
+1,359. It proves none that GNATprove does not. Expect new obligations at the
+calls of a generic formal subprogram that some instance gives a precondition:
+238 on the ten benchmark corpora, 214 in libkeccak and 24 in CoAP-SPARK, 186
+proved and 52 `Unproved`, each call recorded at the call and at its name.
+5 obligations of libkeccak that were `Unproved` are proved as well, 3 range
+checks and 2 overflow checks. On all ten corpora, every preset, findings are
+identical, no proof is lost, no definite error is new or gone, and the 3,625
+matched pairs of the five corpora are those of 1.12.1. On the SPARK testsuite
+12 obligations are added, all `Unproved`, and no verdict changes. The `--verify`
+lane of libkeccak takes about 200 s of user CPU (was 171 s), spent on the
+generic units inside generic units; the other lanes take what they took.
+
+### Changed
+
+- `--verify` raises the precondition of a call of a generic formal subprogram,
+  when some instance in the run gives the formal a subprogram with an aspect
+  `Pre`. Nothing checked such a precondition until now. Each instance decides
+  it with the precondition of its own actual, whose formals go by position, and
+  the obligation is proved when every instance proves it; an actual without a
+  precondition asks nothing. An actual with `Pre'Class` or `pragma
+  Precondition`, an instance of a generic subprogram and a formal left to its
+  default leave the obligation unproved. Instances that differ only in the
+  subprograms they give are analyzed apart.
+- The instance passes reach a generic unit declared inside a generic unit. Its
+  own passes took the unit around it for one of the units it declares, and
+  dropped every obligation of its body with that one's, so none of them was
+  ever analyzed with the actuals of an instance, whatever its kind.
+- The CI limit of the performance smoke test goes from 150 s to 180 s. macOS
+  runners took 110 to 158 s across the 1.12 releases with the same 94 s
+  locally, which left no margin for runner noise.
+
 ## [1.12.1] - 2026-10-31
 
 A `--verify` release that keeps more of what is known across a statement, reads
