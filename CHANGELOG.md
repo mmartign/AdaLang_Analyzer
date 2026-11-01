@@ -9,26 +9,38 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.12.2] - 2026-11-01
 
-A `--verify` release that checks a precondition nothing checked before, that of
-the subprogram an instance gives a generic formal subprogram, and that reaches
-the generic units declared inside generic units with the actuals of their
-instances. It proves 93 more of the checks GNATprove proves. No verdict of
-1.12.1 needs a second look.
+A `--verify` release that corrects a false-safe, `FP-137`: **re-check the
+`Proved_Safe` verdicts it names.** It also checks a precondition nothing checked
+before, that of the subprogram an instance gives a generic formal subprogram;
+reaches the generic units declared inside generic units with the actuals of
+their instances; and gives a call one precondition obligation where it had two.
+The tag `v1.12.2` first stood on `96c17ca`, which carries `FP-137`, and was moved
+here on 2026-11-02.
 
-What to expect: on the five corpora of the gap ledger, `--verify` proves 10,026
-of the 15,043 checks GNATprove proves (was 9,933), all 93 of them preconditions
-in libkeccak, and the checks without an AdaLang obligation go from 1,478 to
-1,359. It proves none that GNATprove does not. Expect new obligations at the
-calls of a generic formal subprogram that some instance gives a precondition:
-238 on the ten benchmark corpora, 214 in libkeccak and 24 in CoAP-SPARK, 186
-proved and 52 `Unproved`, each call recorded at the call and at its name.
-5 obligations of libkeccak that were `Unproved` are proved as well, 3 range
-checks and 2 overflow checks. On all ten corpora, every preset, findings are
-identical, no proof is lost, no definite error is new or gone, and the 3,625
-matched pairs of the five corpora are those of 1.12.1. On the SPARK testsuite
-12 obligations are added, all `Unproved`, and no verdict changes. The `--verify`
-lane of libkeccak takes about 200 s of user CPU (was 171 s), spent on the
-generic units inside generic units; the other lanes take what they took.
+What to expect: on the five corpora of the gap ledger, `--verify` proves 10,019
+of the 15,043 checks GNATprove proves (was 9,933): 93 more preconditions in
+libkeccak, and 7 fewer that were never its own. Those 7 and 5 unproved ones are
+checks AdaLang has no obligation for, which the ledger had paired with the second
+obligation of another call on the line. It proves none that GNATprove does not,
+and the checks without an AdaLang obligation go from 1,478 to 1,371.
+
+Expect fewer obligations and fewer issues. A call has one precondition
+obligation, so 4,499 are gone on the nine corpora with a `--verify` lane, 120,374
+to 115,994 with those added; each had its call beside it. 119 are added at the
+calls of a generic formal subprogram that some instance gives a precondition, 107
+in libkeccak and 12 in CoAP-SPARK, 93 proved and 26 `Unproved`, and 5 of libkeccak
+that were `Unproved` are proved as well, 3 range checks and 2 overflow checks.
+What is `Unproved` or a definite error goes from 37,826 to 36,251. With one
+obligation for a call, a tool that matches by place finds more to compare: the
+pairs matched against GNATprove on the five corpora go from 3,625 to 5,181, and
+neither of the two zero columns moves.
+
+On all ten corpora, every preset, findings are identical, no obligation that
+stays changes its verdict, and no definite error is new or gone. On the SPARK
+testsuite 6 obligations are added, all `Unproved`, 64 are gone, no verdict
+changes, and the pairs go from 595 to 651. The `--verify` lane of libkeccak takes
+about 200 s of user CPU (was 171 s), spent on the generic units inside generic
+units; the other lanes take what they took.
 
 ### Changed
 
@@ -45,9 +57,33 @@ generic units inside generic units; the other lanes take what they took.
   own passes took the unit around it for one of the units it declares, and
   dropped every obligation of its body with that one's, so none of them was
   ever analyzed with the actuals of an instance, whatever its kind.
+- A call with actuals has one precondition obligation, at the call, with the
+  actuals in its operation. It had a second at its name, given the same verdict
+  but for `FP-137`, so that SonarQube showed most precondition issues twice and
+  a comparison by place left the line out. A call with no actual in parentheses
+  has its obligation at its name, as it had.
 - The CI limit of the performance smoke test goes from 150 s to 180 s. macOS
   runners took 110 to 158 s across the 1.12 releases with the same 94 s
   locally, which left no margin for runner noise.
+- The GNATprove differential also compares division, index and range checks in
+  the units of its "parts kept" block, which it passed over.
+
+### Fixed
+
+- `FP-137`: the checks of a postcondition were looked at a second time in the
+  state of the exit with no symbols, while `X'Old` was being read as it was on
+  entry. An object with no symbol was then the object `X'Old` stands for, so a
+  `'Old` in a left operand of `and then` brought in what was true on entry: with
+  `Pre => X > 0`, `X := X - 1` and `Post => X'Old > 0 and then 10 / X = 1`, the
+  division was proved safe and `X` may be 0. GNATprove refuses it. The same held
+  of an index check and of a range check. A precondition was left `Proved_Safe`
+  at the name of the call and `Unproved` at the call. Present in 1.12.2 and, by
+  the history of the code, since 1.10.0, when `'Old` began to be translated;
+  releases were not built to confirm it. It concerns a postcondition with `'Old`
+  to the left of a check on an object the body writes: re-check a `Proved_Safe`
+  division, index or range check there. On the ten corpora no obligation of the
+  ledger or of any other report rested on it, but for 19 preconditions at the
+  name of a call in CoAP-SPARK, whose calls were `Unproved` and stay so.
 
 ## [1.12.1] - 2026-10-31
 
