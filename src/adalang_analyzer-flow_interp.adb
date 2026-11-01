@@ -7762,8 +7762,14 @@ package body Adalang_Analyzer.Flow_Interp is
               Node.As_Call_Expr;
          begin
             Check_Conversion_Or_Index (Unit, Call, State, Symbols);
-            Check_Call_Precondition
-              (Unit, Call.F_Name, State, Symbols);
+            --  A call has its obligation at the call. "F (X) (I)" and, of an
+            --  F with no actual, "F (I)" are an index into what F returns:
+            --  the call is the name.
+            if Call.P_Kind = Libadalang.Common.Call then
+               Check_Call_Precondition (Unit, Call, State, Symbols);
+            else
+               Check_Call_Precondition (Unit, Call.F_Name, State, Symbols);
+            end if;
 
             --  An out-only actual is a destination, not a read. Walking the
             --  raw call subtree would classify an uninitialized outer out
@@ -13800,15 +13806,10 @@ package body Adalang_Analyzer.Flow_Interp is
 
       --  As Finalize_Range_Check, for Precondition_Check via
       --  Check_Call_Precondition (see FP-033, the same mechanism applied
-      --  to a call's precondition). A call statement's precondition is
-      --  live-recorded twice under two distinct stable IDs -- once for
-      --  the whole call (Process_Node's Ada_Call_Stmt handling, with the
-      --  full symbolic state) and once for just the callee name
-      --  (Scan_Expression_For_Flow_Bugs's own Ada_Call_Expr case, reached
-      --  by its generic recursion over the same call statement, without
-      --  symbols) -- so both must be replayed, not just one.
-      --  The obligation is recorded at Callee: the call, its name or, for
-      --  an operator a declaration defines, the operator.
+      --  to a call's precondition).
+      --  The obligation is recorded at Callee: the call, its name where it
+      --  has no actual in parentheses or, for an operator a declaration
+      --  defines, the operator.
       procedure Finalize_Precondition_At
         (Callee    : Libadalang.Analysis.Name'Class;
          Container : CFG.Node_Id)
@@ -13923,15 +13924,6 @@ package body Adalang_Analyzer.Flow_Interp is
          when others =>
             return False;
       end Is_Bare_Call;
-
-      procedure Finalize_Precondition_Check
-        (Call      : Libadalang.Analysis.Call_Expr;
-         Container : CFG.Node_Id)
-      is
-      begin
-         Finalize_Precondition_At (Call, Container);
-         Finalize_Precondition_At (Call.F_Name, Container);
-      end Finalize_Precondition_Check;
 
       --  An operation whose operator a declaration defines is a call of
       --  that function, and its precondition an obligation like that of
@@ -15277,7 +15269,7 @@ package body Adalang_Analyzer.Flow_Interp is
                            if not Libadalang.Analysis.Is_Null (Decl)
                              and then Asks_Of_Caller (Decl)
                            then
-                              Finalize_Precondition_Check (Call, Here);
+                              Finalize_Precondition_At (Call, Here);
                            end if;
                         end;
 
@@ -15852,7 +15844,11 @@ package body Adalang_Analyzer.Flow_Interp is
                   else VC.Unknown_Outcome);
                VC_Result : constant VC.VC_Result := VC_Outcome.Result;
             begin
-               Scan_Expression_For_Flow_Bugs (Unit, Post, Exit_State);
+               --  With the symbols of the exit: an object that has no symbol
+               --  yet would be taken for itself as X'Old has it, and what
+               --  was true of it on entry for true at the exit.
+               Scan_Expression_For_Flow_Bugs
+                 (Unit, Post, Exit_State, Exit_Symbols);
                if Value = Bool_True or else VC_Result = VC.VC_Proved then
                   --  proof-path: postcondition-final
                   Record_Proved_Safe

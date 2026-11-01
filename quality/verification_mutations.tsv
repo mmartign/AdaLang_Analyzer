@@ -442,3 +442,9 @@ formal-contract-procedure	tests/verification_mutation_formal_contracts.adb	preco
 formal-contract-nested-steps	tests/verification_mutation_formal_contracts.adb	precondition	Rot (V, Steps)	unproved	generic inside a generic: 9 steps meet the outer actual that asks for 9, not the one that asks for 3
 formal-contract-nested-outer	tests/verification_mutation_formal_contracts.adb	precondition	Rot (V, 7)	unproved	generic inside a generic, a call that does not depend on the inner formal
 formal-contract-default	tests/verification_mutation_formal_contracts.adb	precondition	Default (V, 2)	unproved	an instance that takes the default gives no actual to read
+fp137-division	tests/verification_fp137_post_old.adb	division-by-zero	Divisor	unproved	the body lowers the divisor to what may be 0: true on entry is not true at the exit.
+fp137-index	tests/verification_fp137_post_old.adb	index-check	Slot	unproved	the body moves the index past the array: 'Old brings in the bounds it had on entry.
+fp137-range	tests/verification_fp137_post_old.adb	range-check	Count	unproved	the body takes the count below 0: what it was on entry says nothing of the conversion.
+fp137-element	tests/verification_fp137_post_old.adb	precondition	Get (Element_Ctx)	unproved	the element the callee asks of is written with a value nothing is known of.
+fp137-whole	tests/verification_fp137_post_old.adb	precondition	Get (Whole_Ctx)	unproved	the whole array is replaced: the precondition of the entry does not stand.
+fp137-update	tests/verification_fp137_post_old.adb	precondition	Get (Update_Ctx)	unproved	'Update replaces the array: the precondition of the entry does not stand.

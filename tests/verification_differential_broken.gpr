@@ -68,6 +68,8 @@ project Verification_Differential_Broken is
       "verification_translation_pieces.adb",
       "verification_fp135_sliding_formal.ads",
       "verification_fp135_sliding_formal.adb",
+      "verification_fp137_post_old.ads",
+      "verification_fp137_post_old.adb",
       "verification_mutation_parts_kept.ads",
       "verification_mutation_parts_kept.adb",
       "verification_mutation_formal_contracts.ads",

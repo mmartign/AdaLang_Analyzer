@@ -147,7 +147,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 48 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 49 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -162,6 +162,7 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_mutation_outside_objects \
   verification_fp134_several_names \
   verification_fp135_sliding_formal \
+  verification_fp137_post_old \
   verification_mutation_parts_kept \
   verification_mutation_formal_contracts \
   verification_mutation_slice_bounds \
@@ -1197,7 +1198,8 @@ PYTHON
 #  refused by GNATprove, and it refuses each claim the mutations seed, by
 #  the line the manifest gives its operation on. Each was refused here first:
 #  FP-135 is a formal read as its actual where the actual slides, FP-136 a
-#  function of an access value kept across a write through it.
+#  function of an access value kept across a write through it, FP-137 what
+#  was true on entry taken for true at the exit of a postcondition.
 kept_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-kept.XXXXXX")
 kept_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-kept.XXXXXX")
 trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$pieces_results" "$pieces_log" "$kept_results" "$kept_log"' \
@@ -1207,6 +1209,8 @@ status=0
 "$analyzer" --verify -q --format=json --output="$kept_results" \
   tests/verification_fp135_sliding_formal.ads \
   tests/verification_fp135_sliding_formal.adb \
+  tests/verification_fp137_post_old.ads \
+  tests/verification_fp137_post_old.adb \
   tests/verification_mutation_parts_kept.ads \
   tests/verification_mutation_parts_kept.adb \
   tests/verification_mutation_formal_contracts.ads \
@@ -1218,6 +1222,7 @@ fi
 "$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
   --level=2 --report=all --output=oneline \
   -u verification_fp135_sliding_formal.adb \
+  verification_fp137_post_old.adb \
   verification_mutation_parts_kept.adb \
   verification_mutation_formal_contracts.adb >"$kept_log" 2>&1 || true
 
@@ -1229,8 +1234,11 @@ import sys
 
 report = json.load(open(sys.argv[1]))
 log = open(sys.argv[2]).read().split("\n")
-kinds = {"assertion": "assertion", "precondition": "precondition"}
+kinds = {"assertion": "assertion", "precondition": "precondition",
+         "division-by-zero": "divide by zero", "index-check": "index check",
+         "range-check": "range check"}
 units = ("verification_fp135_sliding_formal",
+         "verification_fp137_post_old",
          "verification_mutation_parts_kept",
          "verification_mutation_formal_contracts")
 
