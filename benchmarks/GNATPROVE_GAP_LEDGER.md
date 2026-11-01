@@ -16,15 +16,15 @@ pair.
 ## Where it stands
 
 Of the 15,043 checks GNATprove proves on the five corpora, AdaLang proves
-10,026. It has an obligation that it does not decide for 3,657 more (3,629
+10,019. It has an obligation that it does not decide for 3,652 more (3,624
 unproved, 28 unsupported), finds 1 in code that is never reached, and
-has no obligation for 1,359. In the other
+has no obligation for 1,371. In the other
 direction it proves none of the 22 checks GNATprove leaves unproved, and
 reports no definite error on a check GNATprove proves.
 
 By kind, summed over the per-corpus tables below, AdaLang proves:
 
-- 2,203 of GNATprove's 2,938 preconditions, those of the subprogram
+- 2,196 of GNATprove's 2,938 preconditions, those of the subprogram
   an instance gives a generic formal subprogram among them, which AdaLang
   raises since 1.12.2;
 - 1,196 of its 2,372 range checks;
@@ -54,12 +54,12 @@ By kind, summed over the per-corpus tables below, AdaLang proves:
 
 What is left:
 
-- **Unproved (3,629).** AdaLang has the obligation and does not decide it.
+- **Unproved (3,624).** AdaLang has the obligation and does not decide it.
   The per-corpus tables below give the reason it reports for each.
 - **Unsupported (28).** The obligation is in a subprogram that
   `--verify` leaves outside the verified subset, almost all for a
   dispatching call; 26 of them are in `coap_spark`.
-- **No obligation (1,359).** Discriminant checks and memory leaks,
+- **No obligation (1,371).** Discriminant checks and memory leaks,
   which AdaLang does not have; predicate checks
   at the default value of a type, at an allocator and at a component of
   an aggregate, where it raises none yet; and range, index and
@@ -110,11 +110,11 @@ GNATprove proves 15043 checks on these 5 corpora. What AdaLang does with each of
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 10026 | 66.6% |
-| unproved | 3629 | 24.1% |
+| proved-safe | 10019 | 66.6% |
+| unproved | 3624 | 24.1% |
 | unsupported | 28 | 0.2% |
 | unreachable | 1 | 0.0% |
-| no obligation here | 801 | 5.3% |
+| no obligation here | 813 | 5.4% |
 | no such obligation kind | 350 | 2.3% |
 | file without any obligation | 208 | 1.4% |
 
@@ -123,7 +123,7 @@ GNATprove proves 15043 checks on these 5 corpora. What AdaLang does with each of
 | sparknacl | 2446 | 1564 | 760 | 0 | 108 | 14 | 0 |
 | saatana | 367 | 214 | 148 | 0 | 5 | 0 | 0 |
 | libkeccak | 3321 | 2324 | 808 | 2 | 120 | 67 | 0 |
-| coap_spark | 6795 | 4289 | 1602 | 26 | 429 | 241 | 207 |
+| coap_spark | 6795 | 4282 | 1597 | 26 | 441 | 241 | 207 |
 | tokeneer | 2114 | 1635 | 311 | 0 | 139 | 28 | 1 |
 
 Disagreements: 0 checks AdaLang proved that GNATprove did not, 0 definite errors on checks GNATprove proved.
@@ -142,15 +142,15 @@ proved, and gives the figures of the table above:
 | sparknacl | 2,446 | 1,564 | 760 | 122 | 0 |
 | saatana | 367 | 214 | 148 | 5 | 0 |
 | libkeccak | 3,321 | 2,324 | 810 | 187 | 0 |
-| coap_spark | 6,795 | 4,289 | 1,629 | 877 | 0 |
+| coap_spark | 6,795 | 4,282 | 1,624 | 889 | 0 |
 | tokeneer | 2,114 | 1,635 | 311 | 168 | 0 |
-| All five | 15,043 | 10,026 | 3,658 | 1,359 | 0 |
+| All five | 15,043 | 10,019 | 3,653 | 1,371 | 0 |
 
-The second column is what AdaLang proves; it is 10,026 with the logs and
+The second column is what AdaLang proves; it is 10,019 with the logs and
 without them. The third and fourth are GNATprove's work, reported as
-GNATprove's: 3,658 checks on an obligation AdaLang has and did not prove
-(the 3,629 unproved, the 28 unsupported and the 1 unreachable above) and
-1,359 for which it
+GNATprove's: 3,653 checks on an obligation AdaLang has and did not prove
+(the 3,624 unproved, the 28 unsupported and the 1 unreachable above) and
+1,371 for which it
 has no obligation. Nothing is left over, which is all that "the gap is
 zero" means here: with GNATprove's log beside it, an AdaLang report says
 of each of the 15,043 checks who proved it. It does not mean AdaLang proves
@@ -164,11 +164,11 @@ totals on these corpora is what the table shows.
 
 ## Where the missing obligations are
 
-1357 checks GNATprove proved have no AdaLang obligation at their place. By the construct they are in:
+1369 checks GNATprove proved have no AdaLang obligation at their place. By the construct they are in:
 
 | Construct | Checks |
 | --- | ---: |
-| argument | 280 |
+| argument | 292 |
 | subprogram-body | 143 |
 | object-declaration | 104 |
 | expression-function | 76 |
@@ -200,7 +200,7 @@ By GNATprove check, with the constructs it is most often in:
 | --- | ---: | --- |
 | range check | 440 | argument 117, object-declaration 52, expression-function 51, in pragma loop_invariant 44, in aspect pre 41 |
 | resource or memory leak | 211 | subprogram-body 98, argument 51, object-declaration 45, condition 17 |
-| precondition | 149 | call-statement 52, subprogram-declaration 21, in aspect pre 16, in aspect contract_cases 14, loop-range 11 |
+| precondition | 161 | call-statement 52, subprogram-declaration 21, in aspect pre 16, in aspect contract_cases 14, argument 13 |
 | discriminant check | 135 | subprogram-body 45, argument 41, condition 25, assignment-target 12, assignment-value 6 |
 | Always_Terminates | 67 | subprogram-declaration 50, expression-function 17 |
 | predicate check | 49 | slice 13, argument 10, type-declaration 8, component-declaration 7, aggregate 6 |
@@ -225,7 +225,7 @@ By GNATprove check, with the constructs it is most often in:
 | length check | 1 | conditional-expression 1 |
 
 Produced by `benchmarks/gnatprove_gap_contexts.py` from the ledger's rows.
-It has 1,357 of the 1,359 checks without an obligation: the script leaves
+It has 1,369 of the 1,371 checks without an obligation: the script leaves
 out a check whose source file it does not find under the corpus roots it is
 given. The construct is read from the syntax alone, from the inside out. What is
 left under a `Global` aspect is the initialization of state abstractions
@@ -235,7 +235,7 @@ units, which the lanes do not analyze.
 
 ## sparknacl
 
-GNATprove reports 2454 checks (2463 messages, a check of a generic unit being repeated for each instance): 2446 proved, 0 justified by the corpus, 8 not proved. AdaLang raises 10555 obligations.
+GNATprove reports 2454 checks (2463 messages, a check of a generic unit being repeated for each instance): 2446 proved, 0 justified by the corpus, 8 not proved. AdaLang raises 10436 obligations.
 
 ### Checks GNATprove proved
 
@@ -310,12 +310,11 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | initialization-check | 2714 | 2519 | 195 | 0 |
 | integer-overflow | 1423 | 830 | 593 | 0 |
 | postcondition | 1 | 0 | 1 | 0 |
-| precondition | 119 | 90 | 29 | 0 |
 | range-check | 1835 | 1492 | 343 | 0 |
 
 ## saatana
 
-GNATprove reports 367 checks (376 messages, a check of a generic unit being repeated for each instance): 367 proved, 0 justified by the corpus, 0 not proved. AdaLang raises 1659 obligations.
+GNATprove reports 367 checks (376 messages, a check of a generic unit being repeated for each instance): 367 proved, 0 justified by the corpus, 0 not proved. AdaLang raises 1612 obligations.
 
 ### Checks GNATprove proved
 
@@ -384,12 +383,12 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | initialization-check | 573 | 499 | 74 | 0 |
 | integer-overflow | 214 | 145 | 69 | 0 |
 | length-check | 2 | 0 | 2 | 0 |
-| precondition | 73 | 4 | 69 | 0 |
+| precondition | 26 | 0 | 26 | 0 |
 | range-check | 206 | 99 | 107 | 0 |
 
 ## libkeccak
 
-GNATprove reports 3321 checks (20673 messages, a check of a generic unit being repeated for each instance): 3321 proved, 0 justified by the corpus, 0 not proved. AdaLang raises 12961 obligations.
+GNATprove reports 3321 checks (20673 messages, a check of a generic unit being repeated for each instance): 3321 proved, 0 justified by the corpus, 0 not proved. AdaLang raises 12678 obligations.
 
 ### Checks GNATprove proved
 
@@ -471,29 +470,29 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | loop-invariant-preservation | 17 | 1 | 16 | 0 |
 | loop-variant | 2 | 0 | 2 | 0 |
 | postcondition | 3 | 0 | 3 | 0 |
-| precondition | 302 | 204 | 97 | 1 |
+| precondition | 19 | 4 | 15 | 0 |
 | range-check | 1671 | 590 | 1081 | 0 |
 | termination | 4 | 3 | 1 | 0 |
 
 ## coap_spark
 
-GNATprove reports 6809 checks (7423 messages, a check of a generic unit being repeated for each instance): 6795 proved, 0 justified by the corpus, 14 not proved. AdaLang raises 22941 obligations.
+GNATprove reports 6809 checks (7423 messages, a check of a generic unit being repeated for each instance): 6795 proved, 0 justified by the corpus, 14 not proved. AdaLang raises 20714 obligations.
 
 ### Checks GNATprove proved
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 4289 | 63.1% |
-| unproved | 1602 | 23.6% |
+| proved-safe | 4282 | 63.0% |
+| unproved | 1597 | 23.5% |
 | unsupported | 26 | 0.4% |
 | unreachable | 1 | 0.0% |
-| no obligation here | 429 | 6.3% |
+| no obligation here | 441 | 6.5% |
 | no such obligation kind | 241 | 3.5% |
 | file without any obligation | 207 | 3.0% |
 
 | GNATprove check | Proved | AdaLang proved | Unproved | Unsupported | No obligation | Definite error |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| precondition | 2294 | 1752 | 399 | 12 | 131 | 0 |
+| precondition | 2294 | 1745 | 394 | 12 | 143 | 0 |
 | Always_Terminates | 869 | 723 | 79 | 0 | 67 | 0 |
 | range check | 845 | 332 | 353 | 2 | 158 | 0 |
 | postcondition | 379 | 148 | 207 | 0 | 24 | 0 |
@@ -525,15 +524,15 @@ Where AdaLang has no obligation of the kind at the place:
 | What AdaLang has instead | Checks |
 | --- | ---: |
 | another kind on this line | 221 |
-| same kind within 3 lines | 131 |
+| same kind within 3 lines | 134 |
 | nothing on this line | 69 |
-| fewer obligations of this kind on the line | 8 |
+| fewer obligations of this kind on the line | 17 |
 
 Reasons AdaLang gives where it has an obligation but no verdict:
 
 | Status | Reason | Checks |
 | --- | ---: | ---: |
-| unproved | current contract transfer does not certify safety | 341 |
+| unproved | current contract transfer does not certify safety | 336 |
 | unproved | the required bounds are not statically known | 228 |
 | unproved | this expression form is outside the scalar VC subset | 176 |
 | unproved | this attribute is outside the scalar VC subset | 118 |
@@ -564,7 +563,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | length-check | 5 | 5 | 0 | 0 |
 | pointer-dereference | 75 | 54 | 21 | 0 |
 | postcondition | 23 | 3 | 20 | 0 |
-| precondition | 2326 | 1830 | 484 | 12 |
+| precondition | 111 | 49 | 62 | 0 |
 | predicate-check | 32 | 0 | 32 | 0 |
 | range-check | 1165 | 389 | 750 | 25 |
 | termination | 48 | 13 | 35 | 0 |
@@ -573,7 +572,7 @@ GNATprove messages not counted as checks: function contract feasibility proved (
 
 ## tokeneer
 
-GNATprove reports 2127 checks (2205 messages, a check of a generic unit being repeated for each instance): 2114 proved, 13 justified by the corpus, 0 not proved. AdaLang raises 10799 obligations.
+GNATprove reports 2127 checks (2205 messages, a check of a generic unit being repeated for each instance): 2114 proved, 13 justified by the corpus, 0 not proved. AdaLang raises 10495 obligations.
 
 ### Checks GNATprove proved
 
@@ -646,7 +645,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | integer-overflow | 230 | 112 | 116 | 2 |
 | length-check | 56 | 16 | 40 | 0 |
 | postcondition | 4 | 2 | 2 | 0 |
-| precondition | 400 | 195 | 205 | 0 |
+| precondition | 96 | 18 | 78 | 0 |
 | predicate-check | 10 | 0 | 10 | 0 |
 | range-check | 1892 | 409 | 1475 | 8 |
 
