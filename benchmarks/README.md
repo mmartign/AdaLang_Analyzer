@@ -43,7 +43,7 @@ matcher, `compare.awk`.
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 6 | 0 | 0 | 0 |
 | [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 595 | 200 | 0 | 0 |
 
-These are the figures of release 1.12.1 (run of 2026-10-31 against the
+These are the figures of release 1.12.2 (run of 2026-11-01 against the
 GNATprove output of 2026-10-02). A matched pair is a
 `(file, line, check kind)` at which each tool has exactly one obligation;
 "both safe" is the number of pairs AdaLang proves too.
@@ -67,7 +67,7 @@ span far more distinct code shapes than the six real projects reach; its
 value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-10-31.md`.
+`proved-safe`. See `spark_testsuite/RESULTS_2026-11-01.md`.
 
 What the two zero columns don't show:
 
@@ -97,30 +97,30 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 9,933 | 66.0% |
-| Has the obligation, leaves it unproved | 3,603 | 24.0% |
+| Proves it | 10,026 | 66.6% |
+| Has the obligation, leaves it unproved | 3,629 | 24.1% |
 | Has the obligation, calls it unsupported | 28 | 0.2% |
 | Has the obligation, finds the code never reached | 1 | 0.0% |
-| Has no obligation of that kind at that place | 920 | 6.1% |
+| Has no obligation of that kind at that place | 801 | 5.3% |
 | Has no obligation of that kind at all | 350 | 2.3% |
 | Raises nothing in that file | 208 | 1.4% |
 
 Since 1.8.3 the analyzer does this accounting itself when it is given the
 log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
 on each check beside its own result, and on these corpora that leaves none
-of the 15,043 unaccounted for -- 9,933 proved by AdaLang too, 3,632 with
-GNATprove's verdict alone on an obligation AdaLang has, 1,478 with
+of the 15,043 unaccounted for -- 10,026 proved by AdaLang too, 3,658 with
+GNATprove's verdict alone on an obligation AdaLang has, 1,359 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
 
 What is left, and why:
 
-- **Unproved (3,603).** AdaLang has the obligation and does not decide it.
+- **Unproved (3,629).** AdaLang has the obligation and does not decide it.
   The ledger gives the reason it reports for each, per corpus.
 - **Unsupported (28).** The obligation is in a subprogram `--verify`
   leaves outside the verified subset, almost all for a dispatching call;
   26 of them are in coap_spark.
-- **No obligation (1,478).** Discriminant checks and memory leaks, which
+- **No obligation (1,359).** Discriminant checks and memory leaks, which
   AdaLang does not have; predicate checks at the
   default value of a type, at an allocator and at a component of an
   aggregate, where it raises none yet; and range, index and precondition
@@ -129,8 +129,8 @@ What is left, and why:
 In the other direction the record holds: AdaLang proves none of the 22
 checks GNATprove leaves unproved there, and reports no definite error on a
 check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
-the ledger from the lanes' results. How the figure got to 9,933, release
-by release, is in `CHANGELOG.md` (1.8.1 to 1.12.1), with the analyzer faults
+the ledger from the lanes' results. How the figure got to 10,026, release
+by release, is in `CHANGELOG.md` (1.8.1 to 1.12.2), with the analyzer faults
 that the work turned up on the way (`FP-104`, `FP-106` to `FP-122`,
 `FP-124` to `FP-131`, `FP-133` to `FP-136`).
 
@@ -329,8 +329,8 @@ third, unrelated domain (a general-purpose utility library, not a web
 server or crypto primitive): GNATprove hard-stops on a SPARK-illegal
 aspect 41 units into the project, while AdaLang completes a full pass.
 
-**Where the tradeoff bites.** AdaLang proves 66% of what GNATprove proves
-on those corpora (9,933 of 15,043 checks), from 58% on Saatana (214 of
+**Where the tradeoff bites.** AdaLang proves 67% of what GNATprove proves
+on those corpora (10,026 of 15,043 checks), from 58% on Saatana (214 of
 367) to 77% on Tokeneer (1,635 of 2,114), so its `Proved_Safe`
 verdicts are a bonus on top of GNATprove where both are available, not a
 substitute, and its `Unproved`/`Unsupported` results mean "no information,"
