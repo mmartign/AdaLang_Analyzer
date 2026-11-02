@@ -61,10 +61,10 @@ the section it links to has the whole of its proof basis and boundary.
 | Discriminant | The prefix object's own static discriminant constraint (an integer expression or an enumeration literal) selects the variant declaring the component; a constrained object's discriminants never change | A component of a top-level variant part, selected directly from an object declared with an explicit discriminant constraint; a constant, variable, or subtype-name constraint or choice is never resolved by spelling and stays `Unproved` |
 | [Initialization](#initialization) | Flow-sensitive definite-initialization state | Each read of a tracked scalar object; each `out` parameter and `Output` global at the subprogram's normal exit |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
-| [Precondition](#preconditions-and-postconditions) | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts, an operator that a declaration defines among them |
+| [Precondition](#preconditions-and-postconditions) | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts, an operator that a declaration defines and a renaming among them |
 | [Postcondition](#preconditions-and-postconditions) | Joined normal-exit state and scalar Boolean VC | Supported scalar exits and contract expressions, `X'Old` among them |
-| [Loop invariant initialization](#loop-invariants-and-loop-variants) | Entry-edge abstract/symbolic state | Leading invariants on supported loops |
-| [Loop invariant preservation](#loop-invariants-and-loop-variants) | Generic one-iteration abstract/symbolic VC | A straight-line scalar loop body, with at most two independent conditionals along a path |
+| [Loop invariant initialization](#loop-invariants-and-loop-variants) | Entry-edge abstract/symbolic state | Leading invariants on supported loops; an invariant inside the body, from each entry state up to it |
+| [Loop invariant preservation](#loop-invariants-and-loop-variants) | Generic one-iteration abstract/symbolic VC | A straight-line scalar loop body, with at most two independent conditionals along a path; for an invariant inside the body, from it back to it |
 | [Loop variant progress](#loop-invariants-and-loop-variants) | Strict two-state scalar progress VC plus static base-type bounds | One leading, single-component `Increases` or `Decreases` variant, on the loop bodies invariant preservation covers |
 | [Termination](#termination) | The body is seen to return | Each function, and each procedure under `Always_Terminates` |
 | [Data dependencies](#data-and-flow-dependencies) | An over-approximation of what the body touches is within what its `Global` aspect allows | Each subprogram body and expression function that has a `Global` aspect |
@@ -400,9 +400,9 @@ make the array initialized.
 **Precondition.** Proved from formal-to-actual substitution and scalar
 Boolean VC, for resolved calls with supported scalar contracts. An operation
 whose operator a declaration defines is such a call, and its obligation is
-at the operator: decided where the precondition says nothing of the
-operands, `Unproved` where it does, the operands not being substituted for
-the formals yet.
+at the operator, the operands standing for the formals in order. A call of
+a renaming asks what the subprogram it renames asks, past renamings, the
+renaming's actuals standing for that subprogram's formals by position.
 
 A parameter of a record type is, in the precondition, the object that is
 its actual: a whole object, or a part of one that its name settles (see
@@ -458,6 +458,19 @@ abstract/symbolic VC, for these loop bodies:
   edge;
 - one further conditional, nested in an arm or sequential after the first,
   within the branch budget described below.
+
+**An invariant inside the body.** A `Loop_Invariant` that is not first in
+its loop is checked in the state where it stands, which every iteration
+reaches and which assumes nothing of it: what that state proves holds on
+entry and after every iteration. Otherwise, when the pragma is a statement
+of the loop body itself and reads no `'Loop_Entry` nor `'Old`, the loop is
+cut where it stands: initialization is proved from each state the loop is
+entered with (sixteen at most) through the body up to the invariant, and
+preservation from the invariant through the rest of the body, the loop head
+and the body up to it again, on the paths the walk below follows. A loop
+inside the body ends the walk, and the invariant stays unproved. None of
+these invariants is assumed at the loop head: SPARK has a loop's invariants
+in one place.
 
 An `exit`, `exit when`, `return` or `raise` in the body ends the path that
 takes it out of the loop, which then asks nothing of the invariant: the
@@ -800,7 +813,17 @@ Where two remain, the one whose result has the type of the other operand of
 the enclosing operation is taken (`Last - First <= Index'Last - 1`). Where
 none or more than one remains, the operator has no value, as an operator
 that does not resolve has none, and keeps the checks of the predefined
-operation.
+operation. A bound of a range takes the type of the other bound (`for I in
+L + 1 .. R - 1`).
+
+Where the function is found, its precondition is checked at the operator,
+its formals taking the operands by position, and the checks of the
+predefined operation stay as well: GNAT resolves such an operation again in
+each instance of a generic unit, where the predefined operator of the actual
+may be the one called. It is, as GNAT's `-gnatG` shows, for the operand of
+a type conversion whose two operands are of one generic formal type
+(`Natural (I - L)`), which then has no precondition. A precondition refuted
+there is `Unproved`, never a definite error.
 
 ### Names and named numbers
 
@@ -1193,7 +1216,9 @@ In a subprogram that is SPARK code, a scalar component of a record object
 that is initialized is within the subtype the component is declared with,
 as far as its bounds are static. So is a discriminant, and a scalar
 element of an array object is within the subtype of the array's
-components. SPARK requires an object that is read to
+components, at whatever index it is read: the interval analysis gives
+`X (K)` that range where `K` is not known. SPARK requires an object that is
+read to
 be initialized in all its parts, and no value in SPARK code is an invalid
 one; every assignment to the component was checked against that subtype.
 Outside SPARK code nothing is taken of a component beyond what the

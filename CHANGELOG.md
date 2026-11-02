@@ -7,6 +7,64 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.3] - 2026-11-02
+
+A `--verify` release that raises the preconditions of two kinds of call
+nothing checked before, takes an element of an array read at any index to
+be within the subtype of its components, and proves loop invariants that do
+not lead their loop.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+10,059 of the 15,043 checks GNATprove proves (was 10,019): 13 preconditions
+at RecordFlux operators in CoAP-SPARK, 1 range check, and 26 checks of loop
+invariants inside a loop body, 15 on entry and 11 preserved by an iteration.
+It proves none that GNATprove does not, and the checks without an AdaLang
+obligation go from 1,371 to 1,327.
+
+On the nine corpora with a `--verify` lane, 44 obligations are added, all in
+CoAP-SPARK and all preconditions: 35 at operators, 13 proved and 22
+`Unproved`, and 9 at calls of a renaming, `Unproved`. 138 obligations that
+were `Unproved` are proved, 78 of them in SPARKNaCl; none is removed, none
+that was proved is lost, and no definite error is new or gone. What is
+`Unproved` or a definite error goes from 36,251 to 36,144. The pairs matched
+against GNATprove on the five corpora go from 5,181 to 5,199, and neither of
+the two zero columns moves.
+
+On all ten corpora, every preset, findings are identical. On the SPARK
+testsuite no obligation is added or gone, 13 loop invariant checks are
+proved (6 on entry, 7 preserved), and the pairs both tools prove go from 220
+to 233 of 651. The `--verify` lanes take about the CPU time they took.
+
+### Changed
+
+- An operator that Libadalang takes for the abstract function that hides a
+  predefined one, as RecordFlux does for `Index`, calls the function of its
+  symbol that takes the operands, and `--verify` checks its precondition at
+  the operator, the operands standing for the formals by position. The
+  checks of the predefined operation stay as well: GNAT resolves such an
+  operation again in each instance of a generic unit, where the predefined
+  operator of the actual may be the one called -- it is for the operand of a
+  type conversion whose two operands are of one generic formal type, which
+  then has no precondition. A precondition refuted there is `Unproved`, never
+  a definite error. A bound of a range takes the type of the other bound in
+  telling which function an operator calls.
+- A call of a renaming asks what the subprogram it renames asks, past
+  renamings, the renaming's actuals standing for that subprogram's formals by
+  position.
+- In SPARK code an element of an array read at an index that is not known
+  is within the subtype of the array's components, as one read at a known
+  index was.
+- A loop invariant that does not lead its loop is proved where the state it
+  stands in, which every iteration reaches, proves it: it then holds on
+  entry and after every iteration. Otherwise, when it is a statement of the
+  loop body itself and reads no `'Loop_Entry` nor `'Old`, the loop is cut
+  where it stands: its initialization is proved from each state the loop is
+  entered with through the body up to it, and its preservation from it
+  through the rest of the body, the loop head and the body up to it again.
+  A loop inside the body ends the walk and leaves the invariant unproved.
+  Treating `Loop_Optimize`, `Warnings` and `Annotate` before an invariant as
+  leading was measured and dropped: it lost 3 proofs.
+
 ## [1.12.2] - 2026-11-01
 
 A `--verify` release that corrects a false-safe, `FP-137`: **re-check the
