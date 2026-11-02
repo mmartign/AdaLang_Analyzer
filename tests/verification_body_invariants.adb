@@ -27,4 +27,51 @@ is
          pragma Loop_Invariant (Y = A + K);
       end loop;
    end Related_Value;
+
+   --  True by induction only.
+   procedure Counted is
+      S : Integer := 0;
+   begin
+      for K in 1 .. 10 loop
+         S := S + 1;
+         pragma Loop_Invariant (S = K);
+      end loop;
+   end Counted;
+
+   procedure Progress is
+      N : Integer := 10;
+      C : Integer := 0;
+   begin
+      while N > 0 loop
+         N := N - 1;
+         pragma Loop_Invariant (N + C + 1 = 10);
+         C := C + 1;
+      end loop;
+   end Progress;
+
+   procedure Progress_With_Exit is
+      N : Integer := 10;
+      C : Integer := 0;
+   begin
+      while N > 0 loop
+         N := N - 1;
+         pragma Loop_Invariant (C + N + 1 = 10);
+         exit when C = 5;
+         C := C + 1;
+      end loop;
+   end Progress_With_Exit;
+
+   procedure Entered_Again is
+      N, C : Integer;
+   begin
+      for J in 1 .. 3 loop
+         N := 10;
+         C := 0;
+         while N > 0 loop
+            N := N - 1;
+            pragma Loop_Invariant (N + 1 + C = 10);
+            C := C + 1;
+         end loop;
+      end loop;
+   end Entered_Again;
 end Verification_Body_Invariants;

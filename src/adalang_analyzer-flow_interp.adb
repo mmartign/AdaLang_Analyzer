@@ -18,6 +18,7 @@ with Ada.Containers.Hashed_Sets;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Vectors;
 with Ada.Exceptions;
+with Ada.Strings.Fixed;
 with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 
@@ -9177,6 +9178,18 @@ package body Adalang_Analyzer.Flow_Interp is
       Loop_Variants   : Loop_Variant_Vectors.Vector;
       Summary_Mode : Boolean := False;
 
+      --  The states a loop is entered with, as the first pass gives them
+      --  to its head, for the loops with an invariant inside their body
+      --  (Prove_Cuts): its initialization is proved from each of them.
+      type Loop_Entry_Record is record
+         Header  : CFG.Node_Id := CFG.No_Node;
+         State   : Flow_State := Empty_Flow_State;
+         Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
+      end record;
+      package Loop_Entry_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Loop_Entry_Record);
+      Loop_Entries : Loop_Entry_Vectors.Vector;
+
       package Work_Vectors is new Ada.Containers.Vectors
         (Index_Type => Positive, Element_Type => CFG.Node_Id);
       Work : Work_Vectors.Vector;
@@ -9719,6 +9732,44 @@ package body Adalang_Analyzer.Flow_Interp is
          when others =>
             return False;
       end Is_Leading_Loop_Proof_Pragma;
+
+      --  True when the invariant Item, which does not lead its loop, is
+      --  proved by a cut where it stands (Prove_Cuts): a statement of the
+      --  loop body itself, not inside a statement of it, which reads
+      --  nothing of the state on entry ('Loop_Entry, 'Old).
+      function Cut_Eligible (Item : Loop_Invariant_Info) return Boolean is
+      begin
+         if Item.Leading or else Item.Header = CFG.No_Node then
+            return False;
+         end if;
+         declare
+            Loop_Node : constant Libadalang.Analysis.Ada_Node :=
+              Enclosing_Loop (Item.Pragma_Node);
+            Text      : constant String :=
+              Ada.Characters.Handling.To_Lower
+                (Ada_Text.Node_Text (Item.Condition));
+         begin
+            return not Libadalang.Analysis.Is_Null (Loop_Node)
+              and then Item.Pragma_Node.Parent =
+                Libadalang.Analysis.Ada_Node
+                  (Loop_Node.As_Base_Loop_Stmt.F_Stmts)
+              and then Ada.Strings.Fixed.Index (Text, "'loop_entry") = 0
+              and then Ada.Strings.Fixed.Index (Text, "'old") = 0;
+         end;
+      exception
+         when others =>
+            return False;
+      end Cut_Eligible;
+
+      function Has_Cut_Invariant (Header : CFG.Node_Id) return Boolean is
+      begin
+         for Item of Loop_Invariants loop
+            if Item.Header = Header and then Cut_Eligible (Item) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Has_Cut_Invariant;
 
       procedure Collect_Loop_Invariants
         (Node : Libadalang.Analysis.Ada_Node'Class)
@@ -10424,6 +10475,12 @@ package body Adalang_Analyzer.Flow_Interp is
                Check_Loop_VCs
                  (Target, Incoming_State, Incoming_Symbols,
                   Is_Back => False);
+               if not Summary_Mode and then Has_Cut_Invariant (Target) then
+                  Loop_Entries.Append
+                    ((Header  => Target,
+                      State   => Incoming_State,
+                      Symbols => Incoming_Symbols));
+               end if;
             end if;
 
             if Summary_Mode and then First_Pass_Reached (Target) then
@@ -11968,6 +12025,8 @@ package body Adalang_Analyzer.Flow_Interp is
             --  preserved on it. Where one arm of an if leaves the loop, the
             --  walk goes on along the other alone, its condition known.
             --  An exit when is passed knowing its condition is False.
+            --  Stop_At, when given, ends the walk as the back edge does:
+            --  before that node is processed, Reached_Back set.
             function Advance
               (Start         : CFG.Node_Id;
                Branch_Budget : Natural;
@@ -11975,7 +12034,8 @@ package body Adalang_Analyzer.Flow_Interp is
                Symbols       : in out VC.Symbolic_State;
                Steps         : in out Natural;
                Reached_Back  : out Boolean;
-               Blocker       : in out VC.VC_Outcome) return Boolean
+               Blocker       : in out VC.VC_Outcome;
+               Stop_At       : CFG.Node_Id := CFG.No_Node) return Boolean
             is
                Current : CFG.Node_Id := Start;
                First   : Boolean := True;
@@ -12145,6 +12205,10 @@ package body Adalang_Analyzer.Flow_Interp is
             begin
                Reached_Back := False;
                loop
+                  if Current = Stop_At and then not First then
+                     Reached_Back := True;
+                     return True;
+                  end if;
                   if not (First and then Current = Header) then
                      declare
                         Node_Info : constant CFG.CFG_Node :=
@@ -12545,6 +12609,199 @@ package body Adalang_Analyzer.Flow_Interp is
                   end;
                end loop;
             end Advance;
+
+            --  The invariants inside the body of this loop, each cut where
+            --  it stands. Preservation: from the state there, the
+            --  invariant assumed and nothing else of the symbols, the rest
+            --  of the body, the loop head and the body up to the invariant
+            --  again bring it back. Initialization: from each state the
+            --  loop is entered with, the body up to the invariant brings
+            --  it. A loop has one place for its invariants (SPARK RM
+            --  5.5.3), so none of this loop is assumed at its head.
+            procedure Prove_Cuts is
+               Max_Branch_Depth : constant := 2;
+               Max_Entries      : constant := 16;
+
+               --  The loop is iterated: its condition holds, or its
+               --  parameter is in its range.
+               procedure Enter_Body
+                 (Into    : in out Flow_State;
+                  Symbols : in out VC.Symbolic_State)
+               is
+                  Cond   : constant Libadalang.Analysis.Expr :=
+                    Boolean_Condition (Source_Node (Header));
+                  Source : constant Libadalang.Analysis.Ada_Node :=
+                    Source_Node (Header);
+               begin
+                  if not Libadalang.Analysis.Is_Null (Cond) then
+                     declare
+                        True_State, False_State : Flow_State;
+                     begin
+                        Narrow_By_Condition
+                          (Cond, Into, True_State, False_State);
+                        Into := True_State;
+                        Assume_Into
+                          (Symbols, Cond, Truth => True, Flow => Into);
+                     end;
+                  elsif Source.Kind = Libadalang.Common.Ada_For_Loop_Stmt
+                  then
+                     declare
+                        Spec : constant Libadalang.Analysis.For_Loop_Spec :=
+                          Source.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
+                     begin
+                        if Spec.F_Loop_Type.Kind =
+                          Libadalang.Common.Ada_Iter_Type_In
+                        then
+                           Enter_Loop_Parameter (Spec, Into);
+                           Symbols :=
+                             VC.Assume_Loop_Range
+                               (Symbols,
+                                Libadalang.Analysis.Ada_Node
+                                  (Spec.F_Var_Decl.F_Id),
+                                Spec.F_Iter_Expr, Into);
+                        end if;
+                     end;
+                  end if;
+               end Enter_Body;
+
+               --  Whether the walk from Start, stopping at Stop_At or at the
+               --  back edge, gets there and, at Stop_At, proves Cond; By,
+               --  how.
+               function Walk_Proves
+                 (Cond    : Libadalang.Analysis.Expr;
+                  Start   : CFG.Node_Id;
+                  Into    : in out Flow_State;
+                  Symbols : in out VC.Symbolic_State;
+                  Stop_At : CFG.Node_Id;
+                  By      : out Proof.Analysis_Method) return Boolean
+               is
+                  Walk_Steps : Natural := 0;
+                  Reached    : Boolean;
+                  Blocked    : VC.VC_Outcome := VC.Unknown_Outcome;
+               begin
+                  By := Proof.Abstract_Interpretation;
+                  if not Advance
+                    (Start, Max_Branch_Depth, Into, Symbols, Walk_Steps,
+                     Reached, Blocked, Stop_At => Stop_At)
+                    or else not Reached
+                  then
+                     return False;
+                  elsif Stop_At = CFG.No_Node then
+                     return True;
+                  end if;
+                  declare
+                     Value : constant Abstract_Bool :=
+                       Boolean_Value (Cond, Into);
+                  begin
+                     if Value = Bool_True then
+                        return True;
+                     elsif Value = Bool_False then
+                        return False;
+                     elsif VC.Decide (Cond, Into, Symbols).Result =
+                       VC.VC_Proved
+                     then
+                        By := Proof.External_Prover;
+                        return True;
+                     end if;
+                     return False;
+                  end;
+               end Walk_Proves;
+            begin
+               for Index in 1 .. Natural (Loop_Invariants.Length) loop
+                  declare
+                     Item : Loop_Invariant_Info :=
+                       Loop_Invariants.Element (Index);
+                     Here : CFG.Node_Id := CFG.No_Node;
+                  begin
+                     if Item.Header = Header and then Cut_Eligible (Item)
+                     then
+                        for Id in 1 .. CFG.Node_Count (Graph) loop
+                           if Source_Node (Id) = Item.Pragma_Node then
+                              Here := Id;
+                           end if;
+                        end loop;
+                     end if;
+                     if Here /= CFG.No_Node and then Reachable (Here) then
+                        declare
+                           Into    : Flow_State := States (Here);
+                           Symbols : VC.Symbolic_State := VC.Havoc;
+                           By      : Proof.Analysis_Method :=
+                             Proof.Abstract_Interpretation;
+                           Kept    : Boolean;
+                           True_State, False_State : Flow_State;
+                        begin
+                           Narrow_By_Condition
+                             (Item.Condition, Into, True_State, False_State);
+                           Into := True_State;
+                           Assume_Into
+                             (Symbols, Item.Condition, Truth => True,
+                              Flow => Into);
+                           Kept :=
+                             Walk_Proves
+                               (Item.Condition, Here, Into, Symbols,
+                                Stop_At => CFG.No_Node, By => By);
+                           if Kept then
+                              Begin_Iteration
+                                (Header, VC.Next_Iteration, Into, Symbols);
+                              Enter_Body (Into, Symbols);
+                              Kept :=
+                                Walk_Proves
+                                  (Item.Condition, Header, Into, Symbols,
+                                   Stop_At => Here, By => By);
+                           end if;
+                           Item.Preservation :=
+                             (if Kept then VC_Discharged
+                              else VC_Not_Discharged);
+                           Item.Preservation_By := By;
+                        end;
+                        declare
+                           Count    : Natural := 0;
+                           Holds    : Boolean := True;
+                           By       : Proof.Analysis_Method :=
+                             Proof.Abstract_Interpretation;
+                           Entry_By : Proof.Analysis_Method :=
+                             Proof.Abstract_Interpretation;
+                        begin
+                           for Entry_Record of Loop_Entries loop
+                              if Entry_Record.Header = Header then
+                                 Count := Count + 1;
+                                 declare
+                                    Into    : Flow_State :=
+                                      Entry_Record.State;
+                                    Symbols : VC.Symbolic_State :=
+                                      Entry_Record.Symbols;
+                                 begin
+                                    Begin_Iteration
+                                      (Header, VC.First_Iteration, Into,
+                                       Symbols);
+                                    Enter_Body (Into, Symbols);
+                                    if Holds then
+                                       Holds :=
+                                         Walk_Proves
+                                           (Item.Condition, Header, Into,
+                                            Symbols, Stop_At => Here,
+                                            By => Entry_By);
+                                       if Holds
+                                         and then Entry_By =
+                                           Proof.External_Prover
+                                       then
+                                          By := Entry_By;
+                                       end if;
+                                    end if;
+                                 end;
+                              end if;
+                           end loop;
+                           Item.Initialization :=
+                             (if Holds and then Count in 1 .. Max_Entries
+                              then VC_Discharged
+                              else VC_Not_Discharged);
+                           Item.Initialization_By := By;
+                        end;
+                        Loop_Invariants.Replace_Element (Index, Item);
+                     end if;
+                  end;
+               end loop;
+            end Prove_Cuts;
          begin
             if not Reachable (Header) then
                return;
@@ -12650,6 +12907,7 @@ package body Adalang_Analyzer.Flow_Interp is
                  (Header, Before_State, Before_Symbols, State, Symbols,
                   Path_OK, Path_Blocker);
             end;
+            Prove_Cuts;
          end Prove_Header;
       begin
          for Item of Loop_Invariants loop
@@ -12666,6 +12924,12 @@ package body Adalang_Analyzer.Flow_Interp is
               and then Item.Header /= CFG.No_Node
               and then not Checked (Item.Header)
             then
+               Checked (Item.Header) := True;
+               Prove_Header (Item.Header);
+            end if;
+         end loop;
+         for Item of Loop_Invariants loop
+            if Cut_Eligible (Item) and then not Checked (Item.Header) then
                Checked (Item.Header) := True;
                Prove_Header (Item.Header);
             end if;
@@ -14111,22 +14375,53 @@ package body Adalang_Analyzer.Flow_Interp is
                              "iteration",
                            Evidence);
                      else
-                        Record_Unproved
-                          (Unit, Condition,
-                           Proof.Loop_Invariant_Initialization,
-                           Proof.No_Analysis,
-                           "only leading loop invariants currently generate " &
-                             "inductive verification conditions",
-                           Imprecision =>
-                             "the invariant is not at the loop-head cut point");
-                        Record_Unproved
-                          (Unit, Condition,
-                           Proof.Loop_Invariant_Preservation,
-                           Proof.No_Analysis,
-                           "only leading loop invariants currently generate " &
-                             "inductive verification conditions",
-                           Imprecision =>
-                             "the invariant is not at the loop-head cut point");
+                        --  A cut where the invariant stands (Prove_Cuts).
+                        if Item.Initialization = VC_Discharged then
+                           --  proof-path: loop-invariant-cut-initialization
+                           Record_Proved_Safe
+                             (Unit, Condition,
+                              Proof.Loop_Invariant_Initialization,
+                              Item.Initialization_By,
+                              "every state the loop is entered with brings " &
+                                "the invariant where it stands",
+                              (if Item.Initialization_By =
+                                 Proof.External_Prover
+                               then VC.Evidence
+                               else "loop entry state and body => " &
+                                      "invariant"));
+                        else
+                           Record_Unproved
+                             (Unit, Condition,
+                              Proof.Loop_Invariant_Initialization,
+                              Proof.No_Analysis,
+                              "the invariant is not established where it " &
+                                "stands on the first iteration",
+                              Imprecision =>
+                                "the invariant is not at the loop-head cut " &
+                                  "point");
+                        end if;
+                        if Item.Preservation = VC_Discharged then
+                           --  proof-path: loop-invariant-cut-preservation
+                           Record_Proved_Safe
+                             (Unit, Condition,
+                              Proof.Loop_Invariant_Preservation,
+                              Item.Preservation_By,
+                              "one arbitrary iteration from where the " &
+                                "invariant stands back to it preserves it",
+                              (if Item.Preservation_By = Proof.External_Prover
+                               then VC.Evidence
+                               else "invariant and loop body => invariant"));
+                        else
+                           Record_Unproved
+                             (Unit, Condition,
+                              Proof.Loop_Invariant_Preservation,
+                              Proof.No_Analysis,
+                              "the invariant is not shown to be preserved " &
+                                "from where it stands back to it",
+                              Imprecision =>
+                                "the invariant is not at the loop-head cut " &
+                                  "point");
+                        end if;
                      end if;
                   end;
                elsif Item.Initialization = VC_Discharged then

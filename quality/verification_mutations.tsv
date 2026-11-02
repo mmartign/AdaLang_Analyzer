@@ -461,3 +461,5 @@ element-range-halved	tests/verification_mutation_element_ranges.adb	range-check	
 element-range-not-spark	tests/verification_mutation_element_ranges.adb	range-check	N (K)	unproved	outside SPARK code an element need not be valid: its subtype is not assumed.
 body-invariant-entry	tests/verification_mutation_body_invariants.adb	loop-invariant-initialization	X > 1	unproved	an invariant inside the loop body that the first iteration breaks.
 body-invariant-end	tests/verification_mutation_body_invariants.adb	loop-invariant-preservation	X < 10	unproved	an invariant inside the loop body that the last iteration breaks.
+cut-invariant-start	tests/verification_mutation_body_invariants.adb	loop-invariant-initialization	N + C = 10	unproved	a loop cut where its invariant stands: the first iteration brings 9 + 0.
+cut-invariant-step	tests/verification_mutation_body_invariants.adb	loop-invariant-preservation	N + C + 1 = 10	unproved	a loop cut where its invariant stands: a step of 2 breaks what one iteration should keep.

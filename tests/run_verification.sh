@@ -3297,6 +3297,18 @@ for kind in loop-invariant-initialization loop-invariant-preservation; do
    must_prove "$body_invariants" "$kind" 'Y = A + K' external-prover \
      'invariants in the body'
 done
+#  Otherwise the loop is cut where the invariant stands.
+for kind in loop-invariant-initialization loop-invariant-preservation; do
+   must_prove "$body_invariants" "$kind" 'S = K' external-prover \
+     'a loop cut where its invariant stands'
+done
+for operation in 'N + C + 1 = 10' 'C + N + 1 = 10' 'N + 1 + C = 10'; do
+   must_prove "$body_invariants" loop-invariant-initialization \
+     "$operation" abstract-interpretation \
+     'a loop cut where its invariant stands'
+   must_prove "$body_invariants" loop-invariant-preservation "$operation" \
+     external-prover 'a loop cut where its invariant stands'
+done
 
 #  What a call of a generic formal subprogram asks is what each instance
 #  gives it asks: proved when every instance proves it, whatever the names
