@@ -14060,20 +14060,75 @@ package body Adalang_Analyzer.Flow_Interp is
                      "loop invariant preservation is outside the bounded " &
                        "verification subset");
                elsif not Item.Leading then
-                  Record_Unproved
-                    (Unit, Condition, Proof.Loop_Invariant_Initialization,
-                     Proof.No_Analysis,
-                     "only leading loop invariants currently generate " &
-                       "inductive verification conditions",
-                     Imprecision =>
-                       "the invariant is not at the loop-head cut point");
-                  Record_Unproved
-                    (Unit, Condition, Proof.Loop_Invariant_Preservation,
-                     Proof.No_Analysis,
-                     "only leading loop invariants currently generate " &
-                       "inductive verification conditions",
-                     Imprecision =>
-                       "the invariant is not at the loop-head cut point");
+                  --  No inductive VC is made for an invariant that does not
+                  --  lead its loop, but the state where it stands is that of
+                  --  every iteration, entry included, and assumes nothing of
+                  --  it: what that state proves holds when the loop is
+                  --  entered and after every iteration.
+                  declare
+                     Here_State : constant Flow_State := State_At (Container);
+                     Value      : constant Abstract_Bool :=
+                       Boolean_Value (Condition, Here_State);
+                     Outcome    : constant VC.VC_Outcome :=
+                       (if Value = Bool_Unknown
+                          and then not Unreached (Container)
+                        then VC.Decide
+                          (Condition, Here_State, Symbols_At (Container))
+                        else VC.Unknown_Outcome);
+                     Method     : constant Proof.Analysis_Method :=
+                       (if Outcome.Result = VC.VC_Proved
+                        then Proof.External_Prover
+                        else Proof.Abstract_Interpretation);
+                     Evidence   : constant String :=
+                       (if Outcome.Result = VC.VC_Proved
+                        then VC.Evidence
+                        else "state where the invariant stands => invariant");
+                  begin
+                     if Unreached (Container) then
+                        Record_Unreachable
+                          (Unit, Condition,
+                           Proof.Loop_Invariant_Initialization,
+                           "the containing CFG node is unreachable");
+                        Record_Unreachable
+                          (Unit, Condition,
+                           Proof.Loop_Invariant_Preservation,
+                           "the containing CFG node is unreachable");
+                     elsif Value = Bool_True
+                       or else Outcome.Result = VC.VC_Proved
+                     then
+                        --  proof-path: loop-invariant-in-body-initialization
+                        Record_Proved_Safe
+                          (Unit, Condition,
+                           Proof.Loop_Invariant_Initialization, Method,
+                           "the invariant holds where it stands on every " &
+                             "iteration, the first included",
+                           Evidence);
+                        --  proof-path: loop-invariant-in-body-preservation
+                        Record_Proved_Safe
+                          (Unit, Condition,
+                           Proof.Loop_Invariant_Preservation, Method,
+                           "the invariant holds where it stands on every " &
+                             "iteration",
+                           Evidence);
+                     else
+                        Record_Unproved
+                          (Unit, Condition,
+                           Proof.Loop_Invariant_Initialization,
+                           Proof.No_Analysis,
+                           "only leading loop invariants currently generate " &
+                             "inductive verification conditions",
+                           Imprecision =>
+                             "the invariant is not at the loop-head cut point");
+                        Record_Unproved
+                          (Unit, Condition,
+                           Proof.Loop_Invariant_Preservation,
+                           Proof.No_Analysis,
+                           "only leading loop invariants currently generate " &
+                             "inductive verification conditions",
+                           Imprecision =>
+                             "the invariant is not at the loop-head cut point");
+                     end if;
+                  end;
                elsif Item.Initialization = VC_Discharged then
                   --  proof-path: loop-invariant-initialization
                   Record_Proved_Safe
