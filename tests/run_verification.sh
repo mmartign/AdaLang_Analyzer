@@ -153,6 +153,9 @@ outside_objects=$(mktemp "${TMPDIR:-/tmp}/adalang-outside-objects.XXXXXX")
 parts_kept=$(mktemp "${TMPDIR:-/tmp}/adalang-parts-kept.XXXXXX")
 fp135=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp135.XXXXXX")
 fp137=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp137.XXXXXX")
+operator_calls=$(mktemp "${TMPDIR:-/tmp}/adalang-operator-calls.XXXXXX")
+renamed_contracts=$(mktemp "${TMPDIR:-/tmp}/adalang-renamed-contracts.XXXXXX")
+element_ranges=$(mktemp "${TMPDIR:-/tmp}/adalang-element-ranges.XXXXXX")
 formal_contracts=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts.XXXXXX")
 formal_contracts_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts-broken.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
@@ -185,7 +188,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$formal_contracts_broken"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$formal_contracts_broken"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -2447,10 +2450,14 @@ do
    must_prove "$object_parts" assertion "$operation" external-prover \
      "a formal that stands for a part of an object"
 done
-for operation in 'Grade (3) > 0' 'Score (2) >= 0' 'Bits (2)'; do
+for operation in 'Grade (3) > 0' 'Bits (2)'; do
    must_prove "$object_parts" assertion "$operation" external-prover \
      "a scalar element of an array"
 done
+#  The range of an element is that of the subtype of the components, at
+#  whatever index it is read: no solver is needed.
+must_prove "$object_parts" assertion 'Score (2) >= 0' abstract-interpretation \
+  "a scalar element of an array"
 if grep -F '"status": "definite-error"' "$object_parts" >/dev/null; then
    echo "parts of an object: a definite error where nothing is wrong" >&2
    exit 1
@@ -3232,6 +3239,50 @@ then
      "postcondition" >&2
    exit 1
 fi
+
+#  An operator a generic unit hides behind an abstract function calls the
+#  function of its symbol that takes the operands. Its precondition is
+#  checked at the operator, the formals taken by position, and the checks
+#  of the arithmetic stay: in an instance GNAT may call the predefined
+#  operator of the actual. The operand of a conversion whose operands are
+#  both of the formal type calls that operator there, and has no
+#  precondition.
+run_json_pair "$operator_calls" tests/verification_operator_calls
+for line in 8 14 24; do
+   if ! grep -F '"kind": "precondition", "status": "proved-safe"' \
+     "$operator_calls" |
+     grep -F '"file": "tests/verification_operator_calls.adb", '"\"line\": $line," \
+       >/dev/null
+   then
+      echo "the precondition of the operator at line $line is no longer" \
+        "proved" >&2
+      exit 1
+   fi
+done
+must_prove "$operator_calls" integer-overflow 'I + 9' external-prover \
+  'operator calls'
+if grep -F '"kind": "precondition"' "$operator_calls" |
+  grep -F '"file": "tests/verification_operator_calls.adb", "line": 29,' \
+    >/dev/null
+then
+   echo "the conversion of an operation on the formal type has a" \
+     "precondition no instance asks" >&2
+   exit 1
+fi
+
+#  A call of a renaming asks what the subprogram it renames asks, whose
+#  formals take the renaming's by position, through renamings of renamings.
+run_json_pair "$renamed_contracts" tests/verification_renamed_contracts
+for operation in 'Same (X, 4)' 'Crossed (X, 4)' 'Twice (X, 4)'; do
+   must_prove "$renamed_contracts" precondition "$operation" \
+     contract-transfer 'renamed contracts'
+done
+
+#  In SPARK code an element of an array read at whatever index is a value
+#  of the subtype of the array's components.
+run_json_pair "$element_ranges" tests/verification_element_ranges
+must_prove "$element_ranges" range-check 'X (K)' abstract-interpretation \
+  'element ranges'
 
 #  What a call of a generic formal subprogram asks is what each instance
 #  gives it asks: proved when every instance proves it, whatever the names

@@ -33,6 +33,11 @@ package Adalang_Analyzer.Flow_Eval is
    Floating_Zero_Tolerance : constant Long_Long_Float :=
      Long_Long_Float'Model_Epsilon;
 
+   procedure Assume_Component_Subtypes (Enabled : Boolean);
+   --  Whether an element of an array is taken to be a value of the subtype
+   --  of the array's components, at whatever index it is read: in SPARK
+   --  code, whose data is valid. VC.Assume_Component_Subtypes sets it.
+
    type Operator_Origin is (Predefined, Declared, Unresolved);
 
    function Origin_Of_Operator
@@ -59,6 +64,16 @@ package Adalang_Analyzer.Flow_Eval is
    --  declaration that defines it, or the predefined operator it turns out
    --  to be (P_Is_Predefined_Operator); No_Basic_Decl where it is
    --  predefined, or where which function it calls is not settled.
+
+   function Calls_Declared_Function
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when the operation Node calls a function a declaration defines:
+   --  the one its operator denotes or, where Libadalang takes the operator
+   --  for an abstract function, the one Operator_Callee settles on, whose
+   --  precondition is then checked as at any call. There the checks of the
+   --  arithmetic stay as well: GNAT resolves such an operation again in
+   --  each instance, where the predefined operator of the actual may be
+   --  the one called (it is, at least, as Predefined_In_Instances says).
 
    function Integer_Value
      (Node  : Libadalang.Analysis.Ada_Node'Class;

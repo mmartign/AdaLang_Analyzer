@@ -1490,6 +1490,15 @@ package body Adalang_Analyzer.Flow_Interp is
          return Libadalang.Analysis.No_Basic_Decl;
       elsif Call.Kind = Libadalang.Common.Ada_Call_Expr then
          return Call.As_Call_Expr.F_Name.P_Referenced_Decl;
+      elsif Call.Kind in Libadalang.Common.Ada_Op
+        and then Origin_Of_Operator (Call.Parent) = Unresolved
+        and then Calls_Declared_Function (Call.Parent)
+      then
+         --  Libadalang takes the operator for the abstract function that
+         --  hides a predefined one, which is never what is called. Where
+         --  what is called is not settled, the abstract function stands for
+         --  it as before: a function that asks nothing and writes nothing.
+         return Operator_Callee (Call.Parent);
       else
          return Call.P_Referenced_Decl;
       end if;
@@ -3506,15 +3515,60 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end Actual_Has_Precondition;
 
-   --  True when a call of Decl has a precondition to meet: its own, or that
-   --  of what an instance gives it, when it is a formal subprogram.
+   --  The subprogram the renaming Decl renames, past renamings, whose
+   --  precondition is what a call of the renaming asks; No_Basic_Decl
+   --  unless Decl is a renaming of one whose contract can be read off it.
+   function Renamed_Subprogram
+     (Decl : Libadalang.Analysis.Basic_Decl'Class)
+      return Libadalang.Analysis.Basic_Decl
+   is
+      Max_Renamings : constant := 8;
+      Target        : Libadalang.Analysis.Basic_Decl := Decl.As_Basic_Decl;
+   begin
+      if Decl.Kind /= Libadalang.Common.Ada_Subp_Renaming_Decl then
+         return Libadalang.Analysis.No_Basic_Decl;
+      end if;
+      for Count in 1 .. Max_Renamings loop
+         Target := Target.As_Subp_Renaming_Decl.F_Renames.F_Renamed_Object
+           .P_Referenced_Decl;
+         if Libadalang.Analysis.Is_Null (Target)
+           or else Target.Kind not in
+             Libadalang.Common.Ada_Subp_Renaming_Decl
+               | Libadalang.Common.Ada_Subp_Decl
+               | Libadalang.Common.Ada_Subp_Body
+               | Libadalang.Common.Ada_Null_Subp_Decl
+               | Libadalang.Common.Ada_Expr_Function
+         then
+            return Libadalang.Analysis.No_Basic_Decl;
+         elsif Target.Kind /= Libadalang.Common.Ada_Subp_Renaming_Decl then
+            return
+              (if Has_Aspect (Target, "Pre'Class")
+                 or else Has_Aspect (Target, "Precondition")
+               then Libadalang.Analysis.No_Basic_Decl
+               else Target);
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Basic_Decl;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Renamed_Subprogram;
+
+   --  True when a call of Decl has a precondition to meet: its own, that of
+   --  the subprogram it renames, or that of what an instance gives it, when
+   --  it is a formal subprogram.
    function Asks_Of_Caller
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
    is (not Libadalang.Analysis.Is_Null (Contract_Expression (Decl, "Pre"))
        or else
          (Config.Verification_Mode
           and then Decl.Kind in Libadalang.Common.Ada_Formal_Subp_Decl
-          and then Actual_Has_Precondition (Decl)));
+          and then Actual_Has_Precondition (Decl))
+       or else
+         (Decl.Kind = Libadalang.Common.Ada_Subp_Renaming_Decl
+          and then not Libadalang.Analysis.Is_Null
+                         (Contract_Expression
+                            (Renamed_Subprogram (Decl), "Pre"))));
 
    procedure Check_Call_Precondition
      (Unit    : Libadalang.Analysis.Analysis_Unit;
@@ -3534,8 +3588,25 @@ package body Adalang_Analyzer.Flow_Interp is
         and then Libadalang.Analysis.Is_Null
           (Contract_Expression (Callee, "Pre"))
         and then Actual_Has_Precondition (Callee);
+      --  A renaming asks what the subprogram it renames asks, whose formals
+      --  take the renaming's by position, whatever their names.
+      Renamed : constant Libadalang.Analysis.Basic_Decl :=
+        (if Per_Instance or else Libadalang.Analysis.Is_Null (Callee)
+         then Libadalang.Analysis.No_Basic_Decl
+         else Renamed_Subprogram (Callee));
+      Renaming : constant Boolean :=
+        not Libadalang.Analysis.Is_Null (Renamed);
       Decl : constant Libadalang.Analysis.Basic_Decl :=
-        (if Per_Instance then Bound_Subprogram (Callee) else Callee);
+        (if Per_Instance then Bound_Subprogram (Callee)
+         elsif Renaming then Renamed
+         else Callee);
+      --  The formals Call.P_Call_Params names are those of the abstract
+      --  function Libadalang takes the operator for, not those of the
+      --  function called (Call_Declaration), which take the operands by
+      --  position.
+      Rebound : constant Boolean :=
+        Call.Kind in Libadalang.Common.Ada_Op
+        and then Origin_Of_Operator (Call.Parent) = Unresolved;
    begin
       if Config.Rule_States (Rules.Known_Precondition_Failure) /=
            Config.Enabled
@@ -3626,7 +3697,9 @@ package body Adalang_Analyzer.Flow_Interp is
          --  Each gets what its namesake was just given. So do the formals of
          --  the subprogram an instance gives a formal subprogram, which a
          --  precondition names just the same; those go by position, as
-         --  instantiation matches them.
+         --  instantiation matches them. So do those of the subprogram a
+         --  renaming renames, and of the function an operator calls past an
+         --  abstract one (Rebound).
          declare
             Part : constant Libadalang.Analysis.Basic_Decl :=
               Contract_Part (Decl);
@@ -3653,6 +3726,8 @@ package body Adalang_Analyzer.Flow_Interp is
             end Give;
          begin
             if Per_Instance
+              or else Renaming
+              or else Rebound
               or else not Libadalang.Analysis.Is_Null (Part)
             then
                for Pair of Call.P_Call_Params loop
@@ -3662,17 +3737,21 @@ package body Adalang_Analyzer.Flow_Interp is
                        Libadalang.Analysis.Ada_Node
                          (Libadalang.Analysis.Param (Pair));
                      Place  : constant Natural :=
-                       (if Per_Instance
+                       (if Per_Instance or else Renaming
                         then Formal_Position
                                (Callee, Normalized_Text (Formal))
+                        elsif Rebound then Position
                         else 0);
+                     By_Place : constant Boolean :=
+                       Per_Instance or else Renaming or else Rebound;
                   begin
-                     if Per_Instance then
+                     if By_Place then
                         Give (Formal_At (Decl, Place), Formal, Pair);
                      end if;
                      if not Libadalang.Analysis.Is_Null (Part) then
                         Give
-                          ((if Per_Instance then Formal_At (Part, Place)
+                          ((if By_Place
+                            then Formal_At (Part, Place)
                             else Formal_Named
                                    (Part, Normalized_Text (Formal))),
                            Formal, Pair);
@@ -3692,7 +3771,22 @@ package body Adalang_Analyzer.Flow_Interp is
                else VC.Unknown_Outcome);
             VC_Result : constant VC.VC_Result := VC_Outcome.Result;
          begin
-            if Value = Bool_False
+            if Rebound
+              and then
+                (Value = Bool_False or else VC_Result = VC.VC_Refuted)
+            then
+               --  Which function an instance calls is GNAT's to say: no
+               --  error is certain for an operator Libadalang does not
+               --  settle.
+               Record_Unproved
+                 (Unit, Call, Proof.Precondition_Check,
+                  Proof.Contract_Transfer,
+                  "actual arguments make the precondition false",
+                  Imprecision =>
+                    "in an instance the predefined operator of the actual " &
+                      "may be the one called",
+                  Final => Final);
+            elsif Value = Bool_False
               or else
                 (VC_Result = VC.VC_Refuted
                  and then not Contains_VC_Arithmetic (Pre))
@@ -13934,7 +14028,7 @@ package body Adalang_Analyzer.Flow_Interp is
       is
          Decl : Libadalang.Analysis.Basic_Decl;
       begin
-         if Origin_Of_Operator (Operator.Parent) /= Declared then
+         if not Calls_Declared_Function (Operator.Parent) then
             return;
          end if;
 

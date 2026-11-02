@@ -1225,6 +1225,13 @@ package body Adalang_Analyzer.Flow_Eval is
          return Unknown_Int;
    end Integer_Value_Unwrapped;
 
+   Component_Subtypes_Hold : Boolean := False;
+
+   procedure Assume_Component_Subtypes (Enabled : Boolean) is
+   begin
+      Component_Subtypes_Hold := Enabled;
+   end Assume_Component_Subtypes;
+
    function Origin_Of_Operator
      (Node : Libadalang.Analysis.Ada_Node'Class) return Operator_Origin
    is
@@ -1490,7 +1497,8 @@ package body Adalang_Analyzer.Flow_Eval is
                   = Langkit_Support.Slocs.Start_Sloc (Right.Sloc_Range));
 
       --  The type the operation is expected to have, where it is an
-      --  operand of another whose other operand has a type of its own;
+      --  operand of another whose other operand has a type of its own, or
+      --  a bound of a range, whose other bound has its type;
       --  No_Base_Type_Decl elsewhere.
       function Expected return Libadalang.Analysis.Base_Type_Decl is
          Parent : Libadalang.Analysis.Ada_Node := Node.Parent;
@@ -1510,7 +1518,6 @@ package body Adalang_Analyzer.Flow_Eval is
              | Libadalang.Common.Ada_Op_And
              | Libadalang.Common.Ada_Op_Or
              | Libadalang.Common.Ada_Op_Xor
-             | Libadalang.Common.Ada_Op_Double_Dot
              | Libadalang.Common.Ada_Op_In
              | Libadalang.Common.Ada_Op_Not_In
          then
@@ -1633,6 +1640,78 @@ package body Adalang_Analyzer.Flow_Eval is
      (Node : Libadalang.Analysis.Ada_Node'Class)
       return Libadalang.Analysis.Basic_Decl
    is (Callee_Of (Node, In_Context => True));
+
+   --  GNAT analyzes again, in each instance, an operation that is the
+   --  operand of a type conversion and whose two operands are of one generic
+   --  formal type: there it calls the predefined operator of the actual,
+   --  which the generic hides behind an abstract function ("Natural (I - L)"
+   --  in the RecordFlux operations, where "R - L > 0" calls the function
+   --  that takes two Index and returns a Length).
+   function Predefined_In_Instances
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      use type Libadalang.Common.Call_Expr_Kind;
+      Parent : Libadalang.Analysis.Ada_Node := Node.Parent;
+   begin
+      if Node.Kind not in Libadalang.Common.Ada_Bin_Op_Range then
+         return False;
+      end if;
+      while not Libadalang.Analysis.Is_Null (Parent)
+        and then Parent.Kind = Libadalang.Common.Ada_Paren_Expr
+      loop
+         Parent := Parent.Parent;
+      end loop;
+      if Libadalang.Analysis.Is_Null (Parent)
+        or else Parent.Kind /= Libadalang.Common.Ada_Param_Assoc
+        or else Libadalang.Analysis.Is_Null (Parent.Parent)
+        or else Libadalang.Analysis.Is_Null (Parent.Parent.Parent)
+        or else Parent.Parent.Parent.Kind /= Libadalang.Common.Ada_Call_Expr
+        or else Parent.Parent.Parent.As_Call_Expr.P_Kind /=
+                  Libadalang.Common.Type_Conversion
+      then
+         return False;
+      end if;
+      declare
+         Left  : constant Libadalang.Analysis.Expr :=
+           Bare (Node.As_Bin_Op.F_Left);
+         Right : constant Libadalang.Analysis.Expr :=
+           Bare (Node.As_Bin_Op.F_Right);
+         Left_Type : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         if Universal (Left) or else Universal (Right) then
+            return False;
+         end if;
+         Left_Type := Left.P_Expression_Type;
+         return Same_Type (Left_Type, Right.P_Expression_Type)
+           and then Left_Type.P_Canonical_Type.Parent.Kind =
+                      Libadalang.Common.Ada_Generic_Formal_Type_Decl;
+      end;
+   exception
+      when others =>
+         return False;
+   end Predefined_In_Instances;
+
+   function Calls_Declared_Function
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Origin : constant Operator_Origin := Origin_Of_Operator (Node);
+   begin
+      if Origin /= Unresolved then
+         return Origin = Declared;
+      elsif Predefined_In_Instances (Node) then
+         return False;
+      end if;
+      declare
+         Callee : constant Libadalang.Analysis.Basic_Decl :=
+           Operator_Callee (Node);
+      begin
+         return not Libadalang.Analysis.Is_Null (Callee)
+           and then not Callee.P_Is_Predefined_Operator;
+      end;
+   exception
+      when others =>
+         return False;
+   end Calls_Declared_Function;
 
    function Integer_Value
      (Node  : Libadalang.Analysis.Ada_Node'Class;
@@ -1869,6 +1948,20 @@ package body Adalang_Analyzer.Flow_Eval is
          return Range_Value (Node.As_Paren_Expr.F_Expr, State);
       elsif Node.Kind = Libadalang.Common.Ada_Qual_Expr then
          return Range_Value (Node.As_Qual_Expr.F_Suffix, State);
+      elsif Component_Subtypes_Hold
+        and then Node.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Libadalang.Common."="
+                   (Node.As_Call_Expr.P_Kind, Libadalang.Common.Array_Index)
+      then
+         --  An element of an array, at whatever index, is a value of the
+         --  subtype of the array's components.
+         declare
+            Value : constant Abstract_Int := Integer_Value (Node, State);
+         begin
+            return
+              (if Value.Known then Range_From_Int (Value)
+               else Type_Range (Node.As_Expr.P_Expression_Type, State));
+         end;
       elsif Node.Kind = Libadalang.Common.Ada_Un_Op then
          declare
             Expr  : constant Libadalang.Analysis.Un_Op := Node.As_Un_Op;

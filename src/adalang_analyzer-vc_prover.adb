@@ -508,6 +508,8 @@ package body Adalang_Analyzer.VC_Prover is
    procedure Assume_Component_Subtypes (Enabled : Boolean) is
    begin
       Component_Subtypes_Hold := Enabled;
+      --  So does the range of an element read at an unknown index.
+      Eval.Assume_Component_Subtypes (Enabled);
    end Assume_Component_Subtypes;
 
    --  The bounds of the root for a scalar component of a record object:

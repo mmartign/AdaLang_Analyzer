@@ -448,3 +448,14 @@ fp137-range	tests/verification_fp137_post_old.adb	range-check	Count	unproved	the
 fp137-element	tests/verification_fp137_post_old.adb	precondition	Get (Element_Ctx)	unproved	the element the callee asks of is written with a value nothing is known of.
 fp137-whole	tests/verification_fp137_post_old.adb	precondition	Get (Whole_Ctx)	unproved	the whole array is replaced: the precondition of the entry does not stand.
 fp137-update	tests/verification_fp137_post_old.adb	precondition	Get (Update_Ctx)	unproved	'Update replaces the array: the precondition of the entry does not stand.
+operator-crossed	tests/verification_mutation_operator_calls.adb	precondition	+	unproved	the left operand is the formal named Right: a binding by name gives it 1 and proves the call.
+operator-unchecked	tests/verification_mutation_operator_calls.adb	precondition	+	unproved	nothing bounds the left operand of the function the operator calls past the abstract one.
+operator-range-bound	tests/verification_mutation_operator_calls.adb	precondition	-	unproved	R - 1 bounds a range, and R may be Index'First.
+operator-reversed	tests/verification_mutation_operator_calls.adb	precondition	-	unproved	nothing says R is not below L: the function of "-" that returns a Length asks for it.
+renamed-unbounded	tests/verification_mutation_renamed_contracts.adb	precondition	Same (X, 4)	unproved	nothing bounds the actual the renamed subprogram asks to be below 4.
+renamed-by-name	tests/verification_mutation_renamed_contracts.adb	precondition	Crossed (X, 1)	definite-error	the formals of the renaming are crossed: by name the call would give Val 1 and hold.
+renamed-twice	tests/verification_mutation_renamed_contracts.adb	precondition	Twice (X, 9)	definite-error	9 breaks Size <= 8 through two renamings.
+element-range-narrow	tests/verification_mutation_element_ranges.adb	range-check	X (K)	unproved	an element of a Byte array may be up to 255: the target stops at 100.
+element-range-wide	tests/verification_mutation_element_ranges.adb	range-check	W (K)	unproved	the components are full-range I64: their subtype says nothing of the target.
+element-range-halved	tests/verification_mutation_element_ranges.adb	range-check	I64 (Y (K)) / 2	unproved	half of 255 is still above 100.
+element-range-not-spark	tests/verification_mutation_element_ranges.adb	range-check	N (K)	unproved	outside SPARK code an element need not be valid: its subtype is not assumed.
