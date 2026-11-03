@@ -1,13 +1,13 @@
 procedure H15 (A : in out String; N : Integer; M : Integer; Sink : out Integer) is
    type Arr is array (1 .. 4) of Integer;
-   T : Arr := (others => 1);
+   T : Arr := (1, 2, 3, 4);
    X : Integer := 0;
    Y : Integer := 0;
    Prev : Integer := 0;
    Count : Integer := 0;
 begin
    Sink := 0;
-   --  values read from array elements are independent unknowns
+   --  two elements of an array may differ
    if N in 1 .. 4 and then M in 1 .. 4 then
       X := T (N);
       Y := T (M);

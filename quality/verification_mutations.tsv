@@ -300,7 +300,7 @@ part-private-other-side	tests/verification_mutation_object_parts.adb	assertion	B
 part-index-moved	tests/verification_mutation_object_parts.adb	assertion	Walk (Position).Count = 5	unproved	an index that has changed selects another element (FP-119)
 part-index-unknown	tests/verification_mutation_object_parts.adb	assertion	Any (Where).Count = 5	unproved	an index that is not known selects an element nothing is known of (FP-119)
 part-scalar-other-element	tests/verification_mutation_object_parts.adb	assertion	Grade (2) = 5	unproved	what is known of one scalar element says nothing of another
-part-scalar-written	tests/verification_mutation_object_parts.adb	assertion	Regraded (1) = 5	unproved	a scalar element that has been assigned holds another value
+part-scalar-written	tests/verification_mutation_object_parts.adb	assertion	Regraded (1) = 5	definite-error	a scalar element that has been assigned holds another value: the store gives it 7
 part-scalar-subtype-edge	tests/verification_mutation_object_parts.adb	assertion	Score (2) > 0	unproved	an element is within the subtype of the components and may be its first value
 part-boolean-other-element	tests/verification_mutation_object_parts.adb	assertion	Bits (1)	unproved	one Boolean element says nothing of another
 record-recursive-swap	tests/verification_mutation_record_actuals.adb	precondition	Swap_Wants (B, A)	unproved	the callee is the caller with its parameters the other way round: a formal is not read as the object of the other
@@ -467,7 +467,7 @@ array-written	tests/verification_mutation_array_contents.adb	range-check	Wr (K)	
 array-other	tests/verification_mutation_array_contents.adb	range-check	Yo (K)	unproved	the precondition speaks of the contents of Xo, not of Yo.
 array-looped	tests/verification_mutation_array_contents.adb	range-check	Lp (K)	unproved	the loop writes 200 to every element.
 array-filled	tests/verification_mutation_array_contents.adb	range-check	Fi (K)	unproved	Fill writes the whole array, its out parameter, and says nothing of what it writes.
-array-post-written	tests/verification_mutation_array_contents.adb	postcondition	Pb (K) in 0 .. 100	unproved	the body writes 200 at K: the postcondition is of the value after the write.
+array-post-written	tests/verification_mutation_array_contents.adb	postcondition	Pb (K) in 0 .. 100	definite-error	the body writes 200 at K: the postcondition is of the value after the write, which holds 200 there.
 array-same-index	tests/verification_mutation_array_contents.adb	range-check	Si (K)	unproved	J = K on the path that writes: the element read is the one written.
 array-slice-write	tests/verification_mutation_array_contents.adb	range-check	Pw (K + 1)	unproved	a slice assignment writes K + 1 .. 63.
 array-renamed	tests/verification_mutation_array_contents.adb	range-check	Rn (K)	unproved	R renames Rn: the write through R is a write to Rn.
@@ -481,3 +481,19 @@ array-predicate-written	tests/verification_mutation_array_contents.adb	range-che
 array-plain	tests/verification_mutation_array_contents.adb	range-check	Pl (K)	unproved	nothing is said of the elements of Pl beyond their full-range subtype.
 array-alias	tests/verification_mutation_array_aliases.adb	range-check	Xa (K)	unproved	outside SPARK code Xa and Ya may be one array: the write to Ya (K) may be one to Xa (K).
 array-volatile	tests/verification_mutation_array_aliases.adb	range-check	Vc (K)	unproved	a volatile component may change between the precondition and the read.
+store-last-wins	tests/verification_mutation_array_stores.adb	range-check	C1 (J)	definite-error	C1 (J) := 5 is followed by C1 (J) := 200: the later store is the value read.
+store-maybe-same	tests/verification_mutation_array_stores.adb	range-check	C2 (K)	unproved	J may be K: the element read may be the one written with 200.
+store-self-read	tests/verification_mutation_array_stores.adb	assertion	C3 (I) = C3 (J) + 1	unproved	where I = J the element read on the right is the one just written, one more than before.
+store-hidden-index	tests/verification_mutation_array_stores.adb	range-check	C5 (K)	unproved	the index written, Pick (J), has no term: it may be K.
+store-other-array	tests/verification_mutation_array_stores.adb	range-check	D6 (I)	unproved	the store is into C6; nothing is known of D6.
+store-old-changed	tests/verification_mutation_array_stores.adb	postcondition	C7 (K) = C7'Old (K)	unproved	J may be K: the element written may be the one the postcondition compares.
+store-post-wrong	tests/verification_mutation_array_stores.adb	postcondition	C8 (I) in 0 .. 50	unproved	C8 (I) was up to 50 and is one more after the store.
+store-swap-wrong	tests/verification_mutation_array_stores.adb	assertion	C9 (I) in 0 .. 100	unproved	after the swap C9 (I) holds what C9 (J) held, of which nothing is known.
+aggregate-slid-named	tests/verification_mutation_array_stores.adb	range-check	E1 (1)	unproved	the aggregate has the bounds 0 .. 2 of its choices and slides to 1 .. 3: E1 (1) is 500.
+aggregate-slid-copy	tests/verification_mutation_array_stores.adb	range-check	E2 (K)	unproved	Yc, of bounds 0 .. 3, slides to the bounds 1 .. 4 of E2: E2 (1) is Yc (0), which nothing bounds.
+update-written	tests/verification_mutation_array_stores.adb	range-check	E3 (J)	definite-error	E3'Update (J => 200) puts 200 at J.
+aggregate-others-wrong	tests/verification_mutation_array_stores.adb	range-check	E4 (K)	definite-error	every element of (others => 200) is 200.
+aggregate-dynamic-choice	tests/verification_mutation_array_stores.adb	range-check	E5 (K)	unproved	K may be other than J, where the aggregate has 200.
+copy-then-written	tests/verification_mutation_array_stores.adb	range-check	E6 (K)	definite-error	the copy of Y6 is followed by a store of 200 at K.
+copy-source-written	tests/verification_mutation_array_stores.adb	range-check	E7 (K)	definite-error	Y7 (K) is 300 after the copy and E7 (K) is given it.
+alias-store	tests/verification_mutation_array_aliases.adb	range-check	Xb (K)	unproved	outside SPARK code Xb and Yb may be one array: the store of 200 into Yb (K) may be one into Xb (K).

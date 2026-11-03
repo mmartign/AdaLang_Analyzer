@@ -291,7 +291,18 @@ package body Adalang_Analyzer.Flow_Interp is
             Typ := Typ.P_Full_View;
          end if;
          if not Libadalang.Analysis.Is_Null (Typ)
-           and then (Typ.P_Is_Array_Type or else Typ.P_Is_Record_Type)
+           and then Typ.P_Is_Array_Type
+         then
+            --  The contents of an array's new value, where Value says
+            --  them.
+            return VC.Assign_Contents
+              (Symbols,
+               VC.With_Parts_Of
+                 (VC.Forget_Object (Symbols, Writer, Key, After), Symbols,
+                  Key, Value, Before),
+               Key, Value, Writer, Before);
+         elsif not Libadalang.Analysis.Is_Null (Typ)
+           and then Typ.P_Is_Record_Type
          then
             return VC.With_Parts_Of
               (VC.Forget_Object (Symbols, Writer, Key, After), Symbols, Key,
@@ -11544,6 +11555,12 @@ package body Adalang_Analyzer.Flow_Interp is
                                 VC.Forget_Elements
                                   (Input_Symbols, Source, Written);
                            end if;
+                           --  The new value of an array whose element is
+                           --  written is the old one with that element.
+                           Output_Symbols :=
+                             VC.Store_Element
+                               (Input_Symbols, Output_Symbols, Dest,
+                                Source.As_Assign_Stmt.F_Expr, Source, Input);
                         exception
                            when Libadalang.Common.Property_Error =>
                               Output_Symbols :=
@@ -12303,8 +12320,12 @@ package body Adalang_Analyzer.Flow_Interp is
                                  Symbols := VC.Havoc;
                               else
                                  Symbols :=
-                                   Forget_Written_Elements
-                                     (Symbols, Source, Dest);
+                                   VC.Store_Element
+                                     (Symbols,
+                                      Forget_Written_Elements
+                                        (Symbols, Source, Dest),
+                                      Dest, Source.As_Assign_Stmt.F_Expr,
+                                      Source, State);
                               end if;
                               State := After;
                            end;

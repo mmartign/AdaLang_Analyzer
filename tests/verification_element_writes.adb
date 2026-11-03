@@ -13,7 +13,7 @@ is
       R (1) := T mod LM;
    end Ok_Carry;
 
-   --  A (0) is 1 after the write.
+   --  A (0) is 1 after the write: the division is by zero.
    procedure Bad_Same (A : in out Cells; W : out Integer) is
    begin
       A (0) := 1;

@@ -9,7 +9,7 @@ h01.adb	82	BAD	division-by-zero	unproved
 h01.adb	90	BAD	division-by-zero	unproved
 h01.adb	98	BAD	division-by-zero	unproved
 h01.adb	108	BAD	division-by-zero	unproved
-h01.adb	116	BAD	division-by-zero	unproved
+h01.adb	116	BAD	division-by-zero	definite-error
 h01.adb	124	BAD	division-by-zero	unproved
 h01.adb	136	BAD	division-by-zero	unproved
 h01.adb	149	BAD	division-by-zero	unproved
@@ -296,8 +296,8 @@ h08.adb	213	OK	division-by-zero	proved-safe
 h08.adb	214	OK	division-by-zero	proved-safe
 h08.adb	223	OK	division-by-zero	proved-safe
 h08.adb	224	BAD	division-by-zero	unproved
-h08.adb	228	OK	division-by-zero	unproved
-h08.adb	229	BAD	division-by-zero	unproved
+h08.adb	228	OK	division-by-zero	proved-safe
+h08.adb	229	BAD	division-by-zero	definite-error
 h08.adb	232	BAD	division-by-zero	unproved
 h08.adb	235	OK	division-by-zero	proved-safe
 h08.adb	236	BAD	division-by-zero	unproved
@@ -394,8 +394,8 @@ h15.adb	17	OK	division-by-zero	proved-safe
 h15.adb	19	BAD	assertion	unproved
 h15.adb	25	BAD	assertion	unproved
 h15.adb	32	OK	division-by-zero	proved-safe
-h15.adb	34	BAD	division-by-zero	unproved
-h15.adb	39	BAD	assertion	unproved
+h15.adb	34	BAD	division-by-zero	definite-error
+h15.adb	39	BAD	assertion	definite-error
 h15.adb	48	OK	index-check	unproved
 h15.adb	49	BAD	index-check	unproved
 h15.adb	51	OK	index-check	proved-safe

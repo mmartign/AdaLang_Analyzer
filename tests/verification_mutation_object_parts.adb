@@ -87,7 +87,7 @@ package body Verification_Mutation_Object_Parts with SPARK_Mode => On is
       pragma Assert (Grade (2) = 5);
    end Other_Scalar;
 
-   --  Another element has been assigned: which is not worked out.
+   --  The element has been assigned another value since.
    procedure Scalar_Written (Regraded : in out Marks) is
    begin
       Regraded (1) := 7;

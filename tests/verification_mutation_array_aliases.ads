@@ -1,6 +1,7 @@
 --  Outside SPARK code two parameters may be one array, and an array with
 --  volatile components may change between two reads: what is known of the
---  elements of one is not known of the other, nor of the second read.
+--  elements of one is not known of the other, nor of the second read, nor
+--  what is written to one.
 package Verification_Mutation_Array_Aliases is
    type I64 is range -2 ** 63 .. 2 ** 63 - 1;
    type Index is range 0 .. 63;
@@ -13,4 +14,6 @@ package Verification_Mutation_Array_Aliases is
      with Pre => (for all I in Index => Xa (I) in 0 .. 100);
    procedure Volatile (Vc : Shared; K : Index; S : out Small)
      with Pre => Vc (K) in 0 .. 100;
+   procedure Alias_Store (Xb : in out Wides; Yb : in out Wides; K : Index;
+                          S : out Small);
 end Verification_Mutation_Array_Aliases;

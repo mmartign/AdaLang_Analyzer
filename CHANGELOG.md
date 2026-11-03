@@ -18,10 +18,22 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   that may change an element renews the value, as it renews the symbols of
   the elements; a write is not yet a store into the contents. An element at
   a known index is the element of the contents at that index.
+- An assignment to a scalar element of such an array, at an index known or
+  not, stores the value into the contents: those of the array's new value
+  are those of before with the element written, a value of which nothing is
+  known where it has no term. An assignment to the whole array, or the
+  initial value of its declaration, gives the contents an aggregate says
+  (with `others`, of positions, or of named choices covering the bounds),
+  those of a copy with the same first bound, or `'Update`'s. CVC5 is given
+  `--arrays-exp` for a query with a constant array, which an aggregate with
+  `others` of a literal makes; no other query.
 - A quantified expression ranges over `X'Range` of a one-dimensional array
   with an integer index and over a subtype whose bounds a declaration fixes,
   as over `L .. H`. One over a few values that reads an element of an array
-  at its parameter is assumed whole as well as value by value.
+  at its parameter is assumed whole instead of value by value: an element
+  at a known index is linked to the contents, and a link is made only for
+  an element something else is known of, which keeps queries with stores
+  small.
 - The predicate of an array subtype names its elements as the current
   instance indexed (`Normal_GF64 (I)`), which Libadalang takes for a type
   conversion: it is the element of the object the predicate is taken of.

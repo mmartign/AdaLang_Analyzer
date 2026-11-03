@@ -2110,7 +2110,10 @@ package body Adalang_Analyzer.VC_Prover is
    --  -- equal to the element at that index of Contents, the contents of
    --  the array's current value. The two are values of one state, and
    --  every write that renews the one renews the other but where the
-   --  element is not changed (Forget_Designated).
+   --  element is not changed (Forget_Designated). Only an element something
+   --  is known of besides such links: a value a write has just renewed says
+   --  nothing, and a link for each of many such makes queries the solvers
+   --  give up on.
    procedure Link_Elements
      (Context  : in out Translation_Context;
       Place    : Located_Object;
@@ -2138,13 +2141,31 @@ package body Adalang_Analyzer.VC_Prover is
          end;
       end Index_Of;
 
+      --  True when a fact other than a link speaks of the symbol Value.
+      function Known (Value : String) return Boolean is
+         Link_Head : constant String := "(= " & Value & " (select ";
+      begin
+         for Item of Context.Symbols.Assumptions loop
+            if Ada.Strings.Unbounded.Index (Item, Value) /= 0
+              and then
+                (Length (Item) < Link_Head'Length
+                 or else Slice (Item, 1, Link_Head'Length) /= Link_Head)
+            then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Known;
+
       procedure Link
         (Value, Index : String)  --  adalang-analyzer: ignore Swappable_Parameters
       is
          Fact : constant Unbounded_String := To_Unbounded_String
            ("(= " & Value & " (select " & Contents & " " & Index & "))");
       begin
-         if not Context.Symbols.Assumptions.Contains (Fact) then
+         if Known (Value)
+           and then not Context.Symbols.Assumptions.Contains (Fact)
+         then
             Context.Symbols.Assumptions.Append (Fact);
          end if;
       end Link;
@@ -2319,11 +2340,15 @@ package body Adalang_Analyzer.VC_Prover is
    --  of the array Call reads an element of at an index whose value is
    --  known (Selected_Element_Term), Context with the elements of that
    --  array linked to them (Link_Elements): what is said of the contents
-   --  is said of the element. Context as it is otherwise.
+   --  is said of the element. Context as it is otherwise. Element is the
+   --  term of the element read, at Element_Place, which is linked whatever
+   --  is known of it.
    function Link_Known
-     (Call    : Libadalang.Analysis.Call_Expr;
-      Context : Translation_Context;
-      Sort    : Scalar_Sort) return Translation_Context
+     (Call          : Libadalang.Analysis.Call_Expr;
+      Context       : Translation_Context;
+      Sort          : Scalar_Sort;
+      Element       : String;
+      Element_Place : Located_Object) return Translation_Context
    is
       Prefix : constant Libadalang.Analysis.Name := Call.F_Name;
       Place  : constant Located_Object := Location (Prefix, Context);
@@ -2369,6 +2394,25 @@ package body Adalang_Analyzer.VC_Prover is
             return Context;
          end if;
          Link_Elements (Trial, Place, Contents, Sort);
+         declare
+            Path  : constant String := To_String (Element_Place.Path);
+            Index : constant String :=
+              (if Path'Length > Length (Place.Path) + 1
+               then Path (Path'First + Length (Place.Path) + 1 .. Path'Last)
+               else "");
+            Fact  : constant Unbounded_String := To_Unbounded_String
+              ("(= " & Element & " (select " & Contents & " " & Index & "))");
+         begin
+            if Element_Place.Object = Place.Object
+              and then Path'Length > Length (Place.Path)
+              and then Path (Path'First .. Path'First + Length (Place.Path)) =
+                To_String (Place.Path) & "@"
+              and then Is_Numeral (Index)
+              and then not Trial.Symbols.Assumptions.Contains (Fact)
+            then
+               Trial.Symbols.Assumptions.Append (Fact);
+            end if;
+         end;
          return Trial;
       end;
    exception
@@ -2443,7 +2487,9 @@ package body Adalang_Analyzer.VC_Prover is
                     else Domain.Unknown_Range)));
       begin
          if Context.Supported then
-            Context := Link_Known (Call, Context, Sort_Info.Sort);
+            Context :=
+              Link_Known
+                (Call, Context, Sort_Info.Sort, To_String (Symbol), Place);
          end if;
          return Symbol;
       end;
@@ -5593,9 +5639,11 @@ package body Adalang_Analyzer.VC_Prover is
       Truth : Boolean;
       Frame : Part_Frame)
    is
+      --  True once Take_Whole has taken Node.
+      Whole_Taken : Boolean := False;
+
       --  Node as one term; with Only_Selected, only where the term reads
-      --  an element of an array at an index whose value is not known,
-      --  which no fact taken value by value speaks of.
+      --  an element of an array at an index whose value is not known.
       procedure Take_Whole (Only_Selected : Boolean := False) is
          Context : Translation_Context := Part_Context (State, Frame);
          Term    : constant Unbounded_String := Boolean_Term (Node, Context);
@@ -5630,6 +5678,7 @@ package body Adalang_Analyzer.VC_Prover is
          end if;
          Keep_Symbols (State, Context, Frame);
          Any := True;
+         Whole_Taken := True;
       end Take_Whole;
 
       --  "(if C then A else B)" that holds: A under C, and B under not C.
@@ -5882,12 +5931,18 @@ package body Adalang_Analyzer.VC_Prover is
         and then Node.Kind = Libadalang.Common.Ada_Quantified_Expr
         and then Node.As_Quantified_Expr.F_Quantifier.Kind =
           Libadalang.Common.Ada_Quantifier_All
-        and then Took_Each (Node.As_Quantified_Expr)
       then
-         --  The values taken one by one are at indexes that are known;
-         --  an element read at any other index needs the whole.
+         --  One that reads elements of an array at its parameter is the
+         --  whole, which speaks of the element at any index, one at a
+         --  known index too, through its link to the contents (Link_
+         --  Known): the values one by one would say it again, for each
+         --  linked to the contents, more than the solvers take with a
+         --  few stores. Any other, over a few values, is taken value by
+         --  value.
          Take_Whole (Only_Selected => True);
-         return;
+         if Whole_Taken or else Took_Each (Node.As_Quantified_Expr) then
+            return;
+         end if;
       end if;
 
       Take_Whole;
@@ -7138,6 +7193,725 @@ package body Adalang_Analyzer.VC_Prover is
          return State;
    end Assume_Alternative;
 
+   --  Result, a state after Writer wrote the array whose value is kept
+   --  under Key, with what Context added in translating what the write
+   --  reads, and with a token for the array's new value that names no
+   --  value of before: the one the write gave Key, or one given here.
+   --  Old, where not "", is the token of the value before. New_Token is
+   --  "" where none could be given.
+   procedure Renew_Contents
+     (Result    : in out Symbolic_State;
+      Context   : Translation_Context;
+      Key       : Symbol_Key;
+      Old       : String;
+      Writer    : Libadalang.Analysis.Ada_Node'Class;
+      New_Token : out Unbounded_String)
+   is
+      Bound : Natural;
+   begin
+      for Item of Context.Symbols.Roots loop
+         Include_Root (Result, Item);
+      end loop;
+      for Fact of Context.Symbols.Assumptions loop
+         if not Result.Assumptions.Contains (Fact) then
+            Result.Assumptions.Append (Fact);
+         end if;
+      end loop;
+
+      Bound := Binding_Index (Result, Key);
+      if Bound /= 0
+        and then Result.Bindings.Element (Bound).Sort = Opaque_Sort
+        and then To_String (Result.Bindings.Element (Bound).Term) /= Old
+        and then Binding_Index (Context.Symbols, Key) /= 0
+        and then Context.Symbols.Bindings.Element
+                   (Binding_Index (Context.Symbols, Key)).Term /=
+                 Result.Bindings.Element (Bound).Term
+      then
+         New_Token := Result.Bindings.Element (Bound).Term;
+         return;
+      end if;
+      --  The write did not renew the value, or did not need to, the state
+      --  before having no symbol for it: a root under its own name may
+      --  stand for the value before in what Context added.
+      New_Token :=
+        To_Unbounded_String (Root_Name (Key, Writer_Prefix (Writer)));
+      if To_String (New_Token) = Old
+        or else To_String (New_Token) = Root_Name (Key)
+      then
+         New_Token := Null_Unbounded_String;
+         return;
+      end if;
+      Add_Root
+        (Result, To_String (New_Token), Key, Opaque_Sort,
+         Domain.Empty_Flow_State);
+      Set_Binding
+        (Result, (Key => Key, Sort => Opaque_Sort, Term => New_Token));
+   end Renew_Contents;
+
+   function Store_Element
+     (Before      : Symbolic_State;
+      After       : Symbolic_State;  --  adalang-analyzer: ignore Swappable_Parameters
+      Destination : Libadalang.Analysis.Name'Class;
+      Value       : Libadalang.Analysis.Expr'Class;
+      Writer      : Libadalang.Analysis.Ada_Node'Class;
+      Flow        : Domain.Flow_State) return Symbolic_State
+   is
+      Context : Translation_Context :=
+        (State => Flow, Symbols => Before, Supported => True,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Result : Symbolic_State := After;
+   begin
+      if not Before.Supported or else not After.Supported
+        or else Libadalang.Analysis.Is_Null (Writer)
+        or else Destination.Kind /= Libadalang.Common.Ada_Call_Expr
+        or else Destination.As_Call_Expr.P_Kind /=
+          Libadalang.Common.Array_Index
+        or else (After.Roots.Is_Empty and then After.Bindings.Is_Empty
+                 and then After.Assumptions.Is_Empty)
+      then
+         return After;
+      end if;
+
+      declare
+         Call        : constant Libadalang.Analysis.Call_Expr :=
+           Destination.As_Call_Expr;
+         Prefix      : constant Libadalang.Analysis.Name := Call.F_Name;
+         Index       : constant Libadalang.Analysis.Expr :=
+           Single_Actual_Expr (Call.F_Suffix);
+         Prefix_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Prefix.P_Expression_Type;
+         Sort_Info   : constant Sort_Resolution := Expression_Sort (Call);
+
+         function Marked (Name : String) return Boolean is
+           (Prefix_Type.P_Has_Aspect
+              (Langkit_Support.Text.To_Unbounded_Text
+                 (Langkit_Support.Text.To_Text (Name))));
+
+         Place : Located_Object;
+      begin
+         if Call.F_Suffix.Kind /= Libadalang.Common.Ada_Assoc_List
+           or else Call.F_Suffix.Children_Count /= 1
+           or else Libadalang.Analysis.Is_Null (Index)
+           or else not Expression_Sort (Index).Supported
+           or else Expression_Sort (Index).Sort /= Integer_Sort
+           or else not Sort_Info.Supported
+           or else Sort_Info.Sort = Opaque_Sort
+           or else Libadalang.Analysis.Is_Null (Prefix_Type)
+           or else Prefix_Type.P_Is_Access_Type
+           or else not Prefix_Type.P_Is_Array_Type
+           or else not Is_Opaque_Type (Prefix_Type)
+           or else Marked ("Volatile_Components")
+           or else Marked ("Atomic_Components")
+         then
+            return After;
+         end if;
+
+         Place := Location (Prefix, Context);
+         if Libadalang.Analysis.Is_Null (Place.Object)
+           or else Is_Old_Path (Place.Path)
+         then
+            return After;
+         end if;
+
+         declare
+            Key       : constant Symbol_Key := Part_Key (Place);
+            Old_Token : constant String :=
+              Symbol_For (Context, Key, Opaque_Sort);
+            First     : constant String :=
+              (if Context.Supported
+               then To_String
+                 (Array_Attribute_Term (Prefix, "first", Call, Context))
+               else "");
+            Position  : constant String :=
+              (if Context.Supported
+               then To_String (Integer_Term (Index, Context))
+               else "");
+            Element   : Unbounded_String;
+            New_Token : Unbounded_String;
+         begin
+            if not Context.Supported
+              or else Old_Token = "" or else First = "" or else Position = ""
+            then
+               return After;
+            end if;
+
+            --  A value with no term is one of which nothing is known: the
+            --  other elements are still those of before.
+            declare
+               Trial : Translation_Context := Context;
+               Term  : constant Unbounded_String :=
+                 (if Sort_Info.Sort = Boolean_Sort
+                  then Boolean_Term (Value, Trial)
+                  else Integer_Term (Value, Trial));
+            begin
+               if Trial.Supported and then Length (Term) > 0 then
+                  Context := Trial;
+                  Element := Term;
+               else
+                  declare
+                     Value_Key : constant Symbol_Key :=
+                       Plain_Key (Libadalang.Analysis.Ada_Node (Value));
+                     Name      : constant String := Root_Name (Value_Key, "u");
+                  begin
+                     Add_Root
+                       (Context.Symbols, Name, Value_Key,
+                        (if Sort_Info.Sort = Boolean_Sort then Boolean_Sort
+                         else Integer_Sort),
+                        Flow);
+                     Element := To_Unbounded_String (Name);
+                  end;
+               end if;
+            end;
+
+            --  The elements of the array at known indexes are those of the
+            --  contents of its value before the write.
+            Link_Elements
+              (Context, Place, Contents_Term (Old_Token, First, Sort_Info.Sort),
+               Sort_Info.Sort);
+
+            --  The value after the write is one of its own, so that the
+            --  old token, which may have been made just now, names the
+            --  value before.
+            Renew_Contents (Result, Context, Key, Old_Token, Writer, New_Token);
+            if Length (New_Token) = 0 then
+               return After;
+            end if;
+
+            Result.Assumptions.Append
+              (To_Unbounded_String
+                 ("(= " &
+                  Contents_Term (To_String (New_Token), First, Sort_Info.Sort) &
+                  " (store " &
+                  Contents_Term (Old_Token, First, Sort_Info.Sort) & " " &
+                  Position & " " & To_String (Element) & "))"));
+            return (if Result.Supported then Result else After);
+         end;
+      end;
+   exception
+      when others =>
+         return After;
+   end Store_Element;
+
+   function Assign_Contents
+     (Before : Symbolic_State;
+      After  : Symbolic_State;  --  adalang-analyzer: ignore Swappable_Parameters
+      Target : Libadalang.Analysis.Ada_Node;
+      Value  : Libadalang.Analysis.Expr'Class;
+      Writer : Libadalang.Analysis.Ada_Node'Class;
+      Flow   : Domain.Flow_State) return Symbolic_State
+   is
+      Max_Choice_Values : constant := 64;
+
+      Context : Translation_Context :=
+        (State => Flow, Symbols => Before, Supported => True,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Result    : Symbolic_State := After;
+      Key       : constant Symbol_Key := Value_Key (Target);
+      Array_Type : Libadalang.Analysis.Base_Type_Decl;
+      Sort_Info  : Sort_Resolution;
+      First      : Unbounded_String;
+      Own        : Domain.Abstract_Range;
+
+      --  Value, the term of an element of the value, of the sort of the
+      --  components: a value of which nothing is known where Element has
+      --  none.
+      procedure Take_Element
+        (Element : Libadalang.Analysis.Expr;
+         Value   : out Unbounded_String)
+      is
+         Trial : Translation_Context := Context;
+         Term  : constant Unbounded_String :=
+           (if Sort_Info.Sort = Boolean_Sort then Boolean_Term (Element, Trial)
+            else Integer_Term (Element, Trial));
+      begin
+         if Trial.Supported and then Length (Term) > 0 then
+            Context := Trial;
+            Value := Term;
+            return;
+         end if;
+         declare
+            Element_Key : constant Symbol_Key :=
+              Plain_Key (Libadalang.Analysis.Ada_Node (Element));
+            Name        : constant String := Root_Name (Element_Key, "u");
+         begin
+            Add_Root
+              (Context.Symbols, Name, Element_Key,
+               (if Sort_Info.Sort = Boolean_Sort then Boolean_Sort
+                else Integer_Sort),
+               Flow);
+            Value := To_Unbounded_String (Name);
+         end;
+      end Take_Element;
+
+      --  Contents, those of the array a name settles, as they are before
+      --  the write, where its first bound is that of the target; "" for
+      --  any other value.
+      procedure Take_Contents
+        (Source   : Libadalang.Analysis.Expr;
+         Contents : out Unbounded_String)
+      is
+         Place : Located_Object;
+      begin
+         Contents := Null_Unbounded_String;
+         if Source.Kind not in Libadalang.Common.Ada_Identifier
+                             | Libadalang.Common.Ada_Dotted_Name
+                             | Libadalang.Common.Ada_Call_Expr
+         then
+            return;
+         end if;
+         Place := Location (Source, Context);
+         if Libadalang.Analysis.Is_Null (Place.Object)
+           or else Is_Old_Path (Place.Path)
+         then
+            return;
+         end if;
+         declare
+            Trial : Translation_Context := Context;
+            Token : constant String :=
+              Symbol_For (Trial, Part_Key (Place), Opaque_Sort);
+            Its_First : constant String :=
+              (if Trial.Supported
+               then To_String
+                 (Array_Attribute_Term
+                    (Source.As_Name, "first", Source, Trial))
+               else "");
+         begin
+            if not Trial.Supported or else Token = ""
+              or else Its_First /= To_String (First)
+            then
+               return;
+            end if;
+            Context := Trial;
+            Link_Elements
+              (Context, Place, Contents_Term (Token, Its_First, Sort_Info.Sort),
+               Sort_Info.Sort);
+            Contents := To_Unbounded_String
+              (Contents_Term (Token, Its_First, Sort_Info.Sort));
+         end;
+      exception
+         when others =>
+            Contents := Null_Unbounded_String;
+      end Take_Contents;
+
+      --  Base with each association of Assocs stored, the positional ones
+      --  from the first bound on; or, where Base is "", the facts of
+      --  the elements they give, of the contents New_Contents. "" where
+      --  an association is not one this takes: a choice that is a range
+      --  or a subtype of more than a few values, or one with no term.
+      --  Named choices with no "others" must cover the bounds of the
+      --  target exactly, the aggregate sliding to them otherwise.
+      Facts      : Unbounded_String;
+      Exclusions : Unbounded_String;
+
+      --  True for a choice that is a subtype mark: the values of the
+      --  subtype, not one index.
+      function Names_Subtype
+        (Choice : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+      begin
+         return Choice.Kind in Libadalang.Common.Ada_Identifier
+                             | Libadalang.Common.Ada_Dotted_Name
+           and then not Libadalang.Analysis.Is_Null
+             (Choice.As_Name.P_Referenced_Decl)
+           and then Choice.As_Name.P_Referenced_Decl.Kind in
+             Libadalang.Common.Ada_Base_Type_Decl;
+      exception
+         when others =>
+            return True;
+      end Names_Subtype;
+
+      function Stored
+        (Assocs       : Libadalang.Analysis.Assoc_List;
+         Base         : String;
+         New_Contents : String;  --  adalang-analyzer: ignore Swappable_Parameters
+         Positional   : Boolean;
+         With_Others  : Boolean := False)  --  adalang-analyzer: ignore Swappable_Parameters
+         return String
+      is
+         Term     : Unbounded_String := To_Unbounded_String (Base);
+         Position : Long_Long_Integer := 0;
+         Low, High : Long_Long_Integer := 0;
+         Any_Named : Boolean := False;
+
+         procedure Put
+           (Index, Element : String)  --  adalang-analyzer: ignore Swappable_Parameters
+         is
+         begin
+            if Base = "" then
+               Append
+                 (Facts,
+                  " (= (select " & New_Contents & " " & Index & ") " &
+                  Element & ")");
+               Append (Exclusions, " (distinct ada!j " & Index & ")");
+            else
+               Term := To_Unbounded_String
+                 ("(store " & To_String (Term) & " " & Index & " " & Element &
+                  ")");
+            end if;
+         end Put;
+      begin
+         for Item of Assocs loop
+            if Item.Kind /= Libadalang.Common.Ada_Aggregate_Assoc then
+               return "";
+            end if;
+            declare
+               Assoc   : constant Libadalang.Analysis.Aggregate_Assoc :=
+                 Item.As_Aggregate_Assoc;
+               Choices : constant Libadalang.Analysis.Alternatives_List :=
+                 Assoc.F_Designators;
+               Element : constant Libadalang.Analysis.Expr := Assoc.F_R_Expr;
+            begin
+               if Element.Kind = Libadalang.Common.Ada_Box_Expr then
+                  return "";
+               elsif Choices.Children_Count = 0 then
+                  if not Positional then
+                     return "";
+                  end if;
+                  declare
+                     Value_Term : Unbounded_String;
+                  begin
+                     Take_Element (Element, Value_Term);
+                     Put ((if Is_Numeral (To_String (First))
+                           then SMT_Integer
+                             (Long_Long_Integer'Value (To_String (First)) +
+                              Position)
+                           else "(+ " & To_String (First) & " " &
+                             SMT_Integer (Position) & ")"),
+                          To_String (Value_Term));
+                  end;
+                  Position := Position + 1;
+               else
+                  declare
+                     Value_Text : Unbounded_String;
+                  begin
+                     Take_Element (Element, Value_Text);
+                     --  The indexes "others" stands for are the caller's.
+                     for Choice of Choices loop
+                        if Choice.Kind in Libadalang.Common.Ada_Expr
+                          and then not
+                            (Choice.Kind in Libadalang.Common.Ada_Bin_Op_Range
+                             and then Choice.As_Bin_Op.F_Op =
+                               Libadalang.Common.Ada_Op_Double_Dot)
+                          and then Choice.Kind /=
+                            Libadalang.Common.Ada_Attribute_Ref
+                          and then not Names_Subtype (Choice)
+                          and then Expression_Sort (Choice).Supported
+                          and then Expression_Sort (Choice).Sort = Integer_Sort
+                        then
+                           declare
+                              Known : constant Domain.Abstract_Int :=
+                                Eval.Integer_Value (Choice.As_Expr, Flow);
+                              Index : constant Unbounded_String :=
+                                Integer_Term (Choice.As_Expr, Context);
+                           begin
+                              if not Context.Supported
+                                or else Length (Index) = 0
+                              then
+                                 return "";
+                              end if;
+                              if Known.Known then
+                                 Low := (if Any_Named
+                                         then Long_Long_Integer'Min
+                                           (Low, Known.Value)
+                                         else Known.Value);
+                                 High := (if Any_Named
+                                          then Long_Long_Integer'Max
+                                            (High, Known.Value)
+                                          else Known.Value);
+                              else
+                                 Low := Long_Long_Integer'First;
+                              end if;
+                              Any_Named := True;
+                              Put (To_String (Index), To_String (Value_Text));
+                           end;
+                        elsif Choice.Kind /=
+                          Libadalang.Common.Ada_Others_Designator
+                        then
+                           declare
+                              Bounds : Domain.Abstract_Range;
+                              Sort   : Scalar_Sort;
+                           begin
+                              Find_Iteration_Domain (Choice, Bounds, Sort);
+                              if Sort /= Integer_Sort
+                                or else not Bounds.Has_Low
+                                or else not Bounds.Has_High
+                                or else Bounds.High - Bounds.Low >=
+                                  Max_Choice_Values
+                              then
+                                 return "";
+                              end if;
+                              for Index in Bounds.Low .. Bounds.High loop
+                                 Put (SMT_Integer (Index), To_String (Value_Text));
+                              end loop;
+                              Low := (if Any_Named
+                                      then Long_Long_Integer'Min
+                                        (Low, Bounds.Low)
+                                      else Bounds.Low);
+                              High := (if Any_Named
+                                       then Long_Long_Integer'Max
+                                         (High, Bounds.High)
+                                       else Bounds.High);
+                              Any_Named := True;
+                           end;
+                        end if;
+                     end loop;
+                  end;
+               end if;
+            end;
+         end loop;
+         --  Without "others" the aggregate has the bounds of its choices
+         --  and slides to those of the target.
+         if Base = "" and then Any_Named and then not With_Others
+           and then not (Own.Has_Low and then Own.Has_High
+                         and then Low = Own.Low and then High = Own.High)
+         then
+            return "";
+         end if;
+         return (if Base = "" then "true" else To_String (Term));
+      end Stored;
+
+      Fact      : Unbounded_String;
+      New_Token : Unbounded_String;
+      Expr      : Libadalang.Analysis.Expr := Value.As_Expr;
+   begin
+      if not Before.Supported or else not After.Supported
+        or else Libadalang.Analysis.Is_Null (Target)
+        or else Target.Kind /= Libadalang.Common.Ada_Defining_Name
+        or else (After.Roots.Is_Empty and then After.Bindings.Is_Empty
+                 and then After.Assumptions.Is_Empty)
+      then
+         return After;
+      end if;
+      while Expr.Kind = Libadalang.Common.Ada_Paren_Expr loop
+         Expr := Expr.As_Paren_Expr.F_Expr;
+      end loop;
+
+      Array_Type := Expr.P_Expression_Type;
+      if Libadalang.Analysis.Is_Null (Array_Type)
+        or else not Array_Type.P_Is_Array_Type
+        or else Array_Type.P_Is_Access_Type
+        or else not Is_Opaque_Type (Array_Type)
+        or else not Array_Type.P_Index_Type (0).P_Is_Int_Type
+      then
+         return After;
+      end if;
+      declare
+         Second : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         begin
+            Second := Array_Type.P_Index_Type (1);
+         exception
+            when others =>
+               Second := Libadalang.Analysis.No_Base_Type_Decl;
+         end;
+         if not Libadalang.Analysis.Is_Null (Second) then
+            return After;
+         end if;
+      end;
+      Sort_Info := Type_Sort (Array_Type.P_Comp_Type);
+      if not Sort_Info.Supported or else Sort_Info.Sort = Opaque_Sort
+        or else Array_Type.P_Has_Aspect
+          (Langkit_Support.Text.To_Unbounded_Text
+             (Langkit_Support.Text.To_Text ("Volatile_Components")))
+        or else Array_Type.P_Has_Aspect
+          (Langkit_Support.Text.To_Unbounded_Text
+             (Langkit_Support.Text.To_Text ("Atomic_Components")))
+      then
+         return After;
+      end if;
+
+      --  The first bound of the target as an element read of it takes it:
+      --  a number where its declaration fixes it, its symbol otherwise.
+      Own := Eval.Declared_Index_Range (Target, 1, Flow);
+      if Own.Has_Low then
+         First := To_Unbounded_String (SMT_Integer (Own.Low));
+      elsif Writer.Kind = Libadalang.Common.Ada_Assign_Stmt
+        and then Writer.As_Assign_Stmt.F_Dest.Kind =
+          Libadalang.Common.Ada_Identifier
+      then
+         First := Array_Attribute_Term
+           (Writer.As_Assign_Stmt.F_Dest, "first", Writer, Context);
+      end if;
+      if not Context.Supported or else Length (First) = 0 then
+         return After;
+      end if;
+
+      declare
+         New_Contents_Placeholder : constant String := "|a!new|";
+      begin
+         if Expr.Kind in Libadalang.Common.Ada_Aggregate
+                       | Libadalang.Common.Ada_Bracket_Aggregate
+           and then Libadalang.Analysis.Is_Null
+                      (Expr.As_Base_Aggregate.F_Ancestor_Expr)
+         then
+            declare
+               Assocs : constant Libadalang.Analysis.Assoc_List :=
+                 Expr.As_Base_Aggregate.F_Assocs;
+               Others_Value : Libadalang.Analysis.Expr :=
+                 Libadalang.Analysis.No_Expr;
+               Named  : Boolean := False;
+            begin
+               for Item of Assocs loop
+                  if Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
+                     for Choice of Item.As_Aggregate_Assoc.F_Designators loop
+                        Named := True;
+                        if Choice.Kind =
+                          Libadalang.Common.Ada_Others_Designator
+                        then
+                           Others_Value := Item.As_Aggregate_Assoc.F_R_Expr;
+                        end if;
+                     end loop;
+                  end if;
+               end loop;
+               if not Libadalang.Analysis.Is_Null (Others_Value) then
+                  if Others_Value.Kind = Libadalang.Common.Ada_Box_Expr then
+                     return After;
+                  end if;
+                  declare
+                     Other_Text : Unbounded_String;
+                  begin
+                     Take_Element (Others_Value, Other_Text);
+                     declare
+                        Other_Term : constant String := To_String (Other_Text);
+                     begin
+                        --  CVC5 takes a constant array of a literal only.
+                        if Is_Numeral (Other_Term)
+                          or else Other_Term = "true" or else Other_Term = "false"
+                        then
+                           declare
+                              Base : constant String :=
+                                "((as const (Array Int " &
+                                (if Sort_Info.Sort = Boolean_Sort then "Bool"
+                                 else "Int")
+                                & ")) " & Other_Term & ")";
+                              Term : constant String :=
+                                Stored (Assocs, Base, "", Positional => True);
+                           begin
+                              if Term = "" then
+                                 return After;
+                              end if;
+                              Fact := To_Unbounded_String
+                                ("(= " & New_Contents_Placeholder & " " & Term &
+                                 ")");
+                           end;
+                        else
+                           if Stored
+                                (Assocs, "", New_Contents_Placeholder,
+                                 Positional => True, With_Others => True) = ""
+                           then
+                              return After;
+                           end if;
+                           Fact := To_Unbounded_String
+                             ("(and true" & To_String (Facts) &
+                              " (forall ((ada!j Int)) (=> (and true" &
+                              To_String (Exclusions) & ") (= (select " &
+                              New_Contents_Placeholder & " ada!j) " & Other_Term &
+                              "))))");
+                        end if;
+                     end;
+                  end;
+               else
+                  if Stored
+                       (Assocs, "", New_Contents_Placeholder,
+                        Positional => not Named) = ""
+                    or else Length (Facts) = 0
+                  then
+                     return After;
+                  end if;
+                  Fact := "(and" & Facts & ")";
+               end if;
+            end;
+         elsif Expr.Kind = Libadalang.Common.Ada_Delta_Aggregate
+           or else Expr.Kind = Libadalang.Common.Ada_Update_Attribute_Ref
+         then
+            declare
+               Source : constant Libadalang.Analysis.Expr :=
+                 (if Expr.Kind = Libadalang.Common.Ada_Delta_Aggregate
+                  then Expr.As_Base_Aggregate.F_Ancestor_Expr
+                  else Expr.As_Update_Attribute_Ref.F_Prefix.As_Expr);
+               Assocs : constant Libadalang.Analysis.Assoc_List :=
+                 (if Expr.Kind = Libadalang.Common.Ada_Delta_Aggregate
+                  then Expr.As_Base_Aggregate.F_Assocs
+                  else Expr.As_Update_Attribute_Ref.F_Values.F_Assocs);
+               Base   : Unbounded_String;
+            begin
+               if not Libadalang.Analysis.Is_Null (Source) then
+                  Take_Contents (Source, Base);
+               end if;
+               if Length (Base) = 0 then
+                  return After;
+               end if;
+               declare
+                  Term : constant String :=
+                    Stored
+                      (Assocs, To_String (Base), "", Positional => False);
+               begin
+                  if Term = "" then
+                     return After;
+                  end if;
+                  Fact := To_Unbounded_String
+                    ("(= " & New_Contents_Placeholder & " " & Term & ")");
+               end;
+            end;
+         else
+            declare
+               Source : Unbounded_String;
+            begin
+               Take_Contents (Expr, Source);
+               if Length (Source) = 0 then
+                  return After;
+               end if;
+               Fact := To_Unbounded_String
+                 ("(= " & New_Contents_Placeholder & " " & To_String (Source) &
+                  ")");
+            end;
+         end if;
+
+         if not Context.Supported then
+            return After;
+         end if;
+         Renew_Contents (Result, Context, Key, "", Writer, New_Token);
+         if Length (New_Token) = 0 then
+            return After;
+         end if;
+         declare
+            Contents : constant String :=
+              Contents_Term
+                (To_String (New_Token), To_String (First), Sort_Info.Sort);
+            Text     : constant String := To_String (Fact);
+            Output   : Unbounded_String;
+            Index    : Natural := Text'First;
+         begin
+            while Index <= Text'Last loop
+               if Index + New_Contents_Placeholder'Length - 1 <= Text'Last
+                 and then Text
+                   (Index .. Index + New_Contents_Placeholder'Length - 1) =
+                     New_Contents_Placeholder
+               then
+                  Append (Output, Contents);
+                  Index := Index + New_Contents_Placeholder'Length;
+               else
+                  Append (Output, Text (Index));
+                  Index := Index + 1;
+               end if;
+            end loop;
+            Result.Assumptions.Append (Output);
+         end;
+         return (if Result.Supported then Result else After);
+      end;
+   exception
+      when others =>
+         return After;
+   end Assign_Contents;
+
    function Assign_Component
      (State       : Symbolic_State;
       Destination : Libadalang.Analysis.Name'Class;
@@ -8198,10 +8972,14 @@ package body Adalang_Analyzer.VC_Prover is
       Solver_Time_Limit := Milliseconds;
    end Set_Solver_Time_Limit;
 
+   --  With Constant_Arrays, the query has a constant array (the
+   --  contents an aggregate with "others" gives), which CVC5 decides only
+   --  with its arrays-exp option; no other query is given that option.
    function Run_Solver
-     (Path       : String;
-      Is_CVC5    : Boolean;
-      Input_File : String) return Solver_Answer
+     (Path            : String;
+      Is_CVC5         : Boolean;
+      Input_File      : String;
+      Constant_Arrays : Boolean := False) return Solver_Answer
    is
       Output_FD   : GNAT.OS_Lib.File_Descriptor;
       Output_Name : GNAT.OS_Lib.String_Access;
@@ -8218,7 +8996,22 @@ package body Adalang_Analyzer.VC_Prover is
       end if;
       GNAT.OS_Lib.Close (Output_FD);
 
-      if Is_CVC5 then
+      if Is_CVC5 and then Constant_Arrays then
+         declare
+            Args : GNAT.OS_Lib.Argument_List :=
+              (1 => new String'("--lang=smt2"),
+               2 => new String'("--tlimit=" & Limit_Image),
+               3 => new String'("--arrays-exp"),
+               4 => new String'(Input_File));
+         begin
+            GNAT.OS_Lib.Spawn
+              (Path, Args, Output_Name.all, Success, Return_Code,
+               Err_To_Out => True);
+            for Arg of Args loop
+               GNAT.OS_Lib.Free (Arg);
+            end loop;
+         end;
+      elsif Is_CVC5 then
          declare
             Args : GNAT.OS_Lib.Argument_List :=
               (1 => new String'("--lang=smt2"),
@@ -8316,7 +9109,11 @@ package body Adalang_Analyzer.VC_Prover is
       Ada.Text_IO.Put_Line (File, "(check-sat)");
       Ada.Text_IO.Close (File);
 
-      CVC5 := Run_Solver (CVC5_Path, True, Input_Name.all);
+      CVC5 :=
+        Run_Solver
+          (CVC5_Path, True, Input_Name.all,
+           Constant_Arrays =>
+             Ada.Strings.Fixed.Index (Formula, "(as const ") /= 0);
       Z3 :=
         (if CVC5 = Solver_Unsat
          then Run_Solver (Z3_Path, False, Input_Name.all) else CVC5);

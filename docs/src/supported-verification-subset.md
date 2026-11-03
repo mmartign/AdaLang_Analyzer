@@ -1029,7 +1029,9 @@ and only the elements and the value of that array, and of every object
 that renames another, are renewed. What a predicate or a precondition
 says of the elements of another array then stands. A call renews them
 as it renews the components of records (see "Objects and effects the
-analysis does not follow").
+analysis does not follow"). What the array written holds after the write is
+said of the contents of its new value (see "Elements at an index that is not
+known").
 
 ### Elements at an index that is not known
 
@@ -1050,11 +1052,25 @@ other.
 
 Every write that may change an element renews the value of the array, as it
 renews the symbols of its elements: what was known of the contents is of
-the value before the write, and nothing is known of the new one but what
-is said of it afterwards. An assignment to an element, at an index known or
-not, is not taken as a store into the contents, nor is an aggregate or
-`'Update`. An array read with two first bounds -- an actual that slides to
-the bounds of a formal -- has two contents that nothing links. An array
+the value before the write. Where the write says what the new contents are,
+that is known of the new value:
+
+- an assignment to a scalar element, `X (I) := V`, at an index known or not:
+  the contents of before with `V` at `I`, `V` being a value of which nothing
+  is known where it has no term -- the other elements are those of before;
+- an assignment to the whole array, or the initial value of its declaration:
+  an aggregate with `others` (each element the value of `others` but for
+  the choices given), of positions from the first bound on, or of named
+  choices that cover the bounds of the array, a range choice of at most 64
+  values; a copy of another array whose first bound is the same term;
+  `Y'Update (I => V)`.
+
+An aggregate of named choices without `others` has the bounds of its
+choices and slides to those of the array: where they are not the array's,
+nothing is said. Any other write -- to a slice, through an access value, by
+a call -- leaves only the renewal. An array read with two first bounds -- an
+actual that slides to the bounds of a formal -- has two contents that
+nothing links. An array
 with volatile or atomic components, one reached through an access value,
 one with an index of an enumeration type and one of more than one
 dimension have no such term.
@@ -1701,10 +1717,10 @@ being anything the rules of this section take in its turn.
   range with static bounds: the parts of `E` for each value of `P`. A
   subtype that has a predicate is no such domain, the expression ranging
   over the values that satisfy it and not over all its range. Where `E`
-  reads an element of an array at `P`, the expression is also one term,
-  so that what it says is known at an index that is not known. One such
-  expression inside two others, and any other domain, is one term or
-  none.
+  reads an element of an array at `P`, the expression is one term instead,
+  which speaks of the element at any index: one at a known index is the
+  element of the array's contents there. One such expression inside two
+  others, and any other domain, is one term or none.
 - A call of an expression function that returned `True`: the parts of its
   body, each parameter standing for its actual -- a scalar for the term of
   the actual, a record or an array for the object or the part of one that

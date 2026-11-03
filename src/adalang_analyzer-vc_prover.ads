@@ -370,6 +370,44 @@ package Adalang_Analyzer.VC_Prover is
    --  State after Writer has given the scalar Object a value of which
    --  nothing is known but what After says.
 
+   function Store_Element
+     (Before      : Symbolic_State;
+      After       : Symbolic_State;
+      Destination : Libadalang.Analysis.Name'Class;
+      Value       : Libadalang.Analysis.Expr'Class;
+      Writer      : Libadalang.Analysis.Ada_Node'Class;
+      Flow        : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  After, the state Writer, the assignment of Value to Destination,
+   --  left from Before, Flow being the flow state before it: where
+   --  Destination is the scalar element of a one-dimensional array with an
+   --  integer index, an object or a part of one that the name settles,
+   --  with the contents of the array's value after the write (Selected_
+   --  Element_Term in the body) those of its value in Before with the
+   --  element at the index the value of Value -- a value of which nothing
+   --  is known where Value has no term. After must be a state in which the
+   --  write renewed what it may have changed (Forget_Elements and the
+   --  like); the value of the array gets a token of its own there if the
+   --  write did not give it one. After as it is for any other Destination,
+   --  or where the index has no term.
+
+   function Assign_Contents
+     (Before : Symbolic_State;
+      After  : Symbolic_State;
+      Target : Libadalang.Analysis.Ada_Node;
+      Value  : Libadalang.Analysis.Expr'Class;
+      Writer : Libadalang.Analysis.Ada_Node'Class;
+      Flow   : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  As Store_Element, for Writer giving the whole one-dimensional array
+   --  object whose defining name is Target the value of Value: the contents
+   --  of its new value are those Value says -- an aggregate with "others"
+   --  or of positions, or of named choices that cover the bounds of the
+   --  target; another array's, where the two have one first bound term;
+   --  another's with elements replaced ('Update, a delta aggregate). After
+   --  must be a state in which the write renewed the object; After as it
+   --  is for any other value.
+
    function Assign_Component
      (State       : Symbolic_State;
       Destination : Libadalang.Analysis.Name'Class;
