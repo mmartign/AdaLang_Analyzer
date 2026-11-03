@@ -10381,7 +10381,10 @@ package body Adalang_Analyzer.VC_Prover is
          and then (for all Item of Text => not Is_Delimiter (Item)));
 
       --  Text with each name Token in it replaced by By.
-      function With_Token (Text, Token, By : String) return String is
+      function With_Token
+        (Text, Token, By : String)  --  adalang-analyzer: ignore Swappable_Parameters
+         return String
+      is
          Result : Unbounded_String;
          Index  : Positive := Text'First;
       begin
@@ -10425,6 +10428,9 @@ package body Adalang_Analyzer.VC_Prover is
       end Mentions;
 
       procedure Define (Attribute : Libadalang.Analysis.Ada_Node) is
+         --  What State is if the value of this X'Loop_Entry cannot be given:
+         --  X'Loop_Entry is then not translated.
+         Before    : constant Symbolic_State := Result;
          Prefix    : constant Libadalang.Analysis.Name :=
            Attribute.As_Attribute_Ref.F_Prefix;
          Key       : constant Symbol_Key :=
@@ -10499,7 +10505,7 @@ package body Adalang_Analyzer.VC_Prover is
            (To_Unbounded_String ("(= " & Name & " " & To_String (Term) & ")"));
       exception
          when others =>
-            null;
+            Result := Before;
       end Define;
    begin
       if not State.Supported
