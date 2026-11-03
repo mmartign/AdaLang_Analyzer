@@ -7,6 +7,35 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- A scalar element of a one-dimensional array with an integer index, read
+  at an index whose value is not known, is the element at that index of the
+  contents of the array's value, an SMT array that is a function of the
+  value and of the array's first bound: what a precondition, an assertion,
+  a postcondition or a predicate says of the contents is known of it, and
+  in SPARK code it is within the subtype of the components. Every write
+  that may change an element renews the value, as it renews the symbols of
+  the elements; a write is not yet a store into the contents. An element at
+  a known index is the element of the contents at that index.
+- A quantified expression ranges over `X'Range` of a one-dimensional array
+  with an integer index and over a subtype whose bounds a declaration fixes,
+  as over `L .. H`. One over a few values that reads an element of an array
+  at its parameter is assumed whole as well as value by value.
+- The predicate of an array subtype names its elements as the current
+  instance indexed (`Normal_GF64 (I)`), which Libadalang takes for a type
+  conversion: it is the element of the object the predicate is taken of.
+
+### Fixed
+
+- FP-138: the predicate of the array subtype of a formal was taken of the
+  actual after the call element by element at the same indexes, although an
+  actual of other bounds slides to those of the formal: `X : Arr (1 .. 4);
+  Make (X); S := X (1)` was proved from a predicate on the elements 1 .. 3 of
+  `subtype A0 is Arr (0 .. 3)`, `X (1)` being the formal's element 0. A
+  predicate of a definite array subtype is now taken only of a whole object
+  whose declaration gives it the bounds of the subtype.
+
 ## [1.12.3] - 2026-11-02
 
 A `--verify` release that raises the preconditions of two kinds of call

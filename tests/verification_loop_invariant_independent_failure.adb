@@ -9,7 +9,9 @@ begin
    Y := 0;
    while I < Data'Length loop
       pragma Loop_Invariant (I in 0 .. Data'Length);
-      pragma Loop_Invariant (Data (Data'First + I) = Data (Data'First + I));
+      pragma Loop_Invariant
+        (Data (Data'First .. Data'First + I) =
+           Data (Data'First .. Data'First + I));
 
       Y := Y + 1;
       I := I + 1;

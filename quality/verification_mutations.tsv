@@ -463,3 +463,21 @@ body-invariant-entry	tests/verification_mutation_body_invariants.adb	loop-invari
 body-invariant-end	tests/verification_mutation_body_invariants.adb	loop-invariant-preservation	X < 10	unproved	an invariant inside the loop body that the last iteration breaks.
 cut-invariant-start	tests/verification_mutation_body_invariants.adb	loop-invariant-initialization	N + C = 10	unproved	a loop cut where its invariant stands: the first iteration brings 9 + 0.
 cut-invariant-step	tests/verification_mutation_body_invariants.adb	loop-invariant-preservation	N + C + 1 = 10	unproved	a loop cut where its invariant stands: a step of 2 breaks what one iteration should keep.
+array-written	tests/verification_mutation_array_contents.adb	range-check	Wr (K)	unproved	Wr (J) := 200 may write the element read: what the precondition said of the contents is of the value before the write.
+array-other	tests/verification_mutation_array_contents.adb	range-check	Yo (K)	unproved	the precondition speaks of the contents of Xo, not of Yo.
+array-looped	tests/verification_mutation_array_contents.adb	range-check	Lp (K)	unproved	the loop writes 200 to every element.
+array-filled	tests/verification_mutation_array_contents.adb	range-check	Fi (K)	unproved	Fill writes the whole array, its out parameter, and says nothing of what it writes.
+array-post-written	tests/verification_mutation_array_contents.adb	postcondition	Pb (K) in 0 .. 100	unproved	the body writes 200 at K: the postcondition is of the value after the write.
+array-same-index	tests/verification_mutation_array_contents.adb	range-check	Si (K)	unproved	J = K on the path that writes: the element read is the one written.
+array-slice-write	tests/verification_mutation_array_contents.adb	range-check	Pw (K + 1)	unproved	a slice assignment writes K + 1 .. 63.
+array-renamed	tests/verification_mutation_array_contents.adb	range-check	Rn (K)	unproved	R renames Rn: the write through R is a write to Rn.
+array-in-loop	tests/verification_mutation_array_contents.adb	range-check	Il (K)	unproved	the element read may be one written in this or an earlier iteration.
+array-out-element	tests/verification_mutation_array_contents.adb	range-check	Oe (K)	unproved	Set200 (Oe (J)) writes 200 to the element at J, which may be K.
+array-record-component	tests/verification_mutation_array_contents.adb	range-check	Rw.A (K)	unproved	the write to Rw.A (J) is a write to the array component the read is of.
+array-global-call	tests/verification_mutation_array_contents.adb	range-check	G (K)	unproved	Clobber writes the global array G that the precondition spoke of.
+array-assert-written	tests/verification_mutation_array_contents.adb	assertion	Ta (K) in 0 .. 100	unproved	Ta (J) := 200 comes before the assertion.
+array-sliding-call	tests/verification_mutation_array_contents.adb	precondition	Q0 (Sc, K)	unproved	Sc, of bounds 1 .. 4, slides to the bounds 0 .. 3 of Y: Y (K) is Sc (K + 1), and Sc (4) is not bounded.
+array-predicate-written	tests/verification_mutation_array_contents.adb	range-check	Wn (J)	unproved	the predicate of Normal holds on entry; Wn (K) := 200 comes after.
+array-plain	tests/verification_mutation_array_contents.adb	range-check	Pl (K)	unproved	nothing is said of the elements of Pl beyond their full-range subtype.
+array-alias	tests/verification_mutation_array_aliases.adb	range-check	Xa (K)	unproved	outside SPARK code Xa and Ya may be one array: the write to Ya (K) may be one to Xa (K).
+array-volatile	tests/verification_mutation_array_aliases.adb	range-check	Vc (K)	unproved	a volatile component may change between the precondition and the read.

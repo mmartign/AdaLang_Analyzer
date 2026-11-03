@@ -299,7 +299,7 @@ h08.adb	224	BAD	division-by-zero	unproved
 h08.adb	228	OK	division-by-zero	unproved
 h08.adb	229	BAD	division-by-zero	unproved
 h08.adb	232	BAD	division-by-zero	unproved
-h08.adb	235	OK	division-by-zero	unproved
+h08.adb	235	OK	division-by-zero	proved-safe
 h08.adb	236	BAD	division-by-zero	unproved
 h08.adb	249	BAD	division-by-zero	unproved
 h08.adb	251	OK	division-by-zero	unproved
@@ -390,7 +390,7 @@ h14.adb	15	BAD	division-by-zero	definite-error
 h14.adb	20	BAD	division-by-zero	definite-error
 h14.adb	21	BAD	division-by-zero	unproved
 h14.adb	25	BAD	division-by-zero	unproved
-h15.adb	17	OK	division-by-zero	unproved
+h15.adb	17	OK	division-by-zero	proved-safe
 h15.adb	19	BAD	assertion	unproved
 h15.adb	25	BAD	assertion	unproved
 h15.adb	32	OK	division-by-zero	proved-safe

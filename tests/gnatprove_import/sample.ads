@@ -1,6 +1,6 @@
---  Checks GNATprove and AdaLang agree on, checks only GNATprove proves,
---  a check AdaLang has no obligation for, and checks neither proves:
---  what tests/run_gnatprove_import.sh sets GNATprove's log beside.
+--  Checks GNATprove and AdaLang agree on, and checks neither proves, each
+--  with an AdaLang obligation: what tests/run_gnatprove_import.sh sets
+--  GNATprove's log, and a made-up one, beside.
 package Sample with SPARK_Mode is
 
    type Vector is array (Positive range <>) of Integer;
@@ -12,8 +12,8 @@ package Sample with SPARK_Mode is
    function Quotient (Left : Integer; Right : Integer) return Integer is
      (Left / Right);
 
-   --  GNATprove proves the addition from what the precondition says of
-   --  every element.
+   --  Both prove the addition from what the precondition says of every
+   --  element.
    function Sum_Of_Two (Data : Vector) return Integer is
      (Data (Data'First) + Data (Data'Last))
      with Pre => Data'Length = 2

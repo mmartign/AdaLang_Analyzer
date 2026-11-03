@@ -111,20 +111,22 @@ def obligation(report, identifier):
     return found[0]
 
 
-# 3. GNATprove's own log: eighteen checks, fifteen of them proved. Fourteen
-#    AdaLang proves too, and one it has an obligation for and leaves
-#    unproved.
+# 3. GNATprove's own log: eighteen checks, fifteen of them proved, which
+#    AdaLang proves too.
 expect(real, "real", checks=18, proved=15, justified=0, notProved=3,
-       provedByBoth=14, provedByGnatproveOnObligation=1,
+       provedByBoth=15, provedByGnatproveOnObligation=0,
        provedByGnatproveWithoutObligation=0,
        definiteErrorWhereGnatproveProved=0,
        provedSafeWhereGnatproveNotProved=0)
 
+#    The addition of two elements, which the precondition bounds by what it
+#    says of every element, is the check of an obligation that carries
+#    GNATprove's verdict.
 overflow = check_at(real, "sample.ads", 18, 25, "overflow check")
-if (overflow["verdict"], overflow["adalang"]) != ("proved", "unproved"):
-    fail("the addition only GNATprove proves is " + str(overflow))
+if (overflow["verdict"], overflow["adalang"]) != ("proved", "proved-safe"):
+    fail("the addition of two elements is " + str(overflow))
 carried = obligation(real, overflow["obligation"])
-if (carried["status"], carried.get("gnatprove")) != ("unproved", "proved"):
+if (carried["status"], carried.get("gnatprove")) != ("proved-safe", "proved"):
     fail("the obligation of that addition is " + str(carried))
 
 #    The length check of the assignment is at its ":=", where AdaLang has
@@ -176,12 +178,13 @@ if ledger != imported:
          f"  ledger only: {sorted(set(ledger.items()) - set(imported.items()))}\n"
          f"  import only: {sorted(set(imported.items()) - set(ledger.items()))}")
 
-# 5. The made-up log.
+# 5. The made-up log. Two checks AdaLang proves are said not proved: the
+#    division at sample.ads:9 and the addition of the instances below.
 expect(made_up, "made_up", checks=7, proved=4, justified=1, notProved=2,
        provedByBoth=1, provedByGnatproveOnObligation=0,
        provedByGnatproveWithoutObligation=2,
        definiteErrorWhereGnatproveProved=1,
-       provedSafeWhereGnatproveNotProved=1)
+       provedSafeWhereGnatproveNotProved=2)
 
 #    The verdict that goes against AdaLang's leaves AdaLang's as it is.
 against = check_at(made_up, "sample.adb", 11, 20, "division check")
@@ -232,8 +235,8 @@ grep -F "GNATprove verdicts (read from 1 log; not AdaLang's own results):" \
   "$work/text" >/dev/null
 grep -F 'Checks in the log : 18 (15 proved, 0 justified, 3 not proved)' \
   "$work/text" >/dev/null
-grep -F 'proved by AdaLang too : 14' "$work/text" >/dev/null
-grep -F "GNATprove's verdict alone, on an AdaLang obligation : 1" \
+grep -F 'proved by AdaLang too : 15' "$work/text" >/dev/null
+grep -F "GNATprove's verdict alone, on an AdaLang obligation : 0" \
   "$work/text" >/dev/null
 grep -F "GNATprove's verdict alone, no AdaLang obligation : 0" \
   "$work/text" >/dev/null

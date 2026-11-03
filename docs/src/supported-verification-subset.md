@@ -995,14 +995,17 @@ an index whose value is known where the name stands. `Deep.Left.Count`,
 the index is that of a literal, a named number or a constant; the
 position of an enumeration literal; what the state holds of a variable; or
 what a call bound a parameter of an inlined expression function to. Two
-elements of one array are two symbols, and nothing known of one is known
-of the other. A discriminant is read as a component is.
+elements of one array are two symbols; each is also the element at its
+index of the contents of the array (see "Elements at an index that is not
+known"), and what is known of one element is known of the other only
+through those. A discriminant is read as a component is.
 
 There is no symbol for a part that the name does not settle: one behind
 an access value, in the result of a call or of a conversion, or in an
 element at an index that is not known. Nothing is proved from
 `Row (I).Count` while `I` is not known, and it is not taken for
-`Row (1).Count` (FP-119).
+`Row (1).Count` (FP-119). A scalar element itself at such an index has a
+term, below.
 
 An assignment to a component of a record whose name settles which part is
 written -- `Ctx.P.Next := 1`, `Row (1).Count := 0` -- gives that part a new
@@ -1027,6 +1030,34 @@ that renames another, are renewed. What a predicate or a precondition
 says of the elements of another array then stands. A call renews them
 as it renews the components of records (see "Objects and effects the
 analysis does not follow").
+
+### Elements at an index that is not known
+
+A scalar element of a one-dimensional array with an integer index, read at
+an index whose value is not known -- `X (K)`, `XL (I - 16)`,
+`Ctx.Data (J)` -- is the element at that index of the contents of the
+array's value: an SMT array from indexes to elements, a function of the
+value of the array and of its first bound. The array is an object, or a
+part of one that its name settles, or `X'Old` of one, and it is initialized
+where it is read; in SPARK code the element is within the subtype of the
+components. What a precondition, an assertion, the postcondition of a
+callee or a predicate says of the contents is then known of every element
+read there: `Pre => (for all J in Index => X (J) in 0 .. 100)` proves
+`Small (X (K))`, and `Pre => X (K) > 0` proves `X (K) > 0` further on while
+neither `X` nor `K` has changed. An element at a known index is the element
+of the contents at that index, so what is said of the one is said of the
+other.
+
+Every write that may change an element renews the value of the array, as it
+renews the symbols of its elements: what was known of the contents is of
+the value before the write, and nothing is known of the new one but what
+is said of it afterwards. An assignment to an element, at an index known or
+not, is not taken as a store into the contents, nor is an aggregate or
+`'Update`. An array read with two first bounds -- an actual that slides to
+the bounds of a formal -- has two contents that nothing links. An array
+with volatile or atomic components, one reached through an access value,
+one with an index of an enumeration type and one of more than one
+dimension have no such term.
 
 In that same code, a write through an access value reaches no named part of
 any object: what an access value designates is not one. After
@@ -1237,8 +1268,8 @@ discount what is proved from them.
 
 A predicate -- `Dynamic_Predicate`, `Static_Predicate`, GNAT's `Predicate`
 -- is part of the subtype it is given for, and of every subtype of that
-one and every type derived from it. It is taken as holding of a record
-object at two places:
+one and every type derived from it. It is taken as holding of a record or
+an array object at two places:
 
 - of a parameter of mode `in` or `in out` where a subprogram that is SPARK
   code is entered;
@@ -1264,8 +1295,13 @@ the body of `Valid_Context` that the scalar VC language expresses is known
 of the components of the object, and a part that reads what it does not
 express -- the designated object of an access value, most often -- is
 left out. A component named alone in the predicate of a record type
-("Rate > Min_Padding_Bits") is the component of the object. What is known is known of the values the object had at that
-place. An assignment to a component afterwards, or to an element at an
+("Rate > Min_Padding_Bits") is the component of the object, and the name
+of an array subtype indexed in its predicate (`Normal_GF64 (I)`) the
+element of the object. The predicate of an array subtype that fixes its
+bounds is taken only of a whole object whose declaration gives it those
+bounds: an actual of other bounds slides to those of the formal, and its
+elements are not at the indexes the predicate names (FP-138). What is
+known is known of the values the object had at that place. An assignment to a component afterwards, or to an element at an
 index that is not known, leaves the predicate saying what it said of the
 values that were replaced, which is nothing of the new ones; `--verify`
 does not take the predicate to hold again after such an assignment, nor of
@@ -1664,7 +1700,9 @@ being anything the rules of this section take in its turn.
   enumeration type, a subtype of one written with two literals, an integer
   range with static bounds: the parts of `E` for each value of `P`. A
   subtype that has a predicate is no such domain, the expression ranging
-  over the values that satisfy it and not over all its range. One such
+  over the values that satisfy it and not over all its range. Where `E`
+  reads an element of an array at `P`, the expression is also one term,
+  so that what it says is known at an index that is not known. One such
   expression inside two others, and any other domain, is one term or
   none.
 - A call of an expression function that returned `True`: the parts of its
@@ -1792,9 +1830,11 @@ A quantified expression is decided where it is evaluated as a condition:
 in a `Pre` or a `Post`, and in an `Assert`, an `Assert_And_Cut` or a
 `Loop_Invariant`. One that is used as a value anywhere else in a body --
 the condition of an `if`, the right side of an assignment, the initial
-value of an object -- is part of the verified subset as well: over `L .. H`
-its value is the quantified formula, and over any other domain a value of
-which nothing is known. The checks inside its predicate are decided as for
+value of an object -- is part of the verified subset as well: over `L .. H`,
+over `X'Range` of a one-dimensional array with an integer index, and over a
+subtype whose bounds a declaration fixes and that has no predicate, its
+value is the quantified formula, and over any other domain a value of which
+nothing is known. The checks inside its predicate are decided as for
 a loop body, below, and a call in it is evaluated where the expression is.
 An iteration that is not over a discrete range or an array runs user code
 (see "Objects and effects the analysis does not follow").

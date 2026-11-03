@@ -633,7 +633,8 @@ private
    --
    --  Opaque_Sort is the value of an object that is not a scalar: a token
    --  with no structure, the same for as long as the object is unchanged
-   --  and good only as an argument of a function term.
+   --  and good only as an argument of a function term, the contents of an
+   --  array (Selected_Element_Term in the body) being one.
 
    --  Identifies what a root/binding stands for: an ordinary object
    --  (Component = No_Ada_Node), or one record component of one object
