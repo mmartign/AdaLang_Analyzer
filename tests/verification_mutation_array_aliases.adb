@@ -18,4 +18,13 @@ package body Verification_Mutation_Array_Aliases is
       Yb (K) := 200;
       S := Xb (K);
    end Alias_Store;
+
+   procedure Global_Alias (Ga : Wides; S : out Small) is
+   begin
+      S := 0;
+      for I in Index loop
+         G (I) := 500;
+         S := Ga (I);
+      end loop;
+   end Global_Alias;
 end Verification_Mutation_Array_Aliases;

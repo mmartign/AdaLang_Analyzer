@@ -37,6 +37,32 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - The predicate of an array subtype names its elements as the current
   instance indexed (`Normal_GF64 (I)`), which Libadalang takes for a type
   conversion: it is the element of the object the predicate is taken of.
+- A quantified expression also ranges over `T range L .. H` whose bounds no
+  declaration fixes (`Index_16 range 0 .. I - 1`), T being an integer
+  subtype without a predicate.
+- What is known of the value of an array object that holds the one it was
+  declared with -- a constant, and in SPARK code a formal parameter or a
+  generic formal object of mode `in` -- its contents included, holds at the
+  head of a loop as what is known of a scalar one does. The proof that a
+  loop invariant is preserved, and the proof of one inside the body where
+  it stands, start from those facts and from the bounds of arrays: they
+  started from nothing.
+- `X'Loop_Entry` is the value X has where its loop is entered: a symbol of
+  its own, given on each way into the loop, that no write renews and the
+  loop head keeps, and of which what is known there of X's value is known.
+  An element of it is read in its contents at any index. A loop invariant
+  with `X'Loop_Entry` inside the body is proved where it stands.
+- Where a `for` loop over a range that is not empty wherever the loop is
+  entered (its bounds fixed, the range shown not empty) is left by its
+  head, and every invariant leading its body is proved, what holds is what
+  holds at the end of its last iteration: one iteration from the head with
+  the parameter at the last value, with each invariant proved where it
+  stands that only pragmas follow. A postcondition, an assertion or a check
+  after such a loop is proved from it; a `while` loop had this from its
+  invariants already. An `exit` statement leaves the loop by its own way.
+- One iteration walked for those proofs renews, on a write to an element
+  of an array, only that array where the analysis of the subprogram does:
+  it renewed every array.
 
 ### Fixed
 
@@ -47,6 +73,14 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   `subtype A0 is Arr (0 .. 3)`, `X (1)` being the formal's element 0. A
   predicate of a definite array subtype is now taken only of a whole object
   whose declaration gives it the bounds of the subtype.
+- FP-139: the preservation of a loop invariant of a `for` loop was checked
+  with the loop parameter at the value it had, where the step to the next
+  one could not be told: over `T range L .. H`, whose bounds were not read
+  (Libadalang gives a discrete subtype indication a kind of its own), and
+  over a range with a bound the loop may change. `X = I or else I = 0` was
+  proved preserved by `X := I`. The parameter now has a value of its own
+  there, related to the one before where the range is known, and the
+  bounds of `T range L .. H` are read.
 
 ## [1.12.3] - 2026-11-02
 

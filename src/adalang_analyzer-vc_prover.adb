@@ -99,6 +99,24 @@ package body Adalang_Analyzer.VC_Prover is
    function Is_Old_Path (Path : Unbounded_String) return Boolean is
      (Length (Path) > 0 and then Element (Path, 1) = Old_Mark);
 
+   --  The place of X'Loop_Entry is the attribute reference itself, with
+   --  the path Entry_Path (Location): its value is the root Enter_Loop
+   --  gives it on each way into the loop, which no name of the program
+   --  reaches and no write renews.
+   Entry_Path : constant String := "!entry";
+
+   function Is_Entry_Path (Path : Unbounded_String) return Boolean is
+     (Length (Path) >= Entry_Path'Length
+      and then Slice (Path, 1, Entry_Path'Length) = Entry_Path);
+
+   function Is_Loop_Entry
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+     (not Libadalang.Analysis.Is_Null (Node)
+      and then Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+      and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                 (Adalang_Analyzer.Ada_Text.Node_Text
+                    (Node.As_Attribute_Ref.F_Attribute)) = "loop-entry");
+
    --  Generated code reaches a scalar through a chain of expression
    --  functions (RecordFlux: Sufficient_Space, Available_Space,
    --  Field_First, Field_First_Internal, Field_First_X), and a fact and a
@@ -657,6 +675,27 @@ package body Adalang_Analyzer.VC_Prover is
          --  the same value, so no symbol can stand for it (FP-092).
          Mark_Unsupported (Context, Key.Object, Unsupported_Expression_Kind);
          return "";
+      elsif Is_Entry_Path (Key.Path) then
+         --  X'Loop_Entry: the root Enter_Loop gave it on the way into the
+         --  loop, never one made here, which would name a value nothing
+         --  links to X's.
+         declare
+            Name  : constant String := Root_Name (Key);
+            Index : constant Natural := Root_Index (Context.Symbols, Name);
+         begin
+            if To_String (Key.Path) /= Entry_Path or else Index = 0 then
+               Mark_Unsupported (Context, Key.Object, Unsupported_Attribute);
+               return "";
+            elsif (Context.Symbols.Roots.Element (Index).Sort = Opaque_Sort)
+                    /= (Sort = Opaque_Sort)
+              or else (Context.Symbols.Roots.Element (Index).Sort =
+                         Boolean_Sort) /= (Sort = Boolean_Sort)
+            then
+               Mark_Unsupported (Context, Key.Object, Sort_Mismatch);
+               return "";
+            end if;
+            return Name;
+         end;
       elsif Is_Old_Path (Key.Path) then
          --  A part of a place as it was in the old state: its term there,
          --  or the value it had before it was first written, which is what
@@ -1289,6 +1328,10 @@ package body Adalang_Analyzer.VC_Prover is
       Bounds     : out Domain.Abstract_Range;
       Sort       : out Scalar_Sort);
 
+   function Constrained_Range
+     (Definition : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Bin_Op;
+
    procedure Set_Binding
      (State : in out Symbolic_State;
       Item  : Symbolic_Binding);
@@ -1817,6 +1860,68 @@ package body Adalang_Analyzer.VC_Prover is
          return Libadalang.Analysis.No_Base_Type_Decl;
    end Current_Instance_Array;
 
+   function Entry_Loop
+     (Attribute : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+      Current : Libadalang.Analysis.Ada_Node;
+   begin
+      if not Is_Loop_Entry (Attribute)
+        or else
+          (not Libadalang.Analysis.Is_Null (Attribute.As_Attribute_Ref.F_Args)
+           and then Attribute.As_Attribute_Ref.F_Args.Children_Count /= 0)
+      then
+         return Libadalang.Analysis.No_Ada_Node;
+      end if;
+
+      --  X'Loop_Entry (L) is of the loop named L, which need not be the
+      --  innermost one: not taken.
+      if Attribute.Parent.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Libadalang.Analysis."="
+          (Libadalang.Analysis.Ada_Node (Attribute.Parent.As_Call_Expr.F_Name),
+           Libadalang.Analysis.Ada_Node (Attribute))
+      then
+         declare
+            Actual : constant Libadalang.Analysis.Expr :=
+              Single_Actual_Expr (Attribute.Parent.As_Call_Expr.F_Suffix);
+         begin
+            if Libadalang.Analysis.Is_Null (Actual)
+              or else
+                (Actual.Kind = Libadalang.Common.Ada_Identifier
+                 and then not Libadalang.Analysis.Is_Null
+                   (Actual.As_Identifier.P_Referenced_Decl)
+                 and then Actual.As_Identifier.P_Referenced_Decl.Kind =
+                   Libadalang.Common.Ada_Named_Stmt_Decl)
+            then
+               return Libadalang.Analysis.No_Ada_Node;
+            end if;
+         end;
+      end if;
+
+      Current := Attribute.Parent;
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind in Libadalang.Common.Ada_For_Loop_Stmt
+                          | Libadalang.Common.Ada_While_Loop_Stmt
+                          | Libadalang.Common.Ada_Loop_Stmt
+         then
+            return Current;
+         elsif Current.Kind in Libadalang.Common.Ada_Subp_Body
+                             | Libadalang.Common.Ada_Expr_Function
+                             | Libadalang.Common.Ada_Package_Body
+                             | Libadalang.Common.Ada_Task_Body
+                             | Libadalang.Common.Ada_Protected_Body
+                             | Libadalang.Common.Ada_Entry_Body
+         then
+            exit;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return Libadalang.Analysis.No_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Entry_Loop;
+
    --  Where Name is: the object it names, or the part of an object -- a
    --  component of a record, the element of an array at an index whose
    --  value is known where Name stands, and so on inwards. Nowhere for
@@ -1857,6 +1962,13 @@ package body Adalang_Analyzer.VC_Prover is
             end if;
             return (Object => Base.Object, Path => Old_Mark & Base.Path);
          end;
+      elsif Is_Loop_Entry (Name) then
+         if Libadalang.Analysis.Is_Null (Entry_Loop (Name)) then
+            return Nowhere;
+         end if;
+         return
+           (Object => Libadalang.Analysis.Ada_Node (Name),
+            Path   => To_Unbounded_String (Entry_Path));
       end if;
 
       Id :=
@@ -1888,7 +2000,10 @@ package body Adalang_Analyzer.VC_Prover is
                return Nowhere;
             end if;
             Base := Location (Dotted.F_Prefix, Context);
-            if Libadalang.Analysis.Is_Null (Base.Object) then
+            --  A part of X'Loop_Entry has no root of its own.
+            if Libadalang.Analysis.Is_Null (Base.Object)
+              or else Is_Entry_Path (Base.Path)
+            then
                return Nowhere;
             end if;
             return
@@ -1931,7 +2046,11 @@ package body Adalang_Analyzer.VC_Prover is
                   return Nowhere;
                end if;
                Base := Location (Call.F_Name, Context);
-               if Libadalang.Analysis.Is_Null (Base.Object) then
+               --  An element of X'Loop_Entry is read in its contents
+               --  (Selected_Element_Term), whatever the index.
+               if Libadalang.Analysis.Is_Null (Base.Object)
+                 or else Is_Entry_Path (Base.Path)
+               then
                   return Nowhere;
                end if;
                return
@@ -1946,11 +2065,15 @@ package body Adalang_Analyzer.VC_Prover is
    end Location;
 
    --  True when the object at Place is initialized where its parts are
-   --  read: in the old state for a place as it was there.
+   --  read: in the old state for a place as it was there, on the way into
+   --  the loop for X'Loop_Entry, which has a value only where Enter_Loop
+   --  gave it one.
    function Initialized_At
      (Context : Translation_Context;
       Place   : Located_Object) return Boolean
-   is (if Is_Old_Path (Place.Path)
+   is (if Is_Entry_Path (Place.Path)
+       then Root_Index (Context.Symbols, Root_Name (Part_Key (Place))) /= 0
+       elsif Is_Old_Path (Place.Path)
        then Old_View.Present
             and then Domain.Flow_Initialization (Old_View.Flow, Place.Object) =
               Domain.Bool_True
@@ -2033,6 +2156,22 @@ package body Adalang_Analyzer.VC_Prover is
       end loop;
       return Term;
    end Old_Term;
+
+   --  The term for Node, X'Loop_Entry, as a value of Sort: the root
+   --  Enter_Loop gave it on the way into its loop (Symbol_For).
+   function Entry_Term
+     (Node    : Libadalang.Analysis.Ada_Node'Class;
+      Context : in out Translation_Context;
+      Sort    : Scalar_Sort) return Unbounded_String
+   is
+      Place : constant Located_Object := Location (Node, Context);
+   begin
+      if Libadalang.Analysis.Is_Null (Place.Object) then
+         Mark_Unsupported (Context, Node, Unsupported_Attribute);
+         return Null_Unbounded_String;
+      end if;
+      return To_Unbounded_String (Symbol_For (Context, Part_Key (Place), Sort));
+   end Entry_Term;
 
    --  The term for Prefix'Result, the value the function Prefix names
    --  returns, where the state is that of its normal exit: what every return
@@ -3790,6 +3929,8 @@ package body Adalang_Analyzer.VC_Prover is
             begin
                if Name = "old" then
                   return Old_Term (Attr.F_Prefix, Node, Context, Integer_Sort);
+               elsif Name = "loop-entry" then
+                  return Entry_Term (Node, Context, Integer_Sort);
                elsif Name = "result" then
                   return Result_Term (Attr.F_Prefix, Node, Context,
                                       Integer_Sort);
@@ -4098,32 +4239,49 @@ package body Adalang_Analyzer.VC_Prover is
                 .P_Index_Type (0).P_Is_Int_Type;
             Bounds       : Domain.Abstract_Range := Domain.Unknown_Range;
             Bound_Sort   : Scalar_Sort := Integer_Sort;
+            --  The range written in "T range Low .. High", T an integer
+            --  subtype without a predicate, whose bounds no declaration
+            --  fixes: "Index_16 range 0 .. I - 1".
+            Constrained  : Libadalang.Analysis.Bin_Op :=
+              Libadalang.Analysis.No_Bin_Op;
+            Written      : Libadalang.Analysis.Bin_Op :=
+              Libadalang.Analysis.No_Bin_Op;
          begin
             if not Is_Range and then not Array_Range then
                Find_Iteration_Domain (Iter_Expr, Bounds, Bound_Sort);
+               if not (Bounds.Has_Low and then Bounds.Has_High) then
+                  Constrained := Constrained_Range (Iter_Expr);
+               end if;
             end if;
             if Spec.F_Loop_Type /= Libadalang.Common.Ada_Iter_Type_In
               or else not Libadalang.Analysis.Is_Null (Spec.F_Iter_Filter)
               or else
                 (not Is_Range and then not Array_Range
+                 and then Libadalang.Analysis.Is_Null (Constrained)
                  and then not (Bounds.Has_Low and then Bounds.Has_High))
             then
                Mark_Unsupported (Context, Node, Unsupported_Quantifier);
                return Null_Unbounded_String;
             end if;
+            if Is_Range then
+               Written := Iter_Expr.As_Bin_Op;
+            elsif not Libadalang.Analysis.Is_Null (Constrained) then
+               Written := Constrained;
+               Bound_Sort := Integer_Sort;
+            end if;
 
             declare
                Low        : constant Unbounded_String :=
-                 (if Is_Range
-                  then Integer_Term (Iter_Expr.As_Bin_Op.F_Left, Context)
+                 (if not Libadalang.Analysis.Is_Null (Written)
+                  then Integer_Term (Written.F_Left, Context)
                   elsif Array_Range
                   then Array_Attribute_Term
                     (Iter_Expr.As_Attribute_Ref.F_Prefix, "first", Node,
                      Context)
                   else To_Unbounded_String (SMT_Integer (Bounds.Low)));
                High       : constant Unbounded_String :=
-                 (if Is_Range
-                  then Integer_Term (Iter_Expr.As_Bin_Op.F_Right, Context)
+                 (if not Libadalang.Analysis.Is_Null (Written)
+                  then Integer_Term (Written.F_Right, Context)
                   elsif Array_Range
                   then Array_Attribute_Term
                     (Iter_Expr.As_Attribute_Ref.F_Prefix, "last", Node,
@@ -4354,6 +4512,8 @@ package body Adalang_Analyzer.VC_Prover is
       then
          return Old_Term
            (Node.As_Attribute_Ref.F_Prefix, Node, Context, Boolean_Sort);
+      elsif Is_Loop_Entry (Node) then
+         return Entry_Term (Node, Context, Boolean_Sort);
       elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref
         and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
           (Adalang_Analyzer.Ada_Text.Node_Text
@@ -4846,6 +5006,8 @@ package body Adalang_Analyzer.VC_Prover is
             then
                return Old_Term
                  (Node.As_Attribute_Ref.F_Prefix, Node, Context, Opaque_Sort);
+            elsif Is_Loop_Entry (Node) then
+               return Entry_Term (Node, Context, Opaque_Sort);
             end if;
             Mark_Unsupported (Context, Node, Unsupported_Expression_Kind);
             return Null_Unbounded_String;
@@ -5619,6 +5781,55 @@ package body Adalang_Analyzer.VC_Prover is
          Bounds := Domain.Unknown_Range;
          Sort := Integer_Sort;
    end Find_Iteration_Domain;
+
+   --  The range "Low .. High" of a subtype indication "T range Low ..
+   --  High", T an integer subtype without a predicate: the values the
+   --  parameter of a quantified expression over it takes, whatever its
+   --  bounds. No_Bin_Op for any other definition.
+   function Constrained_Range
+     (Definition : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Bin_Op
+   is
+      Indication : Libadalang.Analysis.Subtype_Indication;
+      Subtype_Of : Libadalang.Analysis.Basic_Decl;
+      Written    : Libadalang.Analysis.Ada_Node;
+      Sort_Info  : Sort_Resolution;
+   begin
+      if Libadalang.Analysis.Is_Null (Definition)
+        or else Definition.Kind not in
+          Libadalang.Common.Ada_Subtype_Indication_Range
+      then
+         return Libadalang.Analysis.No_Bin_Op;
+      end if;
+      Indication := Definition.As_Subtype_Indication;
+      if Libadalang.Analysis.Is_Null (Indication.F_Constraint)
+        or else Indication.F_Constraint.Kind /=
+          Libadalang.Common.Ada_Range_Constraint
+      then
+         return Libadalang.Analysis.No_Bin_Op;
+      end if;
+      Written :=
+        Libadalang.Analysis.Ada_Node
+          (Indication.F_Constraint.As_Range_Constraint.F_Range.F_Range);
+      Subtype_Of := Indication.F_Name.P_Referenced_Decl;
+      if Libadalang.Analysis.Is_Null (Written)
+        or else Written.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+        or else Written.As_Bin_Op.F_Op /= Libadalang.Common.Ada_Op_Double_Dot
+        or else Libadalang.Analysis.Is_Null (Subtype_Of)
+        or else Subtype_Of.Kind not in Libadalang.Common.Ada_Base_Type_Decl
+        or else Eval.Has_Subtype_Predicate (Subtype_Of.As_Base_Type_Decl)
+      then
+         return Libadalang.Analysis.No_Bin_Op;
+      end if;
+      Sort_Info := Type_Sort (Subtype_Of.As_Base_Type_Decl);
+      if not Sort_Info.Supported or else Sort_Info.Sort /= Integer_Sort then
+         return Libadalang.Analysis.No_Bin_Op;
+      end if;
+      return Written.As_Bin_Op;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Bin_Op;
+   end Constrained_Range;
 
    --  Adds to State what Node having the value Truth says, Node being
    --  written in terms of Frame, and sets Any when something was added.
@@ -6450,13 +6661,14 @@ package body Adalang_Analyzer.VC_Prover is
 
       --  True for what a write to elements of an array can change: a
       --  value that is not a scalar, and a scalar read in an element, but
-      --  for what is Kept.
+      --  for what is Kept, and for X'Loop_Entry, a value of the past.
       function Stale (Key : Symbol_Key; Sort : Scalar_Sort) return Boolean is
         ((Sort = Opaque_Sort
           or else
             (Kept /= Named_Parts
              and then Ada.Strings.Unbounded.Index (Key.Path, "@") /= 0))
          and then not (Kept /= Nothing and then Is_Access_Value (Key))
+         and then not Is_Entry_Path (Key.Path)
          and then (Touched = null or else Touched (Key.Object)));
    begin
       if not State.Supported or else Libadalang.Analysis.Is_Null (Writer) then
@@ -6595,16 +6807,20 @@ package body Adalang_Analyzer.VC_Prover is
             (Key => Key, Sort => Sort, Term => To_Unbounded_String (Name)));
       end Renew;
    begin
+      --  X'Loop_Entry is a value of the past, which no write changes.
       for Root of State.Roots loop
          if Binding_Index (State, Root.Key) = 0
            and then To_String (Root.Name) = Root_Name (Root.Key)
+           and then not Is_Entry_Path (Root.Key.Path)
            and then Renewed (Root.Key)
          then
             Renew (Root.Key, Root.Sort);
          end if;
       end loop;
       for Binding of State.Bindings loop
-         if Renewed (Binding.Key) then
+         if not Is_Entry_Path (Binding.Key.Path)
+           and then Renewed (Binding.Key)
+         then
             Renew (Binding.Key, Binding.Sort);
          end if;
       end loop;
@@ -9957,21 +10173,35 @@ package body Adalang_Analyzer.VC_Prover is
       --  The names of the roots of standing objects kept in Result.
       Kept   : String_Sets.Map;
 
-      --  True for the root of the whole of a scalar object Standing is True
-      --  for.
-      function Is_Standing_Root (Item : Symbol_Root) return Boolean is
+      --  True for the key of a whole object Standing is True for: a scalar
+      --  object, or the value of one that is not a scalar (Value_Key); or
+      --  for that of X'Loop_Entry where Standing is True for the attribute
+      --  reference.
+      function Is_Standing_Key (Key : Symbol_Key) return Boolean is
         (Standing /= null
-         and then not Libadalang.Analysis.Is_Null (Item.Key.Object)
-         and then Libadalang.Analysis.Is_Null (Item.Key.Component)
-         and then Length (Item.Key.Path) = 0
-         and then Item.Key.Object.Kind = Libadalang.Common.Ada_Defining_Name
-         and then Standing (Item.Key.Object));
+         and then not Libadalang.Analysis.Is_Null (Key.Object)
+         and then
+           (((Libadalang.Analysis.Is_Null (Key.Component)
+              or else Key.Component = Key.Object)
+             and then Length (Key.Path) = 0
+             and then Key.Object.Kind = Libadalang.Common.Ada_Defining_Name)
+            or else
+              (Key.Component = Key.Object
+               and then To_String (Key.Path) = Entry_Path
+               and then Is_Loop_Entry (Key.Object)))
+         and then Standing (Key.Object));
+
+      function Is_Standing_Root (Item : Symbol_Root) return Boolean is
+        (Is_Standing_Key (Item.Key));
 
       --  True when every name in the SMT term Text is a bound symbol, the
       --  root of a standing object kept in Result (Kept), an operator, a
-      --  name a "let" of a division binds (Integer_Term) or a literal.
+      --  name a "let" of a division binds (Integer_Term), the variable of
+      --  a quantifier in Text (Boolean_Term), the contents of a value
+      --  (Contents_Term) or a literal.
       function Only_Bounds (Text : String) return Boolean is
          Start : Natural := 0;
+         Bound : String_Sets.Map;
 
          function Acceptable (Token : String) return Boolean is
            (Is_Bound_Symbol (Token)
@@ -9981,9 +10211,34 @@ package body Adalang_Analyzer.VC_Prover is
                      and then
                        (Token in "div" | "mod" | "abs" | "let"
                                 | "ada!l" | "ada!r" | "ada!a"
-                        or else Kept.Contains (Token)))
+                                | "forall" | "exists" | "=>" | "Int"
+                                | "select" | Integer_Contents
+                                | Boolean_Contents
+                        or else Kept.Contains (Token)
+                        or else Bound.Contains (Token)))
             or else (for all Item of Token => Item in '0' .. '9'));
+
+         --  Notes the name each "(forall ((Name Int))" and "(exists ((Name
+         --  Int))" of Text binds.
+         procedure Note_Bound (Binder : String) is
+            From : Natural := Text'First;
+            At_Binder, Stop : Natural;
+         begin
+            loop
+               At_Binder :=
+                 Ada.Strings.Fixed.Index (Text (From .. Text'Last), Binder);
+               exit when At_Binder = 0;
+               From := At_Binder + Binder'Length;
+               Stop := Ada.Strings.Fixed.Index (Text (From .. Text'Last), " ");
+               exit when Stop = 0;
+               Bound.Include (Text (From .. Stop - 1), True);
+            end loop;
+         end Note_Bound;
       begin
+         if Standing /= null then
+            Note_Bound ("(forall ((");
+            Note_Bound ("(exists ((");
+         end if;
          for Index in Text'Range loop
             if Text (Index) in ' ' | '(' | ')' then
                if Start /= 0 and then not Acceptable (Text (Start .. Index - 1))
@@ -10015,12 +10270,7 @@ package body Adalang_Analyzer.VC_Prover is
       --  contract names.
       if Standing /= null then
          for Item of State.Bindings loop
-            if not Libadalang.Analysis.Is_Null (Item.Key.Object)
-              and then Libadalang.Analysis.Is_Null (Item.Key.Component)
-              and then Length (Item.Key.Path) = 0
-              and then Item.Key.Object.Kind =
-                Libadalang.Common.Ada_Defining_Name
-              and then Standing (Item.Key.Object)
+            if Is_Standing_Key (Item.Key)
               and then Only_Bounds (To_String (Item.Term))
             then
                Result.Bindings.Append (Item);
@@ -10028,7 +10278,9 @@ package body Adalang_Analyzer.VC_Prover is
          end loop;
       end if;
       for Item of State.Assumptions loop
-         if Only_Bounds (To_String (Item)) then
+         if To_String (Item) /= Entry_Mark
+           and then Only_Bounds (To_String (Item))
+         then
             Result.Assumptions.Append (Item);
          end if;
       end loop;
@@ -10037,6 +10289,234 @@ package body Adalang_Analyzer.VC_Prover is
       when others =>
          return Havoc;
    end Array_Bound_Facts;
+
+   --  The X'Loop_Entry of each loop, by loop: those Entry_Loop gives the
+   --  loop for, outside any subprogram or package body in it.
+   package Node_Vector_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Node_Vectors.Vector,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=",
+      "="             => Node_Vectors."=");
+   Loop_Entries_Of : Node_Vector_Maps.Map;
+
+   function Loop_Entry_References
+     (Loop_Node : Libadalang.Analysis.Ada_Node) return Node_Vectors.Vector
+   is
+      Position : constant Node_Vector_Maps.Cursor :=
+        Loop_Entries_Of.Find (Loop_Node);
+      Found    : Node_Vectors.Vector;
+
+      procedure Visit (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node)
+           or else Node.Kind in Libadalang.Common.Ada_Subp_Body
+                              | Libadalang.Common.Ada_Expr_Function
+                              | Libadalang.Common.Ada_Package_Body
+                              | Libadalang.Common.Ada_Task_Body
+                              | Libadalang.Common.Ada_Protected_Body
+                              | Libadalang.Common.Ada_Entry_Body
+         then
+            return;
+         elsif Is_Loop_Entry (Node) and then Entry_Loop (Node) = Loop_Node
+         then
+            Found.Append (Libadalang.Analysis.Ada_Node (Node));
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            Visit (Node.Child (Index));
+         end loop;
+      end Visit;
+   begin
+      if Node_Vector_Maps.Has_Element (Position) then
+         return Node_Vector_Maps.Element (Position);
+      end if;
+      Visit (Loop_Node);
+      Loop_Entries_Of.Include (Loop_Node, Found);
+      return Found;
+   end Loop_Entry_References;
+
+   function Enter_Loop
+     (State     : Symbolic_State;
+      Loop_Node : Libadalang.Analysis.Ada_Node'Class;
+      Flow      : Domain.Flow_State) return Symbolic_State
+   is
+      Result : Symbolic_State := State;
+
+      --  True when Node names something declared in the loop, which has
+      --  no value where the loop is entered.
+      function Inside (Node : Libadalang.Analysis.Ada_Node'Class)
+        return Boolean
+      is
+         Current : Libadalang.Analysis.Ada_Node;
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Identifier then
+            Current := Libadalang.Analysis.Ada_Node
+              (Node.As_Identifier.P_Referenced_Defining_Name);
+            while not Libadalang.Analysis.Is_Null (Current) loop
+               if Current = Libadalang.Analysis.Ada_Node (Loop_Node) then
+                  return True;
+               end if;
+               Current := Current.Parent;
+            end loop;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Inside (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Inside;
+
+      --  The facts about X restated of X'Loop_Entry, at most.
+      Max_Restated : constant := 16;
+
+      function Is_Delimiter (Item : Character) return Boolean is
+        (Item in ' ' | '(' | ')');
+
+      --  True when Text is one name, not a term built of several.
+      function Is_Symbol (Text : String) return Boolean is
+        (Text'Length > 0
+         and then (for all Item of Text => not Is_Delimiter (Item)));
+
+      --  Text with each name Token in it replaced by By.
+      function With_Token (Text, Token, By : String) return String is
+         Result : Unbounded_String;
+         Index  : Positive := Text'First;
+      begin
+         while Index <= Text'Last loop
+            if Index + Token'Length - 1 <= Text'Last
+              and then Text (Index .. Index + Token'Length - 1) = Token
+              and then (Index = Text'First
+                        or else Is_Delimiter (Text (Index - 1)))
+              and then (Index + Token'Length > Text'Last
+                        or else Is_Delimiter (Text (Index + Token'Length)))
+            then
+               Append (Result, By);
+               Index := Index + Token'Length;
+            else
+               Append (Result, Text (Index));
+               Index := Index + 1;
+            end if;
+         end loop;
+         return To_String (Result);
+      end With_Token;
+
+      --  True when the SMT text Text has the name Token.
+      function Has_Token (Text, Token : String) return Boolean is
+        (With_Token (Text, Token, "") /= Text);
+
+      --  True when State says anything of the symbol Name: a root alone,
+      --  which a way out of the loop left, says nothing of it.
+      function Mentions (Name : String) return Boolean is
+      begin
+         for Item of Result.Assumptions loop
+            if Ada.Strings.Unbounded.Index (Item, Name) /= 0 then
+               return True;
+            end if;
+         end loop;
+         for Item of Result.Bindings loop
+            if Ada.Strings.Unbounded.Index (Item.Term, Name) /= 0 then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Mentions;
+
+      procedure Define (Attribute : Libadalang.Analysis.Ada_Node) is
+         Prefix    : constant Libadalang.Analysis.Name :=
+           Attribute.As_Attribute_Ref.F_Prefix;
+         Key       : constant Symbol_Key :=
+           Part_Key
+             ((Object => Attribute,
+               Path   => To_Unbounded_String (Entry_Path)));
+         Name      : constant String := Root_Name (Key);
+         Sort_Info : constant Sort_Resolution := Expression_Sort (Prefix);
+         Sort      : Scalar_Sort;
+         Term      : Unbounded_String;
+      begin
+         if Sort_Info.Supported then
+            Sort := Sort_Info.Sort;
+         elsif Is_Opaque_Type (Prefix.P_Expression_Type) then
+            Sort := Opaque_Sort;
+         else
+            return;
+         end if;
+         if Inside (Prefix) then
+            return;
+         end if;
+         --  The loop is entered again: what was said of the value it had
+         --  on entry before is not said of this one. Only a way into the
+         --  loop that did not pass its head nor an enclosing one's
+         --  (Array_Bound_Facts), a goto, can speak of it still.
+         if Mentions (Name) then
+            Result := Array_Bound_Facts (Result);
+         end if;
+         declare
+            Context : Translation_Context :=
+              (State => Flow, Symbols => Result, Supported => True,
+               Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+               Failure_Reason => No_Unsupported_Reason,
+               Failure_Node => Libadalang.Analysis.No_Ada_Node,
+               Inlining_Path => Null_Unbounded_String, Depth => 0,
+               Priming_Old => False);
+         begin
+            Term :=
+              (case Sort is
+                  when Boolean_Sort => Boolean_Term (Prefix, Context),
+                  when Opaque_Sort  => Opaque_Term (Prefix, Context),
+                  when others       => Integer_Term (Prefix, Context));
+            if not Context.Supported or else Length (Term) = 0 then
+               return;
+            end if;
+            Result := Context.Symbols;
+         end;
+         Add_Root (Result, Name, Key, Sort, Flow);
+         --  What is known of the value X has here is known of the value
+         --  of X'Loop_Entry, where X's term is a symbol: said of that
+         --  alone, it holds all through the loop where nothing else it
+         --  speaks of changes (Array_Bound_Facts).
+         if Is_Symbol (To_String (Term)) then
+            declare
+               Known : constant Assumption_Vectors.Vector :=
+                 Result.Assumptions;
+               Count : Natural := 0;
+            begin
+               for Item of Known loop
+                  exit when Count = Max_Restated;
+                  if Has_Token (To_String (Item), To_String (Term)) then
+                     Result.Assumptions.Append
+                       (To_Unbounded_String
+                          (With_Token
+                             (To_String (Item), To_String (Term), Name)));
+                     Count := Count + 1;
+                  end if;
+               end loop;
+            end;
+         end if;
+         Result.Assumptions.Append
+           (To_Unbounded_String ("(= " & Name & " " & To_String (Term) & ")"));
+      exception
+         when others =>
+            null;
+      end Define;
+   begin
+      if not State.Supported
+        or else Libadalang.Analysis.Is_Null (Loop_Node)
+      then
+         return State;
+      end if;
+      for Attribute of
+        Loop_Entry_References (Libadalang.Analysis.Ada_Node (Loop_Node))
+      loop
+         Define (Attribute);
+      end loop;
+      return Result;
+   exception
+      when others =>
+         return Havoc;
+   end Enter_Loop;
 
    --  The terms of the first and the last value of a loop over Iteration:
    --  the loop's own "A'Range", "Low .. High", "T range Low .. High", or a
@@ -10134,7 +10614,8 @@ package body Adalang_Analyzer.VC_Prover is
           Libadalang.Common.Ada_Op_Double_Dot
       then
          Between (Iteration.As_Bin_Op.F_Left, Iteration.As_Bin_Op.F_Right);
-      elsif Iteration.Kind = Libadalang.Common.Ada_Subtype_Indication then
+      elsif Iteration.Kind in Libadalang.Common.Ada_Subtype_Indication_Range
+      then
          declare
             Constraint : constant Libadalang.Analysis.Constraint :=
               Iteration.As_Subtype_Indication.F_Constraint;
@@ -10236,9 +10717,44 @@ package body Adalang_Analyzer.VC_Prover is
       Low      : Unbounded_String;
       High     : Unbounded_String;
       Variable : Unbounded_String;
+
+      --  Where the step cannot be told: on the first iteration State; on
+      --  the next, State with the parameter a value of its own that
+      --  nothing relates to the one before -- never State as it is, where
+      --  it still has that one (FP-139). Havoc where that name is taken.
+      function Untold return Symbolic_State is
+         Key    : constant Symbol_Key := Plain_Key (Parameter);
+         Name   : constant String := Root_Name (Key, "n");
+         Bound  : constant Natural := Binding_Index (State, Key);
+         Result : Symbolic_State := State;
+         Sort   : Scalar_Sort := Integer_Sort;
+      begin
+         if Step = First_Iteration or else not State.Supported then
+            return State;
+         elsif Root_Index (State, Name) /= 0 then
+            return Havoc;
+         end if;
+         if Bound /= 0 then
+            Sort := State.Bindings.Element (Bound).Sort;
+         else
+            for Item of State.Roots loop
+               if Item.Key = Key then
+                  Sort := Item.Sort;
+               end if;
+            end loop;
+         end if;
+         Add_Root (Result, Name, Key, Sort, Flow);
+         Set_Binding
+           (Result,
+            (Key => Key, Sort => Sort, Term => To_Unbounded_String (Name)));
+         return Result;
+      exception
+         when others =>
+            return Havoc;
+      end Untold;
    begin
       if Libadalang.Analysis.Is_Null (Parameter) then
-         return State;
+         return (if Step = First_Iteration then State else Havoc);
       end if;
 
       Loop_Bound_Terms
@@ -10250,7 +10766,7 @@ package body Adalang_Analyzer.VC_Prover is
              (Symbol_For (Context, Plain_Key (Parameter), Integer_Sort));
       end if;
       if not Context.Supported or else Length (Variable) = 0 then
-         return State;
+         return Untold;
       end if;
 
       declare
@@ -10277,7 +10793,7 @@ package body Adalang_Analyzer.VC_Prover is
                   Name : constant String := Root_Name (Key, "n");
                begin
                   if Root_Index (Context.Symbols, Name) /= 0 then
-                     return State;
+                     return Havoc;
                   end if;
                   Add_Root (Context.Symbols, Name, Key, Integer_Sort, Flow);
                   Set_Binding
@@ -10297,8 +10813,75 @@ package body Adalang_Analyzer.VC_Prover is
       end;
    exception
       when others =>
-         return State;
+         return Untold;
    end Step_Loop_Parameter;
+
+   procedure Assume_Last_Iteration
+     (State         : in out Symbolic_State;
+      Standing      : Symbolic_State;
+      Parameter     : Libadalang.Analysis.Ada_Node;
+      Iteration     : Libadalang.Analysis.Ada_Node'Class;
+      Reverse_Order : Boolean;
+      Flow          : Domain.Flow_State;
+      Done          : out Boolean)
+   is
+      Before   : Translation_Context :=
+        (State => Flow, Symbols => Standing, Supported => Standing.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      After    : Translation_Context :=
+        (State => Flow, Symbols => State, Supported => State.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Low      : Unbounded_String;
+      High     : Unbounded_String;
+      Variable : Unbounded_String;
+   begin
+      Done := False;
+      if Libadalang.Analysis.Is_Null (Parameter)
+        or else not State.Supported
+        or else not Standing.Supported
+      then
+         return;
+      end if;
+
+      --  The range is not empty wherever the loop is entered.
+      Loop_Bound_Terms (Iteration, Before, True, Low, High);
+      if not Before.Supported or else Length (Low) = 0 or else Length (High) = 0
+        or else Decide_Goal
+          (To_Unbounded_String
+             ("(<= " & To_String (Low) & " " & To_String (High) & ")"),
+           Before).Result /= VC_Proved
+      then
+         return;
+      end if;
+
+      Loop_Bound_Terms (Iteration, After, True, Low, High);
+      if After.Supported and then Length (Low) > 0 and then Length (High) > 0
+      then
+         Variable :=
+           To_Unbounded_String
+             (Symbol_For (After, Plain_Key (Parameter), Integer_Sort));
+      end if;
+      if not After.Supported or else Length (Variable) = 0 then
+         return;
+      end if;
+      After.Symbols.Assumptions.Append
+        (To_Unbounded_String
+           ("(= " & To_String (Variable) & " " &
+            To_String (if Reverse_Order then Low else High) & ")"));
+      State := After.Symbols;
+      Done := True;
+   exception
+      when others =>
+         Done := False;
+   end Assume_Last_Iteration;
 
    function Join_On_Range
      (True_Side, False_Side : Symbolic_State;

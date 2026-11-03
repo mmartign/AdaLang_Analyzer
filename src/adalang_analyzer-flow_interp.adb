@@ -2425,6 +2425,58 @@ package body Adalang_Analyzer.Flow_Interp is
        then VC.Forget_Designated (Symbols, Writer)
        else Forget_Element_Values (Symbols, Writer));
 
+   --  Symbols after Writer, an assignment, has written the elements of an
+   --  array Dest names, Flow being the flow state before it: of scalars,
+   --  record components and array bounds the symbolic state knows what it
+   --  knew. (A scalar that renames or overlays an element holds no fact in
+   --  the first place.) The array has another value, the old one with
+   --  what is written, and so has whatever it is a part of or is reached
+   --  from: which objects those are is not worked out, but where the array
+   --  is an object named directly in code that keeps its parts to itself
+   --  (Verified_Keeps_Parts), it is that one alone.
+   function Element_Write_Symbols
+     (Symbols : VC.Symbolic_State;
+      Writer  : Libadalang.Analysis.Ada_Node'Class;
+      Dest    : Libadalang.Analysis.Call_Expr;
+      Flow    : Flow_State) return VC.Symbolic_State
+   is
+      Prefix  : constant Libadalang.Analysis.Name := Dest.F_Name;
+      Written : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Result  : VC.Symbolic_State;
+   begin
+      --  Not an access value: what it designates may be what another
+      --  access value does.
+      if Verified_Keeps_Parts
+        and then Prefix.Kind = Libadalang.Common.Ada_Identifier
+        and then not Libadalang.Analysis.Is_Null (Prefix.P_Expression_Type)
+        and then Prefix.P_Expression_Type.P_Is_Array_Type
+      then
+         Written :=
+           Libadalang.Analysis.Ada_Node (Prefix.P_Referenced_Defining_Name);
+      end if;
+      if Libadalang.Analysis.Is_Null (Written)
+        or else Written.As_Defining_Name.P_Basic_Decl.Kind not in
+          Libadalang.Common.Ada_Object_Decl | Libadalang.Common.Ada_Param_Spec
+        or else
+          (Written.As_Defining_Name.P_Basic_Decl.Kind =
+             Libadalang.Common.Ada_Object_Decl
+           and then not Libadalang.Analysis.Is_Null
+             (Written.As_Defining_Name.P_Basic_Decl.As_Object_Decl
+                .F_Renaming_Clause))
+      then
+         Result := Forget_Written_Elements (Symbols, Writer, Dest.As_Name);
+      else
+         Result := VC.Forget_Elements (Symbols, Writer, Written);
+      end if;
+      return
+        VC.Store_Element
+          (Symbols, Result, Dest, Writer.As_Assign_Stmt.F_Expr, Writer, Flow);
+   exception
+      when Libadalang.Common.Property_Error =>
+         return Forget_Element_Values (Symbols, Writer);
+   end Element_Write_Symbols;
+
    --  What Symbols still says once the procedure call Stmt has returned,
    --  After being the flow state then. Where the callee's effects on
    --  objects by name are known -- from its summary or its Global aspect --
@@ -5457,18 +5509,111 @@ package body Adalang_Analyzer.Flow_Interp is
    --  constant, a formal parameter or a generic formal object of mode "in"
    --  -- declared outside the loop, which would otherwise declare them again
    --  each time round. A loop parameter has another value on each
-   --  iteration of its own loop.
+   --  iteration of its own loop. So is what it knows of the value of an
+   --  array object that holds the one it was declared with
+   --  (Holds_Array_Value), its contents included.
    function Loop_Standing_Facts
      (Symbols   : VC.Symbolic_State;
       Loop_Node : Libadalang.Analysis.Ada_Node'Class)
       return VC.Symbolic_State
    is
+      --  True for an array object that is a constant, or a formal
+      --  parameter or a generic formal object of mode "in", of a type
+      --  whose components nothing but the program changes, and that no
+      --  other name may write (May_Share_Storage).
+      function Holds_Array_Value
+        (Object : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+         Decl      : constant Libadalang.Analysis.Basic_Decl :=
+           Object.As_Defining_Name.P_Basic_Decl;
+         Type_Expr : Libadalang.Analysis.Type_Expr;
+         Typ       : Libadalang.Analysis.Base_Type_Decl;
+
+         function Marked (Name : String) return Boolean is
+           (Typ.P_Has_Aspect
+              (Langkit_Support.Text.To_Unbounded_Text
+                 (Langkit_Support.Text.To_Text (Name))));
+      begin
+         if Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+            if Decl.As_Param_Spec.F_Mode.Kind not in
+                 Libadalang.Common.Ada_Mode_In
+                   | Libadalang.Common.Ada_Mode_Default
+              or else Decl.As_Param_Spec.F_Has_Aliased
+            then
+               return False;
+            end if;
+            Type_Expr := Decl.As_Param_Spec.F_Type_Expr;
+         elsif Decl.Kind = Libadalang.Common.Ada_Object_Decl then
+            declare
+               Item : constant Libadalang.Analysis.Object_Decl :=
+                 Decl.As_Object_Decl;
+            begin
+               if not Libadalang.Analysis.Is_Null (Item.F_Renaming_Clause)
+                 or else Classify (Object) /= Tracked
+               then
+                  return False;
+               elsif Decl.Parent.Kind =
+                 Libadalang.Common.Ada_Generic_Formal_Obj_Decl
+               then
+                  if Item.F_Mode.Kind not in Libadalang.Common.Ada_Mode_In
+                       | Libadalang.Common.Ada_Mode_Default
+                  then
+                     return False;
+                  end if;
+               elsif not Item.F_Has_Constant
+                 or else Libadalang.Analysis.Is_Null (Item.F_Default_Expr)
+               then
+                  return False;
+               end if;
+               Type_Expr := Item.F_Type_Expr;
+            end;
+         else
+            return False;
+         end if;
+
+         Typ := Type_Expr.P_Designated_Type_Decl;
+         return not Libadalang.Analysis.Is_Null (Typ)
+           and then Typ.P_Is_Array_Type
+           and then not (Marked ("Volatile") or else Marked ("Atomic")
+                         or else Marked ("Volatile_Full_Access")
+                         or else Marked ("Volatile_Components")
+                         or else Marked ("Atomic_Components"))
+           and then not May_Share_Storage (Object);
+      exception
+         when others =>
+            return False;
+      end Holds_Array_Value;
+
       function Stands
         (Object : Libadalang.Analysis.Ada_Node) return Boolean
       is
          Current : Libadalang.Analysis.Ada_Node := Object;
       begin
-         if not Standing_Fact_Of (Object).Holds_A_Value
+         --  X'Loop_Entry of this loop, or of one this loop is in, is the
+         --  value X had where that loop was entered, the same each time
+         --  round this one.
+         if Object.Kind = Libadalang.Common.Ada_Attribute_Ref then
+            declare
+               Its_Loop : constant Libadalang.Analysis.Ada_Node :=
+                 VC.Entry_Loop (Object);
+            begin
+               if Libadalang.Analysis.Is_Null (Its_Loop) then
+                  return False;
+               end if;
+               Current := Libadalang.Analysis.Ada_Node (Loop_Node);
+               while not Libadalang.Analysis.Is_Null (Current) loop
+                  if Current = Its_Loop then
+                     return True;
+                  end if;
+                  Current := Current.Parent;
+               end loop;
+               return False;
+            end;
+         end if;
+
+         if not (Standing_Fact_Of (Object).Holds_A_Value
+                 or else (Config.Verification_Mode
+                          and then Holds_Array_Value (Object)))
            or else Object.As_Defining_Name.P_Basic_Decl.Kind =
              Libadalang.Common.Ada_For_Loop_Var_Decl
          then
@@ -9201,6 +9346,14 @@ package body Adalang_Analyzer.Flow_Interp is
         (Index_Type => Positive, Element_Type => Loop_Entry_Record);
       Loop_Entries : Loop_Entry_Vectors.Vector;
 
+      --  What holds where a loop over a range that is never empty is left
+      --  by its head, by the head: the state at the end of its last
+      --  iteration (Prove_Header). The second run gives it to that way
+      --  out; any other head its own state.
+      Exit_Summaries    : Symbolic_State_Array (States'Range) :=
+        (others => VC.Empty_Symbolic_State);
+      Has_Exit_Summary  : Boolean_Array (States'Range) := (others => False);
+
       package Work_Vectors is new Ada.Containers.Vectors
         (Index_Type => Positive, Element_Type => CFG.Node_Id);
       Work : Work_Vectors.Vector;
@@ -9747,7 +9900,8 @@ package body Adalang_Analyzer.Flow_Interp is
       --  True when the invariant Item, which does not lead its loop, is
       --  proved by a cut where it stands (Prove_Cuts): a statement of the
       --  loop body itself, not inside a statement of it, which reads
-      --  nothing of the state on entry ('Loop_Entry, 'Old).
+      --  nothing of the state on entry of the subprogram ('Old): what
+      --  X'Loop_Entry is, Enter_Loop says, and the cut keeps (Standing).
       function Cut_Eligible (Item : Loop_Invariant_Info) return Boolean is
       begin
          if Item.Leading or else Item.Header = CFG.No_Node then
@@ -9764,7 +9918,6 @@ package body Adalang_Analyzer.Flow_Interp is
               and then Item.Pragma_Node.Parent =
                 Libadalang.Analysis.Ada_Node
                   (Loop_Node.As_Base_Loop_Stmt.F_Stmts)
-              and then Ada.Strings.Fixed.Index (Text, "'loop_entry") = 0
               and then Ada.Strings.Fixed.Index (Text, "'old") = 0;
          end;
       exception
@@ -10483,6 +10636,13 @@ package body Adalang_Analyzer.Flow_Interp is
 
          if CFG.Node_At (Graph, Target).Kind = CFG.Loop_Header_Node then
             if Incoming_Kind /= CFG.Loop_Back_Edge then
+               --  X'Loop_Entry is X here.
+               if Config.Verification_Mode then
+                  Incoming_Symbols :=
+                    VC.Enter_Loop
+                      (Incoming_Symbols, Source_Node (Target),
+                       Incoming_State);
+               end if;
                Check_Loop_VCs
                  (Target, Incoming_State, Incoming_Symbols,
                   Is_Back => False);
@@ -11506,66 +11666,10 @@ package body Adalang_Analyzer.Flow_Interp is
                          Libadalang.Common.Array_Index
                            | Libadalang.Common.Array_Slice
                      then
-                        --  A write to array elements: of scalars, record
-                        --  components and array bounds the symbolic state
-                        --  knows what it knew. (A scalar that renames or
-                        --  overlays an element holds no fact in the first
-                        --  place.) The array has another value, and so
-                        --  has whatever it is a part of or is reached
-                        --  from: which objects those are is not worked
-                        --  out, but where the array is an object named
-                        --  directly in code that keeps its parts to itself
-                        --  (Verified_Keeps_Parts), it is that one alone.
-                        declare
-                           Prefix  : constant Libadalang.Analysis.Name :=
-                             Dest.As_Call_Expr.F_Name;
-                           Written : Libadalang.Analysis.Ada_Node :=
-                             Libadalang.Analysis.No_Ada_Node;
-                        begin
-                           --  Not an access value: what it designates may
-                           --  be what another access value does.
-                           if Verified_Keeps_Parts
-                             and then Prefix.Kind =
-                               Libadalang.Common.Ada_Identifier
-                             and then not Libadalang.Analysis.Is_Null
-                               (Prefix.P_Expression_Type)
-                             and then Prefix.P_Expression_Type
-                               .P_Is_Array_Type
-                           then
-                              Written := Libadalang.Analysis.Ada_Node
-                                (Prefix.P_Referenced_Defining_Name);
-                           end if;
-                           if Libadalang.Analysis.Is_Null (Written)
-                             or else Written.As_Defining_Name.P_Basic_Decl
-                               .Kind not in
-                                 Libadalang.Common.Ada_Object_Decl
-                                   | Libadalang.Common.Ada_Param_Spec
-                             or else
-                               (Written.As_Defining_Name.P_Basic_Decl.Kind =
-                                  Libadalang.Common.Ada_Object_Decl
-                                and then not Libadalang.Analysis.Is_Null
-                                  (Written.As_Defining_Name.P_Basic_Decl
-                                     .As_Object_Decl.F_Renaming_Clause))
-                           then
-                              Output_Symbols :=
-                                Forget_Written_Elements
-                                  (Input_Symbols, Source, Dest);
-                           else
-                              Output_Symbols :=
-                                VC.Forget_Elements
-                                  (Input_Symbols, Source, Written);
-                           end if;
-                           --  The new value of an array whose element is
-                           --  written is the old one with that element.
-                           Output_Symbols :=
-                             VC.Store_Element
-                               (Input_Symbols, Output_Symbols, Dest,
-                                Source.As_Assign_Stmt.F_Expr, Source, Input);
-                        exception
-                           when Libadalang.Common.Property_Error =>
-                              Output_Symbols :=
-                                Forget_Element_Values (Input_Symbols, Source);
-                        end;
+                        --  A write to array elements (Element_Write_Symbols).
+                        Output_Symbols :=
+                          Element_Write_Symbols
+                            (Input_Symbols, Source, Dest.As_Call_Expr, Input);
                      elsif Dest.Kind = Libadalang.Common.Ada_Dotted_Name then
                         --  A component of an object the name settles: what
                         --  is known of its other parts stands.
@@ -11773,6 +11877,11 @@ package body Adalang_Analyzer.Flow_Interp is
                  and then Edge.Kind in CFG.False_Edge | CFG.Loop_Exit_Edge
                then
                   Note_Filled_Arrays (Source.As_For_Loop_Stmt, Edge_State);
+                  --  The range is gone through: what holds is what holds
+                  --  at the end of the last iteration.
+                  if Summary_Mode and then Has_Exit_Summary (Id) then
+                     Edge_Symbols := Exit_Summaries (Id);
+                  end if;
                elsif Edge.Kind = CFG.Case_Edge
                  and then not Libadalang.Analysis.Is_Null (Edge.Source)
                  and then Edge.Source.Kind =
@@ -11920,7 +12029,13 @@ package body Adalang_Analyzer.Flow_Interp is
 
          procedure Prove_Header (Header : CFG.Node_Id) is
             State     : Flow_State := States (Header);
-            Symbols   : VC.Symbolic_State := VC.Havoc;
+            --  What holds at the head of every iteration whatever the loop
+            --  does: what the head knows, which every way into it gives,
+            --  of the bounds of arrays and of what stands outside the loop.
+            Standing  : constant VC.Symbolic_State :=
+              Loop_Standing_Facts
+                (Symbolic_States (Header), Source_Node (Header));
+            Symbols   : VC.Symbolic_State := Standing;
             Before_State   : Flow_State := Empty_Flow_State;
             Before_Symbols : VC.Symbolic_State := VC.Havoc;
             Steps     : Natural := 0;
@@ -11931,6 +12046,11 @@ package body Adalang_Analyzer.Flow_Interp is
             --  unsupported provenance on the preservation and
             --  variant-progress obligations.
             Path_Blocker : VC.VC_Outcome := VC.Unknown_Outcome;
+
+            --  True when the walk of one iteration from the head reached
+            --  the back edge: State and Symbols are then what holds at the
+            --  end of it.
+            Walked : Boolean := False;
 
             --  The If_Stmt an elsif/else condition belongs to: Source
             --  itself when Source.Parent is the If_Stmt (the chain's
@@ -12320,12 +12440,9 @@ package body Adalang_Analyzer.Flow_Interp is
                                  Symbols := VC.Havoc;
                               else
                                  Symbols :=
-                                   VC.Store_Element
-                                     (Symbols,
-                                      Forget_Written_Elements
-                                        (Symbols, Source, Dest),
-                                      Dest, Source.As_Assign_Stmt.F_Expr,
-                                      Source, State);
+                                   Element_Write_Symbols
+                                     (Symbols, Source, Dest.As_Call_Expr,
+                                      State);
                               end if;
                               State := After;
                            end;
@@ -12745,7 +12862,7 @@ package body Adalang_Analyzer.Flow_Interp is
                      if Here /= CFG.No_Node and then Reachable (Here) then
                         declare
                            Into    : Flow_State := States (Here);
-                           Symbols : VC.Symbolic_State := VC.Havoc;
+                           Symbols : VC.Symbolic_State := Standing;
                            By      : Proof.Analysis_Method :=
                              Proof.Abstract_Interpretation;
                            Kept    : Boolean;
@@ -12823,6 +12940,95 @@ package body Adalang_Analyzer.Flow_Interp is
                   end;
                end loop;
             end Prove_Cuts;
+
+            --  Where the loop goes over a range that is never empty, what
+            --  holds where its head is left: what holds at the end of its
+            --  last iteration (Exit_Summaries). That is the end of the walk
+            --  of one iteration, which starts from what holds at every
+            --  head and from the leading invariants, when every one is
+            --  proved, with each invariant proved where it stands
+            --  (Prove_Cuts) that only pragmas follow in the body, and the
+            --  parameter at the last value of the range.
+            procedure Summarize_Exit is
+               Source       : constant Libadalang.Analysis.Ada_Node :=
+                 Source_Node (Header);
+               Exit_State   : Flow_State := State;
+               Exit_Symbols : VC.Symbolic_State := Symbols;
+               Done         : Boolean := False;
+
+               function Ends_Body (Item : Loop_Invariant_Info) return Boolean
+               is
+                  Statements : constant Libadalang.Analysis.Ada_Node :=
+                    Item.Pragma_Node.Parent;
+                  Seen       : Boolean := False;
+               begin
+                  for Index in 1 .. Statements.Children_Count loop
+                     if Statements.Child (Index) = Item.Pragma_Node then
+                        Seen := True;
+                     elsif Seen
+                       and then Statements.Child (Index).Kind /=
+                         Libadalang.Common.Ada_Pragma_Node
+                     then
+                        return False;
+                     end if;
+                  end loop;
+                  return Seen;
+               end Ends_Body;
+            begin
+               if not Walked
+                 or else not Invariants_Usable_For_Variant (Header)
+                 or else Libadalang.Analysis.Is_Null (Source)
+                 or else Source.Kind /= Libadalang.Common.Ada_For_Loop_Stmt
+               then
+                  return;
+               end if;
+               declare
+                  Spec : constant Libadalang.Analysis.For_Loop_Spec :=
+                    Source.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
+               begin
+                  if Spec.F_Loop_Type.Kind /=
+                    Libadalang.Common.Ada_Iter_Type_In
+                  then
+                     return;
+                  end if;
+                  for Item of Loop_Invariants loop
+                     if Item.Header = Header
+                       and then Cut_Eligible (Item)
+                       and then Item.Initialization = VC_Discharged
+                       and then Item.Preservation = VC_Discharged
+                       and then Ends_Body (Item)
+                     then
+                        declare
+                           True_State, False_State : Flow_State;
+                        begin
+                           Narrow_By_Condition
+                             (Item.Condition, Exit_State, True_State,
+                              False_State);
+                           Exit_State := True_State;
+                           Assume_Into
+                             (Exit_Symbols, Item.Condition, Truth => True,
+                              Flow => Exit_State);
+                        end;
+                     end if;
+                  end loop;
+                  VC.Assume_Last_Iteration
+                    (Exit_Symbols, Standing,
+                     Libadalang.Analysis.Ada_Node (Spec.F_Var_Decl.F_Id),
+                     Spec.F_Iter_Expr,
+                     Reverse_Order =>
+                       Spec.F_Has_Reverse.Kind =
+                         Libadalang.Common.Ada_Reverse_Present,
+                     Flow          => Exit_State,
+                     Done          => Done);
+               end;
+               if Done then
+                  Exit_Summaries (Header) := Exit_Symbols;
+                  Has_Exit_Summary (Header) := True;
+               end if;
+            exception
+               when others =>
+                  Has_Exit_Summary (Header) := False;
+            end Summarize_Exit;
          begin
             if not Reachable (Header) then
                return;
@@ -12918,6 +13124,7 @@ package body Adalang_Analyzer.Flow_Interp is
                Next_State   : Flow_State := State;
                Next_Symbols : VC.Symbolic_State := Symbols;
             begin
+               Walked := Path_OK;
                if Path_OK then
                   Begin_Iteration
                     (Header, VC.Next_Iteration, Next_State, Next_Symbols);
@@ -12929,6 +13136,7 @@ package body Adalang_Analyzer.Flow_Interp is
                   Path_OK, Path_Blocker);
             end;
             Prove_Cuts;
+            Summarize_Exit;
          end Prove_Header;
       begin
          for Item of Loop_Invariants loop

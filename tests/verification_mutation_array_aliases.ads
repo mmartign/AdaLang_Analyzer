@@ -16,4 +16,9 @@ package Verification_Mutation_Array_Aliases is
      with Pre => Vc (K) in 0 .. 100;
    procedure Alias_Store (Xb : in out Wides; Yb : in out Wides; K : Index;
                           S : out Small);
+   --  An in parameter may be an object the loop writes by its own name: a
+   --  loop does not keep what is known of it.
+   G : Wides := (others => 0);
+   procedure Global_Alias (Ga : Wides; S : out Small)
+     with Pre => (for all I in Index => Ga (I) in 0 .. 100);
 end Verification_Mutation_Array_Aliases;

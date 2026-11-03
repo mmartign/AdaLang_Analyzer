@@ -497,3 +497,20 @@ aggregate-dynamic-choice	tests/verification_mutation_array_stores.adb	range-chec
 copy-then-written	tests/verification_mutation_array_stores.adb	range-check	E6 (K)	definite-error	the copy of Y6 is followed by a store of 200 at K.
 copy-source-written	tests/verification_mutation_array_stores.adb	range-check	E7 (K)	definite-error	Y7 (K) is 300 after the copy and E7 (K) is given it.
 alias-store	tests/verification_mutation_array_aliases.adb	range-check	Xb (K)	unproved	outside SPARK code Xb and Yb may be one array: the store of 200 into Yb (K) may be one into Xb (K).
+loop-claims-extra	tests/verification_mutation_array_loops.adb	loop-invariant-preservation	for all K in Index range 0 .. I => A (K) = 0	unproved	the invariant claims A (I), which the body writes only after it.
+loop-frame-ahead	tests/verification_mutation_array_loops.adb	loop-invariant-preservation	for all K in Index range I .. 15 => A (K) in Small	unproved	the body writes 200 into A (I + 1), inside the range the invariant keeps.
+loop-entry-changed	tests/verification_mutation_array_loops.adb	loop-invariant-preservation	for all K in Index => A (K) = A'Loop_Entry (K)	unproved	the body adds one to A (I): A is no longer the value it had on entry.
+loop-call-writes	tests/verification_mutation_array_loops.adb	range-check	A (13)	unproved	the call Set (A, I + 8) writes 500 into A (8 .. 15).
+loop-after-write	tests/verification_mutation_array_loops.adb	range-check	A (3)	unproved	the loop wrote 300 into A (3).
+loop-cut-range	tests/verification_mutation_array_loops.adb	loop-invariant-preservation	for all J in Index range 0 .. I => R (J) in 0 .. 1000	unproved	A (I) is in 0 .. 2000: A (I) mod 1024 may be 1001 .. 1023.
+loop-rename-writes	tests/verification_mutation_array_loops.adb	range-check	A (14)	unproved	B renames A: the loop writes 300 into A (14) through it.
+loop-old-scalar	tests/verification_mutation_array_loops.adb	postcondition	X = X'Old	unproved	the loop changes X: no state after it says what it was on entry.
+loop-old-array	tests/verification_mutation_array_loops.adb	postcondition	A (3) = A'Old (3)	unproved	the loop writes 0 into A (3).
+loop-entry-outer	tests/verification_mutation_array_loops.adb	loop-invariant-initialization	A'Loop_Entry (0) = 0	unproved	the inner loop is entered again with A (0) = J + 1: X'Loop_Entry is of each entry.
+loop-entry-scalar	tests/verification_mutation_array_loops.adb	loop-invariant-preservation	X = X'Loop_Entry	unproved	the body gives X another value.
+loop-range-empty	tests/verification_mutation_array_loops.adb	postcondition	X >= 1	unproved	N may be 0: the loop may not run, and X stays 0.
+loop-exit-early	tests/verification_mutation_array_loops.adb	postcondition	X >= 15	unproved	exit when leaves the loop before the last iteration.
+loop-after-invariant	tests/verification_mutation_array_loops.adb	postcondition	X = 14	definite-error	the body ends with X := 0: after the last iteration X is 0.
+loop-reverse-end	tests/verification_mutation_array_loops.adb	postcondition	X = 15	unproved	a reverse loop ends at the first value of its range: X is 0.
+loop-invariant-unproved	tests/verification_mutation_array_loops.adb	postcondition	X = 0	unproved	the invariant X = 0 is not preserved (X := 1): the end of the last iteration is not taken from it.
+loop-in-alias	tests/verification_mutation_array_aliases.adb	range-check	Ga (I)	unproved	outside SPARK code the in parameter Ga may be the global G the loop writes 500 into.

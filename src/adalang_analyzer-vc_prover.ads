@@ -590,10 +590,52 @@ package Adalang_Analyzer.VC_Prover is
    --  nothing else. Those never change while the objects are visible, so
    --  such facts survive where every fact about a variable must be
    --  dropped, at the entry of a loop body in particular. Where Standing
-   --  is given, what State knows of the values of the scalar objects whose
-   --  defining name it is True for is kept too, alone or together with
-   --  those bounds: it is for the caller to say so only of objects whose
-   --  value nothing changes where the result is used.
+   --  is given, what State knows of the values of the objects whose
+   --  defining name it is True for is kept too -- of a scalar object, or of
+   --  the whole value of one that is not, the contents of an array
+   --  included -- alone or together with those bounds: it is for the
+   --  caller to say so only of objects whose value nothing changes where
+   --  the result is used.
+
+   procedure Assume_Last_Iteration
+     (State         : in out Symbolic_State;
+      Standing      : Symbolic_State;
+      Parameter     : Libadalang.Analysis.Ada_Node;
+      Iteration     : Libadalang.Analysis.Ada_Node'Class;
+      Reverse_Order : Boolean;
+      Flow          : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Done          : out Boolean);
+   --  State, at the end of an iteration of a loop over Iteration whose
+   --  parameter is Parameter, as at the end of the last one: the
+   --  parameter is the last value of the range, Done. Only where the
+   --  bounds cannot change during the loop (as for Next_Iteration) and
+   --  Standing, what holds wherever the loop is entered, shows that the
+   --  range is not empty: then a way out of the loop that no exit
+   --  statement takes follows a last iteration. State as it is, not Done,
+   --  otherwise.
+
+   function Entry_Loop
+     (Attribute : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node;
+   --  The loop whose entry X'Loop_Entry, Attribute, is the value of X at:
+   --  the innermost loop statement Attribute is in, within the body it is
+   --  in. No_Ada_Node for anything else, and for X'Loop_Entry (L), which
+   --  names its loop.
+
+   function Enter_Loop
+     (State     : Symbolic_State;
+      Loop_Node : Libadalang.Analysis.Ada_Node'Class;
+      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State on a way into the loop statement Loop_Node, Flow being the
+   --  flow state there, with each X'Loop_Entry of that loop (Entry_Loop)
+   --  given a root of its own, equal to the term of X in State, where X
+   --  translates and names nothing declared in the loop. That root is the
+   --  value of X'Loop_Entry in the loop (Symbol_For): no write renews it,
+   --  and Array_Bound_Facts keeps it where Standing is True for the
+   --  attribute reference. Where State already speaks of it, which only a
+   --  way that passes no loop head can, all but what Array_Bound_Facts
+   --  keeps is dropped first.
 
    function Assume_Loop_Range
      (State     : Symbolic_State;
@@ -623,8 +665,11 @@ package Adalang_Analyzer.VC_Prover is
    --  bounds are taken as they are in State, where the loop is entered.
    --  Next_Iteration: the value the parameter had was not the last, and
    --  it now has the next one, under a name of its own -- once per state;
-   --  only bounds whose value cannot change during the loop are used. State
-   --  as it is where the range cannot be told.
+   --  only bounds whose value cannot change during the loop are used.
+   --  Where the range cannot be told: State as it is on the first
+   --  iteration, and on the next State with the parameter under a name of
+   --  its own that nothing relates to the value before (Havoc where that
+   --  name is taken).
 
    function Decide_Nonzero
      (Value   : Libadalang.Analysis.Expr'Class;

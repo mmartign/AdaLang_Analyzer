@@ -140,7 +140,7 @@ h04.adb	243	BAD	assertion	unproved
 h04.adb	255	BAD	assertion	unproved
 h04.adb	270	BAD	assertion	unproved
 h05.adb	14	BAD	division-by-zero	unproved
-h05.adb	26	BAD	division-by-zero	unproved
+h05.adb	26	BAD	division-by-zero	definite-error
 h05.adb	37	BAD	division-by-zero	unproved
 h05.adb	38	BAD	division-by-zero	unproved
 h05.adb	39	OK	division-by-zero	proved-safe
