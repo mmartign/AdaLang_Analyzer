@@ -463,7 +463,7 @@ abstract/symbolic VC, for these loop bodies:
 its loop is checked in the state where it stands, which every iteration
 reaches and which assumes nothing of it: what that state proves holds on
 entry and after every iteration. Otherwise, when the pragma is a statement
-of the loop body itself and reads no `'Loop_Entry` nor `'Old`, the loop is
+of the loop body itself and reads no `'Old`, the loop is
 cut where it stands: initialization is proved from each state the loop is
 entered with (sixteen at most) through the body up to the invariant, and
 preservation from the invariant through the rest of the body, the loop head
@@ -482,7 +482,32 @@ are walked as the analysis of the subprogram goes through them.
 For a loop over a range, the invariant is checked at the start of the next
 iteration: the parameter had a value other than the last one of the range
 and now has the one after it (before it, with `reverse`), the range being
-that of the bounds where the loop was entered.
+that of the bounds where the loop was entered. Where a bound may change
+during the loop, or the range is not one of these forms, the parameter has
+a value of its own there that nothing relates to the one before (FP-139:
+1.12.3 checked the next iteration with the value it had). A range is
+`L .. H`, `X'Range`, a subtype, or `T range L .. H`.
+
+**What every iteration starts from.** The head of a loop knows, each time
+round, the bounds of arrays, and what is known of the value of an object
+declared outside the loop that holds the one it was declared with: a
+constant, or a formal parameter or generic formal object of mode `in` -- of
+an array only in SPARK code, where no other name writes it, its contents
+included. The proofs of preservation above, and those of an invariant
+inside the body, start from that and from the leading invariants; what the
+code before the loop established of anything else is not known there.
+
+**Where a loop over a range is left.** A `for` loop over a range whose
+bounds cannot change during the loop, shown not to be empty where the loop
+is entered, is left by its head after its last iteration: where every
+invariant leading its body is proved, what holds there is what holds at the
+end of that iteration -- one iteration walked from its head, as for
+preservation, with the parameter at the last value of the range (the first,
+with `reverse`), and each invariant proved where it stands that only
+pragmas follow in the body. A postcondition, an assertion or a check after
+the loop is decided from that. A `while` loop and a plain loop are left with
+their leading invariants, which hold at their head. An `exit` statement
+leaves any loop by its own way, with the state where it stands.
 
 A missing or non-final `others`, a multi-choice or discontiguous case
 alternative, a third independent conditional along any single path (nested
@@ -1837,8 +1862,17 @@ other code whose effects are not known, an exception handler, and most
 loops, whose bodies are entered knowing nothing but the bounds of arrays
 -- `X'Old` is not translated and the postcondition is `Unproved`. `'Old`
 in the postcondition of a callee is described in "The
-postcondition of a callee"; `'Loop_Entry`, and `'Old` anywhere else, are
-not translated.
+postcondition of a callee"; `'Old` anywhere else is not translated.
+
+The value of `X'Loop_Entry` that names no loop is that of `X` where the
+innermost loop is entered: on each way into the loop it is a symbol of its
+own, equal to the term of `X` there, which no write in the loop renews and
+which the head of that loop, and of any loop inside it, keeps. What is
+known there of the value of `X`, where that is one symbol, is known of it.
+An element of `X'Loop_Entry` is read in its contents at any index (see
+"Elements at an index that is not known"). A `'Loop_Entry` whose prefix
+names an object declared in the loop, or that names a loop, is not
+translated.
 
 ### Quantified expressions and loop parameters
 
@@ -1849,8 +1883,9 @@ the condition of an `if`, the right side of an assignment, the initial
 value of an object -- is part of the verified subset as well: over `L .. H`,
 over `X'Range` of a one-dimensional array with an integer index, and over a
 subtype whose bounds a declaration fixes and that has no predicate, its
-value is the quantified formula, and over any other domain a value of which
-nothing is known. The checks inside its predicate are decided as for
+value is the quantified formula -- over `T range L .. H` too, `T` an
+integer subtype without a predicate, whatever the bounds -- and over any
+other domain a value of which nothing is known. The checks inside its predicate are decided as for
 a loop body, below, and a call in it is evaluated where the expression is.
 An iteration that is not over a discrete range or an array runs user code
 (see "Objects and effects the analysis does not follow").

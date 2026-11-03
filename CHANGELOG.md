@@ -5,7 +5,36 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.13.0] - 2026-11-03
+
+A `--verify` release that puts the elements of arrays in the verification
+conditions: an element read at any index is the element there of the
+contents of the array's value, a write stores into them, and loops keep
+what holds of arrays, translate `X'Loop_Entry`, and leave a `for` loop with
+what holds at the end of its last iteration. It fixes two false-safe
+results of 1.12.3 (FP-138, FP-139).
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+10,196 of the 15,043 checks GNATprove proves (was 10,059): 60 checks of loop
+invariants, 43 on entry and 17 preserved by an iteration, 36 predicate
+checks, 15 range checks, 13 assertions, 7 preconditions, 3 postconditions,
+3 index checks and 1 overflow check, 100 of them in SPARKNaCl. One loop
+invariant in SPARKNaCl that 1.12.3 proved preserved is not proved any more:
+that proof was FP-139's. It proves none that GNATprove does not, and the
+checks without an AdaLang obligation stay at 1,327.
+
+On the nine corpora with a `--verify` lane no obligation is added and none
+is removed. 157 obligations that were `Unproved` are proved, 113 of them in
+SPARKNaCl, the one above is no longer proved, and no definite error is new
+or gone. What is `Unproved` or a definite error goes from 36,144 to 35,988.
+The pairs both tools prove on the five corpora go from 3,270 to 3,398 of
+5,199, and neither of the two zero columns moves.
+
+On all ten corpora, every preset, findings are identical. On the SPARK
+testsuite no obligation is added or gone, 36 are proved in 15 units, and
+the pairs both tools prove go from 233 to 262 of 651. The `--verify` lanes
+take more CPU time where arrays are: SPARKNaCl's about 44 s (was 26 s),
+CoAP-SPARK's about 168 s (was 154 s); the others about what they took.
 
 ### Changed
 
