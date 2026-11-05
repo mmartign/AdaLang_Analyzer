@@ -5,9 +5,9 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.13.1] - 2026-11-05
 
-A `--verify` change that puts arrays of records in the verification
+A `--verify` release that puts arrays of records in the verification
 conditions: each scalar component of the elements has contents of its own,
 read and written at any index; a write to an element keeps the other
 elements and the other parts of the object; two records compare component
