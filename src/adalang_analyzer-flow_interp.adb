@@ -2455,7 +2455,27 @@ package body Adalang_Analyzer.Flow_Interp is
          Written :=
            Libadalang.Analysis.Ada_Node (Prefix.P_Referenced_Defining_Name);
       end if;
-      if Libadalang.Analysis.Is_Null (Written)
+      --  An element at a known index of an array an object's name settles,
+      --  or any element of an array that is a part of one ("Ctx.Cur (F)"):
+      --  what overlaps it alone (VC.Forget_Element_Part).
+      if Verified_Keeps_Parts
+        and then not Through_Access (Dest)
+        and then
+          (VC.Is_Settled_Part (Dest, Flow)
+           or else VC.Is_Settled_Part (Prefix, Flow))
+      then
+         declare
+            Root : constant Libadalang.Analysis.Ada_Node :=
+              (if VC.Is_Settled_Part (Dest, Flow)
+               then VC.Settled_Object (Dest, Flow)
+               else VC.Settled_Object (Prefix, Flow));
+         begin
+            Result :=
+              VC.Forget_Element_Part
+                (Symbols, Writer, Dest, Flow,
+                 Shared => May_Share_Storage (Root));
+         end;
+      elsif Libadalang.Analysis.Is_Null (Written)
         or else Written.As_Defining_Name.P_Basic_Decl.Kind not in
           Libadalang.Common.Ada_Object_Decl | Libadalang.Common.Ada_Param_Spec
         or else

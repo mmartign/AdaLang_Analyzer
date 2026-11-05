@@ -34,8 +34,6 @@ package Verification_Mutation_Function_Terms with SPARK_Mode is
      with Pre => Ready (Changed);
    procedure Renaming_Written (Renamed : in out Context)
      with Pre => Ready (Renamed);
-   procedure Other_Formal_Written (First, Second : in out Context)
-     with Pre => Ready (First);
    procedure Heap_Written (Pointing : in out Context)
      with Pre => Sum_Ok (Pointing);
    procedure Written_In_Loop (Looped : in out Context)
@@ -56,6 +54,11 @@ package Verification_Mutation_Function_Terms with SPARK_Mode is
    --  it is given, wherever in the expression it is called.
    package Loose with SPARK_Mode => Off is
       function Poke (Target : Cells_Access) return Boolean;
+
+      --  Outside SPARK two formals may be one object: writing the one
+      --  writes the other (SPARK RM 6.4.2 forbids such a call in SPARK).
+      procedure Other_Formal_Written (First, Second : in out Context)
+        with Pre => Ready (First);
    end Loose;
 
    procedure Poked_Before (Poked : in out Context; Flag : out Boolean)

@@ -514,3 +514,21 @@ loop-after-invariant	tests/verification_mutation_array_loops.adb	postcondition	X
 loop-reverse-end	tests/verification_mutation_array_loops.adb	postcondition	X = 15	unproved	a reverse loop ends at the first value of its range: X is 0.
 loop-invariant-unproved	tests/verification_mutation_array_loops.adb	postcondition	X = 0	unproved	the invariant X = 0 is not preserved (X := 1): the end of the last iteration is not taken from it.
 loop-in-alias	tests/verification_mutation_array_aliases.adb	range-check	Ga (I)	unproved	outside SPARK code the in parameter Ga may be the global G the loop writes 500 into.
+record-written-known	tests/verification_mutation_array_records.adb	postcondition	C (F_B).St = S_Valid	definite-error	the element at F_B is written with S_Invalid.
+record-written-unknown	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_A).St = S_Valid	unproved	F may be F_A, which the write invalidates.
+record-written-component	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_A).First = 3	unproved	F may be F_A, whose First the write sets to 4.
+record-same-index	tests/verification_mutation_array_records.adb	postcondition	X.Cur (G).St = S_Valid	unproved	F may be G: two unknown indexes may be one.
+record-element-changed	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_A) = X.Cur'Old (F_A)	definite-error	the component First of the element changed from 3 to 7.
+record-one-component-equal	tests/verification_mutation_array_records.adb	precondition	Need_Equal (C (F_A), C (F_B))	definite-error	the two elements are equal in St only, not in First.
+record-default-first	tests/verification_mutation_array_records.adb	postcondition	C (F_A).First = 1	definite-error	others => <> gives First its default, 0.
+record-read-known-after	tests/verification_mutation_array_records.adb	postcondition	C (F_C).Last = 9	unproved	F may be F_C, whose Last the write sets to 1.
+record-through-renaming	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_A).Last = 4	unproved	the write through the renaming R sets X.Cur (F_A).Last to 0.
+record-old-of-written	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F).St = X.Cur'Old (F).St	unproved	the element at F is written: its old state is not its new one.
+record-frame-empty	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_A).First = 5	unproved	the frame of Reset (X, F_A) keeps no element.
+record-frame-edge	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_B).First = 5	unproved	the frame of Reset (X, F_B) keeps the elements below F_B only.
+record-frame-unknown	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_B).Last = 5	unproved	G may be F_A or F_B: the frame need not keep F_B.
+record-updated	tests/verification_mutation_array_records.adb	postcondition	X.Len = 3	definite-error	X'Update gives Len the value 4.
+record-updated-array	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_A).Last = 3	unproved	X'Update replaces the whole array Cur.
+record-updated-other	tests/verification_mutation_array_records.adb	postcondition	X.B = 1	definite-error	X becomes Y'Update (...): its B is Y's, 2.
+record-swapped	tests/verification_mutation_array_records.adb	postcondition	X.Len = X.Len'Old	definite-error	the update swaps Len and B, which differ.
+record-loop-writes-all	tests/verification_mutation_array_records.adb	postcondition	X.Cur (F_D).St = S_Valid	unproved	the loop invalidates every element, F_D included.

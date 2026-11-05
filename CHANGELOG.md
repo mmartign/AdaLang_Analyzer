@@ -5,6 +5,87 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+A `--verify` change that puts arrays of records in the verification
+conditions: each scalar component of the elements has contents of its own,
+read and written at any index; a write to an element keeps the other
+elements and the other parts of the object; two records compare component
+by component, through the frame of a callee's postcondition as in a loop
+invariant with `X'Loop_Entry`; `X'Update` of a record keeps the components
+it does not name; and an index of an enumeration type, of an array or of a
+loop, is its position.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+10,287 of the 15,043 checks GNATprove proves (was 10,196): 41 preconditions,
+23 postconditions, 20 checks of loop invariants, 8 on entry and 12
+preserved by an iteration, 5 assertions and 2 predicate checks, 88 of them
+in the RecordFlux code of CoAP-SPARK (`Ctx.Cursors (F)`). It proves none
+that GNATprove does not, and the checks without an AdaLang obligation stay
+at 1,327.
+
+On the nine corpora with a `--verify` lane no obligation is added and none
+is removed. 821 obligations that were `Unproved` are proved, 696 of them in
+CoAP-SPARK, 81 in Tokeneer and 42 in AWS; 716 of them are index checks of an
+array indexed by an enumeration, with an index of that type, which GNATprove
+does not report. None that was proved is lost, and no definite error is new
+or gone. What is `Unproved` or a definite error goes from 35,988 to 35,167.
+
+On all ten corpora, every preset, findings are identical. On the SPARK
+testsuite no obligation is added or gone, 14 are proved in 5 units, and the
+pairs both tools prove go from 262 to 265 of 651. CoAP-SPARK's `--verify`
+lane takes about 215 s of CPU time (was 154 s); the others about what they
+took.
+
+### Changed
+
+- The elements of an array of records -- not tagged, with no discriminant
+  and no variant part -- have the contents of each scalar component apart,
+  functions of the value of the array: `Ctx.Cursors (F).State` at an index
+  whose value is not known is the element at `F` of the contents of
+  `State`, and the component of an element at a known index is the element
+  of those contents there. What is said of the contents of one component is
+  said of each component of the elements read.
+- Two records of such a type are equal where each component of the one is
+  equal to that of the other: `Ctx.Cursors (F) = Ctx.Cursors'Old (F)` is
+  four equalities.
+- An assignment of a record to an element, at an index known or not, stores
+  each component into the contents of the array's new value: the component
+  of a name of a record or of an aggregate, the default of a component the
+  aggregate gives `<>` where that is a static value, and otherwise a value
+  of which nothing is known.
+- In SPARK code that takes no `'Access` or `'Address` of anything, an
+  assignment to an element renews only what shares storage with it -- the
+  element where its index is known, the array otherwise, with what it is a
+  part of and every object that renames another -- where the array is a
+  part of an object its name settles (`Ctx.Cursors`) or the index is known:
+  what is known of the other elements, of the other parts of the object and
+  of other objects stands. It relies on what SPARK RM 6.4.2 rules out for
+  parameters, as the write to an element of a whole array parameter did.
+- `X'Update` of a record that a name locates, each choice a component, keeps
+  what was known of the components it does not name and gives each scalar
+  component it names the term of its value, every value read before any
+  component is given one: `Ctx := Ctx'Update (Verified_Last => L)` keeps
+  `Ctx.Cursors`. It dropped the symbolic state.
+- What is known before a call of the elements of an array at known indexes
+  is known of the contents `X'Old` reads in the callee's postcondition, so
+  that a frame such as `(for all G in Field => (if G < F then Ctx.Cursors
+  (G) = Ctx.Cursors'Old (G)))` keeps it, for arrays of scalars as of records.
+  An element at a known index is linked to the contents of either name of a
+  parameter, that of the body and that of the declaration.
+- An array whose type is constrained by an enumeration subtype whose bounds
+  are literals has the positions of those bounds: its elements are read at
+  any index, its index checks are decided against them, and a `for` loop or
+  a quantified expression over such a range or subtype has its parameter
+  stepped by position.
+- Tests: the fixtures `verification_array_records` and
+  `verification_mutation_array_records` (18 seeded defects in
+  `quality/verification_mutations.tsv`). The seeded defect
+  `function-term-other-formal`, a write to one formal taken to change
+  another, is now in code outside SPARK, where two formals may be one
+  object: in SPARK GNATprove rejects the call that makes them one (SPARK RM
+  6.4.2), and proves the precondition.
+
 ## [1.13.0] - 2026-11-03
 
 A `--verify` release that puts the elements of arrays in the verification

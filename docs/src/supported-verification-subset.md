@@ -159,7 +159,10 @@ or `A'First .. A'Last`), or a scalar VC places it between the object's own
 `'First` and `'Last` taken as symbols, one pair per dimension.
 
 **Boundary.** Array objects whose bounds a declaration fixes, and scalar
-indices. An object of an unconstrained array type that takes its bounds
+indices. An array whose type is constrained by an enumeration subtype whose
+bounds are literals -- the type itself, `Field` of `subtype Field is
+Virtual_Field range F_Ver .. F_Last` -- has the positions of those bounds,
+and an index of that enumeration is its position. An object of an unconstrained array type that takes its bounds
 from a string literal, or from another object whose bounds are known, has
 those bounds. One with no bounds anything fixes (a formal parameter, or an
 object initialized from one, from a call or from an aggregate) proves only
@@ -1027,10 +1030,10 @@ through those. A discriminant is read as a component is.
 
 There is no symbol for a part that the name does not settle: one behind
 an access value, in the result of a call or of a conversion, or in an
-element at an index that is not known. Nothing is proved from
-`Row (I).Count` while `I` is not known, and it is not taken for
-`Row (1).Count` (FP-119). A scalar element itself at such an index has a
-term, below.
+element at an index that is not known. `Row (I).Count` while `I` is not
+known is not taken for `Row (1).Count` (FP-119). A scalar element itself at
+such an index has a term, below, and so has a scalar component of such an
+element of an array of records.
 
 An assignment to a component of a record whose name settles which part is
 written -- `Ctx.P.Next := 1`, `Row (1).Count := 0` -- gives that part a new
@@ -1046,13 +1049,20 @@ of scalar objects, of the components of records that are in no array, of
 array bounds and of whether an object is constrained; every symbol read
 in an element, of whatever array, gets a value of which nothing is known,
 as does the value of every object that is not a scalar. Which array was
-written, and what it is a part of, is not worked out -- except where the
-array is an object or a parameter named directly, and not a renaming, in
-SPARK code that takes no `'Access` or `'Address` of anything and declares
-no task or protected object: no other object shares its storage there,
-and only the elements and the value of that array, and of every object
-that renames another, are renewed. What a predicate or a precondition
-says of the elements of another array then stands. A call renews them
+written, and what it is a part of, is not worked out -- except in SPARK
+code that takes no `'Access` or `'Address` of anything and declares no
+task or protected object, where no other object shares the storage of an
+object or a parameter (SPARK RM 6.4.2). There, where the array is a part
+of an object its name settles (`Ctx.Cursors`), or the element is at an
+index whose value is known (`Row (2)`), only what shares storage with the
+element written -- the element itself where its index is known, the whole
+array otherwise -- is renewed, with what it is a part of and every object
+that renames another: what is known of the other elements, of the other
+parts of the object and of other objects stands. Where the array is an
+object or a parameter named directly, and not a renaming, an element at an
+index that is not known renews the elements and the value of that array,
+and of every object that renames another. What a predicate or a
+precondition says of the elements of another array then stands. A call renews them
 as it renews the components of records (see "Objects and effects the
 analysis does not follow"). What the array written holds after the write is
 said of the contents of its new value (see "Elements at an index that is not
@@ -1060,11 +1070,11 @@ known").
 
 ### Elements at an index that is not known
 
-A scalar element of a one-dimensional array with an integer index, read at
-an index whose value is not known -- `X (K)`, `XL (I - 16)`,
-`Ctx.Data (J)` -- is the element at that index of the contents of the
-array's value: an SMT array from indexes to elements, a function of the
-value of the array and of its first bound. The array is an object, or a
+A scalar element of a one-dimensional array with an integer index, or an
+enumeration one (by position), read at an index whose value is not known
+-- `X (K)`, `XL (I - 16)`, `Ctx.Data (J)` -- is the element at that index of
+the contents of the array's value: an SMT array from indexes to elements, a
+function of the value of the array and of its first bound. The array is an object, or a
 part of one that its name settles, or `X'Old` of one, and it is initialized
 where it is read; in SPARK code the element is within the subtype of the
 components. What a precondition, an assertion, the postcondition of a
@@ -1096,9 +1106,31 @@ nothing is said. Any other write -- to a slice, through an access value, by
 a call -- leaves only the renewal. An array read with two first bounds -- an
 actual that slides to the bounds of a formal -- has two contents that
 nothing links. An array
-with volatile or atomic components, one reached through an access value,
-one with an index of an enumeration type and one of more than one
-dimension have no such term.
+with volatile or atomic components, one reached through an access value
+and one of more than one dimension have no such term.
+
+The elements of an array of records -- one not tagged, with no
+discriminant and no variant part -- have contents of each scalar component
+apart, functions of the value of the array: `Ctx.Cursors (F).State` at any
+`F` is the element at `F` of the contents of `State`, and the component
+`State` of an element at a known index is the element of those contents
+there, as above. Two records of such a type are equal where each
+component of the one is equal to that of the other, so `Ctx.Cursors (F) =
+Ctx.Cursors'Old (F)` says that the four components are. An assignment of a
+record to an element, `Ctx.Cursors (F) := (State => S_Valid, First => L,
+others => <>)`, at an index known or not, gives the contents of each
+component of the new value those of before with the component of the value
+at that index: that of a name of a record, or of an aggregate, a component
+it gives the default value (`<>`) having the value of its default
+expression where that is a static value, and otherwise a value of which
+nothing is known. A component of such an element written on its own, at an
+index that is not known, drops the symbolic state.
+
+What a callee's postcondition says of the elements of an array of
+`F'Old` -- `(for all G in Field => (if G < F then Ctx.Cursors (G) =
+Ctx.Cursors'Old (G)))` -- reaches what was known of the elements at known
+indexes before the call: those are elements of the contents of the value
+`F'Old` reads (see "The postcondition of a callee").
 
 In that same code, a write through an access value reaches no named part of
 any object: what an access value designates is not one. After
@@ -1113,9 +1145,13 @@ it, component by component: after `Tmp : Context := Ctx.P.Request` and after
 `Ctx.P.Request := Tmp`, what was known of the parts of the one is known of
 the parts of the other, the value of the record among them, until either is
 written. An array is not followed so: it slides, and what is known of its
-elements is not known of those with the same indexes in the other. A delta
-aggregate gives the object a value of which nothing is known, and `X'Update`
-drops the symbolic state.
+elements is not known of those with the same indexes in the other. `X'Update`
+of a record that such a name locates, each choice a component of it --
+`Ctx := Ctx'Update (Verified_Last => L, Written_Last => L)` -- leaves what was
+known of the components it does not name, and gives each scalar component
+it names the term of its value; every value is read before any component is
+given one. A delta aggregate gives the object a value of which nothing is
+known, and `X'Update` of anything else drops the symbolic state.
 
 A record or array parameter of an expression function that is inlined
 stands for the part of the caller's object that is its actual, where the

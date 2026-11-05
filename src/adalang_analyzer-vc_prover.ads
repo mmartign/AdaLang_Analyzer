@@ -474,6 +474,24 @@ package Adalang_Analyzer.VC_Prover is
    --  a value of which nothing is known: as Assign_Component, with no
    --  term for the part. Havoc when Part is not settled.
 
+   function Forget_Element_Part
+     (State  : Symbolic_State;
+      Writer : Libadalang.Analysis.Ada_Node'Class;
+      Dest   : Libadalang.Analysis.Name'Class;
+      After  : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Shared : Boolean) return Symbolic_State;
+   --  State after Writer, an assignment, has written Dest, an element of an
+   --  array that is a part of a tracked object the name settles ("Ctx.Cur
+   --  (F)"), in code where no access value designates such an object nor
+   --  any part of it: each key of what overlaps the element gets a value of
+   --  its own where the index is known (Is_Settled_Part of Dest), and each
+   --  key of what overlaps the array otherwise; so does each value and each
+   --  element of an object that renames another, or that is no object nor
+   --  parameter. What State says of the other parts of the object, and of
+   --  other objects, stands -- unless Shared, another name may then denote
+   --  the object: each part of every other object gets a value of its own
+   --  too. Havoc where neither Dest nor the array is settled.
+
    function Bind_Actual
      (State  : Symbolic_State;
       Formal : Libadalang.Analysis.Ada_Node;

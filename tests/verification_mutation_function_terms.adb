@@ -65,12 +65,6 @@ package body Verification_Mutation_Function_Terms with SPARK_Mode is
       Step (Renamed);
    end Renaming_Written;
 
-   procedure Other_Formal_Written (First, Second : in out Context) is
-   begin
-      Second.Data (1) := 9;
-      Step (First);
-   end Other_Formal_Written;
-
    procedure Heap_Written (Pointing : in out Context) is
    begin
       Shared (1) := 0;
@@ -123,6 +117,12 @@ package body Verification_Mutation_Function_Terms with SPARK_Mode is
          Target (1) := 0;
          return True;
       end Poke;
+
+      procedure Other_Formal_Written (First, Second : in out Context) is
+      begin
+         Second.Data (1) := 9;
+         Step (First);
+      end Other_Formal_Written;
    end Loose;
 
    procedure Poked_Before (Poked : in out Context; Flag : out Boolean) is
