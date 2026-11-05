@@ -4111,6 +4111,74 @@ package body Adalang_Analyzer.Flow_Eval is
               Libadalang.Analysis.Ada_Node (Prefix))
          then
             return Array_Object_Index_Range (Value, Dimension, State);
+         elsif Dimension = 1
+           and then Value.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Libadalang.Common."="
+             (Value.As_Call_Expr.P_Kind, Libadalang.Common.Array_Slice)
+           and then Value.As_Call_Expr.F_Suffix.Kind in
+             Libadalang.Common.Ada_Bin_Op_Range
+           and then Value.As_Call_Expr.F_Suffix.As_Bin_Op.F_Op =
+             Libadalang.Common.Ada_Op_Double_Dot
+         then
+            --  A slice keeps its bounds: those its range is written with,
+            --  where a declaration fixes them.
+            declare
+               Low  : constant Abstract_Int :=
+                 Declared_Bound_Value
+                   (Value.As_Call_Expr.F_Suffix.As_Bin_Op.F_Left, State);
+               High : constant Abstract_Int :=
+                 Declared_Bound_Value
+                   (Value.As_Call_Expr.F_Suffix.As_Bin_Op.F_Right, State);
+            begin
+               return
+                 (Has_Low => Low.Known, Low => Low.Value,
+                  Has_High => High.Known, High => High.Value);
+            end;
+         elsif Dimension = 1
+           and then Value.Kind = Libadalang.Common.Ada_Concat_Op
+         then
+            --  A concatenation starts where its left operand does when that
+            --  is not null (RM 4.5.3): a string literal that is not empty
+            --  or a component, at the first value of the index subtype
+            --  (RM 4.2); an 'Image, at 1 (RM 3.5).
+            declare
+               Left  : Libadalang.Analysis.Expr :=
+                 Value.As_Concat_Op.F_First_Operand;
+               Index : constant Abstract_Range :=
+                 (if Designated.P_Index_Type (0).P_Is_Int_Type
+                  then Type_Range (Designated.P_Index_Type (0), State)
+                  else Unknown_Range);
+               Left_Type : Libadalang.Analysis.Base_Type_Decl;
+            begin
+               while Left.Kind = Libadalang.Common.Ada_Paren_Expr loop
+                  Left := Left.As_Paren_Expr.F_Expr;
+               end loop;
+               Left_Type := Left.P_Expression_Type;
+               --  T'Image (X) is a call of the attribute.
+               if Left.Kind = Libadalang.Common.Ada_Call_Expr
+                 and then Left.As_Call_Expr.F_Name.Kind =
+                   Libadalang.Common.Ada_Attribute_Ref
+               then
+                  Left := Left.As_Call_Expr.F_Name.As_Expr;
+               end if;
+               if Left.Kind = Libadalang.Common.Ada_String_Literal
+                 and then Left.As_String_Literal.P_Denoted_Value'Length > 0
+                 and then Index.Has_Low
+               then
+                  return (Has_Low => True, Low => Index.Low, others => <>);
+               elsif Left.Kind = Libadalang.Common.Ada_Attribute_Ref
+                 and then Text_Utils.Normalize_Rule_Name
+                   (Ada_Text.Node_Text (Left.As_Attribute_Ref.F_Attribute))
+                   in "image" | "img" | "wide-image" | "wide-wide-image"
+               then
+                  return (Has_Low => True, Low => 1, others => <>);
+               elsif not Libadalang.Analysis.Is_Null (Left_Type)
+                 and then not Left_Type.P_Is_Array_Type
+                 and then Index.Has_Low
+               then
+                  return (Has_Low => True, Low => Index.Low, others => <>);
+               end if;
+            end;
          end if;
          return Unknown_Range;
       exception

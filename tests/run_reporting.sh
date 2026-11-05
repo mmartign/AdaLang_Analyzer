@@ -135,7 +135,9 @@ grep -F '      inline path: Outer -> Square' \
 
 #  Every range/index operation reached by the current check machinery is
 #  represented. Known failures refine to definite-error; all other outcomes
-#  remain unproved because this stage makes no green proof claim.
+#  remain unproved because this stage makes no green proof claim. An array
+#  value has a length to check, not a range: "A : Vector := (others => 0)"
+#  has no range check.
 proof_checks='Known_Range_Check_Failure,Known_Index_Check_Failure'
 if "$analyzer" --format=json --output="$proof_json" \
      -checks="$proof_checks" tests/runtime_check_findings.adb
@@ -144,13 +146,13 @@ then
    exit 1
 fi
 grep -F \
-  '"proofSummary": {"scope": "enumerated outcomes in current analysis scope; not exhaustive", "total": 12, "provedSafe": 0, "definiteError": 5, "unproved": 7, "unreachable": 0, "unsupported": 0}' \
+  '"proofSummary": {"scope": "enumerated outcomes in current analysis scope; not exhaustive", "total": 11, "provedSafe": 0, "definiteError": 5, "unproved": 6, "unreachable": 0, "unsupported": 0}' \
   "$proof_json" >/dev/null
-if [ "$(grep -c '"kind": "range-check"' "$proof_json")" -ne 10 ] ||
+if [ "$(grep -c '"kind": "range-check"' "$proof_json")" -ne 9 ] ||
    [ "$(grep -c '"kind": "index-check"' "$proof_json")" -ne 2 ] ||
    [ "$(grep -c '"status": "definite-error"' "$proof_json")" -ne 5 ] ||
-   [ "$(grep -c '"status": "unproved"' "$proof_json")" -ne 7 ] ||
-   [ "$(grep -Ec '"id": "proof/v1/[0-9a-f]{16}"' "$proof_json")" -ne 12 ]
+   [ "$(grep -c '"status": "unproved"' "$proof_json")" -ne 6 ] ||
+   [ "$(grep -Ec '"id": "proof/v1/[0-9a-f]{16}"' "$proof_json")" -ne 11 ]
 then
    echo "unexpected structured proof obligations" >&2
    cat "$proof_json" >&2

@@ -110,6 +110,9 @@ elaboration; otherwise scalar bounds VC against those same two bounds.
   initialization, assignment, and conversion into a signed or modular
   subtype whose two bounds are both known; a subtype with a bound that is
   not (`range 1 .. N` for a variable or unconstrained `N`) is `Unproved`.
+  An array given to an array subtype has no such check: its length is
+  checked (see [Length](#length)), and the bounds of a slice where it is
+  written, below.
 - **The bounds of a slice.** The two bounds of a slice written
   `A (L .. H)`, against the bounds of `A` as an index check takes them,
   at `A`: proved when both bounds are within them, when the slice is known
@@ -162,9 +165,14 @@ or `A'First .. A'Last`), or a scalar VC places it between the object's own
 indices. An array whose type is constrained by an enumeration subtype whose
 bounds are literals -- the type itself, `Field` of `subtype Field is
 Virtual_Field range F_Ver .. F_Last` -- has the positions of those bounds,
-and an index of that enumeration is its position. An object of an unconstrained array type that takes its bounds
-from a string literal, or from another object whose bounds are known, has
-those bounds. One with no bounds anything fixes (a formal parameter, or an
+and an index of that enumeration is its position. An object of an
+unconstrained array type that takes its bounds from a string literal, from
+another object whose bounds are known, or from a slice whose bounds a
+declaration fixes (`Head : constant Bytes := N (2 .. 9)`), has those bounds;
+one declared with a concatenation whose left operand is a string literal
+that is not empty, a component or a `'Image` (`"Issuer: " & Image`) starts
+where that operand does (RM 4.5.3), its last bound unknown. One with no
+bounds anything fixes (a formal parameter, or an
 object initialized from one, from a call or from an aggregate) proves only
 in the own-range loop form or against those symbols: its index subtype says
 what its bounds may be, not what they are.

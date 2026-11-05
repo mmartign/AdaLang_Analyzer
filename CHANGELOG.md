@@ -14,28 +14,42 @@ elements and the other parts of the object; two records compare component
 by component, through the frame of a callee's postcondition as in a loop
 invariant with `X'Loop_Entry`; `X'Update` of a record keeps the components
 it does not name; and an index of an enumeration type, of an array or of a
-loop, is its position.
+loop, is its position. An array value is no longer given the range check of
+a scalar, which hid proved checks of slices, and an object declared with a
+slice or with a concatenation has the bounds it takes from it.
 
 What to expect: on the five corpora of the gap ledger, `--verify` proves
-10,287 of the 15,043 checks GNATprove proves (was 10,196): 41 preconditions,
-23 postconditions, 20 checks of loop invariants, 8 on entry and 12
-preserved by an iteration, 5 assertions and 2 predicate checks, 88 of them
-in the RecordFlux code of CoAP-SPARK (`Ctx.Cursors (F)`). It proves none
-that GNATprove does not, and the checks without an AdaLang obligation stay
-at 1,327.
+10,356 of the 15,043 checks GNATprove proves (was 10,196): 62 range checks,
+41 preconditions, 23 postconditions, 20 checks of loop invariants, 8 on
+entry and 12 preserved by an iteration, 10 length checks, 5 assertions, 2
+predicate checks and 1 index check; 102 in CoAP-SPARK, most in the
+RecordFlux code (`Ctx.Cursors (F)`), 31 in SPARKNaCl, 19 in Tokeneer and 12
+in libkeccak. Most of the range checks are checks of a slice that were
+proved already, which the gap ledger paired with the range check of the
+array value at the same place. Four range checks that were proved now pair
+with no obligation, a neighbour on their line taking theirs. It proves none
+that GNATprove does not. The checks without an AdaLang obligation go from
+1,327 to 1,382: 51 of them are range checks GNATprove makes of the bounds of
+a concatenation, of an index constraint written in a declaration or of a
+string literal given to a formal, which AdaLang does not make and which only
+the range check of the array value stood beside.
 
-On the nine corpora with a `--verify` lane no obligation is added and none
-is removed. 821 obligations that were `Unproved` are proved, 696 of them in
-CoAP-SPARK, 81 in Tokeneer and 42 in AWS; 716 of them are index checks of an
-array indexed by an enumeration, with an index of that type, which GNATprove
-does not report. None that was proved is lost, and no definite error is new
-or gone. What is `Unproved` or a definite error goes from 35,988 to 35,167.
+On the nine corpora with a `--verify` lane no obligation is added. 1,871 are
+removed, all range checks of an array value: 1,853 `Unproved` and 18 proved
+by an argument about scalar ranges. 837 obligations that were `Unproved` are
+proved, 696 of them in CoAP-SPARK, 97 in Tokeneer and 42 in AWS; 716 of them
+are index checks of an array indexed by an enumeration, with an index of
+that type, which GNATprove does not report. None that was proved is lost,
+and no definite error is new or gone. What is `Unproved` or a definite error
+goes from 35,988 to 33,298.
 
-On all ten corpora, every preset, findings are identical. On the SPARK
-testsuite no obligation is added or gone, 14 are proved in 5 units, and the
-pairs both tools prove go from 262 to 265 of 651. CoAP-SPARK's `--verify`
-lane takes about 215 s of CPU time (was 154 s); the others about what they
-took.
+On all ten corpora, every preset, findings are identical; the
+`--recommended` and `--spark` presets lose the same range checks of array
+values. On the SPARK testsuite no obligation is added, 63 range checks of
+array values are removed, 15 obligations are proved in 6 units, and the
+pairs both tools prove go from 262 to 271 of 650 (651 matched before, one
+of them the range check of an array value). CoAP-SPARK's `--verify` lane
+takes about 225 s of CPU time (was 154 s); the others about what they took.
 
 ### Changed
 
@@ -78,13 +92,32 @@ took.
   any index, its index checks are decided against them, and a `for` loop or
   a quantified expression over such a range or subtype has its parameter
   stepped by position.
-- Tests: the fixtures `verification_array_records` and
-  `verification_mutation_array_records` (18 seeded defects in
+- An object of an unconstrained array type declared with a slice whose
+  bounds a declaration fixes has those bounds, and one declared with a
+  concatenation whose left operand is a string literal that is not empty,
+  a component or a `'Image` starts where that operand does (RM 4.5.3):
+  `LocalUser (1 .. FullString'Last) := FullString` has the length it needs
+  where `FullString : String := "Issuer: " & ...`.
+- Tests: the fixtures `verification_array_records`,
+  `verification_mutation_array_records`, `verification_array_values` and
+  `verification_mutation_array_values` (22 seeded defects in
   `quality/verification_mutations.tsv`). The seeded defect
   `function-term-other-formal`, a write to one formal taken to change
   another, is now in code outside SPARK, where two formals may be one
   object: in SPARK GNATprove rejects the call that makes them one (SPARK RM
   6.4.2), and proves the precondition.
+
+### Fixed
+
+- An array given to an array subtype -- the operand of a conversion, the
+  initial value of an object, an assigned value -- was given a range check
+  as a scalar is, besides the checks of its length and of the bounds of a
+  slice, and nothing could decide it: `Bytes_16 (N (0 .. 15))` had an
+  `Unproved` range check at `N (0 .. 15)` beside the proved check of the
+  slice, which it hid in the gap ledger. 780 such obligations on the five
+  corpora, 12 of them proved by an argument about scalar ranges that says
+  nothing of an array, none on a check GNATprove refutes. They are no
+  longer raised.
 
 ## [1.13.0] - 2026-11-03
 

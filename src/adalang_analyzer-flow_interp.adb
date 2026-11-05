@@ -5917,8 +5917,31 @@ package body Adalang_Analyzer.Flow_Interp is
       is (if Constraint.Present
           then Definitely_Inside_Range (Value, Constraint.Bounds, State)
           else Definitely_Inside_Type (Value, Typ, State));
+      --  True when Typ is an array type, seen through a private type.
+      function Array_Target return Boolean is
+      begin
+         return not Libadalang.Analysis.Is_Null (Typ)
+           and then
+             (Typ.P_Is_Array_Type
+              or else
+                (Typ.P_Is_Private
+                 and then not Libadalang.Analysis.Is_Null (Typ.P_Full_View)
+                 and then Typ.P_Full_View.P_Is_Array_Type));
+      exception
+         when others =>
+            return False;
+      end Array_Target;
    begin
       if Config.Rule_States (Rule) /= Config.Enabled then
+         return;
+      end if;
+
+      --  An array given to an array subtype -- the operand of a conversion,
+      --  the initial value of an object, an assigned value -- has a length
+      --  to check, not a range: the length checks are made where the array
+      --  is given (Finalize_Array_Given, Finalize_Array_Assignment), and
+      --  the bounds of a slice where it is written (Finalize_Slice_Check).
+      if Array_Target then
          return;
       end if;
 
