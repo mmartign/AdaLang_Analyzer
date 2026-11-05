@@ -5589,14 +5589,20 @@ package body Adalang_Analyzer.VC_Prover is
             else
                --  The operands are the actuals, in the order of the
                --  formals of the function the operator calls.
+               --  Each element gets its own conditional expression: GNAT
+               --  15.1 rejects a conditional expression whose branches are
+               --  aggregates of an anonymous array type.
                declare
+                  Is_Unary : constant Boolean :=
+                    Operator_Call.Kind = Libadalang.Common.Ada_Un_Op;
                   Operands : constant array (1 .. 2)
                     of Libadalang.Analysis.Expr :=
-                      (if Operator_Call.Kind = Libadalang.Common.Ada_Un_Op
-                       then (Operator_Call.As_Un_Op.F_Expr,
-                             Libadalang.Analysis.No_Expr)
-                       else (Operator_Call.As_Bin_Op.F_Left,
-                             Operator_Call.As_Bin_Op.F_Right));
+                      (1 => (if Is_Unary
+                             then Operator_Call.As_Un_Op.F_Expr
+                             else Operator_Call.As_Bin_Op.F_Left),
+                       2 => (if Is_Unary
+                             then Libadalang.Analysis.No_Expr
+                             else Operator_Call.As_Bin_Op.F_Right));
                   Position : Positive := 1;
                begin
                   for Param of Decl.As_Expr_Function.F_Subp_Spec.P_Params loop

@@ -141,6 +141,12 @@ takes about 230 s of CPU time (was 154 s); the others about what they took.
   corpora, 12 of them proved by an argument about scalar ranges that says
   nothing of an array, none on a check GNATprove refutes. They are no
   longer raised.
+- The analyzer did not compile with GNAT 15.1 (`expected type access to
+  subtype of type derived from "Toperands"` in `adalang_analyzer-vc_prover.adb`):
+  that compiler rejects a conditional expression whose branches are
+  aggregates of an anonymous array type. The operands of an operator call
+  are now chosen one element at a time; every GNAT 15 builds it, and the
+  results are unchanged.
 
 ## [1.13.0] - 2026-11-03
 
