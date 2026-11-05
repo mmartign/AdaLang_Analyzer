@@ -131,9 +131,9 @@ old-prefix-division	tests/verification_fp112_earlier_prefix.adb	division-by-zero
 old-prefix-overflow	tests/verification_fp112_earlier_prefix.adb	integer-overflow	Addend + 1	unproved	FP-112: an addition inside an 'Old prefix is made on entry
 old-prefix-range	tests/verification_fp112_earlier_prefix.adb	range-check	Converted	unproved	FP-112: a conversion inside an 'Old prefix converts the entry value
 old-prefix-precondition	tests/verification_fp112_earlier_prefix.adb	precondition	Positive_Only (Passed)	unproved	FP-112: a call inside an 'Old prefix is made on entry
-loop-entry-prefix-initialization	tests/verification_fp112_earlier_prefix.adb	initialization-check	Late	unproved	FP-112: an object that gets its value inside the loop has none when the loop is entered
-loop-entry-prefix-division	tests/verification_fp112_earlier_prefix.adb	division-by-zero	Zeroed	unproved	FP-112: the divisor inside a 'Loop_Entry prefix is the value at the entry of the loop
-loop-entry-prefix-inner-loop	tests/verification_fp112_earlier_prefix.adb	division-by-zero	Inner	unproved	FP-112: a 'Loop_Entry prefix belongs to the innermost loop, entered after the outer one changed the object
+loop-entry-prefix-initialization	tests/verification_fp112_earlier_prefix.adb	initialization-check	Late	definite-error	FP-112: an object that gets its value inside the loop has none when the loop is entered
+loop-entry-prefix-division	tests/verification_fp112_earlier_prefix.adb	division-by-zero	Zeroed	definite-error	FP-112: the divisor inside a 'Loop_Entry prefix is the value at the entry of the loop
+loop-entry-prefix-inner-loop	tests/verification_fp112_earlier_prefix.adb	division-by-zero	Inner	definite-error	FP-112: a 'Loop_Entry prefix belongs to the innermost loop, entered after the outer one changed the object
 modular-bound-sum	tests/verification_fp113_modular_bound.adb	range-check	Summed	unproved	FP-113: the bound 200 + 100 of a mod 256 type is 44, and 100 is above it
 modular-bound-negation	tests/verification_fp113_modular_bound.adb	range-check	Negated	unproved	FP-113: the bound - 100 of a mod 256 type is 156, neither below zero nor above 200
 modular-bound-product	tests/verification_fp113_modular_bound.adb	range-check	Doubled	unproved	FP-113: the bound 200 * 2 of a mod 256 type is 144
@@ -536,3 +536,7 @@ array-value-empty-left	tests/verification_mutation_array_values.adb	assertion	S'
 array-value-formal-left	tests/verification_mutation_array_values.adb	assertion	T'First = 1	unproved	the left operand is a formal, which may start anywhere.
 array-value-variable-bound	tests/verification_mutation_array_values.adb	assertion	H'Length = 3	unproved	a slice N (I .. 3) with I a variable has the length 4 - I.
 array-value-slice-first	tests/verification_mutation_array_values.adb	assertion	H'First = 0	definite-error	an object declared with N (2 .. 9) starts at 2: a slice does not slide.
+loop-entry-prefix-on-entry	tests/verification_mutation_loop_entry_records.adb	precondition	Pos (A)	definite-error	the prefix of Pos (A)'Loop_Entry is evaluated when the loop is entered, where A is 0.
+loop-element-written	tests/verification_mutation_loop_entry_records.adb	precondition	Get (Ctx, F_A)	unproved	the loop invalidates Ctx.Cursors (F_A) before reading it.
+loop-entry-subtype-bound	tests/verification_mutation_loop_entry_records.adb	assertion	L > F_B	unproved	a Late may be F_B itself.
+loop-entry-value-not-current	tests/verification_mutation_loop_entry_records.adb	precondition	Get (Ctx, F_B)	unproved	the element was valid on entry; the loop invalidates it, and the next iteration reads it.

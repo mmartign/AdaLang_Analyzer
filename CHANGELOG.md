@@ -14,20 +14,25 @@ elements and the other parts of the object; two records compare component
 by component, through the frame of a callee's postcondition as in a loop
 invariant with `X'Loop_Entry`; `X'Update` of a record keeps the components
 it does not name; and an index of an enumeration type, of an array or of a
-loop, is its position. An array value is no longer given the range check of
-a scalar, which hid proved checks of slices, and an object declared with a
-slice or with a concatenation has the bounds it takes from it.
+loop, is its position. What is known of the elements where a loop is
+entered holds of the contents of `X'Loop_Entry`, and the prefix of an
+`X'Loop_Entry` is decided where the loop is entered. An array value is no
+longer given the range check of a scalar, which hid proved checks of
+slices, and an object declared with a slice or with a concatenation has the
+bounds it takes from it.
 
 What to expect: on the five corpora of the gap ledger, `--verify` proves
-10,356 of the 15,043 checks GNATprove proves (was 10,196): 62 range checks,
-41 preconditions, 23 postconditions, 20 checks of loop invariants, 8 on
-entry and 12 preserved by an iteration, 10 length checks, 5 assertions, 2
-predicate checks and 1 index check; 102 in CoAP-SPARK, most in the
-RecordFlux code (`Ctx.Cursors (F)`), 31 in SPARKNaCl, 19 in Tokeneer and 12
-in libkeccak. Most of the range checks are checks of a slice that were
-proved already, which the gap ledger paired with the range check of the
-array value at the same place. Four range checks that were proved now pair
-with no obligation, a neighbour on their line taking theirs. It proves none
+10,430 of the 15,043 checks GNATprove proves (was 10,196): 86
+preconditions, 83 range checks, 27 postconditions, 22 checks of loop
+invariants, 8 on entry and 14 preserved by an iteration, 10 length checks,
+6 assertions, 2 predicate checks and 2 index checks; 168 in CoAP-SPARK,
+most in the RecordFlux code (`Ctx.Cursors (F)`, 42 of them the
+preconditions of `Field_First (Ctx, Fld)` and `Field_Size (Ctx, Fld)` in
+`Reset_Dependent_Fields`), 31 in SPARKNaCl, 27 in Tokeneer and 12 in
+libkeccak. Most of the range checks are checks of a slice that were proved
+already, which the gap ledger paired with the range check of the array
+value at the same place. Four range checks that were proved now pair with
+no obligation, a neighbour on their line taking theirs. It proves none
 that GNATprove does not. The checks without an AdaLang obligation go from
 1,327 to 1,382: 51 of them are range checks GNATprove makes of the bounds of
 a concatenation, of an index constraint written in a declaration or of a
@@ -36,12 +41,12 @@ the range check of the array value stood beside.
 
 On the nine corpora with a `--verify` lane no obligation is added. 1,871 are
 removed, all range checks of an array value: 1,853 `Unproved` and 18 proved
-by an argument about scalar ranges. 837 obligations that were `Unproved` are
-proved, 696 of them in CoAP-SPARK, 97 in Tokeneer and 42 in AWS; 716 of them
-are index checks of an array indexed by an enumeration, with an index of
-that type, which GNATprove does not report. None that was proved is lost,
-and no definite error is new or gone. What is `Unproved` or a definite error
-goes from 35,988 to 33,298.
+by an argument about scalar ranges. 1,264 obligations that were `Unproved`
+are proved, 1,108 of them in CoAP-SPARK, 109 in Tokeneer and 45 in AWS; 963
+of them are index checks, most of an array indexed by an enumeration, with
+an index of that type, which GNATprove does not report. None that was
+proved is lost, and no definite error is new or gone. What is `Unproved` or
+a definite error goes from 35,988 to 32,871.
 
 On all ten corpora, every preset, findings are identical; the
 `--recommended` and `--spark` presets lose the same range checks of array
@@ -49,7 +54,7 @@ values. On the SPARK testsuite no obligation is added, 63 range checks of
 array values are removed, 15 obligations are proved in 6 units, and the
 pairs both tools prove go from 262 to 271 of 650 (651 matched before, one
 of them the range check of an array value). CoAP-SPARK's `--verify` lane
-takes about 225 s of CPU time (was 154 s); the others about what they took.
+takes about 230 s of CPU time (was 154 s); the others about what they took.
 
 ### Changed
 
@@ -98,9 +103,27 @@ takes about 225 s of CPU time (was 154 s); the others about what they took.
   a component or a `'Image` starts where that operand does (RM 4.5.3):
   `LocalUser (1 .. FullString'Last) := FullString` has the length it needs
   where `FullString : String := "Issuer: " & ...`.
+- What is known where a loop is entered of the elements of an array at
+  known indexes -- of their components, for an array of records -- is said
+  of the contents of `X'Loop_Entry`, which the loop head keeps: the
+  precondition `Valid_Next (Ctx, Fld)` of RecordFlux's
+  `Reset_Dependent_Fields` holds at the head of its loop, with the
+  invariant `Ctx.Cursors (F) = Ctx.Cursors'Loop_Entry (F)`, and after it.
+- The prefix of an `X'Loop_Entry` is decided where its loop is entered, in
+  what each way into the head brings with the first iteration begun; it was
+  decided in the state of the head, which holds on every iteration. The
+  three checks of `verification_fp112_earlier_prefix` in such prefixes that
+  fail whenever their loop is entered are now definite errors.
+- An element at a known index is linked to the contents of its array
+  wherever it is read: in the body of an inlined expression function or of
+  a quantified expression, which kept nothing of what they added, and
+  through a formal of an inlined function bound to the element.
+- An object of an enumeration subtype declared with a range of two literals
+  is within their positions.
 - Tests: the fixtures `verification_array_records`,
-  `verification_mutation_array_records`, `verification_array_values` and
-  `verification_mutation_array_values` (22 seeded defects in
+  `verification_mutation_array_records`, `verification_array_values`,
+  `verification_mutation_array_values`, `verification_loop_entry_records`
+  and `verification_mutation_loop_entry_records` (26 seeded defects in
   `quality/verification_mutations.tsv`). The seeded defect
   `function-term-other-formal`, a write to one formal taken to change
   another, is now in code outside SPARK, where two formals may be one

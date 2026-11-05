@@ -9389,6 +9389,19 @@ package body Adalang_Analyzer.Flow_Interp is
         (Index_Type => Positive, Element_Type => Loop_Entry_Record);
       Loop_Entries : Loop_Entry_Vectors.Vector;
 
+      --  The state each way into the head of a loop gives it, the last one
+      --  the run gave (Merge_Into), which is the state the prefix of a
+      --  'Loop_Entry of that loop is evaluated in (Finalize_Earlier).
+      type Entry_View is record
+         Header  : CFG.Node_Id := CFG.No_Node;
+         From    : CFG.Node_Id := CFG.No_Node;
+         State   : Flow_State := Empty_Flow_State;
+         Symbols : VC.Symbolic_State := VC.Empty_Symbolic_State;
+      end record;
+      package Entry_View_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Entry_View);
+      Entry_Views : Entry_View_Vectors.Vector;
+
       --  What holds where a loop over a range that is never empty is left
       --  by its head, by the head: the state at the end of its last
       --  iteration (Prove_Header). The second run gives it to that way
@@ -10628,7 +10641,8 @@ package body Adalang_Analyzer.Flow_Interp is
         (Target : CFG.Node_Id;
          State  : Flow_State;
          Symbols : VC.Symbolic_State;
-         Incoming_Kind : CFG.Edge_Kind)
+         Incoming_Kind : CFG.Edge_Kind;
+         From   : CFG.Node_Id := CFG.No_Node)
       is
          Incoming_State   : Flow_State := State;
          Incoming_Symbols : VC.Symbolic_State := Symbols;
@@ -10689,6 +10703,27 @@ package body Adalang_Analyzer.Flow_Interp is
                Check_Loop_VCs
                  (Target, Incoming_State, Incoming_Symbols,
                   Is_Back => False);
+               if From /= CFG.No_Node then
+                  declare
+                     View  : constant Entry_View :=
+                       (Header  => Target, From => From,
+                        State   => Incoming_State,
+                        Symbols => Incoming_Symbols);
+                     Found : Boolean := False;
+                  begin
+                     for Index in 1 .. Natural (Entry_Views.Length) loop
+                        if Entry_Views.Element (Index).Header = Target
+                          and then Entry_Views.Element (Index).From = From
+                        then
+                           Entry_Views.Replace_Element (Index, View);
+                           Found := True;
+                        end if;
+                     end loop;
+                     if not Found then
+                        Entry_Views.Append (View);
+                     end if;
+                  end;
+               end if;
                if not Summary_Mode and then Has_Cut_Invariant (Target) then
                   Loop_Entries.Append
                     ((Header  => Target,
@@ -11942,7 +11977,8 @@ package body Adalang_Analyzer.Flow_Interp is
 
                if Propagate then
                   Merge_Into
-                    (Edge.To, Edge_State, Edge_Symbols, Edge.Kind);
+                    (Edge.To, Edge_State, Edge_Symbols, Edge.Kind,
+                     From => Edge.From);
                end if;
 
                <<Continue_Edge>>
@@ -14951,6 +14987,51 @@ package body Adalang_Analyzer.Flow_Interp is
             Operand_Dead := not Reachable (Header);
             Operand_State := States (Header);
             Operand_Symbols := Symbolic_States (Header);
+            --  The prefix is evaluated where the loop is entered: in the
+            --  state each way into its head gives it, all of them joined.
+            declare
+               Taken : Boolean := False;
+            begin
+               for View of Entry_Views loop
+                  if View.Header = Header then
+                     if not Taken then
+                        Operand_State := View.State;
+                        Operand_Symbols := View.Symbols;
+                        Taken := True;
+                     else
+                        Operand_State := Flow_Join (Operand_State, View.State);
+                        Operand_Symbols :=
+                          VC.Join
+                            (Operand_Symbols, View.Symbols, Operand_State,
+                             Merge_Tag => Positive (Header));
+                     end if;
+                  end if;
+               end loop;
+               --  Where the loop is entered: its first iteration begins, the
+               --  condition of a while loop holding.
+               if Taken then
+                  Begin_Iteration
+                    (Header, VC.First_Iteration, Operand_State,
+                     Operand_Symbols);
+                  if Source_Node (Header).Kind =
+                    Libadalang.Common.Ada_While_Loop_Stmt
+                  then
+                     declare
+                        Cond : constant Libadalang.Analysis.Expr :=
+                          Source_Node (Header).As_While_Loop_Stmt.F_Spec
+                            .As_While_Loop_Spec.F_Expr;
+                        True_State, False_State : Flow_State;
+                     begin
+                        Narrow_By_Condition
+                          (Cond, Operand_State, True_State, False_State);
+                        Operand_State := True_State;
+                        Assume_Into
+                          (Operand_Symbols, Cond, Truth => True,
+                           Flow => Operand_State);
+                     end;
+                  end if;
+               end if;
+            end;
          elsif Entry_Known and then Name = "old" then
             Operand_State := Entry_Flow;
             Operand_Symbols := Entry_Flow_Symbols;

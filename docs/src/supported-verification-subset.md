@@ -905,7 +905,8 @@ for an object: the size of an object is the target's affair.
 Symbolic assignments resolve their scalar sort from Ada semantic type
 identity: signed integers use mathematical-integer terms, `Standard.Boolean`
 uses SMT Boolean terms, and enumeration values use their declaration-order
-positions. Unsupported scalar types and inconsistent bindings stop translation
+positions; an object of an enumeration subtype declared with a range of two
+literals is within the positions of those. Unsupported scalar types and inconsistent bindings stop translation
 with explicit `sort-mismatch` provenance rather than being inferred from the
 absence of interval facts.
 
@@ -1034,7 +1035,11 @@ what a call bound a parameter of an inlined expression function to. Two
 elements of one array are two symbols; each is also the element at its
 index of the contents of the array (see "Elements at an index that is not
 known"), and what is known of one element is known of the other only
-through those. A discriminant is read as a component is.
+through those. A discriminant is read as a component is. An element at a
+known index is linked to the contents wherever it is read: in the body of
+an expression function that is inlined, in that of a quantified
+expression, and through a formal of an inlined function that stands for the
+element (`C.State` of `Valid (Cursors (F_Ver))`).
 
 There is no symbol for a part that the name does not settle: one behind
 an access value, in the result of a call or of a conversion, or in an
@@ -1889,8 +1894,10 @@ The prefix of `'Old` and that of `'Loop_Entry` are evaluated earlier than
 where the attribute is written, and their checks are decided in the state
 of that earlier place. For an `'Old` of the postcondition it is the state
 on entry, once the precondition holds. For a `'Loop_Entry` that names no
-loop it is the state of the header of the innermost loop, which holds each
-time the header is reached, the first time included. The checks of any
+loop it is the state in which the innermost loop is entered: what each way
+into its head brings, all of them joined, with its first iteration begun --
+the range of a `for` loop not empty, the condition of a `while` loop
+holding. The checks of any
 other such prefix -- a `'Loop_Entry` that names a loop, an `'Old` in a
 `Contract_Cases` -- are decided with no state at all. The
 prefix is evaluated whether or not the place where the attribute is
@@ -1912,9 +1919,14 @@ The value of `X'Loop_Entry` that names no loop is that of `X` where the
 innermost loop is entered: on each way into the loop it is a symbol of its
 own, equal to the term of `X` there, which no write in the loop renews and
 which the head of that loop, and of any loop inside it, keeps. What is
-known there of the value of `X`, where that is one symbol, is known of it.
-An element of `X'Loop_Entry` is read in its contents at any index (see
-"Elements at an index that is not known"). A `'Loop_Entry` whose prefix
+known there of the value of `X`, where that is one symbol, is known of it,
+and what is known there of the elements of an array `X` at known indexes,
+or of their components, is known of those of the contents of
+`X'Loop_Entry`: the precondition `Valid_Next (Ctx, Fld)` reaches the head of
+a loop that writes `Ctx.Cursors`, and with the invariant `Ctx.Cursors (F) =
+Ctx.Cursors'Loop_Entry (F)` it holds there. An element of `X'Loop_Entry` is
+read in its contents at any index (see "Elements at an index that is not
+known"). A `'Loop_Entry` whose prefix
 names an object declared in the loop, or that names a loop, is not
 translated.
 

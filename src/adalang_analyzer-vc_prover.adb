@@ -1253,11 +1253,22 @@ package body Adalang_Analyzer.VC_Prover is
    --  Domain.Unknown_Range for anything else, the same conservative fallback used throughout this
    --  file (costs precision, never soundness, since the true range is
    --  always a subset of the base type's).
+   function Enum_Definition_Positions
+     (Definition : Libadalang.Analysis.Ada_Node'Class;
+      Depth      : Natural := 0) return Domain.Abstract_Range;
+
    function Enum_Type_Position_Range
      (Typ : Libadalang.Analysis.Base_Type_Decl'Class)
       return Domain.Abstract_Range
    is
    begin
+      --  A subtype of an enumeration type declared with a range of two
+      --  literals has the positions of those (Enum_Definition_Positions).
+      if not Libadalang.Analysis.Is_Null (Typ)
+        and then Typ.Kind = Libadalang.Common.Ada_Subtype_Decl
+      then
+         return Enum_Definition_Positions (Typ.As_Subtype_Decl.F_Subtype);
+      end if;
       if Libadalang.Analysis.Is_Null (Typ)
         or else Typ.Kind not in Libadalang.Common.Ada_Type_Decl
         or else Typ.As_Type_Decl.F_Type_Def.Kind /=
@@ -2458,6 +2469,23 @@ package body Adalang_Analyzer.VC_Prover is
       return Last < Fact'Last - 2 and then Fact (Last) = ' ';
    end Is_Element_Link;
 
+   --  Context with the links of elements to contents (Link_Elements) that
+   --  the translation of a part in Inner made: a fact of the state both
+   --  are of, which neither the formals of a function nor the parameter of
+   --  a quantified expression is part of.
+   procedure Keep_Element_Links
+     (Context : in out Translation_Context;
+      Inner   : Translation_Context) is
+   begin
+      for Fact of Inner.Symbols.Assumptions loop
+         if Is_Element_Link (To_String (Fact))
+           and then not Context.Symbols.Assumptions.Contains (Fact)
+         then
+            Context.Symbols.Assumptions.Append (Fact);
+         end if;
+      end loop;
+   end Keep_Element_Links;
+
    --  Names, each with a flag.
    package Name_Flags is new Ada.Containers.Indefinite_Hashed_Maps
      (Key_Type        => String,
@@ -3059,6 +3087,115 @@ package body Adalang_Analyzer.VC_Prover is
    --  symbol, equal whatever the two elements hold (FP-119): the element
    --  is part of the key, and a record that is nowhere a name settles has
    --  no symbol for its components.
+   --  Context with the component Field of the element at Place -- an
+   --  element at a known index of an array of records, "X.Cur@3" -- whose
+   --  term is Symbol linked to the contents of that component, where some
+   --  fact of Context already speaks of those contents: the first bound is
+   --  read from that fact. So are the other components of the element,
+   --  whose type is Record_Type (Link_Components). Context as it is for any
+   --  other place.
+   procedure Link_Element_Place
+     (Context     : in out Translation_Context;
+      Place       : Located_Object;
+      Field       : Libadalang.Analysis.Ada_Node;
+      Sort        : Scalar_Sort;
+      Symbol      : String;
+      Record_Type : Libadalang.Analysis.Base_Type_Decl)
+   is
+      Path  : constant String := To_String (Place.Path);
+      At_Mark : Natural := 0;
+   begin
+      if Libadalang.Analysis.Is_Null (Place.Object)
+        or else Is_Old_Path (Place.Path) or else Is_Entry_Path (Place.Path)
+        or else Context.Symbols.Assumptions.Is_Empty
+      then
+         return;
+      end if;
+      for Index in reverse Path'Range loop
+         if Path (Index) = '@' then
+            At_Mark := Index;
+            exit;
+         end if;
+      end loop;
+      if At_Mark = 0 or else not Is_Numeral (Path (At_Mark + 1 .. Path'Last))
+      then
+         return;
+      end if;
+      declare
+         Array_Place : constant Located_Object :=
+           (Object => Place.Object,
+            Path   => To_Unbounded_String (Path (Path'First .. At_Mark - 1)));
+         Key         : constant Symbol_Key := Part_Key (Array_Place);
+         Bound       : constant Natural := Binding_Index (Context.Symbols, Key);
+         Token       : Unbounded_String;
+      begin
+         if Bound /= 0 then
+            if Context.Symbols.Bindings.Element (Bound).Sort /= Opaque_Sort then
+               return;
+            end if;
+            Token := Context.Symbols.Bindings.Element (Bound).Term;
+         elsif Root_Index (Context.Symbols, Root_Name (Key)) /= 0 then
+            Token := To_Unbounded_String (Root_Name (Key));
+         else
+            return;
+         end if;
+         declare
+            Head  : constant String :=
+              "(" & (if Sort = Boolean_Sort then Boolean_Contents
+                     else Integer_Contents) & " " &
+              Component_Token (Field, To_String (Token)) & " ";
+            First : Unbounded_String;
+         begin
+            for Fact of Context.Symbols.Assumptions loop
+               declare
+                  Found : constant Natural :=
+                    Ada.Strings.Unbounded.Index (Fact, Head);
+               begin
+                  if Found /= 0 then
+                     declare
+                        Rest : constant String :=
+                          Slice (Fact, Found + Head'Length, Length (Fact));
+                        Stop : constant Natural :=
+                          Ada.Strings.Fixed.Index (Rest, ")");
+                     begin
+                        if Stop > Rest'First then
+                           First := To_Unbounded_String
+                             (Rest (Rest'First .. Stop - 1));
+                           exit;
+                        end if;
+                     end;
+                  end if;
+               end;
+            end loop;
+            if Length (First) = 0
+              or else Ada.Strings.Unbounded.Index (First, " ") /= 0
+              or else Ada.Strings.Unbounded.Index (First, "(") /= 0
+            then
+               return;
+            end if;
+            declare
+               Fact : constant Unbounded_String := To_Unbounded_String
+                 ("(= " & Symbol & " (select " &
+                  Contents_Term
+                    (Component_Token (Field, To_String (Token)),
+                     To_String (First), Sort) &
+                  " " & Path (At_Mark + 1 .. Path'Last) & "))");
+            begin
+               if not Context.Symbols.Assumptions.Contains (Fact) then
+                  Context.Symbols.Assumptions.Append (Fact);
+               end if;
+            end;
+            if not Libadalang.Analysis.Is_Null (Record_Type) then
+               Link_Components
+                 (Context, Array_Place, To_String (Token), To_String (First),
+                  (if Record_Type.P_Is_Private then Record_Type.P_Full_View
+                   else Record_Type),
+                  Except => Field);
+            end if;
+         end;
+      end;
+   end Link_Element_Place;
+
    --  The term for the component Field, of subtype Field_Type, of the
    --  record Prefix names (Component_Term), Node being what is reported
    --  where it has none.
@@ -3146,6 +3283,12 @@ package body Adalang_Analyzer.VC_Prover is
                  Link_Known
                    (Prefix.As_Call_Expr, Context, Sort_Info.Sort,
                     To_String (Symbol), Place, Component => Field);
+            elsif Context.Supported then
+               --  The same element named otherwise: a formal of an inlined
+               --  function bound to it ("C.State" of "Valid (Cursors (F))").
+               Link_Element_Place
+                 (Context, Place, Field, Sort_Info.Sort, To_String (Symbol),
+                  Prefix.P_Expression_Type);
             end if;
             return Symbol;
          end;
@@ -5010,6 +5153,7 @@ package body Adalang_Analyzer.VC_Prover is
                begin
                   Copy_Failure (Context, Child);
                   Context.Symbols.Roots := Child.Symbols.Roots;
+                  Keep_Element_Links (Context, Child);
 
                   case Quant.F_Quantifier is
                      when Libadalang.Common.Ada_Quantifier_All =>
@@ -5516,6 +5660,7 @@ package body Adalang_Analyzer.VC_Prover is
 
             Copy_Failure (Context, Callee);
             Context.Symbols.Roots := Callee.Symbols.Roots;
+            Keep_Element_Links (Context, Callee);
             return Result;
          end;
       end;
@@ -11311,6 +11456,33 @@ package body Adalang_Analyzer.VC_Prover is
          Start : Natural := 0;
          Bound : String_Sets.Map;
 
+         --  The function that gives the contents of a component of the
+         --  elements of an array of records (Component_Token): no value of
+         --  its own.
+         function Is_Component_Function (Token : String) return Boolean is
+           (Token'Length > 10
+            and then Token (Token'First .. Token'First + 2) = "|f!"
+            and then Token (Token'Last - 6 .. Token'Last) = "!c1O>O|");
+
+         --  The value a case expression has where no alternative covers its
+         --  selector, "|cv<place> <selector>|": a value of the selector,
+         --  which holds where the selector is acceptable.
+         function Is_Case_Value (Token : String) return Boolean is
+            Space : Natural;
+         begin
+            if Token'Length < 6
+              or else Token (Token'First .. Token'First + 2) /= "|cv"
+              or else Token (Token'Last) /= '|'
+            then
+               return False;
+            end if;
+            Space := Ada.Strings.Fixed.Index
+              (Token (Token'First .. Token'Last - 1), " ");
+            return Space /= 0
+              and then Space < Token'Last - 1
+              and then Only_Bounds (Token (Space + 1 .. Token'Last - 1));
+         end Is_Case_Value;
+
          function Acceptable (Token : String) return Boolean is
            (Is_Bound_Symbol (Token)
             or else Token in "and" | "or" | "not" | "ite" | "=" | "<=" | ">="
@@ -11323,7 +11495,9 @@ package body Adalang_Analyzer.VC_Prover is
                                 | "select" | Integer_Contents
                                 | Boolean_Contents
                         or else Kept.Contains (Token)
-                        or else Bound.Contains (Token)))
+                        or else Bound.Contains (Token)
+                        or else Is_Component_Function (Token)
+                        or else Is_Case_Value (Token)))
             or else (for all Item of Token => Item in '0' .. '9'));
 
          --  Notes the name each "(forall ((Name Int))" and "(exists ((Name
@@ -11347,17 +11521,30 @@ package body Adalang_Analyzer.VC_Prover is
             Note_Bound ("(forall ((");
             Note_Bound ("(exists ((");
          end if;
-         for Index in Text'Range loop
-            if Text (Index) in ' ' | '(' | ')' then
-               if Start /= 0 and then not Acceptable (Text (Start .. Index - 1))
-               then
-                  return False;
+         declare
+            Index  : Natural := Text'First;
+            Quoted : Boolean := False;
+         begin
+            while Index <= Text'Last loop
+               --  A quoted name is one token, whatever it holds.
+               if Text (Index) = '|' then
+                  if Start = 0 then
+                     Start := Index;
+                  end if;
+                  Quoted := not Quoted;
+               elsif not Quoted and then Text (Index) in ' ' | '(' | ')' then
+                  if Start /= 0
+                    and then not Acceptable (Text (Start .. Index - 1))
+                  then
+                     return False;
+                  end if;
+                  Start := 0;
+               elsif Start = 0 then
+                  Start := Index;
                end if;
-               Start := 0;
-            elsif Start = 0 then
-               Start := Index;
-            end if;
-         end loop;
+               Index := Index + 1;
+            end loop;
+         end;
          return Start = 0 or else Acceptable (Text (Start .. Text'Last));
       end Only_Bounds;
    begin
@@ -11373,6 +11560,22 @@ package body Adalang_Analyzer.VC_Prover is
             Kept.Include (To_String (Item.Name), True);
          end if;
       end loop;
+      --  The value of a case expression no alternative covers, of a
+      --  selector kept, which a fact kept may name.
+      if Standing /= null then
+         for Item of State.Roots loop
+            declare
+               Root : constant String := To_String (Item.Name);
+            begin
+               if Root'Length > 4
+                 and then Root (Root'First .. Root'First + 2) = "|cv"
+                 and then Only_Bounds (Root)
+               then
+                  Result.Roots.Append (Item);
+               end if;
+            end;
+         end loop;
+      end if;
       --  A standing object can be bound to the root of another name of it:
       --  a formal of a body to that of its declaration, which the
       --  contract names.
@@ -11535,6 +11738,129 @@ package body Adalang_Analyzer.VC_Prover is
          return False;
       end Mentions;
 
+      --  The facts about the elements X has at known indexes here are
+      --  restated of the contents of X'Loop_Entry, whose root is Name, X
+      --  being Prefix, an array: each live symbol of such an element -- of
+      --  a component of it, where the elements are records -- replaced by
+      --  the element of those contents at its index. They are facts of the
+      --  value X has here, which X'Loop_Entry is; said of that alone, they
+      --  hold all through the loop.
+      Max_Element_Facts : constant := 256;
+
+      procedure Restate_Elements
+        (Prefix    : Libadalang.Analysis.Name;
+         Attribute : Libadalang.Analysis.Ada_Node;
+         Name      : String)
+      is
+         Context : Translation_Context :=
+           (State => Flow, Symbols => Result, Supported => True,
+            Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+            Failure_Reason => No_Unsupported_Reason,
+            Failure_Node => Libadalang.Analysis.No_Ada_Node,
+            Inlining_Path => Null_Unbounded_String, Depth => 0,
+            Priming_Old => False);
+         Place  : constant Located_Object := Location (Prefix, Context);
+         Typ    : constant Libadalang.Analysis.Base_Type_Decl :=
+           Prefix.P_Expression_Type;
+         First  : Unbounded_String;
+         Formal : Libadalang.Analysis.Ada_Node;
+         Marker : constant String := To_String (Place.Path) & "@";
+
+         type Element_Symbol is record
+            Symbol      : Unbounded_String;
+            Replacement : Unbounded_String;
+         end record;
+         package Element_Symbol_Vectors is new Ada.Containers.Vectors
+           (Index_Type => Positive, Element_Type => Element_Symbol);
+         Elements : Element_Symbol_Vectors.Vector;
+
+         procedure Note (Key : Symbol_Key; Sort : Scalar_Sort; Symbol : String)
+         is
+            Path : constant String := To_String (Key.Path);
+         begin
+            if (Key.Object /= Place.Object and then Key.Object /= Formal)
+              or else Path'Length <= Marker'Length
+              or else Path (Path'First .. Path'First + Marker'Length - 1) /=
+                Marker
+              or else not Is_Numeral
+                (Path (Path'First + Marker'Length .. Path'Last))
+              or else not Is_Symbol (Symbol)
+            then
+               return;
+            end if;
+            Elements.Append
+              ((Symbol      => To_Unbounded_String (Symbol),
+                Replacement => To_Unbounded_String
+                  ("(select " &
+                   Contents_Term
+                     ((if Key.Component = Key.Object then Name
+                       else Component_Token (Key.Component, Name)),
+                      To_String (First), Sort) &
+                   " " & Path (Path'First + Marker'Length .. Path'Last) &
+                   ")")));
+         end Note;
+      begin
+         if Libadalang.Analysis.Is_Null (Place.Object)
+           or else Is_Old_Path (Place.Path) or else Is_Entry_Path (Place.Path)
+           or else Libadalang.Analysis.Is_Null (Typ)
+           or else not Typ.P_Is_Array_Type
+         then
+            return;
+         end if;
+         First := Array_Attribute_Term (Prefix, "first", Attribute, Context);
+         if not Context.Supported or else Length (First) = 0 then
+            return;
+         end if;
+         Result := Context.Symbols;
+         Formal := Declaration_Formal (Place.Object);
+         for Item of Result.Bindings loop
+            if Item.Sort /= Opaque_Sort then
+               Note (Item.Key, Item.Sort, To_String (Item.Term));
+            end if;
+         end loop;
+         for Item of Result.Roots loop
+            if Item.Sort /= Opaque_Sort
+              and then Binding_Index (Result, Item.Key) = 0
+              and then To_String (Item.Name) = Root_Name (Item.Key)
+            then
+               Note (Item.Key, Item.Sort, To_String (Item.Name));
+            end if;
+         end loop;
+         if Elements.Is_Empty then
+            return;
+         end if;
+         declare
+            Known : constant Assumption_Vectors.Vector := Result.Assumptions;
+            Count : Natural := 0;
+         begin
+            for Item of Known loop
+               exit when Count = Max_Element_Facts;
+               declare
+                  Text      : Unbounded_String := Item;
+                  Restated  : Boolean := False;
+               begin
+                  if not Is_Element_Link (To_String (Item)) then
+                     for Element of Elements loop
+                        if Has_Token (To_String (Text), To_String (Element.Symbol))
+                        then
+                           Text := To_Unbounded_String
+                             (With_Token
+                                (To_String (Text), To_String (Element.Symbol),
+                                 To_String (Element.Replacement)));
+                           Restated := True;
+                        end if;
+                     end loop;
+                  end if;
+                  if Restated and then not Result.Assumptions.Contains (Text)
+                  then
+                     Result.Assumptions.Append (Text);
+                     Count := Count + 1;
+                  end if;
+               end;
+            end loop;
+         end;
+      end Restate_Elements;
+
       procedure Define (Attribute : Libadalang.Analysis.Ada_Node) is
          --  What State is if the value of this X'Loop_Entry cannot be given:
          --  X'Loop_Entry is then not translated.
@@ -11608,6 +11934,9 @@ package body Adalang_Analyzer.VC_Prover is
                   end if;
                end loop;
             end;
+         end if;
+         if Sort = Opaque_Sort then
+            Restate_Elements (Prefix, Attribute, Name);
          end if;
          Result.Assumptions.Append
            (To_Unbounded_String ("(= " & Name & " " & To_String (Term) & ")"));
