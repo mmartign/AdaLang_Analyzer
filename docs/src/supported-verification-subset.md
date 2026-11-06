@@ -488,7 +488,10 @@ takes it out of the loop, which then asks nothing of the invariant: the
 invariant is checked on the paths that come back to the loop's head, an
 `exit when` being walked past with its condition false, and an `if` one of
 whose arms leaves the loop through its other arm. Declarations in the body
-are walked as the analysis of the subprogram goes through them.
+are walked as the analysis of the subprogram goes through them, and so are
+the proof pragmas (`Assert`, `Assume`, `Assert_And_Cut`, `Check`, and the
+loop's other invariants): the walk goes on knowing the condition, which is
+checked where the pragma stands as everywhere else.
 
 For a loop over a range, the invariant is checked at the start of the next
 iteration: the parameter had a value other than the last one of the range

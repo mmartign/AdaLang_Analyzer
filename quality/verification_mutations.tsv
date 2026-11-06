@@ -463,6 +463,7 @@ body-invariant-entry	tests/verification_mutation_body_invariants.adb	loop-invari
 body-invariant-end	tests/verification_mutation_body_invariants.adb	loop-invariant-preservation	X < 10	unproved	an invariant inside the loop body that the last iteration breaks.
 cut-invariant-start	tests/verification_mutation_body_invariants.adb	loop-invariant-initialization	N + C = 10	unproved	a loop cut where its invariant stands: the first iteration brings 9 + 0.
 cut-invariant-step	tests/verification_mutation_body_invariants.adb	loop-invariant-preservation	N + C + 1 = 10	unproved	a loop cut where its invariant stands: a step of 2 breaks what one iteration should keep.
+cut-invariant-assumed	tests/verification_mutation_body_invariants.adb	loop-invariant-preservation	S <= K	unproved	a loop cut whose walk assumes T in 0 .. 2 on the way: S <= K is not kept.
 array-written	tests/verification_mutation_array_contents.adb	range-check	Wr (K)	unproved	Wr (J) := 200 may write the element read: what the precondition said of the contents is of the value before the write.
 array-other	tests/verification_mutation_array_contents.adb	range-check	Yo (K)	unproved	the precondition speaks of the contents of Xo, not of Yo.
 array-looped	tests/verification_mutation_array_contents.adb	range-check	Lp (K)	unproved	the loop writes 200 to every element.

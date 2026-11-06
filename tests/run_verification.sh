@@ -3338,6 +3338,14 @@ for operation in 'N + C + 1 = 10' 'C + N + 1 = 10' 'N + 1 + C = 10'; do
    must_prove "$body_invariants" loop-invariant-preservation "$operation" \
      external-prover 'a loop cut where its invariant stands'
 done
+#  The walk of the cut knows a proof pragma it passes where it stands, as
+#  the rest of the analysis does: S <= K is kept through the Assume only.
+#  GNATprove proves both; with T in 0 .. 2 neither (mutation
+#  cut-invariant-assumed).
+must_prove "$body_invariants" loop-invariant-initialization 'S <= K' \
+  abstract-interpretation 'a loop cut that knows the pragmas on its way'
+must_prove "$body_invariants" loop-invariant-preservation 'S <= K' \
+  external-prover 'a loop cut that knows the pragmas on its way'
 
 #  An element at an index whose value is not known is the element at that
 #  index of the contents of the array's value: a quantified precondition,

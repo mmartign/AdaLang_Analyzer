@@ -12241,6 +12241,10 @@ package body Adalang_Analyzer.Flow_Interp is
             --  preserved on it. Where one arm of an if leaves the loop, the
             --  walk goes on along the other alone, its condition known.
             --  An exit when is passed knowing its condition is False.
+            --  A proof pragma (Assert, Assume, Loop_Invariant, Check) is
+            --  passed knowing its condition, as the main pass gives it:
+            --  the pragma is checked where it stands, and execution goes
+            --  on only when it holds.
             --  Stop_At, when given, ends the walk as the back edge does:
             --  before that node is processed, Reached_Back set.
             function Advance
@@ -12603,6 +12607,28 @@ package body Adalang_Analyzer.Flow_Interp is
                                  end loop;
                               end if;
                               State := After;
+                           end;
+                        elsif Node_Info.Kind = CFG.Statement_Node
+                          and then Source.Kind =
+                            Libadalang.Common.Ada_Pragma_Node
+                          and then not Libadalang.Analysis.Is_Null
+                            (Pragma_Condition (Source.As_Pragma_Node))
+                        then
+                           --  As Process_Node gives it its effect: its own
+                           --  obligation is decided there, on the state of
+                           --  every visit.
+                           declare
+                              Cond   : constant Libadalang.Analysis.Expr :=
+                                Pragma_Condition (Source.As_Pragma_Node);
+                              Before : constant Flow_State := State;
+                              True_State, False_State : Flow_State;
+                           begin
+                              Narrow_By_Condition
+                                (Cond, State, True_State, False_State);
+                              State := True_State;
+                              Assume_Narrowed
+                                (Symbols, Cond, Truth => True,
+                                 Flow => Before, After => State);
                            end;
                         elsif Node_Info.Kind in  --  adalang-analyzer: ignore Empty_Elsif_Body
                           CFG.Statement_Node | CFG.Merge_Node

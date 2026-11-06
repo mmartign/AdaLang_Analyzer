@@ -42,4 +42,17 @@ is
          C := C + 2;
       end loop;
    end Wrong_Step;
+
+   --  A step of 2 is assumed possible: S <= K is not kept.
+   procedure Wide_Assumption (A : Values) is
+      S : Integer := 0;
+      T : Integer;
+   begin
+      for K in A'Range loop
+         T := A (K);
+         pragma Assume (T in 0 .. 2);
+         S := S + T;
+         pragma Loop_Invariant (S <= K);
+      end loop;
+   end Wide_Assumption;
 end Verification_Mutation_Body_Invariants;

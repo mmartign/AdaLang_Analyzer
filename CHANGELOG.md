@@ -5,6 +5,32 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+10,439 of the 15,043 checks GNATprove proves (was 10,430): 5 assertions, 3
+checks of loop invariants inside a loop body and 1 overflow check, 8 of them
+in SPARKNaCl and 1 in CoAP-SPARK. It also proves one that GNATprove leaves
+unproved, its provers reaching their step limit: the preservation of
+`for all K in Index_64 range I .. 63 => XL (K) = 0` in `sparknacl-sign.adb`
+(line 604), which holds, the body writing no element above `I` and setting
+`XL (I)` to 0. On the nine corpora with a `--verify` lane, 11 obligations
+that were `Unproved` are proved (10 in SPARKNaCl, 1 in CoAP-SPARK); none is
+added or removed, none that was proved is lost, and no definite error is new
+or gone. On all ten corpora, every preset, findings are identical. On the
+SPARK testsuite the pairs both tools prove go from 271 to 272 of 650
+(Q607-015).
+
+### Changed
+
+- The walk that proves a loop invariant over one iteration -- the
+  invariants at the head of the loop, an invariant inside the body cut
+  where it stands, and what holds where a loop over a range is left -- knows
+  the condition of each proof pragma it passes (`Assert`, `Assume`,
+  `Assert_And_Cut`, `Check`, and the loop's other invariants), as the rest
+  of the analysis does: the pragma is checked where it stands, and
+  execution goes on only when it holds. It knew none of them.
+
 ## [1.13.1] - 2026-11-05
 
 A `--verify` release that puts arrays of records in the verification

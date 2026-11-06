@@ -74,4 +74,17 @@ is
          end loop;
       end loop;
    end Entered_Again;
+
+   --  Kept by an iteration only through what is assumed on the way.
+   procedure Assumed_Step (A : Values) is
+      S : Integer := 0;
+      T : Integer;
+   begin
+      for K in A'Range loop
+         T := A (K);
+         pragma Assume (T in 0 .. 1);
+         S := S + T;
+         pragma Loop_Invariant (S <= K);
+      end loop;
+   end Assumed_Step;
 end Verification_Body_Invariants;
