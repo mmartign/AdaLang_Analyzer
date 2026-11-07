@@ -31,6 +31,18 @@ SPARK testsuite the pairs both tools prove go from 271 to 272 of 650
   of the analysis does: the pragma is checked where it stands, and
   execution goes on only when it holds. It knew none of them.
 
+### Fixed
+
+- FP-141: the value written to an element of an array, or to the whole
+  array, was translated in the state before the write, where reading an
+  element could give it its first symbol, which the state after the write
+  then took for the element's value. `L (2) := L (2) + 1` made `L (2)` equal
+  to itself plus one, and both `L (2) = 6` and `L (2) = 5` were proved after
+  it, in 1.13.0 and 1.13.1; so were a swap written as an aggregate, a write
+  to an element of an array component, and `L (I) := L (3) + 1` followed by
+  `L (3) = 5`. GNATprove refutes each. An element read so now gets a symbol
+  of its own after the write.
+
 ## [1.13.1] - 2026-11-05
 
 A `--verify` release that puts arrays of records in the verification

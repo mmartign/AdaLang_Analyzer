@@ -8576,6 +8576,70 @@ package body Adalang_Analyzer.VC_Prover is
         (Result, (Key => Key, Sort => Opaque_Sort, Term => New_Token));
    end Renew_Contents;
 
+   --  Result, the state after Writer has written the object at Place --
+   --  where Elements, elements of the array at Place -- with a symbol of
+   --  its own for each part written that Context, the translation of the
+   --  value in the state Before, has made a root for. That root names the
+   --  value the part had before the write: the parts the write changes
+   --  were forgotten in Before, which did not have it, and it would be
+   --  taken for the value of the part after the write (FP-141).
+   function Renew_Read_Parts
+     (Result   : Symbolic_State;
+      Before   : Symbolic_State;  --  adalang-analyzer: ignore Swappable_Parameters
+      Context  : Translation_Context;
+      Place    : Located_Object;
+      Elements : Boolean;
+      Writer   : Libadalang.Analysis.Ada_Node'Class;
+      Flow     : Domain.Flow_State) return Symbolic_State
+   is
+      Prefix : constant String :=
+        To_String (Place.Path) & (if Elements then "@" else "");
+
+      --  The declaration and the body of a subprogram name each of its
+      --  parameters, a key being of either.
+      function Canonical
+        (Name : Libadalang.Analysis.Ada_Node) return Libadalang.Analysis.Ada_Node
+      is
+      begin
+         if not Libadalang.Analysis.Is_Null (Name)
+           and then Name.Kind = Libadalang.Common.Ada_Defining_Name
+         then
+            return Libadalang.Analysis.Ada_Node
+              (Name.As_Defining_Name.P_Canonical_Part);
+         end if;
+         return Name;
+      exception
+         when others =>
+            return Name;
+      end Canonical;
+
+      Written : constant Libadalang.Analysis.Ada_Node :=
+        Canonical (Place.Object);
+
+      function Renewed (Key : Symbol_Key) return Boolean is
+         Path : constant String := To_String (Key.Path);
+         Name : constant String := Root_Name (Key);
+      begin
+         return Root_Index (Before, Name) = 0
+           and then Root_Index (Context.Symbols, Name) /= 0
+           and then Binding_Index (Result, Key) = 0
+           and then Path'Length >= Prefix'Length
+           and then Path (Path'First .. Path'First + Prefix'Length - 1) =
+             Prefix
+           and then Canonical (Key.Object) = Written;
+      exception
+         when others =>
+            return True;
+      end Renewed;
+   begin
+      if Libadalang.Analysis.Is_Null (Place.Object)
+        or else Libadalang.Analysis.Is_Null (Writer)
+      then
+         return Result;
+      end if;
+      return Renew_Keys (Result, Writer, Flow, Renewed'Access);
+   end Renew_Read_Parts;
+
    --  Store_Element for an element of an array of records whose components
    --  are scalars, of type Record_Type: Context is the translation context
    --  of the state before the write, Result the state after it (After),
@@ -8800,9 +8864,15 @@ package body Adalang_Analyzer.VC_Prover is
             then
                return After;
             elsif not Libadalang.Analysis.Is_Null (Record_Type) then
-               return Store_Record
-                 (Context, Result, Record_Type, Place, Key, Old_Token, First,
-                  Position, Value, Writer, Flow);
+               declare
+                  Stored : constant Symbolic_State :=
+                    Store_Record
+                      (Context, Result, Record_Type, Place, Key, Old_Token,
+                       First, Position, Value, Writer, Flow);
+               begin
+                  return Renew_Read_Parts
+                    (Stored, Before, Context, Place, True, Writer, Flow);
+               end;
             end if;
 
             --  A value with no term is one of which nothing is known: the
@@ -8854,6 +8924,9 @@ package body Adalang_Analyzer.VC_Prover is
                   " (store " &
                   Contents_Term (Old_Token, First, Sort_Info.Sort) & " " &
                   Position & " " & To_String (Element) & "))"));
+            Result :=
+              Renew_Read_Parts
+                (Result, Before, Context, Place, True, Writer, Flow);
             return (if Result.Supported then Result else After);
          end;
       end;
@@ -9348,6 +9421,11 @@ package body Adalang_Analyzer.VC_Prover is
          if Length (New_Token) = 0 then
             return After;
          end if;
+         Result :=
+           Renew_Read_Parts
+             (Result, Before,
+              Context, (Object => Target, Path => Null_Unbounded_String),
+              False, Writer, Flow);
          declare
             Contents : constant String :=
               Contents_Term
