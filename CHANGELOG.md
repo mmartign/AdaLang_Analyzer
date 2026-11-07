@@ -5,7 +5,16 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.13.2] - 2026-11-07
+
+A `--verify` release that follows an object with relaxed initialization as
+a whole: it has a value in every part where it is given one that has, and
+where a precondition, an assertion or a loop invariant says `X'Initialized`
+of it, and nowhere else -- an `in` or `in out` parameter of it no longer
+comes with a value it need not have (FP-140). It also fixes a false proof
+of 1.13.0 and 1.13.1 after a write of an element of an array that reads
+the array (FP-141), and lets the walk of a loop invariant know the proof
+pragmas it passes.
 
 What to expect: on the five corpora of the gap ledger, `--verify` proves
 10,517 of the 15,043 checks GNATprove proves (was 10,430). 93 more are
