@@ -35,26 +35,29 @@ matcher, `compare.awk`.
 
 | Corpus | Author | Domain | Matched pairs | Both safe | Unsoundness | False positives |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 1,264 | 809 | 0 | 0 |
-| [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 185 | 89 | 0 | 0 |
+| [sparknacl](sparknacl/) | rod-chapman | NaCl-style crypto, fixed-width arithmetic | 1,264 | 867 | 1 | 0 |
+| [saatana](saatana/) | HeisenbugLtd | Phelix stream cipher | 185 | 95 | 0 | 0 |
 | [libkeccak](libkeccak/) | damaki | SHA-3/Keccak sponge family | 253 | 210 | 0 | 0 |
-| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 3,078 | 2,161 | 0 | 0 |
+| [coap_spark](coap_spark/) | mgrojo | CoAP protocol parsing/session state | 3,078 | 2,162 | 0 | 0 |
 | [tokeneer](tokeneer/) | AdaCore/NSA | Access-control system (identification station) | 446 | 270 | 0 | 0 |
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 10 | 0 | 0 | 0 |
-| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 650 | 271 | 0 | 0 |
+| [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 650 | 275 | 0 | 0 |
 
-These are the figures of release 1.13.1 (run of 2026-11-05 against the
+These are the figures of release 1.13.2 (run of 2026-11-07 against the
 GNATprove output of 2026-10-02). A matched pair is a
 `(file, line, check kind)` at which each tool has exactly one obligation;
 "both safe" is the number of pairs AdaLang proves too.
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark, Tokeneer) — 5,199 proof obligations both
+Saatana, libkeccak, coap_spark, Tokeneer) — 5,226 proof obligations both
 tools could independently evaluate at the same location, spanning five
 different authors/origins and five structurally different domains —
-AdaLang has never once called something safe that GNATprove could not
-prove, and never once called something a definite error that GNATprove
-proved safe.** CubedOS's 10 matched pairs (not a fully-proved corpus, so a
+AdaLang has called safe one check that GNATprove could not prove, and
+never once called something a definite error that GNATprove proved
+safe.** That check holds: it is the preservation of a loop invariant in
+`sparknacl-sign.adb` (line 604), on which GNATprove's provers reach their
+step limit, the loop's body writing no element the invariant speaks of
+but one it sets to 0. CubedOS's 10 matched pairs (not a fully-proved corpus, so a
 weaker oracle) show the same zero-disagreement pattern on a much smaller
 sample.
 
@@ -97,8 +100,8 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 10,430 | 69.3% |
-| Has the obligation, leaves it unproved | 3,202 | 21.3% |
+| Proves it | 10,517 | 69.9% |
+| Has the obligation, leaves it unproved | 3,115 | 20.7% |
 | Has the obligation, calls it unsupported | 28 | 0.2% |
 | Has the obligation, finds the code never reached | 1 | 0.0% |
 | Has no obligation of that kind at that place | 824 | 5.5% |
@@ -108,14 +111,14 @@ what AdaLang does with each:
 Since 1.8.3 the analyzer does this accounting itself when it is given the
 log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
 on each check beside its own result, and on these corpora that leaves none
-of the 15,043 unaccounted for -- 10,430 proved by AdaLang too, 3,231 with
+of the 15,043 unaccounted for -- 10,517 proved by AdaLang too, 3,144 with
 GNATprove's verdict alone on an obligation AdaLang has, 1,382 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
 
 What is left, and why:
 
-- **Unproved (3,202).** AdaLang has the obligation and does not decide it.
+- **Unproved (3,115).** AdaLang has the obligation and does not decide it.
   The ledger gives the reason it reports for each, per corpus.
 - **Unsupported (28).** The obligation is in a subprogram `--verify`
   leaves outside the verified subset, almost all for a dispatching call;
@@ -126,13 +129,13 @@ What is left, and why:
   aggregate, where it raises none yet; and range, index and precondition
   checks at places it does not yet look.
 
-In the other direction the record holds: AdaLang proves none of the 22
-checks GNATprove leaves unproved there, and reports no definite error on a
-check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
-the ledger from the lanes' results. How the figure got to 10,430, release
-by release, is in `CHANGELOG.md` (1.8.1 to 1.13.1), with the analyzer faults
+In the other direction AdaLang proves one of the 22 checks GNATprove
+leaves unproved there, the `sparknacl-sign.adb` preservation above, which
+holds, and reports no definite error on a check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
+the ledger from the lanes' results. How the figure got to 10,517, release
+by release, is in `CHANGELOG.md` (1.8.1 to 1.13.2), with the analyzer faults
 that the work turned up on the way (`FP-104`, `FP-106` to `FP-122`,
-`FP-124` to `FP-131`, `FP-133` to `FP-136`).
+`FP-124` to `FP-131`, `FP-133` to `FP-141`).
 
 ## Real-code validation (no GNATprove oracle)
 
@@ -329,8 +332,8 @@ third, unrelated domain (a general-purpose utility library, not a web
 server or crypto primitive): GNATprove hard-stops on a SPARK-illegal
 aspect 41 units into the project, while AdaLang completes a full pass.
 
-**Where the tradeoff bites.** AdaLang proves 69% of what GNATprove proves
-on those corpora (10,430 of 15,043 checks), from 59% on Saatana (216 of
+**Where the tradeoff bites.** AdaLang proves 70% of what GNATprove proves
+on those corpora (10,517 of 15,043 checks), from 60% on Saatana (222 of
 367) to 79% on Tokeneer (1,677 of 2,114), so its `Proved_Safe`
 verdicts are a bonus on top of GNATprove where both are available, not a
 substitute, and its `Unproved`/`Unsupported` results mean "no information,"
