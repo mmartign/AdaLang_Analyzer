@@ -2196,6 +2196,85 @@ package body Adalang_Analyzer.Flow_Eval is
       end case;
    end Compare_Range;
 
+   function Initialized_Prefix_Object
+     (Prefix : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+      use Libadalang.Common;
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Prefix);
+   begin
+      loop
+         if Libadalang.Analysis.Is_Null (Current) then
+            return Libadalang.Analysis.No_Ada_Node;
+         end if;
+         case Current.Kind is
+            when Ada_Call_Expr =>
+               declare
+                  Call : constant Libadalang.Analysis.Call_Expr :=
+                    Current.As_Call_Expr;
+                  Typ  : constant Libadalang.Analysis.Base_Type_Decl :=
+                    Call.F_Name.P_Expression_Type;
+               begin
+                  if Call.P_Kind not in Array_Index | Array_Slice
+                    or else Libadalang.Analysis.Is_Null (Typ)
+                    or else Typ.P_Is_Access_Type
+                  then
+                     return Libadalang.Analysis.No_Ada_Node;
+                  end if;
+                  Current := Libadalang.Analysis.Ada_Node (Call.F_Name);
+               end;
+            when Ada_Dotted_Name =>
+               if not Libadalang.Analysis.Is_Null
+                        (Expanded_Name_Target (Current))
+               then
+                  Current := Expanded_Name_Target (Current);
+               else
+                  declare
+                     Dotted : constant Libadalang.Analysis.Dotted_Name :=
+                       Current.As_Dotted_Name;
+                     Field  : constant Libadalang.Analysis.Basic_Decl :=
+                       Dotted.F_Suffix.P_Referenced_Decl;
+                     Typ    : constant Libadalang.Analysis.Base_Type_Decl :=
+                       Dotted.F_Prefix.P_Expression_Type;
+                  begin
+                     if Libadalang.Analysis.Is_Null (Field)
+                       or else Field.Kind not in
+                         Ada_Component_Decl | Ada_Discriminant_Spec
+                       or else Libadalang.Analysis.Is_Null (Typ)
+                       or else Typ.P_Is_Access_Type
+                     then
+                        return Libadalang.Analysis.No_Ada_Node;
+                     end if;
+                     Current := Libadalang.Analysis.Ada_Node (Dotted.F_Prefix);
+                  end;
+               end if;
+            when Ada_Identifier =>
+               declare
+                  Decl : constant Libadalang.Analysis.Basic_Decl :=
+                    Current.As_Identifier.P_Referenced_Decl;
+               begin
+                  if not Libadalang.Analysis.Is_Null (Decl)
+                    and then
+                      (Decl.Kind = Ada_Param_Spec
+                       or else
+                         (Decl.Kind = Ada_Object_Decl
+                          and then Libadalang.Analysis.Is_Null
+                            (Decl.As_Object_Decl.F_Renaming_Clause)))
+                  then
+                     return Current;
+                  end if;
+                  return Libadalang.Analysis.No_Ada_Node;
+               end;
+            when others =>
+               return Libadalang.Analysis.No_Ada_Node;
+         end case;
+      end loop;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Initialized_Prefix_Object;
+
    function Boolean_Value  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       State : Flow_State := Empty_Flow_State) return Abstract_Bool
@@ -2232,6 +2311,32 @@ package body Adalang_Analyzer.Flow_Eval is
 
          when Libadalang.Common.Ada_Paren_Expr =>
             return Boolean_Value (Node.As_Paren_Expr.F_Expr, State);
+
+         when Libadalang.Common.Ada_Attribute_Ref =>
+            --  X'Initialized where the object X is a part of has a value
+            --  in every part, as the state itself holds it.
+            declare
+               Ref    : constant Libadalang.Analysis.Attribute_Ref :=
+                 Node.As_Attribute_Ref;
+               Object : constant Libadalang.Analysis.Ada_Node :=
+                 (if Text_Utils.Normalize_Rule_Name
+                       (Ada_Text.Node_Text (Ref.F_Attribute)) = "initialized"
+                    and then (Libadalang.Analysis.Is_Null (Ref.F_Args)
+                              or else Ref.F_Args.Children_Count = 0)
+                  then Initialized_Prefix_Object (Ref.F_Prefix)
+                  else Libadalang.Analysis.No_Ada_Node);
+            begin
+               if not Libadalang.Analysis.Is_Null (Object)
+                 and then Stored_Initialization
+                   (State,
+                    Libadalang.Analysis.Ada_Node
+                      (Object.As_Name.P_Referenced_Defining_Name)) =
+                   Bool_True
+               then
+                  return Bool_True;
+               end if;
+               return Bool_Unknown;
+            end;
 
          when Libadalang.Common.Ada_Un_Op =>
             declare

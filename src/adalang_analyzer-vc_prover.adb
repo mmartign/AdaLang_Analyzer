@@ -2192,10 +2192,39 @@ package body Adalang_Analyzer.VC_Prover is
          return Nowhere;
    end Location;
 
+   Relaxed : Relaxed_Oracle := null;
+
+   procedure Set_Relaxed_Oracle (Oracle : Relaxed_Oracle) is
+   begin
+      Relaxed := Oracle;
+   end Set_Relaxed_Oracle;
+
+   --  True when Object, of relaxed initialization, is read in Context
+   --  directly: not through a formal bound to it, not in an inlined body.
+   function Read_Directly_Relaxed
+     (Context : Translation_Context;
+      Object  : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+   begin
+      if Relaxed = null
+        or else Length (Context.Inlining_Path) > 0
+        or else not Relaxed (Object)
+      then
+         return False;
+      end if;
+      for Binding of Context.Object_Bindings loop
+         if Binding.Actual = Object then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Read_Directly_Relaxed;
+
    --  True when the object at Place is initialized where its parts are
    --  read: in the old state for a place as it was there, on the way into
    --  the loop for X'Loop_Entry, which has a value only where Enter_Loop
-   --  gave it one.
+   --  gave it one. A part of an object with relaxed initialization read
+   --  directly is checked where it is read (Set_Relaxed_Oracle).
    function Initialized_At
      (Context : Translation_Context;
       Place   : Located_Object) return Boolean
@@ -2206,7 +2235,8 @@ package body Adalang_Analyzer.VC_Prover is
             and then Domain.Flow_Initialization (Old_View.Flow, Place.Object) =
               Domain.Bool_True
        else Domain.Flow_Initialization (Context.State, Place.Object) =
-              Domain.Bool_True);
+              Domain.Bool_True
+            or else Read_Directly_Relaxed (Context, Place.Object));
 
    --  The term for Prefix'Old, the value Prefix had in the old state:
    --  Prefix translated there, the callee's scalar formals having the terms
@@ -4967,6 +4997,37 @@ package body Adalang_Analyzer.VC_Prover is
       end;
    end Integer_Term;
 
+   --  X'Initialized: true where the object X is a part of (in the state
+   --  as it is, through what a formal is bound to) has a value in every
+   --  part, as the state itself holds it.
+   function Initialized_Term
+     (Node    : Libadalang.Analysis.Attribute_Ref;
+      Context : in out Translation_Context) return Unbounded_String
+   is
+      Object : constant Libadalang.Analysis.Ada_Node :=
+        (if Libadalang.Analysis.Is_Null (Node.F_Args)
+            or else Node.F_Args.Children_Count = 0
+         then Eval.Initialized_Prefix_Object (Node.F_Prefix)
+         else Libadalang.Analysis.No_Ada_Node);
+      Place  : constant Located_Object :=
+        (if Libadalang.Analysis.Is_Null (Object) then Nowhere
+         else Location (Object, Context));
+   begin
+      if Libadalang.Analysis.Is_Null (Place.Object)
+        or else Is_Entry_Path (Place.Path)
+        or else Is_Old_Path (Place.Path)
+      then
+         Mark_Unsupported (Context, Node, Unsupported_Attribute);
+         return Null_Unbounded_String;
+      elsif Domain.Stored_Initialization (Context.State, Place.Object) /=
+        Domain.Bool_True
+      then
+         Mark_Unsupported (Context, Node, Uninitialized_Object);
+         return Null_Unbounded_String;
+      end if;
+      return To_Unbounded_String ("true");
+   end Initialized_Term;
+
    function Boolean_Term
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String
@@ -5379,6 +5440,12 @@ package body Adalang_Analyzer.VC_Prover is
            (Node.As_Attribute_Ref.F_Prefix, Node, Context, Boolean_Sort);
       elsif Is_Loop_Entry (Node) then
          return Entry_Term (Node, Context, Boolean_Sort);
+      elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+          (Adalang_Analyzer.Ada_Text.Node_Text
+             (Node.As_Attribute_Ref.F_Attribute)) = "initialized"
+      then
+         return Initialized_Term (Node.As_Attribute_Ref, Context);
       elsif Node.Kind = Libadalang.Common.Ada_Attribute_Ref
         and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
           (Adalang_Analyzer.Ada_Text.Node_Text

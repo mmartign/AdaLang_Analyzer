@@ -366,15 +366,36 @@ that calls SPARK code raises nothing either.
 that have no value: for GNATprove its initialization is a matter of proof, and
 an `Output` or an `out` parameter says nothing of it. So an object with that
 aspect, or of a type that has it or is made of something that has it, or a
-parameter the aspect of its subprogram names, is left out of all of the above:
-it is not taken as initialized on entry, a call neither initializes it nor
-keeps it initialized, and it is not followed part by part. The other parameters
-of that subprogram are not concerned, nor is an object an index or a slice bound
-of the actual reads. Its reads after a call are `Unproved`, some of them proved
-by GNATprove, which proves the initialization of a scalar of such a type after
-an `out` parameter, and reads a `Post` that says `X'Initialized`. A state
-abstraction is not such an object: GNATprove takes one as initialized by its
-`Output`, whatever its constituents.
+parameter the aspect of its subprogram names, is left out of all of the above
+and followed as a whole: it is known to have a value in every part where it
+is given, as a whole, a value that has one -- a value of a scalar type, an
+object that does not have relaxed initialization or is known to have a value
+in every part, the result of a function that does not have relaxed
+initialization, or an aggregate, a conditional expression or a concatenation
+of such values -- and where a `for` loop gives every element a value of a
+scalar type (as below). It is also known to have one where a condition known
+to hold says `X'Initialized` of the whole object: a precondition on entry, an
+assertion or an assumption after it, a loop invariant where it is assumed,
+under `and`, `and then` and `not`, and under `or` and `or else` where the
+condition is false. Nothing else gives it one: an `in` or `in out` parameter
+may come with parts that have none -- but for one of a scalar type, which
+has a value, its actual being checked at the call as GNATprove checks it --
+and a call, or the write of a part with a value that may have parts with
+none, leaves it unknown. A read of a scalar
+part of it is an `initialization-check`, proved where the whole object is
+known to have a value in every part and `Unproved` otherwise; GNATprove
+proves some of those from what it knows of each part. Copying the whole
+object, or a part of it that is not a scalar, into an object with relaxed
+initialization or as the actual of a formal with it reads no value and has no
+obligation, nor has such a parameter or `Output` at the exit. In a
+verification condition a part read directly is taken to have a value, its own
+check being decided where it stands, as GNATprove does. `X'Initialized` of
+the whole object is true where it is known to have a value in every part;
+of a part (`X (I)'Initialized`, `X.C'Initialized`) it is not decided. The
+other parameters of that subprogram are not concerned, nor is an object an
+index or a slice bound of the actual reads. A state abstraction is not such
+an object: GNATprove takes one as initialized by its `Output`, whatever its
+constituents.
 
 **What a call leaves of the globals it writes.** After a call of SPARK code
 -- a formal subprogram of a generic that is SPARK code and an instance

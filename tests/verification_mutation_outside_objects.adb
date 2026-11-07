@@ -363,7 +363,7 @@ is
       From       : Integer := 2;
    begin
       Maybe_Some (C, Soft_Slice (From .. From + 1));
-      pragma Assert (Soft_Slice (2) = Soft_Slice (2));
+      pragma Assert (Soft_Slice'Initialized);
       R := Soft_Slice (2);
    end After_Relaxed_Slice;
 
@@ -372,7 +372,7 @@ is
       From       : Integer := 2;
    begin
       Maybe_Some (C, Soft_Whole.D (From .. From + 1));
-      pragma Assert (Soft_Whole.D (2) = Soft_Whole.D (2));
+      pragma Assert (Soft_Whole'Initialized);
       R := Soft_Whole.D (2);
    end After_Component_Slice;
 

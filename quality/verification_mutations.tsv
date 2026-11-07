@@ -395,8 +395,8 @@ relaxed-output-after-set	tests/verification_mutation_outside_objects.adb	initial
 relaxed-out-formal	tests/verification_mutation_outside_objects.adb	initialization-check	Soft_Cells	unproved	an out parameter the subprogram's aspect names need not be given a value
 relaxed-out-component	tests/verification_mutation_outside_objects.adb	initialization-check	Soft_Holder	unproved	an out parameter of a type with such a component need not be given a value (FP-133)
 relaxed-parts-then-out	tests/verification_mutation_outside_objects.adb	initialization-check	Soft_Parts	unproved	parts given a value are not kept across an out parameter of such a type
-relaxed-slice-target	tests/verification_mutation_outside_objects.adb	assertion	Soft_Slice (2) = Soft_Slice (2)	unproved	the object a slice actual names is what such a parameter can leave without a value
-relaxed-component-slice-target	tests/verification_mutation_outside_objects.adb	assertion	Soft_Whole.D (2) = Soft_Whole.D (2)	unproved	the same through a component of the object
+relaxed-slice-target	tests/verification_mutation_outside_objects.adb	assertion	Soft_Slice'Initialized	unproved	the object a slice actual names is what such a parameter can leave without a value
+relaxed-component-slice-target	tests/verification_mutation_outside_objects.adb	assertion	Soft_Whole'Initialized	unproved	the same through a component of the object
 relaxed-second-listed	tests/verification_mutation_outside_objects.adb	initialization-check	Second_Listed	unproved	every name the aspect lists is such a parameter, not the first alone
 outside-generic-actual	tests/verification_mutation_outside_objects.adb	initialization-check	Unset_Actual	unproved	a subprogram passed as a generic actual is called where no call says what it reads
 fp134-first	tests/verification_fp134_several_names.adb	division-by-zero	(First - 5)	unproved	the first name of a declaration of two: a call writes it
@@ -541,3 +541,11 @@ loop-entry-prefix-on-entry	tests/verification_mutation_loop_entry_records.adb	pr
 loop-element-written	tests/verification_mutation_loop_entry_records.adb	precondition	Get (Ctx, F_A)	unproved	the loop invalidates Ctx.Cursors (F_A) before reading it.
 loop-entry-subtype-bound	tests/verification_mutation_loop_entry_records.adb	assertion	L > F_B	unproved	a Late may be F_B itself.
 loop-entry-value-not-current	tests/verification_mutation_loop_entry_records.adb	precondition	Get (Ctx, F_B)	unproved	the element was valid on entry; the loop invalidates it, and the next iteration reads it.
+relaxed-in-parameter	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Carried	unproved	FP-140: a parameter with relaxed initialization may come with parts that have no value.
+relaxed-whole-copy	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Dest	unproved	FP-140: Dest := Src gives Dest the parts Src has, with relaxed initialization maybe none.
+relaxed-local-element	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Part	unproved	a relaxed local with element 1 written: element 2 has no value.
+relaxed-whole-initialized	tests/verification_mutation_relaxed_initialization.adb	assertion	Sparse'Initialized	unproved	a relaxed local with element 1 written is not initialized as a whole.
+relaxed-post-copy	tests/verification_mutation_relaxed_initialization.adb	postcondition	Unfilled'Initialized	unproved	a copy of a relaxed parameter may have parts with no value.
+relaxed-pre-or	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Either	unproved	Either'Initialized or Flag says nothing of Either where Flag holds.
+relaxed-pre-element	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Front	unproved	Front (1)'Initialized says nothing of Front (2).
+relaxed-pre-component	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Holder	unproved	Holder.C'Initialized says nothing of Holder.D.

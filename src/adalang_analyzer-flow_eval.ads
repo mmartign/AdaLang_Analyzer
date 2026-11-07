@@ -95,6 +95,16 @@ package Adalang_Analyzer.Flow_Eval is
    --  membership tests, and an "if" expression whose condition itself
    --  resolves. Bool_Unknown for anything else.
 
+   function Initialized_Prefix_Object
+     (Prefix : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node;
+   --  For the prefix of X'Initialized, the name of the object X is a part
+   --  of -- through indexing, slicing and the selection of components,
+   --  never through a dereference -- where that is an object declared or a
+   --  parameter, not a renaming: the identifier, or the last identifier of
+   --  an expanded name. No_Ada_Node for anything else. Where that object
+   --  has a value in every part, so has every part of it.
+
    function Static_Condition_Value
      (Node : Libadalang.Analysis.Ada_Node'Class) return Abstract_Bool;
    --  What a rule check asks of a condition: whether it is constant as it

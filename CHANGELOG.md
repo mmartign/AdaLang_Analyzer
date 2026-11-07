@@ -8,18 +8,26 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 What to expect: on the five corpora of the gap ledger, `--verify` proves
-10,439 of the 15,043 checks GNATprove proves (was 10,430): 5 assertions, 3
-checks of loop invariants inside a loop body and 1 overflow check, 8 of them
-in SPARKNaCl and 1 in CoAP-SPARK. It also proves one that GNATprove leaves
-unproved, its provers reaching their step limit: the preservation of
-`for all K in Index_64 range I .. 63 => XL (K) = 0` in `sparknacl-sign.adb`
-(line 604), which holds, the body writing no element above `I` and setting
-`XL (I)` to 0. On the nine corpora with a `--verify` lane, 11 obligations
-that were `Unproved` are proved (10 in SPARKNaCl, 1 in CoAP-SPARK); none is
-added or removed, none that was proved is lost, and no definite error is new
-or gone. On all ten corpora, every preset, findings are identical. On the
-SPARK testsuite the pairs both tools prove go from 271 to 272 of 650
-(Q607-015).
+10,517 of the 15,043 checks GNATprove proves (was 10,430). 93 more are
+proved, 86 of them in SPARKNaCl, 6 in Saatana and 1 in CoAP-SPARK: 26
+initialization checks of objects with relaxed initialization, 18 range
+checks, 16 assertions, 13 checks of loop invariants, 12 preconditions, 5
+postconditions, 2 predicate checks and 1 overflow check. 6 are no longer
+proved, initialization checks in `sparknacl-car.adb` of a parameter with
+relaxed initialization whose precondition says that each element has a
+value, which 1.13.1 proved only by taking the parameter as initialized
+whatever it was (FP-140); an element's `X (I)'Initialized` is not decided
+yet. It also proves one check that GNATprove leaves unproved, its provers
+reaching their step limit: the preservation of `for all K in Index_64 range
+I .. 63 => XL (K) = 0` in `sparknacl-sign.adb` (line 604), which holds, the
+body writing no element above `I` and setting `XL (I)` to 0. On the nine
+corpora with a `--verify` lane, 99 obligations that were `Unproved` are
+proved and 8 that were proved are `Unproved` (the 6 above and 2 reads of a
+parameter with relaxed initialization in a Saatana test program); 155
+initialization checks that GNATprove does not have are gone, none is added,
+and no definite error is new or gone. On all ten corpora, every preset,
+findings are identical. On the SPARK testsuite the pairs both tools prove
+go from 271 to 275 of 650.
 
 ### Changed
 
@@ -30,9 +38,31 @@ SPARK testsuite the pairs both tools prove go from 271 to 272 of 650
   `Assert_And_Cut`, `Check`, and the loop's other invariants), as the rest
   of the analysis does: the pragma is checked where it stands, and
   execution goes on only when it holds. It knew none of them.
+- An object with `Relaxed_Initialization` -- by its own aspect, its type's,
+  or its subprogram's for a parameter -- is followed as a whole: it has a
+  value in every part where it is given, as a whole, a value that has one,
+  where a `for` loop gives every element a value of a scalar type, and where
+  a condition known to hold says `X'Initialized` of it: a precondition, an
+  assertion or an assumption after it, a loop invariant, under `and then`,
+  `not` and a false `or else`; a parameter of a scalar type has one on
+  entry, its actual being checked at the call, as GNATprove checks it. A
+  read of a scalar part of it is proved there, `Unproved` elsewhere, and in
+  a verification condition is taken to have a value, its own check being
+  decided where it stands, as GNATprove does. `X'Initialized` of a whole
+  object is true where it has a value in every part; it was not translated.
+  A copy of such an object, or of a part that is not a scalar, into another
+  one or as the actual of such a formal reads no value and has no
+  obligation, and such an `out` parameter or `Output` has none at the exit:
+  GNATprove has none of these. An initialization check left `Unproved` on
+  such an object says so.
 
 ### Fixed
 
+- FP-140: an `in` or `in out` parameter with relaxed initialization was
+  taken as having a value in every part on entry, and an object given such a
+  value whole (`A := B`) as having one after: a read of `X (1)` was proved
+  where GNATprove says "initialization check might fail", in 1.13.1 and
+  every earlier release.
 - FP-141: the value written to an element of an array, or to the whole
   array, was translated in the state before the write, where reading an
   element could give it its first symbol, which the state after the write

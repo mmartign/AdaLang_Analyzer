@@ -282,6 +282,17 @@ package Adalang_Analyzer.VC_Prover is
 
    procedure Set_Function_Oracle (Oracle : Function_Oracle);
 
+   --  Which objects have relaxed initialization (SPARK RM 6.10). A part of
+   --  one, read in the expression being decided, is taken as having a
+   --  value whatever the state says of the whole object: that read is
+   --  checked where it is, as GNATprove checks it. Read through a formal
+   --  bound to it, or in an inlined body, it is not. Without an oracle no
+   --  object is taken to have relaxed initialization.
+   type Relaxed_Oracle is access function
+     (Key : Libadalang.Analysis.Ada_Node) return Boolean;
+
+   procedure Set_Relaxed_Oracle (Oracle : Relaxed_Oracle);
+
    Default_Solver_Time_Limit : constant := 2_000;
    procedure Set_Solver_Time_Limit (Milliseconds : Positive);
    --  The time each solver is given for one query, in milliseconds;
