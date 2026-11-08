@@ -5,9 +5,9 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.13.3] - 2026-11-08
 
-A `--verify` change that follows, in the verification condition, which
+A `--verify` release that follows, in the verification condition, which
 elements of an array with relaxed initialization have a value: an element,
 a slice and the whole array of such an object have one where writes, calls
 and the conditions that hold say so.
