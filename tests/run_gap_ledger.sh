@@ -69,4 +69,27 @@ grep -F 'AdaLang proved, GNATprove did not: 1' "$work/report.md" >/dev/null || {
    exit 1
 }
 
+#  The totals over corpora: each corpus's outcomes add up to the checks
+#  GNATprove proves in it.
+python3 benchmarks/gnatprove_gap_ledger.py \
+  --corpus one=tests/gap_ledger --corpus two=tests/gap_ledger \
+  >"$work/all.md"
+awk -F'|' '
+   /^\| Corpus \|/ { inside = 1; next }
+   inside && /^\| ---/ { next }
+   inside && /^\|/ {
+      rows++
+      sum = 0
+      for (i = 4; i < NF; i++) sum += $i
+      if (sum != $3) { print "gap ledger: " $2 "adds up to " sum ", not " $3; bad = 1 }
+      next
+   }
+   inside { inside = 0 }
+   END { if (rows != 2) { print "gap ledger: expected 2 corpus rows, found " rows; bad = 1 }
+         exit bad }
+' "$work/all.md" >&2 || {
+   cat "$work/all.md" >&2
+   exit 1
+}
+
 echo "gap ledger tests passed"

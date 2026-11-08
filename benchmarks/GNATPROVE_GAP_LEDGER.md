@@ -133,13 +133,13 @@ GNATprove proves 15043 checks on these 5 corpora. What AdaLang does with each of
 | no such obligation kind | 350 | 2.3% |
 | file without any obligation | 208 | 1.4% |
 
-| Corpus | Proved by GNATprove | AdaLang proved | Unproved | Unsupported | No obligation here | No such kind | File without obligations |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| sparknacl | 2446 | 1791 | 526 | 0 | 115 | 14 | 0 |
-| saatana | 367 | 222 | 136 | 0 | 9 | 0 | 0 |
-| libkeccak | 3321 | 2343 | 783 | 2 | 126 | 67 | 0 |
-| coap_spark | 6795 | 4484 | 1412 | 26 | 424 | 241 | 207 |
-| tokeneer | 2114 | 1677 | 258 | 0 | 150 | 28 | 1 |
+| Corpus | Proved by GNATprove | AdaLang proved | Unproved | Unsupported | Unreachable | No obligation here | No such kind | File without obligations |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| sparknacl | 2446 | 1791 | 526 | 0 | 0 | 115 | 14 | 0 |
+| saatana | 367 | 222 | 136 | 0 | 0 | 9 | 0 | 0 |
+| libkeccak | 3321 | 2343 | 783 | 2 | 0 | 126 | 67 | 0 |
+| coap_spark | 6795 | 4484 | 1412 | 26 | 1 | 424 | 241 | 207 |
+| tokeneer | 2114 | 1677 | 258 | 0 | 0 | 150 | 28 | 1 |
 
 Disagreements: 1 checks AdaLang proved that GNATprove did not, 0 definite errors on checks GNATprove proved.
 

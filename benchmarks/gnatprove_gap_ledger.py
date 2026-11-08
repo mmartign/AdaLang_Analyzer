@@ -300,6 +300,18 @@ OUTCOMES = [
     "file without any obligation",
 ]
 
+# The heading of each outcome in the table per corpus.
+CORPUS_COLUMN = {
+    "proved-safe": "AdaLang proved",
+    "unproved": "Unproved",
+    "unsupported": "Unsupported",
+    "definite-error": "Definite error",
+    "unreachable": "Unreachable",
+    "no obligation here": "No obligation here",
+    "no such obligation kind": "No such kind",
+    "file without any obligation": "File without obligations",
+}
+
 
 def table(rows, header):
     lines = ["| " + " | ".join(header) + " |"]
@@ -553,35 +565,21 @@ def overall(corpora):
         )
     )
     out.append("")
+    # The same outcomes as the table above, so that each corpus's columns
+    # add up to the checks GNATprove proves in it.
+    columns = [label for label in OUTCOMES if outcome[label]]
     rows = []
     for name, checks, _ in corpora:
         mine = [check for check in checks if check["verdict"] == "proved"]
         counts = collections.Counter(check["adalang"] for check in mine)
         rows.append(
-            (
-                name,
-                len(mine),
-                counts["proved-safe"],
-                counts["unproved"],
-                counts["unsupported"],
-                counts["no obligation here"],
-                counts["no such obligation kind"],
-                counts["file without any obligation"],
-            )
+            (name, len(mine)) + tuple(counts[label] for label in columns)
         )
     out.append(
         table(
             rows,
-            (
-                "Corpus",
-                "Proved by GNATprove",
-                "AdaLang proved",
-                "Unproved",
-                "Unsupported",
-                "No obligation here",
-                "No such kind",
-                "File without obligations",
-            ),
+            ("Corpus", "Proved by GNATprove")
+            + tuple(CORPUS_COLUMN[label] for label in columns),
         )
     )
     out.append("")
