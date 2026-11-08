@@ -390,12 +390,32 @@ initialization or as the actual of a formal with it reads no value and has no
 obligation, nor has such a parameter or `Output` at the exit. In a
 verification condition a part read directly is taken to have a value, its own
 check being decided where it stands, as GNATprove does. `X'Initialized` of
-the whole object is true where it is known to have a value in every part;
-of a part (`X (I)'Initialized`, `X.C'Initialized`) it is not decided. The
-other parameters of that subprogram are not concerned, nor is an object an
-index or a slice bound of the actual reads. A state abstraction is not such
-an object: GNATprove takes one as initialized by its `Output`, whatever its
-constituents.
+the whole object is true where it is known to have a value in every part.
+
+Where such an object is an array of one dimension, the verification
+condition also follows which of its elements have a value. An element given
+a value of a scalar type has one; so has every element of a slice given a
+value with no part that has none, and every element of an element or a
+slice passed as the actual of an `out` or `in out` parameter that has a
+value in every part on return -- one without relaxed initialization, or one
+whose `X'Initialized` is a conjunct of the callee's postcondition. A
+precondition, an assertion or an assumption after it, and a loop invariant
+where it is assumed, that say `X (I)'Initialized`, `X (L .. H)'Initialized`
+or `X'Initialized`, also inside a quantified expression, say it of those
+elements. Then `X'Initialized` of an element, of a slice or of the whole
+array is decided from what was said, and so is the `initialization-check`
+of a read of an element, of a slice or of the whole array. Nothing is ever
+said of an element having no value, and a write of the whole object, or a
+call that may leave parts of it without one, gives its value a new name of
+which nothing is known. Two ways that meet after an `if`, or at the head of
+a loop, keep only what both said of the same value, which is often nothing
+where the elements were written on one of them: such a read is `Unproved`
+where GNATprove proves it. A copy of a slice of such an object into another
+one gives the target nothing either. `X.C'Initialized` of a component is not
+decided. The other parameters of that subprogram are not concerned, nor is
+an object an index or a slice bound of the actual reads. A state abstraction
+is not such an object: GNATprove takes one as initialized by its `Output`,
+whatever its constituents.
 
 **What a call leaves of the globals it writes.** After a call of SPARK code
 -- a formal subprogram of a generic that is SPARK code and an instance
@@ -1979,7 +1999,10 @@ from it, so `Index'Last` and a constant are their values. Over `T range
 L .. H` it is within that and within `T` as well: a range that is not null
 has both its bounds in the subtype it constrains. So `X (K)` under `for all
 K in Index range 0 .. Last` is an index within an array over `Index`,
-whatever `Last` is, and `X (K + 1)` is not.
+whatever `Last` is, and `X (K + 1)` is not. In the verification condition
+of a check inside the predicate of a quantified expression over `L .. H`,
+the parameter is between the values `L` and `H` have where the expression
+is evaluated: under `for all K in 1 .. I`, `K <= I`.
 
 ### Code that is evaluated later
 

@@ -2392,6 +2392,19 @@ package body Adalang_Analyzer.VC_Prover is
    Integer_Contents : constant String := "|a!I|";
    Boolean_Contents : constant String := "|a!B|";
 
+   --  The initialization of the value of an array of an object with
+   --  relaxed initialization, with the same arguments as the contents: an
+   --  SMT array from the index of an element to whether that element has
+   --  a value. Only what gives elements a value is said of it -- a write
+   --  of a value of a scalar type (Store_Element), of a slice or of an
+   --  actual (Store_Initialized_Range), and a condition that holds which
+   --  says X (I)'Initialized -- never that an element has none: a value
+   --  of which nothing is said may have parts with no value.
+   Init_Contents : constant String := "|a!N|";
+
+   function Init_Contents_Term (Token, First : String) return String is
+     ("(" & Init_Contents & " " & Token & " " & First & ")");
+
    --  The contents of the array whose value has the token Token and whose
    --  first bound is First, as a term.
    function Contents_Term
@@ -4997,9 +5010,235 @@ package body Adalang_Analyzer.VC_Prover is
       end;
    end Integer_Term;
 
+   --  Token, the token of the value of the array Prefix names, and First,
+   --  the term of its first bound, where Prefix is a whole object of
+   --  relaxed initialization (Relaxed), or what a formal is bound to, of
+   --  an array type of one dimension that has contents (Is_Opaque_Type);
+   --  both "" otherwise, Context then as it was.
+   procedure Relaxed_Array_Value
+     (Prefix  : Libadalang.Analysis.Name;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Context : in out Translation_Context;
+      Token   : out Unbounded_String;
+      First   : out Unbounded_String)  --  adalang-analyzer: ignore Swappable_Parameters
+   is
+      Typ   : Libadalang.Analysis.Base_Type_Decl;
+      Place : Located_Object;
+      Trial : Translation_Context := Context;
+
+      function More_Dimensions return Boolean is
+      begin
+         return not Libadalang.Analysis.Is_Null (Typ.P_Index_Type (1));
+      exception
+         when Libadalang.Common.Property_Error =>
+            return False;
+      end More_Dimensions;
+   begin
+      Token := Null_Unbounded_String;
+      First := Null_Unbounded_String;
+      if Relaxed = null
+        or else Prefix.Kind not in Libadalang.Common.Ada_Identifier
+                                 | Libadalang.Common.Ada_Dotted_Name
+      then
+         return;
+      end if;
+      Typ := Prefix.P_Expression_Type;
+      if Libadalang.Analysis.Is_Null (Typ)
+        or else Typ.P_Is_Access_Type
+        or else not Typ.P_Is_Array_Type
+        or else More_Dimensions
+        or else not Is_Opaque_Type (Typ)
+      then
+         return;
+      end if;
+      Place := Location (Prefix, Trial);
+      if Libadalang.Analysis.Is_Null (Place.Object)
+        or else Length (Place.Path) /= 0
+        or else not Relaxed (Place.Object)
+      then
+         return;
+      end if;
+      declare
+         Its_Token : constant String :=
+           Symbol_For (Trial, Part_Key (Place), Opaque_Sort);
+         Its_First : constant String :=
+           (if Trial.Supported
+            then To_String (Array_Attribute_Term (Prefix, "first", Node, Trial))
+            else "");
+      begin
+         if Trial.Supported and then Its_Token /= "" and then Its_First /= ""
+         then
+            Context := Trial;
+            Token := To_Unbounded_String (Its_Token);
+            First := To_Unbounded_String (Its_First);
+         end if;
+      end;
+   exception
+      when Libadalang.Common.Property_Error =>
+         Token := Null_Unbounded_String;
+         First := Null_Unbounded_String;
+   end Relaxed_Array_Value;
+
+   --  Low and High, the terms of the bounds of the range Interval, the
+   --  suffix of a slice: "L .. H", "Y'Range" or a subtype whose bounds are
+   --  static. Both "" where it is none of those, Context then as it was.
+   procedure Slice_Range_Terms
+     (Interval : Libadalang.Analysis.Ada_Node'Class;
+      Node     : Libadalang.Analysis.Ada_Node'Class;
+      Context  : in out Translation_Context;
+      Low      : out Unbounded_String;
+      High     : out Unbounded_String)  --  adalang-analyzer: ignore Swappable_Parameters
+   is
+      Trial : Translation_Context := Context;
+   begin
+      Low := Null_Unbounded_String;
+      High := Null_Unbounded_String;
+      if Interval.Kind = Libadalang.Common.Ada_Bin_Op
+        and then Interval.As_Bin_Op.F_Op.Kind =
+          Libadalang.Common.Ada_Op_Double_Dot
+      then
+         Low := Integer_Term (Interval.As_Bin_Op.F_Left, Trial);
+         High := Integer_Term (Interval.As_Bin_Op.F_Right, Trial);
+      elsif Interval.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                   (Adalang_Analyzer.Ada_Text.Node_Text
+                      (Interval.As_Attribute_Ref.F_Attribute)) = "range"
+        and then
+          (Libadalang.Analysis.Is_Null (Interval.As_Attribute_Ref.F_Args)
+           or else Interval.As_Attribute_Ref.F_Args.Children_Count = 0)
+      then
+         Low := Array_Attribute_Term
+           (Interval.As_Attribute_Ref.F_Prefix, "first", Node, Trial);
+         High := Array_Attribute_Term
+           (Interval.As_Attribute_Ref.F_Prefix, "last", Node, Trial);
+      elsif Interval.Kind in Libadalang.Common.Ada_Identifier
+                           | Libadalang.Common.Ada_Dotted_Name
+        and then not Libadalang.Analysis.Is_Null
+          (Interval.As_Name.P_Referenced_Decl)
+        and then Interval.As_Name.P_Referenced_Decl.Kind in
+          Libadalang.Common.Ada_Base_Type_Decl
+      then
+         declare
+            Bounds : constant Domain.Abstract_Range :=
+              Eval.Type_Range
+                (Interval.As_Name.P_Referenced_Decl.As_Base_Type_Decl,
+                 Context.State);
+         begin
+            if Bounds.Has_Low and then Bounds.Has_High then
+               Low := To_Unbounded_String (SMT_Integer (Bounds.Low));
+               High := To_Unbounded_String (SMT_Integer (Bounds.High));
+            end if;
+         end;
+      end if;
+      if Trial.Supported and then Length (Low) > 0 and then Length (High) > 0
+      then
+         Context := Trial;
+      else
+         Low := Null_Unbounded_String;
+         High := Null_Unbounded_String;
+      end if;
+   exception
+      when Libadalang.Common.Property_Error =>
+         Low := Null_Unbounded_String;
+         High := Null_Unbounded_String;
+   end Slice_Range_Terms;
+
+   --  The term saying that every element of Prefix -- the element of an
+   --  array at an index, a slice of one, or the whole of one -- has a
+   --  value, the array being of an object with relaxed initialization
+   --  whose value has contents of its initialization (Init_Contents): the
+   --  element there, every element between the bounds. "" where Prefix is
+   --  none of those, Context then as it was.
+   function Elements_Initialized_Term
+     (Prefix  : Libadalang.Analysis.Ada_Node'Class;
+      Node    : Libadalang.Analysis.Ada_Node'Class;
+      Context : in out Translation_Context) return Unbounded_String
+   is
+      Trial : Translation_Context := Context;
+      Arr   : Libadalang.Analysis.Name;
+      Token, First, Low, High, Index : Unbounded_String;
+   begin
+      if Prefix.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Prefix.As_Call_Expr.P_Kind in Libadalang.Common.Array_Index
+                                             | Libadalang.Common.Array_Slice
+      then
+         Arr := Prefix.As_Call_Expr.F_Name;
+      elsif Prefix.Kind in Libadalang.Common.Ada_Identifier
+                         | Libadalang.Common.Ada_Dotted_Name
+      then
+         Arr := Prefix.As_Name;
+      else
+         return Null_Unbounded_String;
+      end if;
+      Relaxed_Array_Value (Arr, Node, Trial, Token, First);
+      if Length (Token) = 0 then
+         return Null_Unbounded_String;
+      end if;
+
+      if Prefix.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Prefix.As_Call_Expr.P_Kind = Libadalang.Common.Array_Index
+      then
+         declare
+            Call  : constant Libadalang.Analysis.Call_Expr :=
+              Prefix.As_Call_Expr;
+            Value : constant Libadalang.Analysis.Expr :=
+              (if Call.F_Suffix.Kind = Libadalang.Common.Ada_Assoc_List
+                 and then Call.F_Suffix.Children_Count = 1
+               then Single_Actual_Expr (Call.F_Suffix)
+               else Libadalang.Analysis.No_Expr);
+         begin
+            if Libadalang.Analysis.Is_Null (Value)
+              or else not Expression_Sort (Value).Supported
+              or else Expression_Sort (Value).Sort not in
+                Integer_Sort | Enum_Sort
+            then
+               return Null_Unbounded_String;
+            end if;
+            Index := Integer_Term (Value, Trial);
+            if not Trial.Supported or else Length (Index) = 0 then
+               return Null_Unbounded_String;
+            end if;
+            Context := Trial;
+            return To_Unbounded_String
+              ("(select " &
+               Init_Contents_Term (To_String (Token), To_String (First)) &
+               " " & To_String (Index) & ")");
+         end;
+      elsif Prefix.Kind = Libadalang.Common.Ada_Call_Expr then
+         Slice_Range_Terms
+           (Prefix.As_Call_Expr.F_Suffix, Node, Trial, Low, High);
+      else
+         Low := First;
+         High := Array_Attribute_Term (Arr, "last", Node, Trial);
+      end if;
+      if not Trial.Supported or else Length (Low) = 0
+        or else Length (High) = 0
+      then
+         return Null_Unbounded_String;
+      end if;
+      Context := Trial;
+      declare
+         Bound : constant String :=
+           Root_Name
+             (Plain_Key (Libadalang.Analysis.Ada_Node (Node)), "q");
+      begin
+         return To_Unbounded_String
+           ("(forall ((" & Bound & " Int)) (=> (and (<= " & To_String (Low) &
+            " " & Bound & ") (<= " & Bound & " " & To_String (High) &
+            ")) (select " &
+            Init_Contents_Term (To_String (Token), To_String (First)) & " " &
+            Bound & ")))");
+      end;
+   exception
+      when Libadalang.Common.Property_Error =>
+         return Null_Unbounded_String;
+   end Elements_Initialized_Term;
+
    --  X'Initialized: true where the object X is a part of (in the state
    --  as it is, through what a formal is bound to) has a value in every
-   --  part, as the state itself holds it.
+   --  part, as the state itself holds it; otherwise, for elements of an
+   --  array of an object with relaxed initialization, what the contents
+   --  of its initialization say (Elements_Initialized_Term).
    function Initialized_Term
      (Node    : Libadalang.Analysis.Attribute_Ref;
       Context : in out Translation_Context) return Unbounded_String
@@ -5019,13 +5258,21 @@ package body Adalang_Analyzer.VC_Prover is
       then
          Mark_Unsupported (Context, Node, Unsupported_Attribute);
          return Null_Unbounded_String;
-      elsif Domain.Stored_Initialization (Context.State, Place.Object) /=
+      elsif Domain.Stored_Initialization (Context.State, Place.Object) =
         Domain.Bool_True
       then
-         Mark_Unsupported (Context, Node, Uninitialized_Object);
-         return Null_Unbounded_String;
+         return To_Unbounded_String ("true");
       end if;
-      return To_Unbounded_String ("true");
+      declare
+         Term : constant Unbounded_String :=
+           Elements_Initialized_Term (Node.F_Prefix, Node, Context);
+      begin
+         if Length (Term) > 0 then
+            return Term;
+         end if;
+      end;
+      Mark_Unsupported (Context, Node, Uninitialized_Object);
+      return Null_Unbounded_String;
    end Initialized_Term;
 
    function Boolean_Term
@@ -6244,6 +6491,12 @@ package body Adalang_Analyzer.VC_Prover is
          Append
            (Result,
             "(declare-fun " & Boolean_Contents &
+            " (Int Int) (Array Int Bool))" & ASCII.LF);
+      end if;
+      if Ada.Strings.Fixed.Index (Text, Init_Contents) /= 0 then
+         Append
+           (Result,
+            "(declare-fun " & Init_Contents &
             " (Int Int) (Array Int Bool))" & ASCII.LF);
       end if;
       return To_String (Result);
@@ -8991,6 +9244,18 @@ package body Adalang_Analyzer.VC_Prover is
                   " (store " &
                   Contents_Term (Old_Token, First, Sort_Info.Sort) & " " &
                   Position & " " & To_String (Element) & "))"));
+            --  An element of an object with relaxed initialization given
+            --  a value of a scalar type has one: a read of a part with
+            --  none in that value is checked where it is.
+            if Relaxed /= null and then Length (Place.Path) = 0
+              and then Relaxed (Place.Object)
+            then
+               Result.Assumptions.Append
+                 (To_Unbounded_String
+                    ("(= " & Init_Contents_Term (To_String (New_Token), First) &
+                     " (store " & Init_Contents_Term (Old_Token, First) & " " &
+                     Position & " true))"));
+            end if;
             Result :=
               Renew_Read_Parts
                 (Result, Before, Context, Place, True, Writer, Flow);
@@ -9001,6 +9266,173 @@ package body Adalang_Analyzer.VC_Prover is
       when others =>
          return After;
    end Store_Element;
+
+   --  Where Target -- the element X (I) of an array, or the slice
+   --  X (L .. H) of one, X a whole object with relaxed initialization
+   --  (Relaxed_Array_Value) -- translates in Context: Arr, the array, and
+   --  the terms of the token of its value, of its first bound, and of the
+   --  lowest and the highest index of Target (one term twice for an
+   --  element). Token is "" otherwise.
+   procedure Initialized_Range_Terms
+     (Target  : Libadalang.Analysis.Ada_Node'Class;
+      Context : in out Translation_Context;
+      Arr     : out Libadalang.Analysis.Name;
+      Token   : out Unbounded_String;
+      First   : out Unbounded_String;  --  adalang-analyzer: ignore Swappable_Parameters
+      Low     : out Unbounded_String;  --  adalang-analyzer: ignore Swappable_Parameters
+      High    : out Unbounded_String)  --  adalang-analyzer: ignore Swappable_Parameters
+   is
+      Trial : Translation_Context := Context;
+      Call  : Libadalang.Analysis.Call_Expr;
+   begin
+      Arr := Libadalang.Analysis.No_Name;
+      Token := Null_Unbounded_String;
+      First := Null_Unbounded_String;
+      Low := Null_Unbounded_String;
+      High := Null_Unbounded_String;
+      if Target.Kind /= Libadalang.Common.Ada_Call_Expr
+        or else Target.As_Call_Expr.P_Kind not in
+          Libadalang.Common.Array_Index | Libadalang.Common.Array_Slice
+      then
+         return;
+      end if;
+      Call := Target.As_Call_Expr;
+      Relaxed_Array_Value (Call.F_Name, Target, Trial, Token, First);
+      if Length (Token) = 0 then
+         return;
+      end if;
+      if Call.P_Kind = Libadalang.Common.Array_Slice then
+         Slice_Range_Terms (Call.F_Suffix, Target, Trial, Low, High);
+      elsif Call.F_Suffix.Kind = Libadalang.Common.Ada_Assoc_List
+        and then Call.F_Suffix.Children_Count = 1
+        and then not Libadalang.Analysis.Is_Null
+          (Single_Actual_Expr (Call.F_Suffix))
+        and then Expression_Sort (Single_Actual_Expr (Call.F_Suffix)).Supported
+        and then Expression_Sort (Single_Actual_Expr (Call.F_Suffix)).Sort in
+          Integer_Sort | Enum_Sort
+      then
+         Low := Integer_Term (Single_Actual_Expr (Call.F_Suffix), Trial);
+         High := Low;
+      end if;
+      if not Trial.Supported or else Length (Low) = 0
+        or else Length (High) = 0
+      then
+         Token := Null_Unbounded_String;
+         return;
+      end if;
+      Context := Trial;
+      Arr := Call.F_Name;
+   exception
+      when Libadalang.Common.Property_Error =>
+         Arr := Libadalang.Analysis.No_Name;
+         Token := Null_Unbounded_String;
+         First := Null_Unbounded_String;
+         Low := Null_Unbounded_String;
+         High := Null_Unbounded_String;
+   end Initialized_Range_Terms;
+
+   function Prime_Initialized_Range
+     (State  : Symbolic_State;
+      Target : Libadalang.Analysis.Ada_Node'Class;
+      Flow   : Domain.Flow_State) return Symbolic_State
+   is
+      Context : Translation_Context :=
+        (State => Flow, Symbols => State, Supported => True,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Arr : Libadalang.Analysis.Name;
+      Token, First, Low, High : Unbounded_String;
+   begin
+      if not State.Supported then
+         return State;
+      end if;
+      Initialized_Range_Terms (Target, Context, Arr, Token, First, Low, High);
+      if Length (Token) = 0 or else not Context.Symbols.Supported then
+         return State;
+      end if;
+      return Context.Symbols;
+   exception
+      when others =>
+         return State;
+   end Prime_Initialized_Range;
+
+   function Store_Initialized_Range
+     (Before      : Symbolic_State;
+      After       : Symbolic_State;  --  adalang-analyzer: ignore Swappable_Parameters
+      Target      : Libadalang.Analysis.Ada_Node'Class;
+      Writer      : Libadalang.Analysis.Ada_Node'Class;
+      Flow        : Domain.Flow_State;
+      Primed_Only : Boolean) return Symbolic_State
+   is
+      Context : Translation_Context :=
+        (State => Flow, Symbols => Before, Supported => True,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Result    : Symbolic_State := After;
+      Arr       : Libadalang.Analysis.Name;
+      Token, First, Low, High, New_Token : Unbounded_String;
+      Place     : Located_Object;
+   begin
+      if not Before.Supported or else not After.Supported
+        or else Libadalang.Analysis.Is_Null (Writer)
+      then
+         return After;
+      end if;
+      Initialized_Range_Terms (Target, Context, Arr, Token, First, Low, High);
+      --  A name the terms read that the state before did not have may be
+      --  a value the writer changed (Prime_Initialized_Range).
+      if Length (Token) = 0
+        or else (Primed_Only
+                 and then Context.Symbols.Roots.Length /= Before.Roots.Length)
+      then
+         return After;
+      end if;
+      Place := Location (Arr, Context);
+      Renew_Contents
+        (Result, Context, Part_Key (Place), To_String (Token), Writer,
+         New_Token);
+      if Length (New_Token) = 0 then
+         return After;
+      end if;
+      if Low = High then
+         Result.Assumptions.Append
+           (To_Unbounded_String
+              ("(= " &
+               Init_Contents_Term (To_String (New_Token), To_String (First)) &
+               " (store " &
+               Init_Contents_Term (To_String (Token), To_String (First)) &
+               " " & To_String (Low) & " true))"));
+      else
+         declare
+            Bound : constant String :=
+              Root_Name
+                (Plain_Key (Libadalang.Analysis.Ada_Node (Target)), "q");
+         begin
+            Result.Assumptions.Append
+              (To_Unbounded_String
+                 ("(forall ((" & Bound & " Int)) (= (select " &
+                  Init_Contents_Term
+                    (To_String (New_Token), To_String (First)) &
+                  " " & Bound & ") (or (and (<= " & To_String (Low) & " " &
+                  Bound & ") (<= " & Bound & " " & To_String (High) &
+                  ")) (select " &
+                  Init_Contents_Term (To_String (Token), To_String (First)) &
+                  " " & Bound & "))))"));
+         end;
+      end if;
+      Result :=
+        Renew_Read_Parts (Result, Before, Context, Place, True, Writer, Flow);
+      return (if Result.Supported then Result else After);
+   exception
+      when others =>
+         return After;
+   end Store_Initialized_Range;
 
    function Assign_Contents
      (Before : Symbolic_State;
@@ -11260,6 +11692,37 @@ package body Adalang_Analyzer.VC_Prover is
          return Unknown_Outcome;
    end Decide_Bounds;
 
+   function Decide_Initialized_Read
+     (Name    : Libadalang.Analysis.Ada_Node'Class;
+      State   : Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False);
+      Term : Unbounded_String;
+   begin
+      if Context.Supported then
+         Term := Elements_Initialized_Term (Name, Name, Context);
+      end if;
+      if not Context.Supported or else Length (Term) = 0 then
+         if Context.Supported then
+            Mark_Unsupported (Context, Name, Uninitialized_Object);
+         end if;
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Name));
+      end if;
+      return Decide_Goal (Term, Context);
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Initialized_Read;
+
    function Decide_Index_In_Object
      (Index     : Libadalang.Analysis.Expr'Class;
       Prefix    : Libadalang.Analysis.Name'Class;
@@ -11644,7 +12107,7 @@ package body Adalang_Analyzer.VC_Prover is
                                 | "ada!l" | "ada!r" | "ada!a"
                                 | "forall" | "exists" | "=>" | "Int"
                                 | "select" | Integer_Contents
-                                | Boolean_Contents
+                                | Boolean_Contents | Init_Contents
                         or else Kept.Contains (Token)
                         or else Bound.Contains (Token)
                         or else Is_Component_Function (Token)
@@ -12324,10 +12787,11 @@ package body Adalang_Analyzer.VC_Prover is
    end Loop_Bound_Terms;
 
    function Assume_Loop_Range
-     (State     : Symbolic_State;
-      Parameter : Libadalang.Analysis.Ada_Node;
-      Iteration : Libadalang.Analysis.Ada_Node'Class;
-      Flow      : Domain.Flow_State) return Symbolic_State
+     (State      : Symbolic_State;
+      Parameter  : Libadalang.Analysis.Ada_Node;
+      Iteration  : Libadalang.Analysis.Ada_Node'Class;
+      Flow       : Domain.Flow_State;
+      Fixed_Only : Boolean := True) return Symbolic_State
    is
       Context : Translation_Context :=
         (State => Flow, Symbols => State, Supported => State.Supported,
@@ -12344,7 +12808,7 @@ package body Adalang_Analyzer.VC_Prover is
          return State;
       end if;
 
-      Loop_Bound_Terms (Iteration, Context, True, Low, High);
+      Loop_Bound_Terms (Iteration, Context, Fixed_Only, Low, High);
       if Context.Supported and then Length (Low) > 0 and then Length (High) > 0
       then
          Variable :=

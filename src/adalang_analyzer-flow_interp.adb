@@ -712,10 +712,10 @@ package body Adalang_Analyzer.Flow_Interp is
    end Assume_Into;
 
    --  As Assume_Into, After being the flow state once Condition is known to
-   --  have the value Truth. Where the translation takes nothing from
-   --  Condition, what After knows of the ranges of scalar objects is said of
-   --  their values: what the interval domain learned from the condition is
-   --  kept with the rest.
+   --  have the value Truth. What After knows of the ranges of scalar objects
+   --  is said of their values, whether the translation takes something from
+   --  Condition or nothing: what the interval domain learned from the
+   --  condition is kept with the rest.
    procedure Assume_Narrowed
      (Symbols   : in out VC.Symbolic_State;
       Condition : Libadalang.Analysis.Expr;
@@ -733,7 +733,7 @@ package body Adalang_Analyzer.Flow_Interp is
       if VC.Equal (Updated, VC.Havoc) then
          Symbols := VC.With_Flow_Ranges (Symbols, After);
       else
-         Symbols := Updated;
+         Symbols := VC.With_Flow_Ranges (Updated, After);
       end if;
       if Evaluates_Untrusted_Call (Condition) then
          Symbols := VC.Forget_Composite_Values (Symbols, Condition);
@@ -3215,6 +3215,112 @@ package body Adalang_Analyzer.Flow_Interp is
          return Symbols;
    end Primed_For_Call;
 
+   --  The elements and slices of arrays of objects with relaxed
+   --  initialization that the procedure call Stmt passes as the actuals of
+   --  formals of mode out or in out that have a value in every part on
+   --  return -- a formal with no relaxed initialization, or one whose
+   --  X'Initialized is a conjunct of the callee's postcondition: Symbols,
+   --  the state after the call, with every element of each such actual
+   --  having a value (VC.Store_Initialized_Range), Before being the state
+   --  before it and Flow the flow state there. With Priming, Before with
+   --  a root for each name that reads of those actuals
+   --  (VC.Prime_Initialized_Range), to be the state before the call.
+   function Initialized_Actuals
+     (Before  : VC.Symbolic_State;
+      Symbols : VC.Symbolic_State;  --  adalang-analyzer: ignore Swappable_Parameters
+      Stmt    : Libadalang.Analysis.Call_Stmt;
+      Flow    : Flow_State;
+      Priming : Boolean) return VC.Symbolic_State
+   is
+      Call   : constant Libadalang.Analysis.Name := Stmt.F_Call;
+      Decl   : constant Libadalang.Analysis.Basic_Decl :=
+        Call_Declaration (Call);
+      Part   : Libadalang.Analysis.Basic_Decl;
+      Post   : Libadalang.Analysis.Expr;
+      Result : VC.Symbolic_State := (if Priming then Before else Symbols);
+
+      --  True when Cond, or a conjunct of it, is Formal'Initialized.
+      function Says_Initialized
+        (Cond   : Libadalang.Analysis.Expr;
+         Formal : Libadalang.Analysis.Defining_Name) return Boolean
+      is
+         Own : constant String := Normalized_Text (Formal);
+      begin
+         if Libadalang.Analysis.Is_Null (Cond) then
+            return False;
+         elsif Cond.Kind = Libadalang.Common.Ada_Paren_Expr then
+            return Says_Initialized (Cond.As_Paren_Expr.F_Expr, Formal);
+         elsif Cond.Kind = Libadalang.Common.Ada_Bin_Op
+           and then Cond.As_Bin_Op.F_Op.Kind in
+             Libadalang.Common.Ada_Op_And | Libadalang.Common.Ada_Op_And_Then
+         then
+            return Says_Initialized (Cond.As_Bin_Op.F_Left, Formal)
+              or else Says_Initialized (Cond.As_Bin_Op.F_Right, Formal);
+         elsif Cond.Kind = Libadalang.Common.Ada_Attribute_Ref then
+            declare
+               Ref : constant Libadalang.Analysis.Attribute_Ref :=
+                 Cond.As_Attribute_Ref;
+            begin
+               return Normalized_Text (Ref.F_Attribute) = "initialized"
+                 and then (Libadalang.Analysis.Is_Null (Ref.F_Args)
+                           or else Ref.F_Args.Children_Count = 0)
+                 and then Ref.F_Prefix.Kind = Libadalang.Common.Ada_Identifier
+                 and then Normalized_Text (Ref.F_Prefix) = Own
+                 and then not Libadalang.Analysis.Is_Null
+                   (Ref.F_Prefix.As_Identifier.P_Referenced_Defining_Name)
+                 and then
+                   Libadalang.Analysis.Ada_Node
+                     (Ref.F_Prefix.As_Identifier.P_Referenced_Defining_Name
+                        .P_Canonical_Part) =
+                   Libadalang.Analysis.Ada_Node (Formal.P_Canonical_Part);
+            end;
+         end if;
+         return False;
+      exception
+         when Libadalang.Common.Property_Error =>
+            return False;
+      end Says_Initialized;
+   begin
+      if not Config.Verification_Mode
+        or else not Verified_In_SPARK
+        or else Libadalang.Analysis.Is_Null (Decl)
+        or else Call.P_Is_Dispatching_Call
+      then
+         return Result;
+      end if;
+      Find_Callee_Postcondition (Decl, Part, Post);
+      for Pair of Call.P_Call_Params loop
+         declare
+            Formal : constant Libadalang.Analysis.Defining_Name :=
+              Libadalang.Analysis.Defining_Name
+                (Libadalang.Analysis.Param (Pair));
+            Actual : constant Libadalang.Analysis.Expr :=
+              Libadalang.Analysis.Expr (Libadalang.Analysis.Actual (Pair));
+         begin
+            if Formal_Is_Writable (Formal)
+              and then Actual.Kind = Libadalang.Common.Ada_Call_Expr
+              and then Actual.As_Call_Expr.P_Kind in
+                Libadalang.Common.Array_Index | Libadalang.Common.Array_Slice
+              and then
+                (not Has_Relaxed_Initialization
+                       (Libadalang.Analysis.Ada_Node (Formal))
+                 or else Says_Initialized (Post, Formal))
+            then
+               Result :=
+                 (if Priming
+                  then VC.Prime_Initialized_Range (Result, Actual, Flow)
+                  else VC.Store_Initialized_Range
+                    (Before, Result, Actual, Stmt, Flow,
+                     Primed_Only => True));
+            end if;
+         end;
+      end loop;
+      return Result;
+   exception
+      when Libadalang.Common.Property_Error =>
+         return (if Priming then Before else Symbols);
+   end Initialized_Actuals;
+
    --  Symbols, the symbolic state once the procedure call Stmt has
    --  returned, with what the callee's postcondition says, After being the
    --  flow state then. The postcondition is assumed as an assertion is:
@@ -5127,9 +5233,12 @@ package body Adalang_Analyzer.Flow_Interp is
             if Libadalang.Analysis.Ada_Node (Libadalang.Analysis.Actual (Pair))
               = Current
             then
+               --  A formal of mode out reads nothing of its actual either.
                return Has_Relaxed_Initialization
                  (Libadalang.Analysis.Ada_Node
-                    (Libadalang.Analysis.Param (Pair)));
+                    (Libadalang.Analysis.Param (Pair)))
+                 or else Formal_Mode (Libadalang.Analysis.Param (Pair)) =
+                   Ada_Mode_Out;
             end if;
          end loop;
       end if;
@@ -5280,6 +5389,43 @@ package body Adalang_Analyzer.Flow_Interp is
       when others =>
          return Whole;
    end Read_Initialization;
+
+   --  True when Node, the name of the object Key with relaxed
+   --  initialization in a read that the flow state does not show to have
+   --  a value, reads elements of an array that Symbols shows every one of
+   --  to have one (VC.Decide_Initialized_Read): the element or the slice
+   --  Node is the prefix of, or the whole array Node names.
+   function Relaxed_Elements_Initialized
+     (Node    : Libadalang.Analysis.Ada_Node'Class;
+      Key     : Libadalang.Analysis.Ada_Node;
+      State   : Flow_State;
+      Symbols : VC.Symbolic_State) return Boolean
+   is
+      Read   : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Node);
+      Parent : constant Libadalang.Analysis.Ada_Node := Node.Parent;
+   begin
+      if not Config.Verification_Mode
+        or else not Verified_In_SPARK
+        or else not Has_Relaxed_Initialization (Key)
+      then
+         return False;
+      end if;
+      if not Libadalang.Analysis.Is_Null (Parent)
+        and then Parent.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Libadalang.Analysis.Ada_Node (Parent.As_Call_Expr.F_Name) =
+          Libadalang.Analysis.Ada_Node (Node)
+        and then Parent.As_Call_Expr.P_Kind in Libadalang.Common.Array_Index
+                                             | Libadalang.Common.Array_Slice
+      then
+         Read := Parent;
+      end if;
+      return VC.Decide_Initialized_Read (Read, State, Symbols).Result =
+        VC.VC_Proved;
+   exception
+      when others =>
+         return False;
+   end Relaxed_Elements_Initialized;
 
    --  As Havoc_Identifiers_In, for an object that the write leaves
    --  initialized if it was: nothing is known of its value any more, and
@@ -8396,6 +8542,23 @@ package body Adalang_Analyzer.Flow_Interp is
                then
                   Dead := True;
                else
+                  --  The predicate is evaluated for values of the
+                  --  parameter between the bounds, as they are here.
+                  declare
+                     Spec : constant Libadalang.Analysis.For_Loop_Spec :=
+                       Parent.As_Quantified_Expr.F_Loop_Spec;
+                  begin
+                     if Spec.F_Loop_Type.Kind =
+                       Libadalang.Common.Ada_Iter_Type_In
+                     then
+                        Symbols :=
+                          VC.Assume_Loop_Range
+                            (Symbols,
+                             Libadalang.Analysis.Ada_Node
+                               (Spec.F_Var_Decl.F_Id),
+                             Spec.F_Iter_Expr, State, Fixed_Only => False);
+                     end if;
+                  end;
                   Enter_Loop_Parameter
                     (Parent.As_Quantified_Expr.F_Loop_Spec, State);
                end if;
@@ -12287,6 +12450,20 @@ package body Adalang_Analyzer.Flow_Interp is
                         Output_Symbols :=
                           Element_Write_Symbols
                             (Input_Symbols, Source, Dest.As_Call_Expr, Input);
+                        --  A slice of an object with relaxed
+                        --  initialization given a value with no part that
+                        --  has none: every element of it has one.
+                        if Dest.As_Call_Expr.P_Kind =
+                             Libadalang.Common.Array_Slice
+                          and then Verified_In_SPARK
+                          and then Value_Is_Full
+                                     (Source.As_Assign_Stmt.F_Expr, Input)
+                        then
+                           Output_Symbols :=
+                             VC.Store_Initialized_Range
+                               (Input_Symbols, Output_Symbols, Dest, Source,
+                                Input, Primed_Only => False);
+                        end if;
                      elsif Dest.Kind = Libadalang.Common.Ada_Dotted_Name then
                         --  A component of an object the name settles: what
                         --  is known of its other parts stands.
@@ -12315,13 +12492,19 @@ package body Adalang_Analyzer.Flow_Interp is
                   declare
                      Primed : constant VC.Symbolic_State :=
                        Primed_For_Call
-                         (Input_Symbols, Source.As_Call_Stmt, Input);
+                         (Initialized_Actuals
+                            (Input_Symbols, Input_Symbols,
+                             Source.As_Call_Stmt, Input, Priming => True),
+                          Source.As_Call_Stmt, Input);
                   begin
                      Output_Symbols :=
                        With_Call_Predicates
                          (With_Call_Postcondition
-                            (Symbols_After_Call
-                               (Primed, Source.As_Call_Stmt, Output),
+                            (Initialized_Actuals
+                               (Primed,
+                                Symbols_After_Call
+                                  (Primed, Source.As_Call_Stmt, Output),
+                                Source.As_Call_Stmt, Input, Priming => False),
                              Source.As_Call_Stmt, Output, Primed, Input),
                           Source.As_Call_Stmt, Output);
                   end;
@@ -16721,14 +16904,31 @@ package body Adalang_Analyzer.Flow_Interp is
                         --  obligation (see FP-031).
                         declare
                            Standing : Boolean;
+                           Initialized : Abstract_Bool;
                         begin
                            Record_Standing_Value
                              (Unit, Node, Key, State_At (Here), True,
                               Standing);
                            if not Standing then
-                              Record_Final_Initialization
-                                (Node, Read_Initialization
-                                         (Node, Key, State_At (Here)));
+                              Initialized :=
+                                Read_Initialization
+                                  (Node, Key, State_At (Here));
+                              if Initialized = Bool_Unknown
+                                and then Relaxed_Elements_Initialized
+                                           (Node, Key, State_At (Here),
+                                            Symbols_At (Here))
+                              then
+                                 --  proof-path: initialization-relaxed-elements
+                                 Record_Proved_Safe
+                                   (Unit, Node, Proof.Initialization_Check,
+                                    Proof.External_Prover,
+                                    "every element read of the object with " &
+                                      "relaxed initialization has a value",
+                                    VC.Evidence, Final => True);
+                              else
+                                 Record_Final_Initialization
+                                   (Node, Initialized);
+                              end if;
                            end if;
                         end;
                      end if;

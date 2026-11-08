@@ -549,3 +549,12 @@ relaxed-post-copy	tests/verification_mutation_relaxed_initialization.adb	postcon
 relaxed-pre-or	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Either	unproved	Either'Initialized or Flag says nothing of Either where Flag holds.
 relaxed-pre-element	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Front	unproved	Front (1)'Initialized says nothing of Front (2).
 relaxed-pre-component	tests/verification_mutation_relaxed_initialization.adb	initialization-check	Holder	unproved	Holder.C'Initialized says nothing of Holder.D.
+relaxed-elements-past-written	tests/verification_mutation_relaxed_elements.adb	assertion	Gappy (1 .. 3)'Initialized	unproved	elements 1 and 3 written: element 2 may have no value.
+relaxed-elements-past-slice	tests/verification_mutation_relaxed_elements.adb	assertion	Short_Band (1 .. 3)'Initialized	unproved	a slice 1 .. 2 given a value says nothing of element 3.
+relaxed-elements-past-actual	tests/verification_mutation_relaxed_elements.adb	assertion	Short_Strip (0 .. 2)'Initialized	unproved	an out slice actual 0 .. 1 says nothing of element 2.
+relaxed-elements-past-loop	tests/verification_mutation_relaxed_elements.adb	assertion	Short_Lane (1 .. 4)'Initialized	unproved	a loop invariant up to I = 3 says nothing of element 4.
+relaxed-elements-past-range	tests/verification_mutation_relaxed_elements.adb	initialization-check	Short_Range	unproved	a precondition from 2 says nothing of element 1, read in the quantified expression.
+relaxed-elements-one-branch	tests/verification_mutation_relaxed_elements.adb	assertion	Forked (1)'Initialized	unproved	an element written on one way of an if only.
+relaxed-elements-other-index	tests/verification_mutation_relaxed_elements.adb	initialization-check	Moved	unproved	an element written at Where says nothing of the one at Read_At.
+relaxed-elements-reassigned	tests/verification_mutation_relaxed_elements.adb	assertion	Replaced (1)'Initialized	unproved	a whole relaxed value given after the element write may have no value there.
+relaxed-elements-left-by-call	tests/verification_mutation_relaxed_elements.adb	assertion	Dropped (1)'Initialized	unproved	a relaxed out parameter that says nothing on return may leave the element with none.

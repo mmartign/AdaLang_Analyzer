@@ -5,6 +5,60 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+A `--verify` change that follows, in the verification condition, which
+elements of an array with relaxed initialization have a value: an element,
+a slice and the whole array of such an object have one where writes, calls
+and the conditions that hold say so.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+10,645 of the 15,043 checks GNATprove proves (was 10,517). 128 more are
+proved and none fewer: 99 in SPARKNaCl, 16 in CoAP-SPARK, 8 in Saatana, 4 in
+LibKeccak and 1 in Tokeneer -- 43 assertions (`R (0 .. 5)'Initialized`
+after element writes, `Y (0 .. 7)'Initialized` after calls that fill
+slices), 32 initialization checks (reads of elements whose precondition,
+assertion or loop invariant says they have a value, and of arrays filled
+element by element), 21 checks of loop invariants, 17 index checks, 10
+overflow checks, 3 range checks and 2 postconditions. On the nine corpora
+with a `--verify` lane, 171 obligations that were `Unproved` are proved and
+none that was proved is `Unproved`; 18 initialization checks that GNATprove
+does not have are gone -- those of an element or a slice of an array with
+relaxed initialization passed to an `out` parameter -- none is added, and no
+definite error is new or gone. On all ten corpora, every preset, findings
+are identical. On the SPARK testsuite the pairs both tools prove go from
+275 to 291 of 650.
+
+### Changed
+
+- An array of one dimension with relaxed initialization has, in the
+  verification condition, the initialization of its elements beside their
+  values. An element given a value of a scalar type has one; so has every
+  element of a slice given a value with no part that has none, and of an
+  element or a slice passed to an `out` or `in out` parameter that has a
+  value in every part on return (one without relaxed initialization, or
+  one whose `X'Initialized` is a conjunct of the callee's postcondition).
+  `X (I)'Initialized`, `X (L .. H)'Initialized` and `X'Initialized` are
+  translated from it, and taken from a precondition, an assertion or a loop
+  invariant that says them; the initialization check of a read of an
+  element, of a slice or of the whole array the flow state leaves unknown
+  is decided from it. Only what gives elements a value is ever said: a
+  write of the whole object, or a call that may leave parts without one,
+  gives its value a new name of which nothing is known.
+- In the verification condition of a check inside the predicate of a
+  quantified expression over `L .. H`, the parameter is between `L` and
+  `H` as they are where the expression is evaluated; it was within the
+  widest range the interval domain gave it, so `K <= I` under `for all K
+  in 1 .. I` was not known.
+- Where a condition holds -- that of the branch taken, an assertion after
+  its check, an assumption, a loop invariant where it is assumed -- the
+  verification condition keeps the bounds the interval domain knows of
+  scalar objects there, as it already did where the condition does not
+  translate: an `'Initialized` that now translates no longer drops them.
+- An element or a slice of an object with relaxed initialization passed to
+  an `out` parameter is not read: it has no initialization check, as for
+  GNATprove.
+
 ## [1.13.2] - 2026-11-07
 
 A `--verify` release that follows an object with relaxed initialization as

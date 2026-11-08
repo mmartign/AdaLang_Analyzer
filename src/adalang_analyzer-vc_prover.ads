@@ -402,6 +402,32 @@ package Adalang_Analyzer.VC_Prover is
    --  write did not give it one. After as it is for any other Destination,
    --  or where the index has no term.
 
+   function Prime_Initialized_Range
+     (State  : Symbolic_State;
+      Target : Libadalang.Analysis.Ada_Node'Class;
+      Flow   : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State with a root for each name that Store_Initialized_Range reads
+   --  of Target, an element or a slice of an array of an object with
+   --  relaxed initialization: a write after that renews what it changes,
+   --  and the roots keep the values of before.
+
+   function Store_Initialized_Range
+     (Before      : Symbolic_State;
+      After       : Symbolic_State;
+      Target      : Libadalang.Analysis.Ada_Node'Class;
+      Writer      : Libadalang.Analysis.Ada_Node'Class;
+      Flow        : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Primed_Only : Boolean) return Symbolic_State;
+   --  After, the state after Writer gave every element of Target a value
+   --  -- the element X (I) of an array, or the slice X (L .. H) of one, X
+   --  an object with relaxed initialization -- with the initialization of
+   --  the elements of the new value of X (a token of its own) that of the
+   --  value before, Target's elements having one. Target is read in
+   --  Before, the state before the write, and Flow; with Primed_Only,
+   --  only through names Before has (Prime_Initialized_Range). After as it
+   --  is for any other Target.
+
    function Assign_Contents
      (Before : Symbolic_State;
       After  : Symbolic_State;
@@ -557,6 +583,16 @@ package Adalang_Analyzer.VC_Prover is
    --  in-bounds condition the way an Assert or Loop_Invariant does.
    --  VC_Unsupported when Bounds carries neither side.
 
+   function Decide_Initialized_Read
+     (Name    : Libadalang.Analysis.Ada_Node'Class;
+      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome;
+   --  Decides that every element of Name -- the element X (I) of an array,
+   --  the slice X (L .. H) of one, or the whole X -- has a value, the
+   --  array being an object with relaxed initialization: from what the
+   --  writes and the conditions that hold said of the initialization of
+   --  its elements. VC_Unsupported for any other name.
+
    function Decide_Index_In_Object
      (Index     : Libadalang.Analysis.Expr'Class;
       Prefix    : Libadalang.Analysis.Name'Class;
@@ -667,15 +703,18 @@ package Adalang_Analyzer.VC_Prover is
    --  keeps is dropped first.
 
    function Assume_Loop_Range
-     (State     : Symbolic_State;
-      Parameter : Libadalang.Analysis.Ada_Node;
-      Iteration : Libadalang.Analysis.Ada_Node'Class;
-      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
+     (State      : Symbolic_State;
+      Parameter  : Libadalang.Analysis.Ada_Node;
+      Iteration  : Libadalang.Analysis.Ada_Node'Class;
+      Flow       : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Fixed_Only : Boolean := True)
       return Symbolic_State;
    --  State with the fact that the loop parameter whose defining name is
    --  Parameter lies within Iteration, the loop's own "A'Range" or
-   --  "Low .. High". Only bounds whose value cannot change during the loop
-   --  are used; otherwise State is returned as it is.
+   --  "Low .. High". With Fixed_Only, only bounds whose value cannot
+   --  change during the loop are used; otherwise State is returned as it
+   --  is. Without, the bounds are read in State: for the parameter of a
+   --  quantified expression, where its predicate is evaluated.
 
    type Loop_Step is (First_Iteration, Next_Iteration);
 
