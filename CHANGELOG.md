@@ -5,7 +5,13 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.13.4] - 2026-11-09
+
+A `--verify` release that follows access values in the verification
+condition: the bounds of the array an access value designates, an access
+formal of an inlined expression function, and assignments of access
+values, so that the predicate of the contexts RecordFlux generates is
+checked at the writes of their parts.
 
 What to expect: on the five corpora of the gap ledger, `--verify` proves
 10,745 of the 15,043 checks GNATprove proves (was 10,645). 100 more are
