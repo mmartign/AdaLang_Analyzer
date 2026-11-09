@@ -5,6 +5,50 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+10,745 of the 15,043 checks GNATprove proves (was 10,645). 100 more are
+proved and none fewer, all in CoAP-SPARK -- 57 predicate checks
+of the contexts RecordFlux generates (`Ctx.Cursors (Fld) := (...)`,
+`Ctx.Buffer := null`, `Ctx.Verified_Last := ...`, `Ctx := Ctx'Update
+(...)`), 31 range checks, 6 assertions (`Slot_Ptr_1 /= null` after an
+allocation), 4 dereference checks, 1 precondition and 1 postcondition. On
+the nine corpora with a `--verify` lane, 133 obligations that were
+`Unproved` are proved (129 in CoAP-SPARK, 4 slice range checks through an
+access value in GNATColl) and none that was proved is `Unproved`; none is
+added or removed, and no definite error is new or gone. On all ten
+corpora, every preset, findings are identical. On the SPARK testsuite
+nothing changes (291 of 650 pairs both tools prove). The `--verify` lane
+of CoAP-SPARK takes about 58% more CPU time (220 s to 347 s): checks that
+were refused at translation now reach the solvers.
+
+### Changed
+
+- The bounds of the array an access value designates, `Buffer'First`,
+  `Buffer'Last` and `Buffer'Length`, are translated: functions of the token
+  of the access value, tied as the bounds of an array object are. They were
+  unsupported, so was anything that read them.
+- An expression function that is inlined takes an access formal for the
+  object, or the part of one, its actual names, and for the token of the
+  actual's value otherwise. Such a call made the whole condition
+  unsupported: the predicate of a RecordFlux context, `Valid_Context (...,
+  Context.Buffer, Context.Cursors)`, was never checked.
+- An assignment of an access value to an object or to a component keeps
+  what the verification condition knows of the rest and gives the target
+  the token of the value: 0 for `null`, a token of its own for a value that
+  has none, not null for an allocator. It dropped everything known of the
+  subprogram's objects (an object) or left the component unknown. A
+  dereference of an object just assigned `null`, and a precondition that
+  requires it not to be null, are now definite errors: two mutations of
+  the campaign that were `Unproved` (`null-assigned`, `dereference-moved`)
+  are definite errors.
+- A quantified expression of a goal over a subtype of at most 64 values a
+  declaration fixes, whose predicate has no term with its parameter free
+  -- `Well_Formed (Cursors (F))`, the element at the parameter given to a
+  record formal -- is the predicate of each value in turn, as an assumption
+  already was. Any quantified expression that has a term keeps it.
+
 ## [1.13.3] - 2026-11-08
 
 A `--verify` release that follows, in the verification condition, which

@@ -74,6 +74,10 @@ package body Adalang_Analyzer.VC_Prover is
       --  Inlined_Call_Term and the Ada_Quantified_Expr case in
       --  Boolean_Term) -- never propagated back to a parent context, only
       --  used to bound how deep a single recursive translation may go.
+      Expanded        : Natural := 0;
+      --  How many quantified expressions taken value by value the current
+      --  translation is inside of (Boolean_Term), down through inlined
+      --  bodies, whose contexts are copies of their caller's.
    end record;
 
    --  The state X'Old reads X in, while Set_Old_State has given one: the
@@ -1433,6 +1437,17 @@ package body Adalang_Analyzer.VC_Prover is
      (Node    : Libadalang.Analysis.Ada_Node'Class;
       Context : in out Translation_Context) return Unbounded_String;
 
+   function Function_Symbol
+     (Name    : Libadalang.Analysis.Ada_Node'Class;
+      Profile : String) return String;
+
+   --  A quantified expression over more values than this is not taken
+   --  value by value, nor is one inside two that are: an assumption
+   --  (Took_Each), or a goal whose quantified expression has no term
+   --  with its parameter left free (Boolean_Term).
+   Max_Expanded_Values : constant := 64;
+   Max_Expanded_Depth  : constant := 2;
+
    function Is_Opaque_Type
      (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Boolean;
 
@@ -1637,12 +1652,69 @@ package body Adalang_Analyzer.VC_Prover is
    end Attribute_Dimension;
 
    --  The term for Prefix'First, Prefix'Last or Prefix'Length (Name, in
+   --  normalized form), Prefix an access value that designates a
+   --  one-dimensional array: a function of the token of that value, one
+   --  function for each attribute and access type. The bounds of the
+   --  object an access value designates are fixed when the object is
+   --  made, so two values that designate the same object, which are the
+   --  same token, give the same bounds; a value the state knows nothing
+   --  of is a token nothing is known of either. The length is tied to the
+   --  two bounds as for an array object. Empty where Prefix has no token:
+   --  then Context says why.
+   function Access_Bounds_Term
+     (Prefix  : Libadalang.Analysis.Name;
+      Name    : String;
+      Context : in out Translation_Context) return Unbounded_String
+   is
+      Token : constant Unbounded_String := Opaque_Term (Prefix, Context);
+   begin
+      if not Context.Supported or else Length (Token) = 0 then
+         return Null_Unbounded_String;
+      end if;
+
+      if Libadalang.Analysis.Is_Null
+           (Prefix.P_Expression_Type.P_Defining_Name)
+      then
+         --  An anonymous access type has no name to key the functions on.
+         return Null_Unbounded_String;
+      end if;
+
+      declare
+         Access_Type : constant Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.Ada_Node
+             (Prefix.P_Expression_Type.P_Defining_Name);
+
+         function Bound (Tag : String) return String is
+           ("(" & Function_Symbol (Access_Type, "~" & Tag & "!1O>I") & " " &
+            To_String (Token) & ")");
+
+         First  : constant String := Bound ("af");
+         Last   : constant String := Bound ("al");
+         Size   : constant String := Bound ("an");
+         Link   : constant Unbounded_String :=
+           To_Unbounded_String
+             ("(= " & Size & " (ite (<= " & First & " " & Last &
+              ") (+ (- " & Last & " " & First & ") 1) 0))");
+      begin
+         if not Context.Symbols.Assumptions.Contains (Link) then
+            Context.Symbols.Assumptions.Append (Link);
+         end if;
+         return To_Unbounded_String
+           (if Name = "first" then First
+            elsif Name = "last" then Last
+            else Size);
+      end;
+   end Access_Bounds_Term;
+
+   --  The term for Prefix'First, Prefix'Last or Prefix'Length (Name, in
    --  normalized form) of the Dimension-th index. A bound a declaration
    --  fixes is its literal value. Otherwise, for an array object, the
    --  three attributes are symbols of their own -- the bounds of a
    --  declared object or a parameter never change -- tied together by
    --  what the language guarantees: Length is Last - First + 1 when that
-   --  is positive, and 0 for an empty array.
+   --  is positive, and 0 for an empty array. For an access value that
+   --  designates an array, the three are functions of the token of the
+   --  value (Access_Bounds_Term).
    function Array_Attribute_Term
      (Prefix    : Libadalang.Analysis.Name;
       Name      : String;
@@ -1708,6 +1780,20 @@ package body Adalang_Analyzer.VC_Prover is
          return To_Unbounded_String
            (if Bounds.Low > Bounds.High then "0"
             else SMT_Integer (Bounds.High - Bounds.Low + 1));
+      end if;
+
+      --  The bounds of the array an access value designates.
+      if Dimension = 1 and then Is_Access_Expression (Prefix) then
+         declare
+            Trial : Translation_Context := Context;
+            Term  : constant Unbounded_String :=
+              Access_Bounds_Term (Prefix, Name, Trial);
+         begin
+            if Trial.Supported and then Length (Term) > 0 then
+               Context := Trial;
+               return Term;
+            end if;
+         end;
       end if;
 
       declare
@@ -2255,7 +2341,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Context.Inlining_Path, Depth => Context.Depth,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Term : Unbounded_String;
    begin
       if Context.Priming_Old then
@@ -5458,7 +5544,73 @@ package body Adalang_Analyzer.VC_Prover is
                   Range_Hyp : constant String :=
                     "(and (<= " & To_String (Low) & " " & Bound_Name &
                       ") (<= " & Bound_Name & " " & To_String (High) & "))";
+
+                  --  A few values a declaration fixes, where the body has
+                  --  no term with the parameter free -- "Cursors (F)"
+                  --  given to a record formal: the body of each value,
+                  --  the parameter that value, all of them for "for all",
+                  --  one of them for "for some". The same for a finite
+                  --  domain, as Took_Each takes an assumption.
+                  function Expanded_Term return Unbounded_String is
+                     Operator : constant String :=
+                       (if Quant.F_Quantifier =
+                          Libadalang.Common.Ada_Quantifier_All
+                        then "and" else "or");
+                     Result   : Unbounded_String;
+                  begin
+                     for Value in Bounds.Low .. Bounds.High loop
+                        declare
+                           Each : Translation_Context := Context;
+                           Term : Unbounded_String;
+                        begin
+                           Each.Depth := Context.Depth + 1;
+                           Each.Expanded := Context.Expanded + 1;
+                           Domain.Flow_Havoc (Each.State, Bound_Key);
+                           Domain.Flow_Set_Initialized
+                             (Each.State, Bound_Key, Domain.Bool_True);
+                           Set_Binding
+                             (Each.Symbols,
+                              (Key  => Plain_Key (Bound_Key),
+                               Sort => Bound_Sort,
+                               Term => To_Unbounded_String
+                                 (SMT_Integer (Value))));
+                           Term := Boolean_Term (Quant.F_Expr, Each);
+                           --  What the body's terms say of themselves
+                           --  holds: no parameter is left in them.
+                           Copy_Failure (Context, Each);
+                           Context.Symbols.Roots := Each.Symbols.Roots;
+                           Context.Symbols.Assumptions :=
+                             Each.Symbols.Assumptions;
+                           Keep_Element_Links (Context, Each);
+                           if not Context.Supported or else Length (Term) = 0
+                           then
+                              if Context.Supported then
+                                 Mark_Unsupported
+                                   (Context, Node, Unsupported_Quantifier);
+                              end if;
+                              return Null_Unbounded_String;
+                           end if;
+                           Result :=
+                             (if Length (Result) = 0 then Term
+                              else "(" & Operator & " " & Result & " " &
+                                Term & ")");
+                        end;
+                     end loop;
+                     return Result;
+                  end Expanded_Term;
                begin
+                  if (not Child.Supported or else Length (Body_Term) = 0)
+                    and then not Is_Range and then not Array_Range
+                    and then Libadalang.Analysis.Is_Null (Constrained)
+                    and then Bounds.Has_Low and then Bounds.Has_High
+                    and then Bounds.Low >= 0
+                    and then Bounds.High - Bounds.Low < Max_Expanded_Values
+                    and then not Spec.F_Has_Reverse
+                    and then Context.Expanded < Max_Expanded_Depth
+                  then
+                     return Expanded_Term;
+                  end if;
+
                   Copy_Failure (Context, Child);
                   Context.Symbols.Roots := Child.Symbols.Roots;
                   Keep_Element_Links (Context, Child);
@@ -5846,6 +5998,38 @@ package body Adalang_Analyzer.VC_Prover is
                         return;
                      end if;
                      Set_Object_Binding (Callee, Named, Place);
+                  end;
+               elsif Is_Access_Expression (Actual) then
+                  --  An access value is a token. The formal stands for
+                  --  the object, or the part of one, the actual names, as
+                  --  a composite formal does, so that what the caller
+                  --  knows of that token is known of the formal; for
+                  --  any other actual, for the token of its value.
+                  declare
+                     Place : constant Located_Object :=
+                       Location (Actual, Context);
+                     Token : Unbounded_String;
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Place.Object)
+                       and then Domain.Flow_Initialization
+                         (Context.State, Place.Object) = Domain.Bool_True
+                     then
+                        Set_Object_Binding (Callee, Named, Place);
+                     else
+                        Token := Opaque_Term (Actual, Context);
+                        if not Context.Supported or else Length (Token) = 0
+                        then
+                           Failed := True;
+                           return;
+                        end if;
+                        Set_Binding
+                          (Callee.Symbols,
+                           (Key  => Part_Key
+                              ((Object => Named,
+                                Path   => Null_Unbounded_String)),
+                            Sort => Opaque_Sort,
+                            Term => Token));
+                     end if;
                   end;
                else
                   declare
@@ -6539,7 +6723,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Sort_Info : constant Sort_Resolution := Expression_Sort (Value);
       Term      : Unbounded_String;
    begin
@@ -6580,7 +6764,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Sort_Info : constant Sort_Resolution := Expression_Sort (Value);
       Term      : Unbounded_String;
    begin
@@ -6590,8 +6774,52 @@ package body Adalang_Analyzer.VC_Prover is
       if Libadalang.Analysis.Is_Null (Destination)
         or else Libadalang.Analysis.Is_Null (Value)
         or else Domain.Classify (Destination) /= Domain.Tracked
-        or else not Sort_Info.Supported
       then
+         return Havoc;
+      elsif State.Supported
+        and then (Value.Kind = Libadalang.Common.Ada_Null_Literal
+                  or else Is_Access_Expression (Value))
+      then
+         --  An access value: the destination holds its token, 0 for null
+         --  (as "X /= null" is translated), a token of its own where the
+         --  value has none, which nothing is known of. What is known of
+         --  other objects stays.
+         declare
+            Key   : constant Symbol_Key :=
+              Part_Key ((Object => Destination,
+                         Path   => Null_Unbounded_String));
+            Trial : Translation_Context := Context;
+            Token : Unbounded_String :=
+              (if Value.Kind = Libadalang.Common.Ada_Null_Literal
+               then To_Unbounded_String ("0")
+               else Opaque_Term (Value, Trial));
+         begin
+            if Trial.Supported and then Length (Token) > 0 then
+               Context := Trial;
+            else
+               declare
+                  Made : constant Symbol_Key :=
+                    Plain_Key (Libadalang.Analysis.Ada_Node (Value));
+               begin
+                  Token := To_Unbounded_String (Root_Name (Made, "u"));
+                  Add_Root
+                    (Context.Symbols, To_String (Token), Made, Opaque_Sort,
+                     Flow);
+                  --  An allocator never gives null (Storage_Error is
+                  --  raised instead).
+                  if Value.Kind = Libadalang.Common.Ada_Allocator then
+                     Context.Symbols.Assumptions.Append
+                       ("(distinct " & Token & " 0)");
+                  end if;
+               end;
+            end if;
+            Note_Access_Value (Key, Value);
+            Set_Binding
+              (Context.Symbols,
+               (Key => Key, Sort => Opaque_Sort, Term => Token));
+            return Context.Symbols;
+         end;
+      elsif not Sort_Info.Supported then
          return Havoc;
       end if;
 
@@ -6738,11 +6966,6 @@ package body Adalang_Analyzer.VC_Prover is
       Quantified : Natural := 0;
    end record;
 
-   --  A quantified expression over more values than this is not taken
-   --  value by value, nor is one inside two that are.
-   Max_Expanded_Values : constant := 64;
-   Max_Expanded_Depth  : constant := 2;
-
    procedure Set_Part_Scalar
      (Frame : in out Part_Frame;
       Item  : Symbolic_Binding)
@@ -6785,7 +7008,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => Frame.Depth,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
    begin
       for Item of Frame.Scalars loop
          Set_Binding (Context.Symbols, Item);
@@ -7607,7 +7830,7 @@ package body Adalang_Analyzer.VC_Prover is
                Failure_Reason => No_Unsupported_Reason,
                Failure_Node => Libadalang.Analysis.No_Ada_Node,
                Inlining_Path => Null_Unbounded_String, Depth => 0,
-               Priming_Old => False);
+               Priming_Old => False, Expanded => 0);
             Term : constant Unbounded_String :=
               (if Sort_Info.Sort = Boolean_Sort
                then Boolean_Term (Actual, Context)
@@ -7656,7 +7879,7 @@ package body Adalang_Analyzer.VC_Prover is
                      Failure_Reason => No_Unsupported_Reason,
                      Failure_Node => Libadalang.Analysis.No_Ada_Node,
                      Inlining_Path => Null_Unbounded_String, Depth => 0,
-                     Priming_Old => False));
+                     Priming_Old => False, Expanded => 0));
             begin
                if Actual.Kind = Libadalang.Common.Ada_Dotted_Name
                  and then not Libadalang.Analysis.Is_Null (Place.Object)
@@ -7696,7 +7919,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Place   : Located_Object;
    begin
       if Libadalang.Analysis.Is_Null (Formal)
@@ -7767,7 +7990,7 @@ package body Adalang_Analyzer.VC_Prover is
                Failure_Reason => No_Unsupported_Reason,
                Failure_Node => Libadalang.Analysis.No_Ada_Node,
                Inlining_Path => Null_Unbounded_String, Depth => 0,
-               Priming_Old => False);
+               Priming_Old => False, Expanded => 0);
             Term    : Unbounded_String;
             Present : Boolean := False;
          begin
@@ -8285,7 +8508,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Place   : constant Located_Object := Location (Part, Context);
    begin
       if Libadalang.Analysis.Is_Null (Place.Object)
@@ -8548,7 +8771,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Source : constant Libadalang.Analysis.Expr :=
         (if Value.Kind = Libadalang.Common.Ada_Delta_Aggregate
          then Value.As_Base_Aggregate.F_Ancestor_Expr
@@ -8681,7 +8904,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
    begin
       if not Is_Record_Value (Value) then
          return State;
@@ -8712,7 +8935,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Sort_Info : constant Sort_Resolution := Expression_Sort (Selector);
       Value     : Unbounded_String;
 
@@ -9100,7 +9323,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Result : Symbolic_State := After;
    begin
       if not Before.Supported or else not After.Supported
@@ -9342,7 +9565,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Arr : Libadalang.Analysis.Name;
       Token, First, Low, High : Unbounded_String;
    begin
@@ -9373,7 +9596,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Result    : Symbolic_State := After;
       Arr       : Libadalang.Analysis.Name;
       Token, First, Low, High, New_Token : Unbounded_String;
@@ -9450,7 +9673,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Result    : Symbolic_State := After;
       Key       : constant Symbol_Key := Value_Key (Target);
       Array_Type : Libadalang.Analysis.Base_Type_Decl;
@@ -9969,7 +10192,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Place     : constant Located_Object :=
         Settled_Place (Destination, Flow);
       Sort_Info : constant Sort_Resolution := Expression_Sort (Destination);
@@ -10037,6 +10260,37 @@ package body Adalang_Analyzer.VC_Prover is
       elsif Is_Record_Value (Value) then
          Result :=
            Parts_Copied (Result, State, Place, Location (Value, Context));
+      elsif Is_Access_Expression (Destination)
+        and then (Value.Kind = Libadalang.Common.Ada_Null_Literal
+                  or else Is_Access_Expression (Value))
+      then
+         --  An access component holds the token of the value, read before
+         --  the write, 0 for null; nothing is known of it where the value
+         --  has none.
+         declare
+            Trial : Translation_Context := Context;
+            Token : constant Unbounded_String :=
+              (if Value.Kind = Libadalang.Common.Ada_Null_Literal
+               then To_Unbounded_String ("0")
+               else Opaque_Term (Value, Trial));
+         begin
+            if Trial.Supported and then Length (Token) > 0 then
+               --  The symbols the token names, and those the write made.
+               for Item of Trial.Symbols.Roots loop
+                  Include_Root (Result, Item);
+               end loop;
+               for Fact of Trial.Symbols.Assumptions loop
+                  if not Result.Assumptions.Contains (Fact) then
+                     Result.Assumptions.Append (Fact);
+                  end if;
+               end loop;
+               Note_Access_Value (Part_Key (Place), Destination);
+               Set_Binding
+                 (Result,
+                  (Key => Part_Key (Place), Sort => Opaque_Sort,
+                   Term => Token));
+            end if;
+         end;
       end if;
       return Result;
    exception
@@ -10337,7 +10591,7 @@ package body Adalang_Analyzer.VC_Prover is
             Failure_Reason => No_Unsupported_Reason,
             Failure_Node => Libadalang.Analysis.No_Ada_Node,
             Inlining_Path => Null_Unbounded_String, Depth => 0,
-            Priming_Old => False);
+            Priming_Old => False, Expanded => 0);
          Term : constant Unbounded_String := Opaque_Term (Actual, Context);
       begin
          if not Context.Supported or else Length (Term) = 0 then
@@ -10350,7 +10604,7 @@ package body Adalang_Analyzer.VC_Prover is
                   Failure_Reason => No_Unsupported_Reason,
                   Failure_Node => Libadalang.Analysis.No_Ada_Node,
                   Inlining_Path => Null_Unbounded_String, Depth => 0,
-                  Priming_Old => False);
+                  Priming_Old => False, Expanded => 0);
             begin
                Bind_Array_Bounds (Bounds_Only, Formal, Actual);
                return With_Constrained (Bounds_Only, Formal, Actual).Symbols;
@@ -11289,7 +11543,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Goal : Unbounded_String;
 
       --  True when an object a formal stands for is itself one of the
@@ -11343,7 +11597,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Current : Libadalang.Analysis.Ada_Node;
       Goal    : Unbounded_String;
 
@@ -11528,7 +11782,7 @@ package body Adalang_Analyzer.VC_Prover is
                   Failure_Reason => No_Unsupported_Reason,
                   Failure_Node => Libadalang.Analysis.No_Ada_Node,
                   Inlining_Path => Null_Unbounded_String, Depth => 0,
-                  Priming_Old => True);
+                  Priming_Old => True, Expanded => 0);
                Sort_Info : constant Sort_Resolution :=
                  (if Target.Kind in Libadalang.Common.Ada_Expr
                   then Expression_Sort (Target)
@@ -11655,7 +11909,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Term : Unbounded_String;
    begin
       Term := Integer_Term (Value, Context);
@@ -11703,7 +11957,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Term : Unbounded_String;
    begin
       if Context.Supported then
@@ -11736,7 +11990,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Term  : Unbounded_String;
       First : Unbounded_String;
       Last  : Unbounded_String;
@@ -11785,7 +12039,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Low_Term  : Unbounded_String;
       High_Term : Unbounded_String;
       First     : Unbounded_String;
@@ -11950,7 +12204,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Goal    : Unbounded_String := To_Unbounded_String ("(and true");
    begin
       for Dimension in 1 .. Dimensions loop
@@ -11995,7 +12249,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Term    : constant Unbounded_String :=
         Array_Length_Term (Value, 1, Context);
    begin
@@ -12372,7 +12626,7 @@ package body Adalang_Analyzer.VC_Prover is
             Failure_Reason => No_Unsupported_Reason,
             Failure_Node => Libadalang.Analysis.No_Ada_Node,
             Inlining_Path => Null_Unbounded_String, Depth => 0,
-            Priming_Old => False);
+            Priming_Old => False, Expanded => 0);
          Place  : constant Located_Object := Location (Prefix, Context);
          Typ    : constant Libadalang.Analysis.Base_Type_Decl :=
            Prefix.P_Expression_Type;
@@ -12514,7 +12768,7 @@ package body Adalang_Analyzer.VC_Prover is
                Failure_Reason => No_Unsupported_Reason,
                Failure_Node => Libadalang.Analysis.No_Ada_Node,
                Inlining_Path => Null_Unbounded_String, Depth => 0,
-               Priming_Old => False);
+               Priming_Old => False, Expanded => 0);
          begin
             Term :=
               (case Sort is
@@ -12799,7 +13053,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Variable : Unbounded_String;
       Low      : Unbounded_String;
       High     : Unbounded_String;
@@ -12844,7 +13098,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Low      : Unbounded_String;
       High     : Unbounded_String;
       Variable : Unbounded_String;
@@ -12965,14 +13219,14 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       After    : Translation_Context :=
         (State => Flow, Symbols => State, Supported => State.Supported,
          Object_Bindings => Object_Binding_Vectors.Empty_Vector,
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Low      : Unbounded_String;
       High     : Unbounded_String;
       Variable : Unbounded_String;
@@ -13082,7 +13336,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Term : Unbounded_String;
    begin
       Term := Integer_Term (Value, Context);
@@ -13110,7 +13364,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Token : Unbounded_String;
    begin
       Token := Opaque_Term (Value, Context);
@@ -13144,7 +13398,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       After_Context : Translation_Context :=
         (State => After_State, Symbols => After_Symbols,
          Supported => After_Symbols.Supported,
@@ -13152,7 +13406,7 @@ package body Adalang_Analyzer.VC_Prover is
          Failure_Reason => No_Unsupported_Reason,
          Failure_Node => Libadalang.Analysis.No_Ada_Node,
          Inlining_Path => Null_Unbounded_String, Depth => 0,
-         Priming_Old => False);
+         Priming_Old => False, Expanded => 0);
       Before_Term : Unbounded_String;
       After_Term  : Unbounded_String;
       Goal        : Unbounded_String;

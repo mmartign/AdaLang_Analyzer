@@ -271,8 +271,15 @@ Min_Padding_Bits") is the component of the object. Every part of the
 predicate has to be expressed in the scalar VC language -- a check cannot
 leave out what it does not express, as an assumption can -- and the check
 is `Unproved` otherwise: a predicate that reads the object an access value
-designates, one quantified over the elements of an array, the bounds of a
-string literal. A component of an object of mode `out` that is not written
+designates, one quantified over the elements of an array that is not taken
+value by value (see "Quantified expressions and loop parameters"), the
+bounds of a string literal. The bounds of the array an access component
+designates are expressed (see "Scalar VC language"): the predicate of the
+contexts RecordFlux generates, `Valid_Context (..., Context.Buffer,
+Context.Cursors)`, is checked at `Ctx.Buffer := null`, at
+`Ctx.Cursors (Fld) := (...)`, at `Ctx.Verified_Last := ...` and at
+`Ctx := Ctx'Update (...)`, from the predicate `Ctx` has on entry. A
+component of an object of mode `out` that is not written
 yet is a value of its subtype, as GNATprove takes it: after `C.Count := 0`
 the predicate `Count < Limit` holds whatever `Limit` is. Where the solvers
 find the predicate false the check is `Unproved` too, never a definite
@@ -307,7 +314,10 @@ precondition, from the left operand of `and then` or the condition of an
 an expression function such as RecordFlux's `Has_Buffer (Ctx)` whose body
 says so. A write through the access value, `P.all (I) := X` or
 `P (I .. J) := X`, leaves it as it was, and so does a write to an element of
-another array. The check is `Unproved` where the access value is a part of
+another array. An assignment to the access object gives it the value
+assigned (see "Access values"): after `P := Q` what is known of `Q` is
+known of `P`, after `P := new T` it is not null, and after `P := null` a
+dereference of `P` is a definite error. The check is `Unproved` where the access value is a part of
 an object reached through another dereference, or the element of an array,
 or the result of a call: the translation has no name for it.
 
@@ -863,6 +873,16 @@ of an access value says is said of the access value alone, not of what it
 designates: a function given one is no function of its arguments (see
 "Calls as terms").
 
+An assignment of an access value to an object or to a component of one
+gives it the token of the value, read before the write: `Moved :=
+Ctx.Buffer; Ctx.Buffer := null` leaves `Moved` with the token `Ctx.Buffer`
+had and `Ctx.Buffer` null, and what is known of every other object stays.
+A value that has no token -- an allocator, the result of a call -- gives a
+token of its own, of which nothing is known but that an allocator's is not
+null. An expression function that is inlined takes an access formal for
+the object, or the part of one, its actual names, as it takes a record
+formal, and for the token of the actual's value otherwise.
+
 ### Operators that a declaration defines
 
 An operator is the operation its symbol stands for only where it denotes
@@ -978,6 +998,16 @@ is null in that dimension: of an array over `Natural` that is not null,
 `'First` is not negative and `'Last` is at most `Integer'Last`. The bounds
 of a null array are values of the type and no more: `(0 .. -1)` and
 `(5 .. 2)` are both arrays over `Natural`.
+
+Where `X` is an access value that designates a one-dimensional array --
+`Buffer'First`, `Ctx.Buffer'Length` -- each of the three is a function of
+the token of the value (see "Access values"), one function for each
+attribute and access type, tied to the others as for an array object. The
+bounds of the object an access value designates are fixed when the object
+is made: two access values with the same token designate the same object
+and give the same bounds, and nothing is known of the bounds behind a
+token nothing is known of. That the access value is not null is a check of
+its own (see "Dereferences").
 
 In the precondition of a call, a formal of an unconstrained array type has
 the first bounds of its actual: those a declaration fixes for an object, or
@@ -1987,6 +2017,16 @@ value is the quantified formula -- over `T range L .. H` too, `T` an
 integer subtype without a predicate, whatever the bounds -- and over any
 other domain a value of which nothing is known. The checks inside its predicate are decided as for
 a loop body, below, and a call in it is evaluated where the expression is.
+
+Where the predicate has no term while its parameter is free -- `(for all
+F in Field => (if Well_Formed (Cursors (F)) then ...))`, the element at
+`F` given to a record formal -- and the domain is a subtype of at most 64
+values that a declaration fixes, as for an assumption (see "Assertions as
+assumptions"), the expression is the predicate of each value in turn, the
+parameter that value: all of them for `for all`, one of them for `for
+some`. That is the same expression over a finite domain. One such
+expression inside two others is not taken that way; any expression that
+has a term with its parameter free keeps it.
 An iteration that is not over a discrete range or an array runs user code
 (see "Objects and effects the analysis does not follow").
 

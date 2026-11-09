@@ -284,7 +284,7 @@ constrained-declared-constraint	tests/verification_mutation_expression_forms.adb
 constrained-declared-subtype	tests/verification_mutation_expression_forms.adb	precondition	Refill (Narrowed)	unproved	a variable declared with a constrained subtype is constrained
 constrained-other-parameter	tests/verification_mutation_expression_forms.adb	precondition	Refill (Bound)	unproved	that one parameter is not constrained says nothing of another
 null-not-known	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Maybe)	unproved	nothing says an access parameter is not null
-null-assigned	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Dropped)	unproved	an access object that has been assigned null is no longer known not to be null
+null-assigned	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Dropped)	definite-error	an access object that has been assigned null is null where it is passed: the precondition fails on every path.
 null-other-object	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Empty)	unproved	that one access value is not null says nothing of another
 known-divisor-other-modulus	tests/verification_mutation_expression_forms.adb	precondition	Aligned (Rough)	unproved	a multiple of 4 is not known to be a multiple of 8
 part-other-element	tests/verification_mutation_object_parts.adb	assertion	Apart (2).Count = 5	unproved	what is known of one element of an array says nothing of another (FP-119)
@@ -353,7 +353,7 @@ dereference-unguarded	tests/verification_dereferences.adb	pointer-dereference	Ba
 dereference-explicit	tests/verification_dereferences.adb	pointer-dereference	Bad_C.all	unproved	an explicit dereference of an access value nothing says anything of
 dereference-branch	tests/verification_dereferences.adb	pointer-dereference	Bad_B.Buffer'Length	unproved	a guard that does not cover the dereference
 dereference-call	tests/verification_dereferences.adb	pointer-dereference	Bad_K.Buffer'Length	unproved	a call with no contract may change the access value
-dereference-moved	tests/verification_dereferences.adb	pointer-dereference	Bad_M.Buffer'Length	unproved	the access value assigned null since the precondition
+dereference-moved	tests/verification_dereferences.adb	pointer-dereference	Bad_M.Buffer'Length	definite-error	the access component was assigned null just before it is read: the dereference fails on every path.
 dereference-element	tests/verification_dereferences.adb	pointer-dereference	Bad_S.Items (1).View'Last	unproved	a write to the element of an array the access value is in changes it
 operator-false	tests/verification_translation_pieces.adb	assertion	D = Len (A) - Len (B) + 1	unproved	a false claim about the value of an operator a declaration defines
 constrained-component	tests/verification_translation_pieces.adb	precondition	Reset (H.Fixed)	unproved	a component whose declaration constrains it is constrained
@@ -558,3 +558,12 @@ relaxed-elements-one-branch	tests/verification_mutation_relaxed_elements.adb	ass
 relaxed-elements-other-index	tests/verification_mutation_relaxed_elements.adb	initialization-check	Moved	unproved	an element written at Where says nothing of the one at Read_At.
 relaxed-elements-reassigned	tests/verification_mutation_relaxed_elements.adb	assertion	Replaced (1)'Initialized	unproved	a whole relaxed value given after the element write may have no value there.
 relaxed-elements-left-by-call	tests/verification_mutation_relaxed_elements.adb	assertion	Dropped (1)'Initialized	unproved	a relaxed out parameter that says nothing on return may leave the element with none.
+access-contexts-predecessor	tests/verification_mutation_access_contexts.adb	predicate-check	Broken_Order	unproved	F_A made invalid while F_B may stay well formed: the order rule of the predicate fails.
+access-contexts-lowered	tests/verification_mutation_access_contexts.adb	predicate-check	Lowered	unproved	Verified_Last lowered below the cursors it bounds.
+access-contexts-overrun	tests/verification_mutation_access_contexts.adb	predicate-check	Overrun	unproved	a cursor made well formed one past Verified_Last.
+access-contexts-two-buffers	tests/verification_mutation_access_contexts.adb	assertion	Left.Buffer'Last = Right.Buffer'Last	unproved	the buffers of two contexts need not end at the same index.
+access-contexts-other-formal	tests/verification_mutation_access_contexts.adb	assertion	Ends_At (Theirs.Buffer, Mine.Buffer_Last)	unproved	the access formal stands for the buffer of the other context.
+access-contexts-first-bound	tests/verification_mutation_access_contexts.adb	assertion	Holder.Buffer'First = Holder.Buffer_Last	unproved	the predicate ties the first bound to Buffer_First, not to Buffer_Last.
+access-contexts-dropped	tests/verification_mutation_access_contexts.adb	assertion	Gone.Buffer /= null	definite-error	the access component was just set to null.
+access-contexts-none-formed	tests/verification_mutation_access_contexts.adb	assertion	for some F in Field => Well_Formed (Idle.Cursors (F))	definite-error	the precondition makes every cursor invalid.
+access-contexts-allocations	tests/verification_mutation_access_contexts.adb	assertion	P'Last = Q'Last	unproved	two allocations made in a loop are two values, of other lengths.
