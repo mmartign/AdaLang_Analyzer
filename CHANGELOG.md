@@ -5,6 +5,84 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Discriminant checks in `--verify`: a component of a variant part read,
+written or given as an actual, and the assignment of a record with
+discriminants, are checked in SPARK code by the solvers, as GNATprove
+checks them.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+10,963 of the 15,043 checks GNATprove proves (was 10,745). 218 more are
+proved and none fewer. 129 are discriminant checks, all in CoAP-SPARK, of
+the 135 GNATprove proves there: of the other 6, 3 are in subprograms
+outside the verified subset, 2 are unproved under a precondition
+`--verify` does not translate, and 1, at a component of an aggregate, has
+no obligation. The other 89 -- 38 preconditions, 9 assertions, 8
+dereference checks, 7 loop invariants preserved by an iteration, 6 range
+checks, 6 overflow checks, 6 postconditions, 5 predicate checks, 3 loop
+invariants on entry and 1 length check; CoAP-SPARK 67, libkeccak 17,
+Saatana 5 -- follow from what is now kept: the discriminant of a private
+type as one value in both views (RecordFlux's contexts), a discriminant
+without a default across writes and calls, and, in SPARK code, what is
+known of a subprogram's objects across code that runs implicitly. On the
+nine corpora with a `--verify` lane, 135 discriminant checks are added,
+all in CoAP-SPARK (130 proved, 2 unproved, 3 unsupported), 105
+obligations that were `Unproved` are proved (CoAP-SPARK 79, libkeccak 21,
+Saatana 5) and none that was proved is `Unproved`; none is removed, and
+no definite error is new or gone. On all ten corpora, every preset,
+findings are identical. On the SPARK testsuite 58 discriminant checks are
+added and both tools prove 311 of 688 pairs (was 291 of 650), with no
+possible unsoundness and no false positive; its replay found a mistake of
+the new check, fixed before this release (`FP-142`, below). CPU time is
+unchanged.
+
+### Added
+
+- A discriminant check at each component of a variant part read, written
+  or given as an actual, in SPARK code: the discriminant of the record is
+  one of the choices of the variant, decided from what is known where the
+  component is (an `if`, a `case` alternative, `and then`, a precondition,
+  a return on the other variant). Only a component of an object declared
+  with a static discriminant constraint had a discriminant obligation; no
+  other check was raised at all.
+- A discriminant check at each assignment of a record with known
+  discriminants, in SPARK code: the target is not constrained, or the value
+  has its discriminants (an aggregate's, those of a name, of `'Update` or
+  of a delta aggregate). It is a definite error only where both the
+  target's `'Constrained` and the discriminants of the target and the value
+  are known. `FP-142`, found by the SPARK testsuite replay and fixed
+  before the release, made it one where only `'Constrained` was known (the
+  value of a function; a target that is a global of mode `Output`).
+
+### Changed
+
+- A discriminant of an `out` parameter, and of any object, is read before
+  the object is initialized: it always has a value. It made the condition
+  unsupported.
+- A discriminant without a default keeps what is known of it across every
+  write and call: an object of its type is constrained. Not one of a
+  generic formal type.
+- The discriminant of a private type is one value whether a contract reads
+  the partial view's or the body the full view's. They were two unrelated
+  symbols: a postcondition such as RecordFlux's `Ctx.Buffer_First =
+  Ctx.Buffer_First'Old` did not meet the loop invariants and preconditions
+  of the body.
+- After the assignment of an aggregate, and after a declaration with a
+  discriminant constraint, the object's discriminants are those given.
+- `X'Constrained` is `True` of a variable declared with a discriminant
+  constraint, and `False` of one declared with a subtype that adds no
+  constraint to a type whose discriminants have defaults; it was unknown.
+  A call that asks `not X'Constrained` of such a variable is now a definite
+  error: the mutation `constrained-declared-constraint`, `Unproved`, is one.
+- In SPARK code that gives no access value to, and no address of,
+  anything, a subprogram that declares or assigns an object whose type may
+  run code implicitly, the type being declared elsewhere, keeps what is
+  known of its own objects and parameters, as across a call whose effects
+  stay outside them; it dropped everything at each statement. A local of a
+  type with an `Unbounded_String` component, `GNAT.Sockets.Option_Type` in
+  CoAP-SPARK among them, did that.
+
 ## [1.13.4] - 2026-11-09
 
 A `--verify` release that follows access values in the verification

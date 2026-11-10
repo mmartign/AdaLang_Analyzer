@@ -754,6 +754,47 @@ package Adalang_Analyzer.VC_Prover is
    --  As Decide_Nonzero, for Pointer_Dereference_Check's "Value /= null"
    --  goal, Value being of an access type.
 
+   function Is_Discriminated_Record
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Boolean;
+   --  True when Typ is, seen through subtypes and a private view, a record
+   --  type that is not tagged and has known discriminants: one whose
+   --  assignment Decide_Discriminants_Kept decides.
+
+   function Decide_Variant_Selection
+     (Selected : Libadalang.Analysis.Dotted_Name'Class;
+      State    : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols  : Symbolic_State) return VC_Outcome;
+   --  As Decide_Not_Null, for Discriminant_Check's goal at Selected, a
+   --  component of a variant part read or written: the discriminant of
+   --  each variant part the component is in, of the record the prefix
+   --  names, is one of the choices of the variant that declares it ("others"
+   --  standing for none of the other variants' choices).
+
+   function Decide_Discriminants_Kept
+     (Target  : Libadalang.Analysis.Name'Class;
+      Value   : Libadalang.Analysis.Expr'Class;
+      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome;
+   --  As Decide_Variant_Selection, for the assignment of Value to Target, a
+   --  record with discriminants: Target is not constrained (RM 3.7.2), or
+   --  each discriminant of Value is that of Target. The discriminants of
+   --  Value are those an aggregate gives, those of the record a name, an
+   --  'Update or a delta aggregate starts from. The outcome is VC_Refuted
+   --  only where both Target'Constrained and the discriminants of Value are
+   --  known: discriminants that differ fail the check only where the target
+   --  is constrained, and a constrained target only where they differ.
+
+   function With_Declared_Discriminants
+     (State     : Symbolic_State;
+      Object    : Libadalang.Analysis.Ada_Node;
+      Type_Expr : Libadalang.Analysis.Type_Expr'Class;
+      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  State once the object whose defining name is Object is declared with
+   --  Type_Expr: where that gives a discriminant constraint, the object's
+   --  discriminants are its values, read in Flow and State. State
+   --  otherwise.
+
    type Loop_Variant_Direction is (Decreases, Increases);
 
    function Decide_Variant_Progress

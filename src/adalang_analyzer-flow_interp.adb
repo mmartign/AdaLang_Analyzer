@@ -11385,7 +11385,19 @@ package body Adalang_Analyzer.Flow_Interp is
             Incoming_Symbols := VC.Havoc;
          elsif Implicit_Code_May_Run then
             Havoc_Nonlocal (Incoming_State);
-            Incoming_Symbols := VC.Havoc;
+            --  Code of a type declared outside the subprogram sees none of
+            --  its objects. In code that gives no access value to them nor
+            --  their addresses (Verified_Keeps_Parts), what is known of them
+            --  stands, as across a call whose effects stay outside.
+            if not Verified_Keeps_Parts then
+               Incoming_Symbols := VC.Havoc;
+            else
+               Incoming_Symbols :=
+                 VC.Forget_Unowned_Values
+                   (Incoming_Symbols, Source_Node (Target),
+                    Verified_Subprogram, Incoming_State,
+                    Keep_Parts => True);
+            end if;
          end if;
          if Calls_Untrusted (Target) then
             Incoming_Symbols :=
@@ -12423,6 +12435,19 @@ package body Adalang_Analyzer.Flow_Interp is
                           Libadalang.Analysis.Ada_Node (Name),
                           Source.As_Object_Decl.F_Default_Expr, Input,
                           Output);
+                  end loop;
+               end if;
+               --  The discriminants a declaration's constraint gives.
+               if Source.Kind = Libadalang.Common.Ada_Object_Decl
+                 and then Libadalang.Analysis.Is_Null
+                   (Source.As_Object_Decl.F_Renaming_Clause)
+               then
+                  for Name of Source.As_Object_Decl.F_Ids loop
+                     Output_Symbols :=
+                       VC.With_Declared_Discriminants
+                         (Output_Symbols,
+                          Libadalang.Analysis.Ada_Node (Name),
+                          Source.As_Object_Decl.F_Type_Expr, Input);
                   end loop;
                end if;
 
@@ -16576,6 +16601,153 @@ package body Adalang_Analyzer.Flow_Interp is
                Occurrence => E);
       end Finalize_Dereference_Check;
 
+      --  The discriminant check, in SPARK code, of a component of a variant
+      --  part that Node selects (read, written or given as an actual), and
+      --  of Node an assignment to a record with discriminants. One the
+      --  static path decides (Visit_Discriminant_Accesses, a static
+      --  discriminant constraint on the prefix object) is left to it.
+      procedure Finalize_Discriminant_Check
+        (Node      : Libadalang.Analysis.Ada_Node'Class;
+         Container : CFG.Node_Id)
+      is
+         function In_Variant
+           (Selected : Libadalang.Analysis.Dotted_Name) return Boolean
+         is
+            Decl : Libadalang.Analysis.Basic_Decl;
+            Step : Libadalang.Analysis.Ada_Node;
+         begin
+            if Selected.F_Suffix.Kind /= Libadalang.Common.Ada_Identifier then
+               return False;
+            end if;
+            Decl := Selected.F_Suffix.P_Referenced_Decl;
+            if Libadalang.Analysis.Is_Null (Decl)
+              or else Decl.Kind /= Libadalang.Common.Ada_Component_Decl
+            then
+               return False;
+            end if;
+            Step := Decl.Parent;
+            while not Libadalang.Analysis.Is_Null (Step)
+              and then Step.Kind not in Libadalang.Common.Ada_Base_Type_Decl
+            loop
+               if Step.Kind = Libadalang.Common.Ada_Variant then
+                  return True;
+               end if;
+               Step := Step.Parent;
+            end loop;
+            return False;
+         exception
+            when others =>
+               return False;
+         end In_Variant;
+
+         Is_Selection  : Boolean := False;
+         Is_Assignment : Boolean := False;
+
+         --  Where the check of an assignment is: at the value, converted
+         --  to the target's subtype, where the target is an object declared
+         --  with a constraint; at the statement otherwise, the target's
+         --  being constrained or not known only when it runs (GNATprove
+         --  reports both there).
+         function Check_Node return Libadalang.Analysis.Ada_Node is
+            Dest : Libadalang.Analysis.Name;
+            Decl : Libadalang.Analysis.Basic_Decl;
+         begin
+            if Is_Assignment then
+               Dest := Node.As_Assign_Stmt.F_Dest;
+               if Dest.Kind = Libadalang.Common.Ada_Identifier then
+                  Decl := Dest.P_Referenced_Decl;
+                  if not Libadalang.Analysis.Is_Null (Decl)
+                    and then Decl.Kind = Libadalang.Common.Ada_Object_Decl
+                    and then Decl.As_Object_Decl.F_Type_Expr.Kind =
+                      Libadalang.Common.Ada_Subtype_Indication
+                    and then not Libadalang.Analysis.Is_Null
+                      (Decl.As_Object_Decl.F_Type_Expr.As_Subtype_Indication
+                         .F_Constraint)
+                  then
+                     return Libadalang.Analysis.Ada_Node
+                       (Node.As_Assign_Stmt.F_Expr);
+                  end if;
+               end if;
+            end if;
+            return Libadalang.Analysis.Ada_Node (Node);
+         exception
+            when others =>
+               return Libadalang.Analysis.Ada_Node (Node);
+         end Check_Node;
+      begin
+         if not Config.Verification_Mode or else not Verified_In_SPARK then
+            return;
+         end if;
+         if Node.Kind = Libadalang.Common.Ada_Dotted_Name then
+            Is_Selection := In_Variant (Node.As_Dotted_Name)
+              and then not SPARK_Readiness.Discriminant_Access_Decided
+                (Node.As_Dotted_Name);
+         elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+            Is_Assignment :=
+              VC.Is_Discriminated_Record
+                (Node.As_Assign_Stmt.F_Dest.P_Expression_Type);
+         end if;
+         if not Is_Selection and then not Is_Assignment then
+            return;
+         elsif not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Check_Node, Proof.Discriminant_Check,
+               "the discriminant check has not been decided");
+         elsif Unreached (Container) then
+            Record_Unreachable
+              (Unit, Check_Node, Proof.Discriminant_Check,
+               "the containing CFG node is unreachable");
+         else
+            declare
+               Outcome : constant VC.VC_Outcome :=
+                 (if Is_Selection
+                  then VC.Decide_Variant_Selection
+                    (Node.As_Dotted_Name, State_At (Container),
+                     Symbols_At (Container))
+                  else VC.Decide_Discriminants_Kept
+                    (Node.As_Assign_Stmt.F_Dest, Node.As_Assign_Stmt.F_Expr,
+                     State_At (Container), Symbols_At (Container)));
+            begin
+               case Outcome.Result is
+                  when VC.VC_Proved =>
+                     --  proof-path: discriminant-external
+                     Record_Proved_Safe
+                       (Unit, Check_Node, Proof.Discriminant_Check,
+                        Proof.External_Prover,
+                        (if Is_Selection
+                         then "scalar verification condition proves the " &
+                           "discriminant selects the component's variant"
+                         else "scalar verification condition proves the " &
+                           "target is unconstrained or keeps its " &
+                           "discriminants"),
+                        VC.Evidence, Final => True);
+                  when VC.VC_Refuted =>
+                     Record_Definite_Error
+                       (Unit, Check_Node, Proof.Discriminant_Check,
+                        Proof.External_Prover,
+                        "the discriminant check fails in every represented " &
+                          "state",
+                        VC.Evidence, Final => True);
+                  when others =>
+                     Record_VC_Unproved
+                       (Unit, Check_Node, Proof.Discriminant_Check,
+                        Proof.Abstract_Interpretation,
+                        "discriminant failure is not established, but " &
+                          "absence is not proved",
+                        "the discriminant check is not proved",
+                        Outcome, Final => True);
+               end case;
+            end;
+         end if;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize discriminant checks",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Discriminant_Check;
+
       procedure Finalize_Node
         (Node      : Libadalang.Analysis.Ada_Node'Class;
          Container : CFG.Node_Id := CFG.No_Node)
@@ -16633,6 +16805,7 @@ package body Adalang_Analyzer.Flow_Interp is
          --  file is still analyzed.
          Finalize_Predicate_Checks (Node, Here);
          Finalize_Dereference_Check (Node, Here);
+         Finalize_Discriminant_Check (Node, Here);
          begin
             if Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
                declare
@@ -16993,6 +17166,23 @@ package body Adalang_Analyzer.Flow_Interp is
                         then
                            Finalize_Node
                              (Libadalang.Analysis.Actual (Pair), Here);
+                        else
+                           --  An out actual is not read, but a component
+                           --  of a variant part it selects is checked.
+                           declare
+                              Part : Libadalang.Analysis.Ada_Node :=
+                                Libadalang.Analysis.Ada_Node
+                                  (Libadalang.Analysis.Actual (Pair));
+                           begin
+                              while not Libadalang.Analysis.Is_Null (Part)
+                                and then Part.Kind =
+                                  Libadalang.Common.Ada_Dotted_Name
+                              loop
+                                 Finalize_Discriminant_Check (Part, Here);
+                                 Part := Libadalang.Analysis.Ada_Node
+                                   (Part.As_Dotted_Name.F_Prefix);
+                              end loop;
+                           end;
                         end if;
                      end loop;
                      return;

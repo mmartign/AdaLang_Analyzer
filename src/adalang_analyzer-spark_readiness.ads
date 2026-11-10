@@ -53,4 +53,10 @@ package Adalang_Analyzer.SPARK_Readiness is
    --  A constrained object's discriminants cannot change, so the access
    --  can never fail its discriminant check.
 
+   function Discriminant_Access_Decided
+     (Node : Libadalang.Analysis.Dotted_Name'Class) return Boolean;
+   --  True when Discriminant_Access_Proved, or when Check_Discriminant_
+   --  Access reports the access a definite error: the static discriminant
+   --  constraint of the prefix object excludes the component's variant.
+
 end Adalang_Analyzer.SPARK_Readiness;

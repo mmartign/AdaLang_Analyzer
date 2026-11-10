@@ -773,6 +773,111 @@ package body Adalang_Analyzer.VC_Prover is
      (Object => Node, Component => Libadalang.Analysis.No_Ada_Node,
       Path => Null_Unbounded_String);
 
+   --  The discriminant Name (a defining name) as the key of a component:
+   --  the full view's, where Name is one of the partial view of a private
+   --  type, which the full view repeats. A contract on the partial view
+   --  and a body that sees the full view read one discriminant, and the
+   --  variant part names the full view's.
+   function Canonical_Discriminant
+     (Name : Libadalang.Analysis.Ada_Node) return Libadalang.Analysis.Ada_Node
+   is
+      Typ : Libadalang.Analysis.Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Name)
+        or else Name.Kind /= Libadalang.Common.Ada_Defining_Name
+        or else Name.As_Defining_Name.P_Basic_Decl.Kind /=
+          Libadalang.Common.Ada_Discriminant_Spec
+      then
+         return Name;
+      end if;
+      Typ := Name.Parent;
+      while not Libadalang.Analysis.Is_Null (Typ)
+        and then Typ.Kind not in Libadalang.Common.Ada_Base_Type_Decl
+      loop
+         Typ := Typ.Parent;
+      end loop;
+      if Libadalang.Analysis.Is_Null (Typ)
+        or else not Typ.As_Base_Type_Decl.P_Is_Private
+      then
+         return Name;
+      end if;
+      declare
+         Full : constant Libadalang.Analysis.Base_Type_Decl :=
+           Typ.As_Base_Type_Decl.P_Full_View;
+         Text : constant String :=
+           Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+             (Adalang_Analyzer.Ada_Text.Node_Text (Name));
+      begin
+         if Libadalang.Analysis.Is_Null (Full)
+           or else Libadalang.Analysis.Ada_Node (Full) = Typ
+           or else Full.Kind /= Libadalang.Common.Ada_Concrete_Type_Decl
+           or else Libadalang.Analysis.Is_Null
+             (Full.As_Concrete_Type_Decl.F_Discriminants)
+           or else Full.As_Concrete_Type_Decl.F_Discriminants.Kind /=
+             Libadalang.Common.Ada_Known_Discriminant_Part
+         then
+            return Name;
+         end if;
+         for Spec of Full.As_Concrete_Type_Decl.F_Discriminants
+                       .As_Known_Discriminant_Part.F_Discr_Specs
+         loop
+            for Id of Spec.As_Discriminant_Spec.F_Ids loop
+               if Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                    (Adalang_Analyzer.Ada_Text.Node_Text (Id)) = Text
+               then
+                  return Libadalang.Analysis.Ada_Node (Id);
+               end if;
+            end loop;
+         end loop;
+         return Name;
+      end;
+   exception
+      when others =>
+         return Name;
+   end Canonical_Discriminant;
+
+   --  True when Key is the value of a discriminant without a default
+   --  (RM 3.7(28)): every object of its type is constrained, its
+   --  discriminants are those it was created with, and no write changes
+   --  them. Not of a generic formal type, whose actual may have defaults.
+   function Fixed_Discriminant (Key : Symbol_Key) return Boolean is
+   begin
+      if Libadalang.Analysis.Is_Null (Key.Component)
+        or else Key.Component.Kind /= Libadalang.Common.Ada_Defining_Name
+        or else Key.Component.As_Defining_Name.P_Basic_Decl.Kind /=
+          Libadalang.Common.Ada_Discriminant_Spec
+      then
+         return False;
+      end if;
+      if not Libadalang.Analysis.Is_Null
+        (Key.Component.As_Defining_Name.P_Basic_Decl.As_Discriminant_Spec
+           .F_Default_Expr)
+      then
+         return False;
+      end if;
+      --  An object of a generic formal type may be unconstrained in an
+      --  instance whose actual has defaults.
+      declare
+         Step : Libadalang.Analysis.Ada_Node := Key.Component.Parent;
+      begin
+         while not Libadalang.Analysis.Is_Null (Step) loop
+            if Step.Kind in Libadalang.Common.Ada_Generic_Formal
+              or else Step.Kind = Libadalang.Common.Ada_Generic_Formal_Part
+            then
+               return False;
+            end if;
+            exit when Step.Kind in Libadalang.Common.Ada_Base_Type_Decl
+              and then Step.Parent.Kind not in
+                Libadalang.Common.Ada_Generic_Formal;
+            Step := Step.Parent;
+         end loop;
+      end;
+      return True;
+   exception
+      when others =>
+         return False;
+   end Fixed_Discriminant;
+
    --  True only when Node can be shown, from this expression alone, never
    --  to be zero: a nonzero integer literal, an identifier whose known
    --  flow range excludes zero, or any expression whose value or interval
@@ -3366,7 +3471,14 @@ package body Adalang_Analyzer.VC_Prover is
 
       if Libadalang.Analysis.Is_Null (Object_Key)
         or else not Is_Field
-        or else not Initialized_At (Context, Place)
+        or else not (Initialized_At (Context, Place)
+                     or else
+                       --  A discriminant always has a value: an out
+                       --  parameter's is its actual's (RM 6.4.1(12)).
+                       (Field.As_Defining_Name.P_Basic_Decl.Kind =
+                          Libadalang.Common.Ada_Discriminant_Spec
+                        and then not Is_Entry_Path (Place.Path)
+                        and then not Is_Old_Path (Place.Path)))
       then
          Mark_Unsupported
            (Context, Node,
@@ -3433,7 +3545,7 @@ package body Adalang_Analyzer.VC_Prover is
         Libadalang.Analysis.No_Ada_Node;
    begin
       if Dotted.F_Suffix.Kind = Libadalang.Common.Ada_Identifier then
-         Field_Name := Referenced_Key (Dotted.F_Suffix);
+         Field_Name := Canonical_Discriminant (Referenced_Key (Dotted.F_Suffix));
       end if;
       return Component_Of
         (Dotted.F_Prefix, Field_Name, Dotted.P_Expression_Type, Dotted,
@@ -3716,10 +3828,11 @@ package body Adalang_Analyzer.VC_Prover is
    --  is of the actual (RM 6.4.1), which nothing the subprogram does can
    --  change: the term the call bound it to, or a symbol of its own that,
    --  named as the bounds of an array are, no write to the object renews.
-   --  Of a variable it is False where the declaration gives the name of a
-   --  type alone and every discriminant of that type has a default, the
-   --  type being neither tagged nor limited: such an object is constrained
-   --  by nothing. Any other variable is left alone.
+   --  Of a variable it is True where the declaration gives a discriminant
+   --  constraint, and False where it gives the name of a type, or of a
+   --  subtype that adds no constraint, every discriminant of the type having
+   --  a default, the type being neither tagged nor limited: such an object
+   --  is constrained by nothing. Any other variable is left alone.
    function Constrained_Term
      (Prefix  : Libadalang.Analysis.Ada_Node'Class;
       Node    : Libadalang.Analysis.Ada_Node'Class;
@@ -3986,7 +4099,23 @@ package body Adalang_Analyzer.VC_Prover is
              (Type_Expr.As_Subtype_Indication.F_Constraint)
          then
             Typ := Type_Expr.P_Designated_Type_Decl;
+         elsif Type_Expr.Kind = Libadalang.Common.Ada_Subtype_Indication
+           and then Type_Expr.As_Subtype_Indication.F_Constraint.Kind =
+             Libadalang.Common.Ada_Composite_Constraint
+           and then Type_Expr.As_Subtype_Indication.F_Constraint
+             .As_Composite_Constraint.P_Is_Discriminant_Constraint
+         then
+            --  Declared with a discriminant constraint (RM 3.7.2(3)).
+            return To_Unbounded_String ("true");
          end if;
+         --  Through subtypes that add no constraint.
+         for Depth in 1 .. 16 loop
+            exit when Libadalang.Analysis.Is_Null (Typ)
+              or else Typ.Kind /= Libadalang.Common.Ada_Subtype_Decl
+              or else not Libadalang.Analysis.Is_Null
+                (Typ.As_Subtype_Decl.F_Subtype.F_Constraint);
+            Typ := Typ.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+         end loop;
          if not Libadalang.Analysis.Is_Null (Typ)
            and then Typ.Kind = Libadalang.Common.Ada_Concrete_Type_Decl
            and then not Typ.P_Is_Tagged_Type
@@ -8227,6 +8356,7 @@ package body Adalang_Analyzer.VC_Prover is
          if Binding_Index (State, Root.Key) = 0
            and then To_String (Root.Name) = Root_Name (Root.Key)
            and then not Is_Entry_Path (Root.Key.Path)
+           and then not Fixed_Discriminant (Root.Key)
            and then Renewed (Root.Key)
          then
             Renew (Root.Key, Root.Sort);
@@ -8234,6 +8364,7 @@ package body Adalang_Analyzer.VC_Prover is
       end loop;
       for Binding of State.Bindings loop
          if not Is_Entry_Path (Binding.Key.Path)
+           and then not Fixed_Discriminant (Binding.Key)
            and then Renewed (Binding.Key)
          then
             Renew (Binding.Key, Binding.Sort);
@@ -8625,6 +8756,286 @@ package body Adalang_Analyzer.VC_Prover is
    end Forget_Element_Part;
 
    --  True for a value that is a record, seen through a private type.
+   --  The record type Typ is, through subtypes and a private view, where
+   --  it is not tagged and has known discriminants: the declaration that
+   --  lists them. Null otherwise.
+   function Discriminated_Record
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class)
+      return Libadalang.Analysis.Base_Type_Decl
+   is
+      Max_Depth : constant := 16;
+      Full : Libadalang.Analysis.Base_Type_Decl :=
+        Libadalang.Analysis.Base_Type_Decl (Typ);
+   begin
+      for Depth in 1 .. Max_Depth loop
+         exit when Libadalang.Analysis.Is_Null (Full)
+           or else Full.Kind /= Libadalang.Common.Ada_Subtype_Decl;
+         Full := Full.As_Subtype_Decl.F_Subtype.P_Designated_Type_Decl;
+      end loop;
+      if Libadalang.Analysis.Is_Null (Full) then
+         return Libadalang.Analysis.No_Base_Type_Decl;
+      end if;
+      if Full.P_Is_Private then
+         Full := Full.P_Full_View;
+      end if;
+      if Libadalang.Analysis.Is_Null (Full)
+        or else Full.Kind /= Libadalang.Common.Ada_Concrete_Type_Decl
+        or else Full.P_Is_Tagged_Type
+        or else Libadalang.Analysis.Is_Null
+          (Full.As_Concrete_Type_Decl.F_Discriminants)
+        or else Full.As_Concrete_Type_Decl.F_Discriminants.Kind /=
+          Libadalang.Common.Ada_Known_Discriminant_Part
+        or else Full.As_Type_Decl.F_Type_Def.Kind /=
+          Libadalang.Common.Ada_Record_Type_Def
+      then
+         return Libadalang.Analysis.No_Base_Type_Decl;
+      end if;
+      return Full;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Base_Type_Decl;
+   end Discriminated_Record;
+
+   function Is_Discriminated_Record
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Boolean is
+     (not Libadalang.Analysis.Is_Null (Discriminated_Record (Typ)));
+
+   --  The sort of the value of the discriminant Spec in a term: Boolean,
+   --  or the integer sort an enumeration shares.
+   function Discriminant_Sort
+     (Spec : Libadalang.Analysis.Discriminant_Spec) return Scalar_Sort
+   is
+      Info : constant Sort_Resolution :=
+        Type_Sort (Spec.F_Type_Expr.P_Designated_Type_Decl);
+   begin
+      return (if Info.Supported and then Info.Sort = Boolean_Sort
+              then Boolean_Sort else Integer_Sort);
+   end Discriminant_Sort;
+
+   --  The expression that gives the discriminant Discr, at Position among
+   --  the discriminants of the type, in Aggregate: by its name, or by its
+   --  position among the positional associations, which come first (RM
+   --  4.3.1). Null where there is none, and for an extension aggregate.
+   function Aggregate_Discriminant
+     (Aggregate : Libadalang.Analysis.Aggregate;
+      Discr     : Libadalang.Analysis.Ada_Node;
+      Position  : Positive) return Libadalang.Analysis.Expr
+   is
+      Positional : Natural := 0;
+      Name_Text  : constant String :=
+        Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+          (Adalang_Analyzer.Ada_Text.Node_Text (Discr));
+   begin
+      if not Libadalang.Analysis.Is_Null (Aggregate.F_Ancestor_Expr) then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+      for Assoc of Aggregate.F_Assocs loop
+         if Assoc.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
+            declare
+               Item : constant Libadalang.Analysis.Aggregate_Assoc :=
+                 Assoc.As_Aggregate_Assoc;
+            begin
+               if Item.F_Designators.Children_Count = 0 then
+                  Positional := Positional + 1;
+                  if Positional = Position then
+                     return Item.F_R_Expr;
+                  end if;
+               else
+                  for Index in 1 .. Item.F_Designators.Children_Count loop
+                     declare
+                        D : constant Libadalang.Analysis.Ada_Node :=
+                          Item.F_Designators.Child (Index);
+                     begin
+                        if D.Kind = Libadalang.Common.Ada_Identifier
+                          and then Adalang_Analyzer.Text_Utils
+                            .Normalize_Rule_Name
+                              (Adalang_Analyzer.Ada_Text.Node_Text (D)) =
+                            Name_Text
+                        then
+                           return Item.F_R_Expr;
+                        end if;
+                     end;
+                  end loop;
+               end if;
+            end;
+         end if;
+      end loop;
+      return Libadalang.Analysis.No_Expr;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Aggregate_Discriminant;
+
+   --  Result, the state after the record at Target was given Value, with
+   --  the discriminants of Target those an aggregate Value gives, read in
+   --  Prior and Flow, the state before: where the discriminant check of the
+   --  assignment passes, Target has them after it. Result for any other
+   --  Value.
+   function With_Aggregate_Discriminants
+     (Result : Symbolic_State;
+      Prior  : Symbolic_State;  --  adalang-analyzer: ignore Swappable_Parameters
+      Flow   : Domain.Flow_State;
+      Target : Located_Object;
+      Value  : Libadalang.Analysis.Expr'Class) return Symbolic_State
+   is
+      Updated     : Symbolic_State := Result;
+      Source      : Libadalang.Analysis.Expr :=
+        Libadalang.Analysis.Expr (Value);
+      Record_Type : Libadalang.Analysis.Base_Type_Decl;
+      Position    : Natural := 0;
+   begin
+      if not Result.Supported
+        or else Libadalang.Analysis.Is_Null (Target.Object)
+      then
+         return Result;
+      end if;
+      loop
+         if Source.Kind = Libadalang.Common.Ada_Paren_Expr then
+            Source := Source.As_Paren_Expr.F_Expr;
+         elsif Source.Kind = Libadalang.Common.Ada_Qual_Expr then
+            Source := Source.As_Qual_Expr.F_Suffix;
+         else
+            exit;
+         end if;
+      end loop;
+      if Source.Kind /= Libadalang.Common.Ada_Aggregate then
+         return Result;
+      end if;
+      Record_Type := Discriminated_Record (Source.P_Expression_Type);
+      if Libadalang.Analysis.Is_Null (Record_Type) then
+         return Result;
+      end if;
+      for Spec of Record_Type.As_Concrete_Type_Decl.F_Discriminants
+                    .As_Known_Discriminant_Part.F_Discr_Specs
+      loop
+         for Id of Spec.As_Discriminant_Spec.F_Ids loop
+            Position := Position + 1;
+            declare
+               Item  : constant Libadalang.Analysis.Expr :=
+                 Aggregate_Discriminant
+                   (Source.As_Aggregate, Libadalang.Analysis.Ada_Node (Id),
+                    Position);
+               Trial : Translation_Context :=
+                 (State => Flow, Symbols => Prior, Supported => Prior.Supported,
+                  Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+                  Failure_Reason => No_Unsupported_Reason,
+                  Failure_Node => Libadalang.Analysis.No_Ada_Node,
+                  Inlining_Path => Null_Unbounded_String, Depth => 0,
+                  Priming_Old => False, Expanded => 0);
+               Sort  : constant Scalar_Sort :=
+                 Discriminant_Sort (Spec.As_Discriminant_Spec);
+               Term  : Unbounded_String;
+            begin
+               if not Libadalang.Analysis.Is_Null (Item) then
+                  Term :=
+                    (if Sort = Boolean_Sort then Boolean_Term (Item, Trial)
+                     else Integer_Term (Item, Trial));
+                  if Trial.Supported and then Length (Term) > 0 then
+                     for Root of Trial.Symbols.Roots loop
+                        Include_Root (Updated, Root);
+                     end loop;
+                     for Fact of Trial.Symbols.Assumptions loop
+                        if not Updated.Assumptions.Contains (Fact) then
+                           Updated.Assumptions.Append (Fact);
+                        end if;
+                     end loop;
+                     Set_Binding
+                       (Updated,
+                        (Key  => (Object    => Target.Object,
+                                  Component => Libadalang.Analysis.Ada_Node (Id),
+                                  Path      => Target.Path),
+                         Sort => Sort,
+                         Term => Term));
+                  end if;
+               end if;
+            end;
+         end loop;
+      end loop;
+      return Updated;
+   exception
+      when others =>
+         return Result;
+   end With_Aggregate_Discriminants;
+
+   function With_Declared_Discriminants
+     (State     : Symbolic_State;
+      Object    : Libadalang.Analysis.Ada_Node;
+      Type_Expr : Libadalang.Analysis.Type_Expr'Class;
+      Flow      : Domain.Flow_State) return Symbolic_State
+   is
+      Updated    : Symbolic_State := State;
+      Constraint : Libadalang.Analysis.Constraint;
+   begin
+      if not State.Supported
+        or else Libadalang.Analysis.Is_Null (Object)
+        or else Libadalang.Analysis.Is_Null (Type_Expr)
+        or else Type_Expr.Kind /= Libadalang.Common.Ada_Subtype_Indication
+      then
+         return State;
+      end if;
+      Constraint := Type_Expr.As_Subtype_Indication.F_Constraint;
+      if Libadalang.Analysis.Is_Null (Constraint)
+        or else Constraint.Kind /= Libadalang.Common.Ada_Composite_Constraint
+        or else not Constraint.As_Composite_Constraint
+          .P_Is_Discriminant_Constraint
+        or else Libadalang.Analysis.Is_Null
+          (Discriminated_Record (Type_Expr.P_Designated_Type_Decl))
+      then
+         return State;
+      end if;
+      for Pair of Constraint.As_Composite_Constraint.P_Discriminant_Params loop
+         declare
+            Discr : constant Libadalang.Analysis.Ada_Node :=
+              Canonical_Discriminant
+                (Libadalang.Analysis.Ada_Node (Libadalang.Analysis.Param (Pair)));
+            Item  : constant Libadalang.Analysis.Expr :=
+              Libadalang.Analysis.Expr (Libadalang.Analysis.Actual (Pair));
+            Trial : Translation_Context :=
+              (State => Flow, Symbols => State, Supported => State.Supported,
+               Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+               Failure_Reason => No_Unsupported_Reason,
+               Failure_Node => Libadalang.Analysis.No_Ada_Node,
+               Inlining_Path => Null_Unbounded_String, Depth => 0,
+               Priming_Old => False, Expanded => 0);
+            Sort  : Scalar_Sort;
+            Term  : Unbounded_String;
+         begin
+            if not Libadalang.Analysis.Is_Null (Discr)
+              and then Discr.Kind = Libadalang.Common.Ada_Defining_Name
+              and then Discr.As_Defining_Name.P_Basic_Decl.Kind =
+                Libadalang.Common.Ada_Discriminant_Spec
+              and then not Libadalang.Analysis.Is_Null (Item)
+            then
+               Sort := Discriminant_Sort
+                 (Discr.As_Defining_Name.P_Basic_Decl.As_Discriminant_Spec);
+               Term :=
+                 (if Sort = Boolean_Sort then Boolean_Term (Item, Trial)
+                  else Integer_Term (Item, Trial));
+               if Trial.Supported and then Length (Term) > 0 then
+                  for Root of Trial.Symbols.Roots loop
+                     Include_Root (Updated, Root);
+                  end loop;
+                  for Fact of Trial.Symbols.Assumptions loop
+                     if not Updated.Assumptions.Contains (Fact) then
+                        Updated.Assumptions.Append (Fact);
+                     end if;
+                  end loop;
+                  Set_Binding
+                    (Updated,
+                     (Key  => (Object => Object, Component => Discr,
+                               Path => Null_Unbounded_String),
+                      Sort => Sort,
+                      Term => Term));
+               end if;
+            end if;
+         end;
+      end loop;
+      return Updated;
+   exception
+      when others =>
+         return State;
+   end With_Declared_Discriminants;
+
    function Is_Record_Value
      (Value : Libadalang.Analysis.Expr'Class) return Boolean
    is
@@ -8913,10 +9324,13 @@ package body Adalang_Analyzer.VC_Prover is
       then
          return Updated_Parts (State, Prior, Target, Value, Flow);
       end if;
-      return Parts_Copied
-        (State, Prior,
-         (Object => Target, Path => Null_Unbounded_String),
-         Location (Value, Context));
+      return With_Aggregate_Discriminants
+        (Parts_Copied
+           (State, Prior,
+            (Object => Target, Path => Null_Unbounded_String),
+            Location (Value, Context)),
+         Prior, Flow, (Object => Target, Path => Null_Unbounded_String),
+         Value);
    exception
       when others =>
          return State;
@@ -10259,7 +10673,9 @@ package body Adalang_Analyzer.VC_Prover is
          end;
       elsif Is_Record_Value (Value) then
          Result :=
-           Parts_Copied (Result, State, Place, Location (Value, Context));
+           With_Aggregate_Discriminants
+             (Parts_Copied (Result, State, Place, Location (Value, Context)),
+              State, Flow, Place, Value);
       elsif Is_Access_Expression (Destination)
         and then (Value.Kind = Libadalang.Common.Ada_Null_Literal
                   or else Is_Access_Expression (Value))
@@ -13381,6 +13797,379 @@ package body Adalang_Analyzer.VC_Prover is
       when others =>
          return Unknown_Outcome;
    end Decide_Not_Null;
+
+   --  The condition under which Subject, the term of the discriminant a
+   --  variant part depends on (Boolean when Is_Boolean), selects Variant:
+   --  one of its choices, and for "others" none of the choices of the
+   --  other variants of the part. Context.Supported is False where a
+   --  choice has no term.
+   function Variant_Condition
+     (Variant    : Libadalang.Analysis.Variant;
+      Subject    : Unbounded_String;
+      Is_Boolean : Boolean;
+      Context    : in out Translation_Context) return Unbounded_String
+   is
+      function One
+        (Choice : Libadalang.Analysis.Ada_Node) return Unbounded_String is
+      begin
+         if Is_Boolean then
+            declare
+               Value : constant Unbounded_String :=
+                 Boolean_Term (Choice, Context);
+            begin
+               if not Context.Supported or else Length (Value) = 0 then
+                  Context.Supported := False;
+                  return Null_Unbounded_String;
+               end if;
+               return Binary ("=", Subject, Value);
+            end;
+         end if;
+         return Choice_Term (Choice, Subject, Context);
+      end One;
+
+      --  The condition that Subject is one of the choices of Item, others
+      --  aside, which Has_Others tells of.
+      function Any_Of
+        (Item       : Libadalang.Analysis.Variant;
+         Has_Others : out Boolean) return Unbounded_String
+      is
+         Result : Unbounded_String := To_Unbounded_String ("false");
+      begin
+         Has_Others := False;
+         for Index in 1 .. Item.F_Choices.Children_Count loop
+            declare
+               Choice : constant Libadalang.Analysis.Ada_Node :=
+                 Item.F_Choices.Child (Index);
+            begin
+               if Choice.Kind = Libadalang.Common.Ada_Others_Designator then
+                  Has_Others := True;
+               else
+                  declare
+                     Term : constant Unbounded_String := One (Choice);
+                  begin
+                     if not Context.Supported or else Length (Term) = 0 then
+                        Context.Supported := False;
+                        return Null_Unbounded_String;
+                     end if;
+                     Result := Binary ("or", Result, Term);
+                  end;
+               end if;
+            end;
+         end loop;
+         return Result;
+      end Any_Of;
+
+      Own_Others : Boolean;
+      Own        : constant Unbounded_String := Any_Of (Variant, Own_Others);
+      None_Other : Unbounded_String := To_Unbounded_String ("true");
+      Siblings   : constant Libadalang.Analysis.Ada_Node := Variant.Parent;
+   begin
+      if not Context.Supported then
+         return Null_Unbounded_String;
+      elsif not Own_Others then
+         return Own;
+      end if;
+      for Index in 1 .. Siblings.Children_Count loop
+         declare
+            Sibling : constant Libadalang.Analysis.Ada_Node :=
+              Siblings.Child (Index);
+            Ignored : Boolean;
+         begin
+            if Sibling.Kind = Libadalang.Common.Ada_Variant
+              and then Sibling /= Libadalang.Analysis.Ada_Node (Variant)
+            then
+               declare
+                  Term : constant Unbounded_String :=
+                    Any_Of (Sibling.As_Variant, Ignored);
+               begin
+                  if not Context.Supported then
+                     return Null_Unbounded_String;
+                  end if;
+                  None_Other := Binary
+                    ("and", None_Other,
+                     To_Unbounded_String ("(not " & To_String (Term) & ")"));
+               end;
+            end if;
+         end;
+      end loop;
+      return Binary ("or", Own, None_Other);
+   end Variant_Condition;
+
+   function Decide_Variant_Selection
+     (Selected : Libadalang.Analysis.Dotted_Name'Class;
+      State    : Domain.Flow_State;
+      Symbols  : Symbolic_State) return VC_Outcome
+   is
+      Context   : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False, Expanded => 0);
+      Component : constant Libadalang.Analysis.Basic_Decl :=
+        Selected.F_Suffix.P_Referenced_Decl;
+      Goal      : Unbounded_String := To_Unbounded_String ("true");
+      Found     : Boolean := False;
+      Step      : Libadalang.Analysis.Ada_Node;
+
+      function Unsupported return VC_Outcome is
+      begin
+         if Context.Failure_Reason = No_Unsupported_Reason then
+            Mark_Unsupported (Context, Selected, Unsupported_Expression_Kind);
+         end if;
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Selected));
+      end Unsupported;
+   begin
+      if Libadalang.Analysis.Is_Null (Component)
+        or else Component.Kind /= Libadalang.Common.Ada_Component_Decl
+        or else Libadalang.Analysis.Is_Null
+          (Discriminated_Record (Selected.F_Prefix.P_Expression_Type))
+      then
+         return Unsupported;
+      end if;
+
+      --  Each variant the component is in, from the innermost out.
+      Step := Component.Parent;
+      while not Libadalang.Analysis.Is_Null (Step)
+        and then Step.Kind not in Libadalang.Common.Ada_Base_Type_Decl
+      loop
+         if Step.Kind = Libadalang.Common.Ada_Variant then
+            declare
+               Part    : constant Libadalang.Analysis.Variant_Part :=
+                 Step.Parent.Parent.As_Variant_Part;
+               Discr   : constant Libadalang.Analysis.Ada_Node :=
+                 Canonical_Discriminant (Referenced_Key (Part.F_Discr_Name));
+               Spec    : Libadalang.Analysis.Discriminant_Spec;
+               Sort    : Scalar_Sort;
+               Subject : Unbounded_String;
+               Holds   : Unbounded_String;
+            begin
+               if Libadalang.Analysis.Is_Null (Discr)
+                 or else Discr.Kind /= Libadalang.Common.Ada_Defining_Name
+                 or else Discr.As_Defining_Name.P_Basic_Decl.Kind /=
+                   Libadalang.Common.Ada_Discriminant_Spec
+               then
+                  return Unsupported;
+               end if;
+               Spec :=
+                 Discr.As_Defining_Name.P_Basic_Decl.As_Discriminant_Spec;
+               Sort := Discriminant_Sort (Spec);
+               Subject :=
+                 Component_Of
+                   (Selected.F_Prefix, Discr,
+                    Spec.F_Type_Expr.P_Designated_Type_Decl, Selected,
+                    Context, Sort);
+               if not Context.Supported or else Length (Subject) = 0 then
+                  return Unsupported;
+               end if;
+               Holds := Variant_Condition
+                 (Step.As_Variant, Subject, Sort = Boolean_Sort, Context);
+               if not Context.Supported or else Length (Holds) = 0 then
+                  return Unsupported;
+               end if;
+               Goal := Binary ("and", Goal, Holds);
+               Found := True;
+            end;
+         end if;
+         Step := Step.Parent;
+      end loop;
+      if not Found then
+         return Unsupported;
+      end if;
+      return Decide_Goal (Goal, Context);
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Variant_Selection;
+
+   function Decide_Discriminants_Kept
+     (Target  : Libadalang.Analysis.Name'Class;
+      Value   : Libadalang.Analysis.Expr'Class;
+      State   : Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome
+   is
+      Context     : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False, Expanded => 0);
+      Record_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+        Discriminated_Record (Target.P_Expression_Type);
+      Constrained : Unbounded_String;
+      Equal       : Unbounded_String := To_Unbounded_String ("true");
+      Have_Equal  : Boolean := True;
+      Goal        : Unbounded_String;
+      Source      : Libadalang.Analysis.Expr :=
+        Libadalang.Analysis.Expr (Value);
+
+      --  The term of the discriminant Discr, at Position, of the value of
+      --  Source; null where there is none.
+      function Value_Discriminant
+        (Discr    : Libadalang.Analysis.Ada_Node;
+         Spec     : Libadalang.Analysis.Discriminant_Spec;
+         Position : Positive;
+         Sort     : Scalar_Sort;
+         Trial    : in out Translation_Context) return Unbounded_String
+      is
+         Discr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+           Spec.F_Type_Expr.P_Designated_Type_Decl;
+
+         --  The discriminant of the record Name names.
+         function Of_Name
+           (Name : Libadalang.Analysis.Expr) return Unbounded_String is
+         begin
+            if Name.Kind in Libadalang.Common.Ada_Identifier
+                          | Libadalang.Common.Ada_Dotted_Name
+            then
+               return Component_Of
+                 (Name.As_Name, Discr, Discr_Type, Source, Trial, Sort);
+            end if;
+            return Null_Unbounded_String;
+         end Of_Name;
+      begin
+         case Source.Kind is
+            when Libadalang.Common.Ada_Aggregate =>
+               declare
+                  Item : constant Libadalang.Analysis.Expr :=
+                    Aggregate_Discriminant
+                      (Source.As_Aggregate, Discr, Position);
+               begin
+                  if Libadalang.Analysis.Is_Null (Item) then
+                     return Null_Unbounded_String;
+                  end if;
+                  return
+                    (if Sort = Boolean_Sort then Boolean_Term (Item, Trial)
+                     else Integer_Term (Item, Trial));
+               end;
+
+            --  Neither names a discriminant (RM 4.3.4(14), SPARK RM
+            --  15.4.1): the value has those of the record it starts from.
+            when Libadalang.Common.Ada_Update_Attribute_Ref =>
+               return Of_Name (Source.As_Update_Attribute_Ref.F_Prefix.As_Expr);
+            when Libadalang.Common.Ada_Delta_Aggregate =>
+               return Of_Name (Source.As_Delta_Aggregate.F_Ancestor_Expr);
+
+            when Libadalang.Common.Ada_Identifier
+               | Libadalang.Common.Ada_Dotted_Name =>
+               return Of_Name (Source);
+
+            when others =>
+               return Null_Unbounded_String;
+         end case;
+      end Value_Discriminant;
+   begin
+      if Libadalang.Analysis.Is_Null (Record_Type) then
+         Mark_Unsupported (Context, Target, Unsupported_Expression_Kind);
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Target));
+      end if;
+      loop
+         if Source.Kind = Libadalang.Common.Ada_Paren_Expr then
+            Source := Source.As_Paren_Expr.F_Expr;
+         elsif Source.Kind = Libadalang.Common.Ada_Qual_Expr then
+            Source := Source.As_Qual_Expr.F_Suffix;
+         else
+            exit;
+         end if;
+      end loop;
+
+      --  Target'Constrained, where it is known.
+      declare
+         Trial : Translation_Context := Context;
+         Term  : constant Unbounded_String :=
+           Constrained_Term (Target, Target, Trial);
+      begin
+         if Trial.Supported and then Length (Term) > 0 then
+            Context := Trial;
+            Constrained := Term;
+         end if;
+      end;
+
+      --  Each discriminant of Value that of Target, where both are known.
+      declare
+         Trial    : Translation_Context := Context;
+         Position : Natural := 0;
+      begin
+         for Spec of Record_Type.As_Concrete_Type_Decl.F_Discriminants
+                       .As_Known_Discriminant_Part.F_Discr_Specs
+         loop
+            for Id of Spec.As_Discriminant_Spec.F_Ids loop
+               Position := Position + 1;
+               if Have_Equal then
+                  declare
+                     Discr : constant Libadalang.Analysis.Ada_Node :=
+                       Libadalang.Analysis.Ada_Node (Id);
+                     Sort  : constant Scalar_Sort :=
+                       Discriminant_Sort (Spec.As_Discriminant_Spec);
+                     Left  : constant Unbounded_String :=
+                       Component_Of
+                         (Libadalang.Analysis.Name (Target), Discr,
+                          Spec.As_Discriminant_Spec.F_Type_Expr
+                            .P_Designated_Type_Decl,
+                          Target, Trial, Sort);
+                     Right : Unbounded_String;
+                  begin
+                     if Trial.Supported and then Length (Left) > 0 then
+                        Right := Value_Discriminant
+                          (Discr, Spec.As_Discriminant_Spec, Position, Sort,
+                           Trial);
+                     end if;
+                     if not Trial.Supported or else Length (Left) = 0
+                       or else Length (Right) = 0
+                     then
+                        Have_Equal := False;
+                     else
+                        Equal := Binary
+                          ("and", Equal, Binary ("=", Left, Right));
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end loop;
+         if Have_Equal then
+            Context := Trial;
+         end if;
+      end;
+
+      if Length (Constrained) = 0 and then not Have_Equal then
+         Mark_Unsupported (Context, Target, Unsupported_Attribute);
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Target));
+      elsif Length (Constrained) = 0 then
+         Goal := Equal;
+      elsif not Have_Equal then
+         Goal := To_Unbounded_String
+           ("(not " & To_String (Constrained) & ")");
+      else
+         Goal := Binary
+           ("or",
+            To_Unbounded_String ("(not " & To_String (Constrained) & ")"),
+            Equal);
+      end if;
+      declare
+         Outcome : constant VC_Outcome := Decide_Goal (Goal, Context);
+      begin
+         --  A failure is certain only where both are known: refuting
+         --  "not Constrained" alone shows that the target is constrained,
+         --  not that the value has other discriminants.
+         if (Length (Constrained) = 0 or else not Have_Equal)
+           and then Outcome.Result = VC_Refuted
+         then
+            return Unknown_Outcome;
+         end if;
+         return Outcome;
+      end;
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Discriminants_Kept;
 
    function Decide_Variant_Progress
      (Value          : Libadalang.Analysis.Expr'Class;

@@ -58,7 +58,7 @@ the section it links to has the whole of its proof basis and boundary.
 | [Length](#length) | An aggregate with an `others` choice; otherwise a scalar VC that the two lengths are equal in each dimension | An array given to a target, where a compiler keeps the check; the operands of `and`, `or` and `xor` on arrays |
 | [Predicate](#predicates) | The predicate of the subtype as a scalar Boolean VC, of the value given or of the object as the state knows its components once it is written | A value given to an object, to a part of one or to a formal, in SPARK code; none where the value already has the predicates of its own subtype |
 | [Dereference](#dereferences) | The access value is not null, as a scalar VC over its token | An explicit `.all`, and an access value as the prefix of a component, an indexed component, a slice or an array attribute, in SPARK code; none where the subtype of the access value excludes null |
-| Discriminant | The prefix object's own static discriminant constraint (an integer expression or an enumeration literal) selects the variant declaring the component; a constrained object's discriminants never change | A component of a top-level variant part, selected directly from an object declared with an explicit discriminant constraint; a constant, variable, or subtype-name constraint or choice is never resolved by spelling and stays `Unproved` |
+| [Discriminant](#discriminants) | The prefix object's own static discriminant constraint selects the variant declaring the component; otherwise a scalar VC that the discriminant selects it, or that the target of an assignment is not constrained or keeps its discriminants | A component of a variant part read, written or given as an actual, and the assignment of a record with known discriminants, in SPARK code; elsewhere a component selected directly from an object declared with an explicit discriminant constraint |
 | [Initialization](#initialization) | Flow-sensitive definite-initialization state | Each read of a tracked scalar object; each `out` parameter and `Output` global at the subprogram's normal exit |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
 | [Precondition](#preconditions-and-postconditions) | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts, an operator that a declaration defines and a renaming among them |
@@ -320,6 +320,50 @@ known of `P`, after `P := new T` it is not null, and after `P := null` a
 dereference of `P` is a definite error. The check is `Unproved` where the access value is a part of
 an object reached through another dereference, or the element of an array,
 or the result of a call: the translation has no name for it.
+
+### Discriminants
+
+Reading or writing a component of a variant part raises `Constraint_Error`
+when the discriminant of the record does not select the variant that
+declares it, and an assignment to a constrained record raises it when the
+value has other discriminants (RM 4.1.3(15), 5.2(10)). GNATprove checks
+both. A component selected from an object declared with a static
+discriminant constraint that selects its variant is proved wherever it is,
+and one that the constraint excludes is a definite error. In SPARK code
+(see "SPARK code") `--verify` raises the other checks too, decided by the
+solvers:
+
+- at `R.C`, read, written or given as an actual of any mode, `C` a
+  component of a variant part: the discriminant of `R` is one of the
+  choices of the variant, and of each variant around it, `others` standing
+  for none of the choices of the other variants. It is proved from the
+  condition of an `if` or a `case` alternative, from the left operand of
+  `and then`, from a precondition (`Pre => Socket.Is_Secure`), and after a
+  return on the other variant;
+- at `T := V`, `T` a record with known discriminants: `T` is not
+  constrained (see `'Constrained`, in "Objects that always hold a value"),
+  or each discriminant of `V` is that of `T`. The discriminants of `V` are
+  those an aggregate gives, by name or position, those of the record a
+  name, an `'Update` or a delta aggregate starts from -- neither changes a
+  discriminant. Where `T` is an object declared with a constraint the check
+  is at `V`, as GNATprove reports it; at the statement otherwise.
+
+A discriminant has a value wherever the object has been elaborated: that of
+an `out` parameter is its actual's, and is read before anything is
+written. One without a default never changes, so what is known of it stands
+across every write and call (see "Parts of an object"); one with a default
+changes when the whole object is given another value, a call that writes
+the object among them, where the object is not constrained. After an
+assignment of an aggregate the discriminants are those it gives, and after a
+declaration with a discriminant constraint those of the constraint. The
+check is a definite error only where both `T'Constrained` and the
+discriminants of `T` and `V` are known: discriminants that differ fail it
+only if `T` is constrained, and a constrained `T` only if they differ
+(those of a function's value, or of a global nothing gives a value on
+entry, are not known). Otherwise it is proved or `Unproved`. A component
+of a prefix the translation has no name for (see "Parts of an object"), and
+a choice that is a subtype with a predicate, leave it `Unproved`; outside
+SPARK code only the static constraint is taken.
 
 ### Initialization
 
@@ -1109,7 +1153,12 @@ what a call bound a parameter of an inlined expression function to. Two
 elements of one array are two symbols; each is also the element at its
 index of the contents of the array (see "Elements at an index that is not
 known"), and what is known of one element is known of the other only
-through those. A discriminant is read as a component is. An element at a
+through those. A discriminant is read as a component is, the partial
+view's of a private type as the full view's: a contract on the partial view
+and the body that sees the full view read one value. A discriminant without
+a default keeps its symbol when the object is written, whatever writes it:
+every object of its type is constrained (RM 3.7(28)). Not one of a generic
+formal type, whose actual may have defaults. An element at a
 known index is linked to the contents wherever it is read: in the body of
 an expression function that is inlined, in that of a quantified
 expression, and through a formal of an inlined function that stands for the
@@ -1267,15 +1316,16 @@ the actual (RM 6.4.1): where the precondition of a call asks
 parameter it passes on, the two meet. Nothing a subprogram does to an
 object changes whether it is constrained, and what is known of it is kept
 when the object is written, across a call and at the entry of a loop
-body. Of a variable it is `False` where the declaration gives the name of
-a type alone, every discriminant of which has a default, the type being
-neither tagged nor limited, and so is a component of a variable whose
-declaration does so, through subtypes that add no constraint and no
-dereference (`Ctx.P.Response_Ctx`). Any other variable or component --
-declared with a constraint or with a subtype that has one, a renaming, an
-aliased object or component, one reached through an access value -- is
-left unknown, and an actual that is an element or a conversion says nothing
-of the formal.
+body. Of a variable it is `True` where the declaration gives a
+discriminant constraint (RM 3.7.2(3)), and `False` where it gives the name
+of a type, or of a subtype that adds no constraint, every discriminant of
+which has a default, the type being neither tagged nor limited; and so is
+a component of a variable whose declaration does so, through subtypes that
+add no constraint and no dereference (`Ctx.P.Response_Ctx`). Any other
+variable or component -- declared with a subtype that has a constraint, a
+renaming, an aliased object or component, one reached through an access
+value -- is left unknown, and an actual that is an element or a
+conversion says nothing of the formal.
 
 ## Objects that always hold a value
 
@@ -1603,7 +1653,14 @@ the direct name, for reads and writes alike.
   array or untagged record of those whose component defaults call nothing
   with side effects -- keeps no value fact about objects declared outside
   it, and none at all when that type is declared inside it. This is what
-  covers `Initialize`, `Adjust` and `Finalize` of controlled types.
+  covers `Initialize`, `Adjust` and `Finalize` of controlled types. Where
+  the type is declared outside, in SPARK code that gives no access value
+  to, and no address of, anything (see "SPARK code"), what is known of the
+  subprogram's own objects and parameters stands, as across a call whose
+  effects stay outside them: that code cannot name them, and a parameter
+  is no global it writes by another name. A local of a type with an
+  `Unbounded_String` component, `GNAT.Sockets.Option_Type` among them, no
+  longer drops what is known of the rest.
 - A package declared in the subprogram under analysis is elaborated where
   it is declared: the calls in the initial values, bounds and actuals of its
   declarations are calls of that declaration, and the statements of its

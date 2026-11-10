@@ -280,7 +280,7 @@ component-other-record	tests/verification_mutation_expression_forms.adb	precondi
 discriminant-relation-weaker	tests/verification_mutation_expression_forms.adb	precondition	Need_Span (Thin)	unproved	a relation between two discriminants is not a stronger one
 discriminant-other-record	tests/verification_mutation_expression_forms.adb	precondition	Need_Span (Second)	unproved	the discriminants of one record are not those of another
 constrained-not-known	tests/verification_mutation_expression_forms.adb	precondition	Refill (Unknown)	unproved	nothing says whether the actual of an in out parameter is constrained
-constrained-declared-constraint	tests/verification_mutation_expression_forms.adb	precondition	Refill (Fixed)	unproved	a variable declared with a discriminant constraint is constrained
+constrained-declared-constraint	tests/verification_mutation_expression_forms.adb	precondition	Refill (Fixed)	definite-error	a variable declared with a discriminant constraint is constrained: the precondition fails on every path.
 constrained-declared-subtype	tests/verification_mutation_expression_forms.adb	precondition	Refill (Narrowed)	unproved	a variable declared with a constrained subtype is constrained
 constrained-other-parameter	tests/verification_mutation_expression_forms.adb	precondition	Refill (Bound)	unproved	that one parameter is not constrained says nothing of another
 null-not-known	tests/verification_mutation_expression_forms.adb	precondition	Need_Cell (Maybe)	unproved	nothing says an access parameter is not null
@@ -567,3 +567,14 @@ access-contexts-first-bound	tests/verification_mutation_access_contexts.adb	asse
 access-contexts-dropped	tests/verification_mutation_access_contexts.adb	assertion	Gone.Buffer /= null	definite-error	the access component was just set to null.
 access-contexts-none-formed	tests/verification_mutation_access_contexts.adb	assertion	for some F in Field => Well_Formed (Idle.Cursors (F))	definite-error	the precondition makes every cursor invalid.
 access-contexts-allocations	tests/verification_mutation_access_contexts.adb	assertion	P'Last = Q'Last	unproved	two allocations made in a loop are two values, of other lengths.
+discriminants-wrong-guard	tests/verification_mutation_discriminants.adb	discriminant-check	Wrong.X	definite-error	the guard selects the other variant: the component is never there where it is read.
+discriminants-no-guard	tests/verification_mutation_discriminants.adb	discriminant-check	Bare.Y	unproved	nothing selects the variant of the component written.
+discriminants-maybe-constrained	tests/verification_mutation_discriminants.adb	discriminant-check	Ctx_Bad := (F, F, 0);	unproved	the out parameter may be constrained by its actual, to other discriminants.
+discriminants-aggregate-maybe-constrained	tests/verification_mutation_discriminants.adb	discriminant-check	Gone := (Exists => False);	unproved	the in out parameter may be constrained, and Exists is True.
+discriminants-after-aggregate	tests/verification_mutation_discriminants.adb	discriminant-check	Gone.V	definite-error	the aggregate just given has Exists False.
+discriminants-constrained-local	tests/verification_mutation_discriminants.adb	discriminant-check	(Exists => False)	definite-error	a local declared with Exists True cannot be given False.
+discriminants-mutable-call	tests/verification_mutation_discriminants.adb	discriminant-check	Flip.V	unproved	the call may change the discriminant of a parameter whose type has defaults.
+discriminants-other-kind	tests/verification_mutation_discriminants.adb	discriminant-check	Other := (K => B, Common => 0, Y => 0);	unproved	an object of a type without defaults is constrained, to a kind that may not be B.
+discriminants-out-no-guard	tests/verification_mutation_discriminants.adb	discriminant-check	Plain.Ssl	unproved	nothing selects the variant of the component given as an out actual.
+discriminants-generic-formal	tests/verification_mutation_discriminants.adb	assertion	Formal_Item.D = Before	unproved	the actual of a formal type may have defaults: an instance's parameter may then change its discriminant.
+discriminants-implicit-code	tests/verification_mutation_discriminants.adb	assertion	Counter = Seen	unproved	Finalize of a component of the local, run where the source shows no call, changes Counter.

@@ -2288,6 +2288,16 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return False;
    end Discriminant_Access_Proved;
 
+   function Discriminant_Access_Decided
+     (Node : Libadalang.Analysis.Dotted_Name'Class) return Boolean is
+   begin
+      return Discriminant_Access_Proved (Node)
+        or else Classify_Discriminant_Access (Node) = Excluded;
+   exception
+      when others =>
+         return False;
+   end Discriminant_Access_Decided;
+
    procedure Check_Discriminant_Access
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Node : Libadalang.Analysis.Dotted_Name'Class) is
