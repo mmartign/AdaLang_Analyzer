@@ -5,11 +5,11 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.13.5] - 2026-11-10
 
-Discriminant checks in `--verify`: a component of a variant part read,
-written or given as an actual, and the assignment of a record with
-discriminants, are checked in SPARK code by the solvers, as GNATprove
+A `--verify` release that checks discriminants: a component of a variant
+part read, written or given as an actual, and the assignment of a record
+with discriminants, are checked in SPARK code by the solvers, as GNATprove
 checks them.
 
 What to expect: on the five corpora of the gap ledger, `--verify` proves
