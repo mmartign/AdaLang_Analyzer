@@ -754,6 +754,33 @@ package Adalang_Analyzer.VC_Prover is
    --  As Decide_Nonzero, for Pointer_Dereference_Check's "Value /= null"
    --  goal, Value being of an access type.
 
+   type Part_Path_List is
+     array (Positive range <>) of Ada.Strings.Unbounded.Unbounded_String;
+   --  Parts of an object, each as the way to it from the object: "" for
+   --  the object itself, ".c" for its component C, ".c.d" and so on.
+
+   function Decide_Parts_Null
+     (Base    : Libadalang.Analysis.Ada_Node'Class;
+      Paths   : Part_Path_List;
+      State   : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome;
+   --  Resource_Leak_Check's goal: each access part Paths gives of the
+   --  object Base is null. Base is a name, or the defining name of an
+   --  object.
+
+   function Null_Parts
+     (Symbols : Symbolic_State;
+      Base    : Libadalang.Analysis.Ada_Node'Class;
+      Paths   : Part_Path_List;
+      Writer  : Libadalang.Analysis.Ada_Node'Class;
+      Flow    : Adalang_Analyzer.Flow_Domain.Flow_State)
+      return Symbolic_State;
+   --  Symbols with each access part Paths gives of Base null: the value an
+   --  object of an access type has by default, and the one an owning part
+   --  stands for once it is moved, which SPARK code does not read again
+   --  before it is assigned. Symbols where Base is no object the state
+   --  follows.
+
    function Is_Discriminated_Record
      (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Boolean;
    --  True when Typ is, seen through subtypes and a private view, a record

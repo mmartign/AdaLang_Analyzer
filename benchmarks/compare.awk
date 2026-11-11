@@ -52,6 +52,7 @@ function gp_kind(msg) {
    if (msg ~ /discriminant check/)  return "discriminant-check"
    if (msg ~ /predicate check/)     return "predicate-check"
    if (msg ~ /pointer dereference check/) return "pointer-dereference"
+   if (msg ~ /resource or memory leak/) return "resource-leak"
    if (msg ~ /loop invariant/) {
       if (msg ~ /initialization/ || msg ~ /first iteration/)
          return "loop-invariant-initialization"

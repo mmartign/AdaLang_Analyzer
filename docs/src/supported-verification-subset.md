@@ -59,6 +59,7 @@ the section it links to has the whole of its proof basis and boundary.
 | [Predicate](#predicates) | The predicate of the subtype as a scalar Boolean VC, of the value given or of the object as the state knows its components once it is written | A value given to an object, to a part of one or to a formal, in SPARK code; none where the value already has the predicates of its own subtype |
 | [Dereference](#dereferences) | The access value is not null, as a scalar VC over its token | An explicit `.all`, and an access value as the prefix of a component, an indexed component, a slice or an array attribute, in SPARK code; none where the subtype of the access value excludes null |
 | [Discriminant](#discriminants) | The prefix object's own static discriminant constraint selects the variant declaring the component; otherwise a scalar VC that the discriminant selects it, or that the target of an assignment is not constrained or keeps its discriminants | A component of a variant part read, written or given as an actual, and the assignment of a record with known discriminants, in SPARK code; elsewhere a component selected directly from an object declared with an explicit discriminant constraint |
+| [Resource leak](#resource-leaks) | The owning parts of the object are null or moved, as a scalar VC over their tokens; a value that moves the target's own owning parts | The target of an assignment, an `out` actual, and a local wherever its scope ends, of a type with owning parts, in SPARK code |
 | [Initialization](#initialization) | Flow-sensitive definite-initialization state | Each read of a tracked scalar object; each `out` parameter and `Output` global at the subprogram's normal exit |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
 | [Precondition](#preconditions-and-postconditions) | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts, an operator that a declaration defines and a renaming among them |
@@ -112,7 +113,8 @@ elaboration; otherwise scalar bounds VC against those same two bounds.
   not (`range 1 .. N` for a variable or unconstrained `N`) is `Unproved`.
   An array given to an array subtype has no such check: its length is
   checked (see [Length](#length)), and the bounds of a slice where it is
-  written, below.
+  written, below. Nor has an access value or a record given to a target:
+  such a check could never fail.
 - **The bounds of a slice.** The two bounds of a slice written
   `A (L .. H)`, against the bounds of `A` as an index check takes them,
   at `A`: proved when both bounds are within them, when the slice is known
@@ -364,6 +366,47 @@ entry, are not known). Otherwise it is proved or `Unproved`. A component
 of a prefix the translation has no name for (see "Parts of an object"), and
 a choice that is a subtype with a predicate, leave it `Unproved`; outside
 SPARK code only the static constraint is taken.
+
+### Resource leaks
+
+An object of an owning type -- a named access-to-variable type that is
+pool-specific (neither `access all` nor `access constant`), a record that
+has a component of one, through a private type whose full view is SPARK
+code -- must not be overwritten or go out of scope while it designates
+something: what it designates could no longer be freed. GNATprove checks
+this ("resource or memory leak"), and in SPARK code (see "SPARK code")
+`--verify` raises the same checks, each part of the object that is of an
+owning access type being null or moved:
+
+- at `T := V`, `T` of a type with owning parts: before the assignment,
+  where `V` does not move them itself -- `Ctx := Ctx'Update (Last => 0)`,
+  `Ctx := (Ctx.Buffer, 0)` and `Ctx := (Buffer => Ctx.Buffer, ...)` move
+  the parts they name, and that is proved without the solvers; a
+  component `'Update` or a delta aggregate replaces is not moved;
+- at an actual of a formal of mode `out`: before the call;
+- at a local, reported on its declaration: on every way out of its scope
+  that is not an exception -- its end, a `goto`, an `exit`, a `return` --
+  each decided in the state that way carries.
+
+What makes a part null or moved is what the state knows (see "Access
+values"): a precondition, a postcondition, an assertion, an assignment of
+`null`, a move, `Free`, a local declared without a value, an `out`
+parameter on entry. The check is never a definite error: a move the
+translation does not see (in a conditional expression, an allocator, an
+actual) leaves the part as it was. It is `Unproved` where the owning parts
+are not all known -- an array of owning values, a tagged type, a private
+type whose full view SPARK does not see and that is annotated `Ownership`
+-- and where the state was dropped between the move and the check (a
+call of a generic instance declared in the subprogram, a loop that the
+part is written in without an invariant that says it is null). A private
+type whose full view SPARK does not see and that is not so annotated has
+no owning parts, as for GNATprove.
+
+Two facts this rests on are rules that SPARK code obeys and GNATprove
+checks: an object moved out of is not read before it is assigned again,
+so the state takes it as null; and an `out` parameter is not read before
+it is written, so its owning parts are null on entry, its actual being
+checked at the call.
 
 ### Initialization
 
@@ -923,7 +966,19 @@ Ctx.Buffer; Ctx.Buffer := null` leaves `Moved` with the token `Ctx.Buffer`
 had and `Ctx.Buffer` null, and what is known of every other object stays.
 A value that has no token -- an allocator, the result of a call -- gives a
 token of its own, of which nothing is known but that an allocator's is not
-null. An expression function that is inlined takes an access formal for
+null.
+
+In SPARK code an owning value (see "Resource leaks") is moved out of the
+object a value names when that value is assigned or given as an initial
+value, alone, as a component of an aggregate, or as the prefix of
+`'Update` or of a delta aggregate (but for the components it replaces):
+the object's owning parts are null in the state from there on, but for
+what the target of the assignment now holds. A local declared without an
+initial value has its owning parts null, those its type gives a default
+other than `null` aside, unless it is a constant or has `Import` or an
+address clause; so has an `out` parameter on entry. After a call of an
+instance of `Ada.Unchecked_Deallocation` its actual is null (RM
+13.11.2(10)). An expression function that is inlined takes an access formal for
 the object, or the part of one, its actual names, as it takes a record
 formal, and for the token of the actual's value otherwise.
 
@@ -1612,7 +1667,11 @@ the direct name, for reads and writes alike.
   dropped.
 - An allocator runs user code: the `Initialize` or `Adjust` of a
   controlled part, the default expressions of the components, the
-  activation of a task, the `Allocate` of a storage pool. The expression
+  activation of a task, the `Allocate` of a storage pool. One that
+  allocates a scalar, or an array of scalars, of a subtype with no
+  `Dynamic_Predicate`, `Predicate`, `Type_Invariant` nor
+  `Default_Initial_Condition`, from an access type with no `Storage_Pool`
+  of its own, runs none, and nothing is dropped there. The expression
   that evaluates one is evaluated in a state that keeps no value fact about
   the objects declared outside the subprogram under analysis, and none at
   all when the allocated type is declared in it or that subprogram takes

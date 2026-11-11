@@ -5,6 +5,73 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+A `--verify` release that checks resource leaks: an owning access value
+overwritten, given as an `out` actual or going out of scope while it
+designates something is checked in SPARK code, as GNATprove checks it; and
+range checks that could never fail are no longer raised.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+11,152 of the 15,043 checks GNATprove proves (was 10,963). 189 more are
+proved and none fewer. 183 are resource leak checks, all in CoAP-SPARK, of
+the 211 GNATprove proves there: of the other 28, 8 are in a subprogram
+outside the verified subset, 1 (an `out` actual of a generic formal
+subprogram) has no obligation, and 19 are `Unproved` -- 8 where a call of a
+generic instance declared in the subprogram drops what is known between
+the move and the check, 10 in or after loops that write the access value
+without an invariant saying it is null, and 1 that needs the postcondition
+of a generic formal subprogram. The other 6 -- 3 preconditions, 2
+dereference checks and 1 postcondition, all in CoAP-SPARK -- follow from
+what allocators of plain data and `Unchecked_Deallocation` now leave
+known. 4 range checks GNATprove proves were paired with a range check
+raised on a whole record or access value; that check is gone, and they
+now have no obligation. On the nine corpora with a `--verify` lane, 216
+resource leak checks are added, all in CoAP-SPARK (188 proved, 20
+unproved, 8 unsupported), 6 obligations that were `Unproved` are proved,
+and none that was proved is `Unproved`; 2,755 range checks are removed,
+2,744 of them `Unproved` and 11 "proved" on conversions to access or
+tagged types (GNATcoll 4, AWS 7), where no range is checked; no definite
+error is new or gone. The other presets lose the same range checks (AWS
+1,445, GNATcoll 757, Ada Drivers Library 36). On all ten corpora, every
+preset, findings are identical. On the SPARK testsuite 7 resource leak
+checks are added (1 proved, 6 unproved) and both tools prove 312 of 692
+pairs (was 311 of 688), with no possible unsoundness and no false
+positive. CPU time is up by a few percent at most (CoAP-SPARK 349 s ->
+364 s).
+
+### Added
+
+- A resource leak check (`resource-leak`), in SPARK code, wherever
+  GNATprove raises one: at an assignment to an object with owning parts
+  (a named pool-specific access-to-variable type, or a record that has a
+  component of one), at an actual of a formal of mode `out`, and at a
+  local of such a type wherever its scope ends -- its end, a `goto`, an
+  `exit`, a `return` -- reported on its declaration. Each owning part is
+  null or moved, decided by the solvers from what is known there; a value
+  that moves the target's own parts (`Ctx := Ctx'Update (Last => 0)`,
+  `Ctx := (Ctx.Buffer, 0)`) is proved without them. The check is never a
+  definite error. `--gnatprove-log` and the gap ledger pair GNATprove's
+  "resource or memory leak" with it.
+
+### Changed
+
+- In SPARK code an owning value moved out of an object -- assigned, given
+  as an initial value, as a component of an aggregate, or as the prefix of
+  `'Update` or a delta aggregate -- leaves the object's owning parts null
+  in the state; a local declared without an initial value has its owning
+  parts null; so has an `out` parameter on entry; and a call of an
+  instance of `Ada.Unchecked_Deallocation` leaves its actual null. The
+  first two rest on rules SPARK code obeys and GNATprove checks: a moved
+  object is not read before it is assigned again, and an `out` parameter
+  is not read before it is written.
+- An allocator of a scalar, or an array of scalars, of a subtype with no
+  dynamic predicate, type invariant or default initial condition, from an
+  access type without a storage pool of its own, runs no user code: what
+  is known of the subprogram's objects is no longer dropped there.
+- No range check is raised where the target is an access value or a
+  record: such a check could never fail, and was always `Unproved`.
+
 ## [1.13.5] - 2026-11-10
 
 A `--verify` release that checks discriminants: a component of a variant

@@ -2,8 +2,8 @@
 --  fact written through one access value holds for a read through that same
 --  value, but a write through a second access value that may designate the
 --  same object discards it rather than preserving it. Array-of-record
---  indexing and component range checks prove from resolved subtypes;
---  record aggregates stay outside the scalar VC subset.
+--  indexing and component range checks prove from resolved subtypes; a
+--  record aggregate given to a record object has no range check.
 package body Verification_PP_Access with SPARK_Mode is
    procedure Solo (A : Rec_Ptr; Sink : out Integer) is
    begin

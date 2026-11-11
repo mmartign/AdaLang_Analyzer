@@ -72,7 +72,7 @@ package body Adalang_Analyzer.Gnatprove_Import is
       Of_Kind (Object_Initialization, Proof.Initialization_Check),
       Of_Kind ("might not be initialized", Proof.Initialization_Check),
       Of_Kind ("is not initialized", Proof.Initialization_Check),
-      No_Kind ("resource or memory leak"),
+      Of_Kind ("resource or memory leak", Proof.Resource_Leak_Check),
       No_Kind ("non-aliasing"),
       No_Kind ("aliasing"),
       Of_Kind ("Always_Terminates", Proof.Termination_Check),

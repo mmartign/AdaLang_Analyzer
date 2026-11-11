@@ -1755,6 +1755,745 @@ package body Adalang_Analyzer.Flow_Interp is
          return False;
    end In_SPARK_Code;
 
+   ---------------------------------------------------------------------
+   --  Ownership: the owning parts of an object (resource leaks)
+   ---------------------------------------------------------------------
+
+   package Path_Vectors is new Ada.Containers.Vectors
+     (Index_Type   => Positive,
+      Element_Type => Ada.Strings.Unbounded.Unbounded_String,
+      "="          => Ada.Strings.Unbounded."=");
+
+   --  The access parts of an object that SPARK's ownership rules cover,
+   --  as paths (VC.Part_Path_List). Any: the type has such a part.
+   --  Complete: every such part is in Paths (not so for an array of them,
+   --  a class-wide or private type whose parts are not known, ...).
+   type Owning_Parts is record
+      Paths    : Path_Vectors.Vector;
+      Any      : Boolean := False;
+      Complete : Boolean := True;
+   end record;
+
+   function To_List (Parts : Owning_Parts) return VC.Part_Path_List is
+      Result : VC.Part_Path_List (1 .. Natural (Parts.Paths.Length));
+   begin
+      for Index in Result'Range loop
+         Result (Index) := Parts.Paths.Element (Index);
+      end loop;
+      return Result;
+   end To_List;
+
+   --  A named pool-specific access-to-variable type: an owning type.
+   function Is_Owning_Access
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class) return Boolean
+   is
+      Decl : Libadalang.Analysis.Base_Type_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ)
+        or else not Typ.P_Is_Access_Type
+      then
+         return False;
+      end if;
+      Decl := Typ.P_Base_Subtype;
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else Decl.Kind not in Libadalang.Common.Ada_Concrete_Type_Decl
+                               | Libadalang.Common.Ada_Formal_Type_Decl
+      then
+         return False;
+      end if;
+      declare
+         Def : constant Libadalang.Analysis.Type_Def :=
+           Decl.As_Type_Decl.F_Type_Def;
+      begin
+         return Def.Kind = Libadalang.Common.Ada_Type_Access_Def
+           and then not Def.As_Type_Access_Def.F_Has_All
+           and then not Def.As_Type_Access_Def.F_Has_Constant;
+      end;
+   exception
+      when others =>
+         return False;
+   end Is_Owning_Access;
+
+   --  The text a name is written with, lowered, without blanks, its
+   --  components named as in a part path.
+   function Name_Text (Node : Libadalang.Analysis.Ada_Node'Class)
+     return String
+   is
+      Raw    : constant String :=
+        Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Node));
+      Result : String (1 .. Raw'Length);
+      Last   : Natural := 0;
+   begin
+      for C of Raw loop
+         if C not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+            Last := Last + 1;
+            Result (Last) := C;
+         end if;
+      end loop;
+      return Result (1 .. Last);
+   end Name_Text;
+
+   --  True when the full view Full of a private type is SPARK code: not
+   --  in a private part that starts with pragma SPARK_Mode (Off).
+   function Full_View_In_SPARK
+     (Full : Libadalang.Analysis.Base_Type_Decl) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Full);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_Private_Part then
+            declare
+               Decls : constant Libadalang.Analysis.Ada_Node :=
+                 Libadalang.Analysis.Ada_Node
+                   (Current.As_Private_Part.F_Decls);
+            begin
+               for Index in 1 .. Decls.Children_Count loop
+                  declare
+                     Item : constant Libadalang.Analysis.Ada_Node :=
+                       Decls.Child (Index);
+                  begin
+                     if not Libadalang.Analysis.Is_Null (Item)
+                       and then Item.Kind = Libadalang.Common.Ada_Pragma_Node
+                       and then Name_Text (Item.As_Pragma_Node.F_Id) =
+                         "spark-mode"
+                       and then Ada.Strings.Fixed.Index
+                         (Name_Text (Item.As_Pragma_Node.F_Args), "off") > 0
+                     then
+                        return False;
+                     end if;
+                  end;
+               end loop;
+            end;
+            exit;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return In_SPARK_Code (Full);
+   exception
+      when others =>
+         return False;
+   end Full_View_In_SPARK;
+
+   function Owning_Parts_Uncached
+     (Typ           : Libadalang.Analysis.Base_Type_Decl'Class;
+      Defaults_Only : Boolean := False;
+      Depth         : Natural := 0) return Owning_Parts
+   is
+      Result : Owning_Parts;
+      Decl   : Libadalang.Analysis.Base_Type_Decl;
+
+      procedure Add (Prefix : String; Inner : Owning_Parts) is
+      begin
+         Result.Any := Result.Any or else Inner.Any;
+         Result.Complete := Result.Complete and then Inner.Complete;
+         for Path of Inner.Paths loop
+            Result.Paths.Append
+              (New_Item =>
+                 Ada.Strings.Unbounded."&"
+                   (Ada.Strings.Unbounded.To_Unbounded_String (Prefix),
+                    Path));
+         end loop;
+      end Add;
+
+      procedure Components (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Component_Decl then
+            declare
+               Comp : constant Libadalang.Analysis.Component_Decl :=
+                 Node.As_Component_Decl;
+               Inner : constant Owning_Parts :=
+                 Owning_Parts_Uncached
+                   (Comp.F_Component_Def.F_Type_Expr.P_Designated_Type_Decl,
+                    Defaults_Only, Depth + 1);
+            begin
+               if Defaults_Only
+                 and then not Libadalang.Analysis.Is_Null (Comp.F_Default_Expr)
+                 and then Comp.F_Default_Expr.Kind /=
+                   Libadalang.Common.Ada_Null_Literal
+               then
+                  --  Not null by default: nothing said of it.
+                  return;
+               end if;
+               for Id of Comp.F_Ids loop
+                  Add ("." & Text_Utils.Normalize_Rule_Name
+                               (Ada_Text.Node_Text (Id)), Inner);
+               end loop;
+            end;
+            return;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            Components (Node.Child (Index));
+         end loop;
+      end Components;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) or else Depth > 8 then
+         Result.Complete := False;
+         return Result;
+      elsif Is_Owning_Access (Typ) then
+         Result.Any := True;
+         Result.Paths.Append (Ada.Strings.Unbounded.Null_Unbounded_String);
+         return Result;
+      elsif Typ.P_Is_Access_Type then
+         return Result;
+      end if;
+      Decl := Typ.P_Base_Subtype;
+      if Libadalang.Analysis.Is_Null (Decl) then
+         Result.Complete := False;
+         return Result;
+      end if;
+      if Decl.P_Is_Private then
+         if Libadalang.Analysis.Is_Null (Decl.P_Full_View)
+           or else Libadalang.Analysis."=" (Decl.P_Full_View, Decl)
+           or else not Full_View_In_SPARK (Decl.P_Full_View)
+         then
+            --  A private type whose full view SPARK does not see is an
+            --  owning type only when annotated so (GNATprove's
+            --  Ownership annotation), with parts not known here.
+            if Ada.Strings.Fixed.Index
+                 (Name_Text (Decl), "ownership") > 0
+            then
+               Result.Any := True;
+               Result.Complete := False;
+            elsif Libadalang.Analysis.Is_Null (Decl.P_Full_View)
+              or else Libadalang.Analysis."=" (Decl.P_Full_View, Decl)
+            then
+               --  A generic formal private type: what it is is not known.
+               Result.Complete := False;
+            end if;
+            return Result;
+         end if;
+         return Owning_Parts_Uncached (Decl.P_Full_View, Defaults_Only, Depth + 1);
+      elsif Decl.P_Is_Scalar_Type then
+         return Result;
+      elsif Decl.P_Is_Array_Type then
+         declare
+            Element : constant Owning_Parts :=
+              Owning_Parts_Uncached (Decl.P_Comp_Type, Defaults_Only, Depth + 1);
+         begin
+            if Element.Any or else not Element.Complete then
+               Result.Any := Element.Any;
+               Result.Complete := False;
+            end if;
+         end;
+         return Result;
+      elsif Decl.Kind not in Libadalang.Common.Ada_Concrete_Type_Decl then
+         Result.Complete := False;
+         return Result;
+      end if;
+      declare
+         Def : constant Libadalang.Analysis.Type_Def :=
+           Decl.As_Type_Decl.F_Type_Def;
+      begin
+         if Def.Kind = Libadalang.Common.Ada_Record_Type_Def then
+            Components (Def.As_Record_Type_Def.F_Record_Def);
+         elsif Def.Kind = Libadalang.Common.Ada_Derived_Type_Def
+           and then Libadalang.Analysis.Is_Null
+             (Def.As_Derived_Type_Def.F_Record_Extension)
+           and then Def.As_Derived_Type_Def.F_Interfaces.Children_Count = 0
+         then
+            Add ("", Owning_Parts_Uncached
+                   (Def.As_Derived_Type_Def.F_Subtype_Indication
+                      .P_Designated_Type_Decl, Defaults_Only, Depth + 1));
+         else
+            Result.Complete := False;
+         end if;
+      end;
+      return Result;
+   exception
+      when others =>
+         Result.Complete := False;
+         return Result;
+   end Owning_Parts_Uncached;
+
+   package Owning_Parts_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Owning_Parts,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=");
+   Known_Owning_Parts  : Owning_Parts_Maps.Map;
+   Known_Default_Parts : Owning_Parts_Maps.Map;
+
+   --  Owning_Parts_Uncached, once for each type.
+   function Owning_Parts_Of
+     (Typ           : Libadalang.Analysis.Base_Type_Decl'Class;
+      Defaults_Only : Boolean := False) return Owning_Parts
+   is
+      Key    : Libadalang.Analysis.Ada_Node;
+      Result : Owning_Parts;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return Owning_Parts_Uncached (Typ, Defaults_Only);
+      end if;
+      Key := Libadalang.Analysis.Ada_Node (Typ);
+      if Defaults_Only then
+         if Known_Default_Parts.Contains (Key) then
+            return Known_Default_Parts.Element (Key);
+         end if;
+         Result := Owning_Parts_Uncached (Typ, Defaults_Only => True);
+         Known_Default_Parts.Insert (Key, Result);
+      else
+         if Known_Owning_Parts.Contains (Key) then
+            return Known_Owning_Parts.Element (Key);
+         end if;
+         Result := Owning_Parts_Uncached (Typ);
+         Known_Owning_Parts.Insert (Key, Result);
+      end if;
+      return Result;
+   exception
+      when others =>
+         return Owning_Parts_Uncached (Typ, Defaults_Only);
+   end Owning_Parts_Of;
+
+   --  A name an owning value is moved out of: the name, and the parts of
+   --  it the move takes (those of 'Update's or a delta aggregate's prefix
+   --  that the associations do not replace).
+   type Move_Source is record
+      Name  : Libadalang.Analysis.Ada_Node;
+      Parts : Owning_Parts;
+   end record;
+
+   package Move_Source_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Move_Source);
+
+   --  True when Node names an object, or a component of one, not through
+   --  an access value.
+   function Names_Object (Node : Libadalang.Analysis.Ada_Node'Class)
+     return Boolean is
+   begin
+      if Node.Kind = Libadalang.Common.Ada_Identifier then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Node.As_Identifier.P_Referenced_Decl;
+         begin
+            return not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind in Libadalang.Common.Ada_Object_Decl
+                                  | Libadalang.Common.Ada_Param_Spec;
+         end;
+      elsif Node.Kind = Libadalang.Common.Ada_Dotted_Name then
+         declare
+            Dotted : constant Libadalang.Analysis.Dotted_Name :=
+              Node.As_Dotted_Name;
+            Decl   : constant Libadalang.Analysis.Basic_Decl :=
+              Dotted.F_Suffix.P_Referenced_Decl;
+         begin
+            if not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind in Libadalang.Common.Ada_Object_Decl
+                                  | Libadalang.Common.Ada_Param_Spec
+            then
+               --  An expanded name of an object (Pkg.Obj).
+               return True;
+            end if;
+            return not Libadalang.Analysis.Is_Null (Decl)
+              and then Decl.Kind = Libadalang.Common.Ada_Component_Decl
+              and then not Dotted.F_Prefix.P_Expression_Type.P_Is_Access_Type
+              and then Names_Object (Dotted.F_Prefix);
+         end;
+      end if;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Names_Object;
+
+   procedure Collect_Moves
+     (Value  : Libadalang.Analysis.Ada_Node'Class;
+      Result : in out Move_Source_Vectors.Vector)
+   is
+      procedure Of_Assocs (Assocs : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Assocs) then
+            return;
+         end if;
+         for Index in 1 .. Assocs.Children_Count loop
+            declare
+               Item : constant Libadalang.Analysis.Ada_Node :=
+                 Assocs.Child (Index);
+            begin
+               if not Libadalang.Analysis.Is_Null (Item)
+                 and then Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc
+               then
+                  Collect_Moves (Item.As_Aggregate_Assoc.F_R_Expr, Result);
+               elsif not Libadalang.Analysis.Is_Null (Item)
+                 and then Item.Kind = Libadalang.Common.Ada_Param_Assoc
+               then
+                  Collect_Moves (Item.As_Param_Assoc.F_R_Expr, Result);
+               end if;
+            end;
+         end loop;
+      end Of_Assocs;
+
+      --  The prefix of 'Update or of a delta aggregate, less the parts the
+      --  associations replace.
+      procedure Of_Prefix
+        (Prefix : Libadalang.Analysis.Ada_Node'Class;
+         Assocs : Libadalang.Analysis.Ada_Node'Class)
+      is
+         Replaced : Path_Vectors.Vector;
+         All_Parts : Owning_Parts;
+         Kept      : Owning_Parts;
+      begin
+         if Libadalang.Analysis.Is_Null (Prefix)
+           or else not Names_Object (Prefix)
+         then
+            return;
+         end if;
+         All_Parts := Owning_Parts_Of (Prefix.As_Expr.P_Expression_Type);
+         if not All_Parts.Any then
+            return;
+         end if;
+         for Index in 1 .. Assocs.Children_Count loop
+            declare
+               Item : constant Libadalang.Analysis.Ada_Node :=
+                 Assocs.Child (Index);
+            begin
+               if Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc then
+                  for Choice of Item.As_Aggregate_Assoc.F_Designators loop
+                     Replaced.Append
+                       (Ada.Strings.Unbounded.To_Unbounded_String
+                          ("." & Name_Text (Choice)));
+                  end loop;
+               elsif Item.Kind = Libadalang.Common.Ada_Param_Assoc then
+                  if Libadalang.Analysis.Is_Null
+                    (Item.As_Param_Assoc.F_Designator)
+                  then
+                     --  A positional association: which part it replaces
+                     --  is not said here; none is taken as moved.
+                     Replaced.Append
+                       (Ada.Strings.Unbounded.To_Unbounded_String ("."));
+                  else
+                     Replaced.Append
+                       (Ada.Strings.Unbounded.To_Unbounded_String
+                          ("." & Name_Text (Item.As_Param_Assoc.F_Designator)));
+                  end if;
+               else
+                  Replaced.Append
+                    (Ada.Strings.Unbounded.To_Unbounded_String ("."));
+               end if;
+            end;
+         end loop;
+         Kept.Any := True;
+         Kept.Complete := All_Parts.Complete;
+         for Path of All_Parts.Paths loop
+            declare
+               Text : constant String :=
+                 Ada.Strings.Unbounded.To_String (Path);
+               Taken : Boolean := True;
+            begin
+               for R of Replaced loop
+                  declare
+                     RT : constant String :=
+                       Ada.Strings.Unbounded.To_String (R);
+                  begin
+                     --  "." stands for a part the association does not
+                     --  name: none is taken as moved.
+                     if RT = "."
+                       or else
+                         (Text'Length >= RT'Length
+                          and then Text (Text'First ..
+                                         Text'First + RT'Length - 1) = RT
+                          and then (Text'Length = RT'Length
+                                    or else Text (Text'First + RT'Length) =
+                                      '.'))
+                     then
+                        Taken := False;
+                     end if;
+                  end;
+               end loop;
+               if Taken then
+                  Kept.Paths.Append (Path);
+               end if;
+            end;
+         end loop;
+         Result.Append ((Name => Libadalang.Analysis.Ada_Node (Prefix),
+                         Parts => Kept));
+         Of_Assocs (Assocs);
+      end Of_Prefix;
+   begin
+      if Libadalang.Analysis.Is_Null (Value) then
+         return;
+      end if;
+      case Value.Kind is
+         when Libadalang.Common.Ada_Paren_Expr =>
+            Collect_Moves (Value.As_Paren_Expr.F_Expr, Result);
+         when Libadalang.Common.Ada_Qual_Expr =>
+            Collect_Moves (Value.As_Qual_Expr.F_Suffix, Result);
+         when Libadalang.Common.Ada_Aggregate
+            | Libadalang.Common.Ada_Bracket_Aggregate =>
+            Collect_Moves (Value.As_Base_Aggregate.F_Ancestor_Expr, Result);
+            Of_Assocs (Value.As_Base_Aggregate.F_Assocs);
+         when Libadalang.Common.Ada_Delta_Aggregate
+            | Libadalang.Common.Ada_Bracket_Delta_Aggregate =>
+            Of_Prefix (Value.As_Base_Aggregate.F_Ancestor_Expr,
+                       Value.As_Base_Aggregate.F_Assocs);
+         when Libadalang.Common.Ada_Update_Attribute_Ref =>
+            Of_Prefix
+              (Value.As_Update_Attribute_Ref.F_Prefix,
+               Value.As_Update_Attribute_Ref.F_Values.F_Assocs);
+         when Libadalang.Common.Ada_Attribute_Ref =>
+            if Name_Text (Value.As_Attribute_Ref.F_Attribute) = "update"
+              and then not Libadalang.Analysis.Is_Null
+                (Value.As_Attribute_Ref.F_Args)
+            then
+               --  X'Update ((A => ...)) : the argument is an aggregate.
+               declare
+                  Args : constant Libadalang.Analysis.Ada_Node :=
+                    Libadalang.Analysis.Ada_Node
+                      (Value.As_Attribute_Ref.F_Args);
+                  Assocs : Libadalang.Analysis.Ada_Node := Args;
+               begin
+                  if Args.Kind = Libadalang.Common.Ada_Assoc_List
+                    and then Args.Children_Count = 1
+                    and then Args.Child (1).Kind =
+                      Libadalang.Common.Ada_Param_Assoc
+                    and then Args.Child (1).As_Param_Assoc.F_R_Expr.Kind =
+                      Libadalang.Common.Ada_Aggregate
+                  then
+                     Assocs :=
+                       Libadalang.Analysis.Ada_Node
+                         (Args.Child (1).As_Param_Assoc.F_R_Expr
+                            .As_Base_Aggregate.F_Assocs);
+                  end if;
+                  Of_Prefix (Value.As_Attribute_Ref.F_Prefix, Assocs);
+               end;
+            end if;
+         when Libadalang.Common.Ada_Identifier
+            | Libadalang.Common.Ada_Dotted_Name =>
+            if Names_Object (Value) then
+               declare
+                  Parts : constant Owning_Parts :=
+                    Owning_Parts_Of (Value.As_Expr.P_Expression_Type);
+               begin
+                  if Parts.Any then
+                     Result.Append
+                       ((Name => Libadalang.Analysis.Ada_Node (Value),
+                         Parts => Parts));
+                  end if;
+               end;
+            end if;
+         when others =>
+            null;
+      end case;
+   exception
+      when others =>
+         --  No move is taken where the value cannot be read through: the
+         --  parts stay as they were, which only leaves checks unproved.
+         Result.Clear;
+   end Collect_Moves;
+
+   --  Symbols after the declaration Decl (SPARK code): an object declared
+   --  without an initial value has its owning parts null where its type
+   --  gives them no other default; an initial value that is an owning
+   --  name moves it.
+   function Owning_Parts_After_Declaration
+     (Decl    : Libadalang.Analysis.Object_Decl;
+      Symbols : VC.Symbolic_State;
+      After   : Flow_State) return VC.Symbolic_State
+   is
+      Result : VC.Symbolic_State := Symbols;
+   begin
+      if Libadalang.Analysis.Is_Null (Decl.F_Default_Expr) then
+         if not Decl.F_Has_Constant
+           and then not Has_Aspect (Decl, "Import")
+           and then not Has_Aspect (Decl, "Address")
+         then
+            declare
+               Parts : constant Owning_Parts :=
+                 Owning_Parts_Of
+                   (Decl.F_Type_Expr.P_Designated_Type_Decl,
+                    Defaults_Only => True);
+            begin
+               if not Parts.Paths.Is_Empty then
+                  for Id of Decl.F_Ids loop
+                     Result :=
+                       VC.Null_Parts
+                         (Result, Id, To_List (Parts), Decl, After);
+                  end loop;
+               end if;
+            end;
+         end if;
+      else
+         declare
+            Moves : Move_Source_Vectors.Vector;
+         begin
+            Collect_Moves (Decl.F_Default_Expr, Moves);
+            for Move of Moves loop
+               Result :=
+                 VC.Null_Parts
+                   (Result, Move.Name, To_List (Move.Parts), Decl, After);
+            end loop;
+         end;
+      end if;
+      return Result;
+   exception
+      when others =>
+         return Symbols;
+   end Owning_Parts_After_Declaration;
+
+   --  True when Part (a name's text and a path) is the part Dest names, or
+   --  a part of it.
+   function Within_Name (Part, Dest : String) return Boolean is
+     (Part'Length >= Dest'Length
+      and then Part (Part'First .. Part'First + Dest'Length - 1) = Dest
+      and then (Part'Length = Dest'Length
+                or else Part (Part'First + Dest'Length) in '.' | '('));
+
+   --  Symbols after Dest := Value (SPARK code): the owning names Value
+   --  moves are null, but for the parts Dest itself now holds.
+   function Owning_Parts_After_Assignment
+     (Dest    : Libadalang.Analysis.Name;
+      Value   : Libadalang.Analysis.Expr;
+      Writer  : Libadalang.Analysis.Ada_Node'Class;
+      Symbols : VC.Symbolic_State;
+      After   : Flow_State) return VC.Symbolic_State
+   is
+      Result    : VC.Symbolic_State := Symbols;
+      Moves     : Move_Source_Vectors.Vector;
+      Dest_Text : constant String := Name_Text (Dest);
+   begin
+      Collect_Moves (Value, Moves);
+      for Move of Moves loop
+         declare
+            Source_Text : constant String := Name_Text (Move.Name);
+         begin
+            for Path of Move.Parts.Paths loop
+               if not Within_Name
+                 (Source_Text & Ada.Strings.Unbounded.To_String (Path),
+                  Dest_Text)
+               then
+                  Result :=
+                    VC.Null_Parts
+                      (Result, Move.Name, (1 => Path), Writer, After);
+               end if;
+            end loop;
+         end;
+      end loop;
+      return Result;
+   exception
+      when others =>
+         return Symbols;
+   end Owning_Parts_After_Assignment;
+
+   --  The actual of Call where Call calls an instance of
+   --  Ada.Unchecked_Deallocation, which leaves it null (RM 13.11.2).
+   function Deallocated_Actual
+     (Call : Libadalang.Analysis.Call_Stmt) return Libadalang.Analysis.Expr
+   is
+      Decl    : Libadalang.Analysis.Basic_Decl;
+      Current : Libadalang.Analysis.Ada_Node;
+   begin
+      if Call.F_Call.Kind /= Libadalang.Common.Ada_Call_Expr then
+         return Libadalang.Analysis.No_Expr;
+      end if;
+      Decl := Call.F_Call.As_Call_Expr.F_Name.P_Referenced_Decl;
+      Current := Libadalang.Analysis.Ada_Node (Decl);
+      for Step in 1 .. 3 loop
+         exit when Libadalang.Analysis.Is_Null (Current);
+         if Current.Kind = Libadalang.Common.Ada_Generic_Subp_Instantiation
+         then
+            declare
+               Generic_Name : constant String :=
+                 Name_Text
+                   (Current.As_Generic_Subp_Instantiation
+                      .F_Generic_Subp_Name);
+            begin
+               if Generic_Name in "ada.unchecked-deallocation"
+                                | "unchecked-deallocation"
+               then
+                  declare
+                     Suffix : constant Libadalang.Analysis.Ada_Node :=
+                       Call.F_Call.As_Call_Expr.F_Suffix;
+                  begin
+                     if Suffix.Kind = Libadalang.Common.Ada_Assoc_List
+                       and then Suffix.Children_Count = 1
+                       and then Suffix.Child (1).Kind =
+                         Libadalang.Common.Ada_Param_Assoc
+                     then
+                        return Suffix.Child (1).As_Param_Assoc.F_R_Expr;
+                     end if;
+                  end;
+               end if;
+            end;
+            exit;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return Libadalang.Analysis.No_Expr;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Expr;
+   end Deallocated_Actual;
+
+   --  True when Alloc runs no user code: it allocates a scalar, or an
+   --  array of scalars, of a type with no dynamic predicate, from the
+   --  standard storage pool -- in SPARK code, in a unit that names no
+   --  default storage pool of its own.
+   function Allocator_Runs_No_Code
+     (Alloc : Libadalang.Analysis.Allocator) return Boolean
+   is
+      function Plain
+        (Typ   : Libadalang.Analysis.Base_Type_Decl;
+         Depth : Natural) return Boolean
+      is
+         Seen : Libadalang.Analysis.Base_Type_Decl := Typ;
+      begin
+         if Libadalang.Analysis.Is_Null (Seen) or else Depth > 4 then
+            return False;
+         end if;
+         if Seen.P_Is_Private then
+            Seen := Seen.P_Full_View;
+            if Libadalang.Analysis.Is_Null (Seen) then
+               return False;
+            end if;
+         end if;
+         for Item of Libadalang.Analysis.Base_Type_Decl_Array'
+           (Seen, Seen.P_Base_Subtype)
+         loop
+            if not Libadalang.Analysis.Is_Null (Item)
+              and then (Has_Aspect (Item, "Dynamic_Predicate")
+                        or else Has_Aspect (Item, "Predicate")
+                        or else Has_Aspect (Item, "Type_Invariant")
+                        or else Has_Aspect (Item, "Default_Initial_Condition"))
+            then
+               return False;
+            end if;
+         end loop;
+         if Seen.P_Is_Scalar_Type then
+            return True;
+         elsif Seen.P_Is_Array_Type then
+            return Plain (Seen.P_Comp_Type, Depth + 1);
+         end if;
+         return False;
+      end Plain;
+
+      Access_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+        Alloc.P_Expression_Type;
+   begin
+      if not Verified_In_SPARK
+        or else Libadalang.Analysis.Is_Null (Access_Type)
+        or else Ada.Strings.Fixed.Index
+          (Name_Text (Alloc.Unit.Root), "default-storage-pool") > 0
+      then
+         return False;
+      end if;
+      for Item of Libadalang.Analysis.Base_Type_Decl_Array'
+        (Access_Type, Access_Type.P_Base_Subtype)
+      loop
+         if not Libadalang.Analysis.Is_Null (Item)
+           and then (Has_Aspect (Item, "Storage_Pool")
+                     or else Has_Aspect (Item, "Simple_Storage_Pool"))
+         then
+            return False;
+         end if;
+      end loop;
+      return Plain (Alloc.P_Get_Allocated_Type, 0);
+   exception
+      when others =>
+         return False;
+   end Allocator_Runs_No_Code;
+
    --  True when Decl is SPARK code (In_SPARK_Code) and does not say it has
    --  side effects: under an explicit SPARK_Mode (On), or in a generic unit
    --  that is SPARK code wherever it is instantiated, which GNATprove
@@ -6543,6 +7282,24 @@ package body Adalang_Analyzer.Flow_Interp is
          when others =>
             return False;
       end Array_Target;
+
+      --  True when Typ is an access type or a record type, seen through a
+      --  private type.
+      function Access_Or_Record_Target return Boolean is
+         Seen : Libadalang.Analysis.Base_Type_Decl := Typ;
+      begin
+         if Libadalang.Analysis.Is_Null (Seen) then
+            return False;
+         elsif Seen.P_Is_Private
+           and then not Libadalang.Analysis.Is_Null (Seen.P_Full_View)
+         then
+            Seen := Seen.P_Full_View;
+         end if;
+         return Seen.P_Is_Access_Type or else Seen.P_Is_Record_Type;
+      exception
+         when others =>
+            return False;
+      end Access_Or_Record_Target;
    begin
       if Config.Rule_States (Rule) /= Config.Enabled then
          return;
@@ -6554,6 +7311,12 @@ package body Adalang_Analyzer.Flow_Interp is
       --  is given (Finalize_Array_Given, Finalize_Array_Assignment), and
       --  the bounds of a slice where it is written (Finalize_Slice_Check).
       if Array_Target then
+         return;
+      end if;
+
+      --  Nor has an access value or a record: a range check there could
+      --  never fail.
+      if Access_Or_Record_Target then
          return;
       end if;
 
@@ -9961,6 +10724,29 @@ package body Adalang_Analyzer.Flow_Interp is
       After_Symbolic_States : Symbolic_State_Array (States'Range) :=
         (others => VC.Empty_Symbolic_State);
       Reachable : Boolean_Array (States'Range) := (others => False);
+
+      --  The state each edge that leaves the scope of an owning local
+      --  carries (Process_Node), where the leak check of the local is made.
+      Leak_Exit_Edge    : Boolean_Array (1 .. CFG.Edge_Count (Graph)) :=
+        (others => False);
+      Leak_Edge_Live    : Boolean_Array (1 .. CFG.Edge_Count (Graph)) :=
+        (others => False);
+      Leak_Edge_States  : State_Array (1 .. CFG.Edge_Count (Graph)) :=
+        (others => Empty_Flow_State);
+      Leak_Edge_Symbols : Symbolic_State_Array (1 .. CFG.Edge_Count (Graph)) :=
+        (others => VC.Empty_Symbolic_State);
+
+      type Owning_Local is record
+         Name  : Libadalang.Analysis.Defining_Name;
+         Decl  : Libadalang.Analysis.Object_Decl;
+         Scope : Libadalang.Analysis.Ada_Node;
+         Parts : Owning_Parts;
+      end record;
+
+      package Owning_Local_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Owning_Local);
+
+      Owning_Locals : Owning_Local_Vectors.Vector;
       Updates   : Natural_Array (States'Range) := (others => 0);
       --  Of those, the updates a back edge brought (Merge_Into).
       Back_Updates : Natural_Array (States'Range) := (others => 0);
@@ -12207,10 +12993,13 @@ package body Adalang_Analyzer.Flow_Interp is
                return;
             elsif Node.Kind = Libadalang.Common.Ada_Allocator then
                begin
-                  Note
-                    (Reach_Of
-                       (Node.As_Allocator.P_Get_Allocated_Type,
-                        Libadalang.Analysis.No_Ada_Node));
+                  --  An allocator of plain data runs no user code.
+                  if not Allocator_Runs_No_Code (Node.As_Allocator) then
+                     Note
+                       (Reach_Of
+                          (Node.As_Allocator.P_Get_Allocated_Type,
+                           Libadalang.Analysis.No_Ada_Node));
+                  end if;
                exception
                   when others =>
                      Note (Anywhere);
@@ -12449,6 +13238,11 @@ package body Adalang_Analyzer.Flow_Interp is
                           Libadalang.Analysis.Ada_Node (Name),
                           Source.As_Object_Decl.F_Type_Expr, Input);
                   end loop;
+                  if Verified_In_SPARK and then Config.Verification_Mode then
+                     Output_Symbols :=
+                       Owning_Parts_After_Declaration
+                         (Source.As_Object_Decl, Output_Symbols, Output);
+                  end if;
                end if;
 
             when CFG.Statement_Node =>
@@ -12502,6 +13296,13 @@ package body Adalang_Analyzer.Flow_Interp is
                      else
                         Output_Symbols := VC.Havoc;
                      end if;
+                     if Verified_In_SPARK and then Config.Verification_Mode
+                     then
+                        Output_Symbols :=
+                          Owning_Parts_After_Assignment
+                            (Dest, Source.As_Assign_Stmt.F_Expr, Source,
+                             Output_Symbols, Output);
+                     end if;
                      if Dest.Kind = Libadalang.Common.Ada_Call_Expr then
                         Check_Conversion_Or_Index
                           (Unit, Dest.As_Call_Expr, Input, Input_Symbols);
@@ -12533,6 +13334,21 @@ package body Adalang_Analyzer.Flow_Interp is
                              Source.As_Call_Stmt, Output, Primed, Input),
                           Source.As_Call_Stmt, Output);
                   end;
+                  if Verified_In_SPARK and then Config.Verification_Mode then
+                     declare
+                        Freed : constant Libadalang.Analysis.Expr :=
+                          Deallocated_Actual (Source.As_Call_Stmt);
+                     begin
+                        if not Libadalang.Analysis.Is_Null (Freed) then
+                           Output_Symbols :=
+                             VC.Null_Parts
+                               (Output_Symbols, Freed,
+                                (1 => Ada.Strings.Unbounded
+                                        .Null_Unbounded_String),
+                                Source, Output);
+                        end if;
+                     end;
+                  end if;
                elsif Source.Kind = Libadalang.Common.Ada_Pragma_Node then
                   Output :=
                     Interpret_Proof_Pragma
@@ -12722,6 +13538,11 @@ package body Adalang_Analyzer.Flow_Interp is
                            Edge.Source.Parent, Output);
                end if;
 
+               if Leak_Exit_Edge (Edge_Index) then
+                  Leak_Edge_Live (Edge_Index) := Propagate;
+                  Leak_Edge_States (Edge_Index) := Edge_State;
+                  Leak_Edge_Symbols (Edge_Index) := Edge_Symbols;
+               end if;
                if Propagate then
                   Merge_Into
                     (Edge.To, Edge_State, Edge_Symbols, Edge.Kind,
@@ -14923,6 +15744,10 @@ package body Adalang_Analyzer.Flow_Interp is
       end Finalize_Actual_Check;
 
       --  Finalize_Actual_Check for each actual of Call.
+      procedure Finalize_Leak_Out_Actual
+        (Actual    : Libadalang.Analysis.Expr'Class;
+         Container : CFG.Node_Id);
+
       procedure Finalize_Actual_Checks
         (Call      : Libadalang.Analysis.Call_Expr;
          Container : CFG.Node_Id) is
@@ -14931,6 +15756,12 @@ package body Adalang_Analyzer.Flow_Interp is
             Finalize_Actual_Check
               (Libadalang.Analysis.Param (Pair),
                Libadalang.Analysis.Actual (Pair), Container);
+            if Formal_Mode (Libadalang.Analysis.Param (Pair)) =
+              Libadalang.Common.Ada_Mode_Out
+            then
+               Finalize_Leak_Out_Actual
+                 (Libadalang.Analysis.Actual (Pair), Container);
+            end if;
          end loop;
       exception
          when Exc : others =>
@@ -16606,6 +17437,385 @@ package body Adalang_Analyzer.Flow_Interp is
       --  of Node an assignment to a record with discriminants. One the
       --  static path decides (Visit_Discriminant_Accesses, a static
       --  discriminant constraint on the prefix object) is left to it.
+      ------------------------------------------------------------------
+      --  Resource leaks
+      ------------------------------------------------------------------
+
+      function Leak_Checks_On return Boolean is
+        (Config.Verification_Mode and then Verified_In_SPARK);
+
+      --  True when the CFG node Id is in Scope (a subprogram body or a
+      --  block statement). A merge node with no source, the back-edge node
+      --  of a loop, is where its loop is.
+      function Inside_Scope
+        (Id    : CFG.Node_Id;
+         Scope : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+         Info    : constant CFG.CFG_Node := CFG.Node_At (Graph, Id);
+         Current : Libadalang.Analysis.Ada_Node := Info.Source;
+      begin
+         if Libadalang.Analysis.Is_Null (Current)
+           and then Info.Kind = CFG.Merge_Node
+         then
+            for Edge_Index in 1 .. CFG.Edge_Count (Graph) loop
+               declare
+                  Edge : constant CFG.CFG_Edge :=
+                    CFG.Edge_At (Graph, Edge_Index);
+               begin
+                  if Edge.From = Id
+                    and then CFG.Node_At (Graph, Edge.To).Kind =
+                      CFG.Loop_Header_Node
+                  then
+                     Current := CFG.Node_At (Graph, Edge.To).Source;
+                     exit;
+                  end if;
+               end;
+            end loop;
+         end if;
+         while not Libadalang.Analysis.Is_Null (Current) loop
+            if Current = Scope then
+               return True;
+            end if;
+            Current := Current.Parent;
+         end loop;
+         return False;
+      end Inside_Scope;
+
+      --  True when the edge leaves Scope on a path that is not exceptional.
+      function Leaves_Scope
+        (Edge  : CFG.CFG_Edge;
+         Scope : Libadalang.Analysis.Ada_Node) return Boolean is
+      begin
+         return Edge.Kind not in CFG.Exceptional_Edge | CFG.Raise_Edge
+                                | CFG.Handler_Edge | CFG.Unsupported_Edge
+           and then Edge.To /= CFG.Exceptional_Exit (Graph)
+           and then Inside_Scope (Edge.From, Scope)
+           and then not Inside_Scope (Edge.To, Scope);
+      end Leaves_Scope;
+
+      --  The owning locals of the subprogram and of its block statements,
+      --  and the edges that leave their scopes.
+      procedure Collect_Owning_Locals is
+         procedure Collect
+           (Node  : Libadalang.Analysis.Ada_Node'Class;
+            Scope : Libadalang.Analysis.Ada_Node) is
+         begin
+            if Libadalang.Analysis.Is_Null (Node) then
+               return;
+            elsif Node.Kind = Libadalang.Common.Ada_Object_Decl then
+               if Libadalang.Analysis.Is_Null
+                 (Node.As_Object_Decl.F_Renaming_Clause)
+               then
+                  declare
+                     Parts : constant Owning_Parts :=
+                       Owning_Parts_Of
+                         (Node.As_Object_Decl.F_Type_Expr
+                            .P_Designated_Type_Decl);
+                  begin
+                     if Parts.Any then
+                        for Id of Node.As_Object_Decl.F_Ids loop
+                           Owning_Locals.Append
+                             ((Name  => Libadalang.Analysis.Defining_Name (Id),
+                               Decl  => Node.As_Object_Decl,
+                               Scope => Scope,
+                               Parts => Parts));
+                        end loop;
+                     end if;
+                  end;
+               end if;
+               return;
+            elsif Node.Kind = Libadalang.Common.Ada_Decl_Block then
+               for Index in 1 .. Node.Children_Count loop
+                  Collect (Node.Child (Index),
+                           Libadalang.Analysis.Ada_Node (Node));
+               end loop;
+               return;
+            elsif Libadalang.Analysis.Ada_Node (Node) /=
+                    Libadalang.Analysis.Ada_Node (Subprogram)
+              and then Node.Kind in Libadalang.Common.Ada_Body_Node
+                                  | Libadalang.Common.Ada_Base_Package_Decl
+                                  | Libadalang.Common.Ada_Generic_Decl
+                                  | Libadalang.Common.Ada_Basic_Subp_Decl
+            then
+               return;
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               Collect (Node.Child (Index), Scope);
+            end loop;
+         end Collect;
+      begin
+         Owning_Locals.Clear;
+         if not Leak_Checks_On then
+            return;
+         end if;
+         Collect (Subprogram, Libadalang.Analysis.Ada_Node (Subprogram));
+         for Local of Owning_Locals loop
+            for Edge_Index in 1 .. CFG.Edge_Count (Graph) loop
+               if not Leak_Exit_Edge (Edge_Index)
+                 and then Leaves_Scope
+                   (CFG.Edge_At (Graph, Edge_Index), Local.Scope)
+               then
+                  Leak_Exit_Edge (Edge_Index) := True;
+               end if;
+            end loop;
+         end loop;
+      exception
+         when others =>
+            Owning_Locals.Clear;
+      end Collect_Owning_Locals;
+
+      --  The leak check of Dest := Value: the owning parts of Dest are null
+      --  or moved before the assignment, or moved by Value itself.
+      procedure Finalize_Leak_Assignment
+        (Stmt      : Libadalang.Analysis.Assign_Stmt;
+         Container : CFG.Node_Id)
+      is
+         Dest   : constant Libadalang.Analysis.Name := Stmt.F_Dest;
+         Parts  : Owning_Parts;
+         Moves  : Move_Source_Vectors.Vector;
+         Needed : Path_Vectors.Vector;
+      begin
+         if not Leak_Checks_On then
+            return;
+         end if;
+         Parts := Owning_Parts_Of (Dest.P_Expression_Type);
+         if not Parts.Any then
+            return;
+         elsif not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Stmt, Proof.Resource_Leak_Check,
+               "the target's owning parts are not shown to be null");
+            return;
+         elsif Unreached (Container) then
+            Record_Unreachable
+              (Unit, Stmt, Proof.Resource_Leak_Check,
+               "the containing CFG node is unreachable");
+            return;
+         elsif not Parts.Complete then
+            Record_Unproved
+              (Unit, Stmt, Proof.Resource_Leak_Check,
+               Proof.Abstract_Interpretation,
+               "a leak is not established, but absence is not proved",
+               Imprecision => "the owning parts of the target are not all known",
+               Final => True);
+            return;
+         end if;
+         Collect_Moves (Stmt.F_Expr, Moves);
+         declare
+            Dest_Text : constant String := Name_Text (Dest);
+         begin
+            for Path of Parts.Paths loop
+               declare
+                  Full    : constant String :=
+                    Dest_Text & Ada.Strings.Unbounded.To_String (Path);
+                  Covered : Boolean := False;
+               begin
+                  for Move of Moves loop
+                     for Moved of Move.Parts.Paths loop
+                        if Name_Text (Move.Name) &
+                             Ada.Strings.Unbounded.To_String (Moved) = Full
+                        then
+                           Covered := True;
+                        end if;
+                     end loop;
+                  end loop;
+                  if not Covered then
+                     Needed.Append (Path);
+                  end if;
+               end;
+            end loop;
+         end;
+         if Needed.Is_Empty then
+            --  proof-path: leak-moved-by-value
+            Record_Proved_Safe
+              (Unit, Stmt, Proof.Resource_Leak_Check, Proof.Flow_Analysis,
+               "the assigned value moves the target's owning parts",
+               "owning parts moved by the value", Final => True);
+            return;
+         end if;
+         declare
+            Outcome : constant VC.VC_Outcome :=
+              VC.Decide_Parts_Null
+                (Dest, To_List ((Paths => Needed, Any => True,
+                                 Complete => True)),
+                 State_At (Container), Symbols_At (Container));
+         begin
+            if Outcome.Result = VC.VC_Proved then
+               --  proof-path: leak-assignment-external
+               Record_Proved_Safe
+                 (Unit, Stmt, Proof.Resource_Leak_Check,
+                  Proof.External_Prover,
+                  "scalar verification condition proves the target's " &
+                    "owning parts are null or moved",
+                  VC.Evidence, Final => True);
+            else
+               Record_VC_Unproved
+                 (Unit, Stmt, Proof.Resource_Leak_Check,
+                  Proof.Abstract_Interpretation,
+                  "a leak is not established, but absence is not proved",
+                  "the target's owning parts are not known to be null " &
+                    "or moved",
+                  Outcome, Final => True);
+            end if;
+         end;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize leak checks",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Leak_Assignment;
+
+      --  The leak check of an actual for a formal of mode out: its owning
+      --  parts are null or moved before the call.
+      procedure Finalize_Leak_Out_Actual
+        (Actual    : Libadalang.Analysis.Expr'Class;
+         Container : CFG.Node_Id)
+      is
+         Parts : Owning_Parts;
+      begin
+         if not Leak_Checks_On then
+            return;
+         end if;
+         Parts := Owning_Parts_Of (Actual.P_Expression_Type);
+         if not Parts.Any then
+            return;
+         elsif not Boundary_Supported then
+            Record_Unsupported
+              (Unit, Actual, Proof.Resource_Leak_Check,
+               "the actual's owning parts are not shown to be null");
+            return;
+         elsif Unreached (Container) then
+            Record_Unreachable
+              (Unit, Actual, Proof.Resource_Leak_Check,
+               "the containing CFG node is unreachable");
+            return;
+         elsif not Parts.Complete then
+            Record_Unproved
+              (Unit, Actual, Proof.Resource_Leak_Check,
+               Proof.Abstract_Interpretation,
+               "a leak is not established, but absence is not proved",
+               Imprecision => "the owning parts of the actual are not all known",
+               Final => True);
+            return;
+         end if;
+         declare
+            Outcome : constant VC.VC_Outcome :=
+              VC.Decide_Parts_Null
+                (Actual, To_List (Parts),
+                 State_At (Container), Symbols_At (Container));
+         begin
+            if Outcome.Result = VC.VC_Proved then
+               --  proof-path: leak-out-actual-external
+               Record_Proved_Safe
+                 (Unit, Actual, Proof.Resource_Leak_Check,
+                  Proof.External_Prover,
+                  "scalar verification condition proves the actual's " &
+                    "owning parts are null or moved",
+                  VC.Evidence, Final => True);
+            else
+               Record_VC_Unproved
+                 (Unit, Actual, Proof.Resource_Leak_Check,
+                  Proof.Abstract_Interpretation,
+                  "a leak is not established, but absence is not proved",
+                  "the actual's owning parts are not known to be null " &
+                    "or moved",
+                  Outcome, Final => True);
+            end if;
+         end;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize leak checks",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Leak_Out_Actual;
+
+      --  The leak check of each owning local at the end of its scope: on
+      --  every edge that leaves the scope normally, its owning parts are
+      --  null or moved. Reported on its declaration, as GNATprove does.
+      procedure Finalize_Leak_Scopes is
+      begin
+         if not Leak_Checks_On then
+            return;
+         end if;
+         for Local of Owning_Locals loop
+            declare
+               Decl_Node : constant CFG.Node_Id :=
+                 Matching_CFG_Node (Libadalang.Analysis.Ada_Node (Local.Decl));
+               Failed    : Boolean := False;
+               Last      : VC.VC_Outcome := VC.Unknown_Outcome;
+            begin
+               if not Boundary_Supported then
+                  Record_Unsupported
+                    (Unit, Local.Name, Proof.Resource_Leak_Check,
+                     "the object's owning parts are not shown to be null " &
+                       "at the end of its scope");
+               elsif Decl_Node = CFG.No_Node or else Unreached (Decl_Node) then
+                  Record_Unreachable
+                    (Unit, Local.Name, Proof.Resource_Leak_Check,
+                     "the declaration is unreachable");
+               elsif not Local.Parts.Complete then
+                  Record_Unproved
+                    (Unit, Local.Name, Proof.Resource_Leak_Check,
+                     Proof.Abstract_Interpretation,
+                     "a leak is not established, but absence is not proved",
+                     Imprecision =>
+                       "the owning parts of the object are not all known",
+                     Final => True);
+               else
+                  for Edge_Index in 1 .. CFG.Edge_Count (Graph) loop
+                     if Leak_Edge_Live (Edge_Index)
+                       and then Leaves_Scope
+                         (CFG.Edge_At (Graph, Edge_Index), Local.Scope)
+                     then
+                        declare
+                           Outcome : constant VC.VC_Outcome :=
+                             VC.Decide_Parts_Null
+                               (Local.Name, To_List (Local.Parts),
+                                Leak_Edge_States (Edge_Index),
+                                Leak_Edge_Symbols (Edge_Index));
+                        begin
+                           if Outcome.Result /= VC.VC_Proved then
+                              Failed := True;
+                              Last := Outcome;
+                           end if;
+                        end;
+                     end if;
+                     exit when Failed;
+                  end loop;
+                  if Failed then
+                     Record_VC_Unproved
+                       (Unit, Local.Name, Proof.Resource_Leak_Check,
+                        Proof.Abstract_Interpretation,
+                        "a leak is not established, but absence is not proved",
+                        "the object's owning parts are not known to be null " &
+                          "or moved at an end of its scope",
+                        Last, Final => True);
+                  else
+                     --  proof-path: leak-scope-external
+                     Record_Proved_Safe
+                       (Unit, Local.Name, Proof.Resource_Leak_Check,
+                        Proof.External_Prover,
+                        "scalar verification condition proves the object's " &
+                          "owning parts are null or moved wherever its " &
+                          "scope ends",
+                        VC.Evidence, Final => True);
+                  end if;
+               end if;
+            exception
+               when E : others =>
+                  Report_Recoverable_Failure_Once
+                    (Rule       => "Verification",
+                     Operation  => "finalize leak checks",
+                     Source     => Ada_Text.Safe_Filename (Unit),
+                     Occurrence => E);
+            end;
+         end loop;
+      end Finalize_Leak_Scopes;
+
       procedure Finalize_Discriminant_Check
         (Node      : Libadalang.Analysis.Ada_Node'Class;
          Container : CFG.Node_Id)
@@ -16806,6 +18016,9 @@ package body Adalang_Analyzer.Flow_Interp is
          Finalize_Predicate_Checks (Node, Here);
          Finalize_Dereference_Check (Node, Here);
          Finalize_Discriminant_Check (Node, Here);
+         if Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
+            Finalize_Leak_Assignment (Node.As_Assign_Stmt, Here);
+         end if;
          begin
             if Node.Kind in Libadalang.Common.Ada_Bin_Op_Range then
                declare
@@ -17401,6 +18614,7 @@ package body Adalang_Analyzer.Flow_Interp is
       Fixpoint_In_Progress := True;  --  adalang-analyzer: ignore Overwritten_Assignment
       Collect_Loop_Invariants (Subprogram);
       Collect_Effectful_Calls;
+      Collect_Owning_Locals;
       Seed_Parameters (Initial);
       Seed_Outside_Inputs (Initial);
       for Pair of Pairs loop
@@ -17443,6 +18657,50 @@ package body Adalang_Analyzer.Flow_Interp is
       --  has a root there, which a write renews, and the entry state is
       --  marked, so that the exit state shows whether every symbol of the
       --  entry state still names what it named there.
+      --  The owning parts of an out parameter are free on entry (the
+      --  caller's leak check of its actual), null as far as SPARK code can
+      --  tell: it does not read them before it writes them.
+      if Config.Verification_Mode and then Verified_In_SPARK
+        and then Subprogram.Kind = Libadalang.Common.Ada_Subp_Body
+      then
+         begin
+            for Param of Subprogram.As_Subp_Body.F_Subp_Spec.P_Params loop
+               if Param.F_Mode.Kind = Libadalang.Common.Ada_Mode_Out then
+                  declare
+                     Parts : constant Owning_Parts :=
+                       Owning_Parts_Of
+                         (Param.F_Type_Expr.P_Designated_Type_Decl);
+                  begin
+                     if not Parts.Paths.Is_Empty then
+                        for Id of Param.F_Ids loop
+                           Initial_Symbols :=
+                             VC.Null_Parts
+                               (Initial_Symbols, Id, To_List (Parts), Id,
+                                Initial);
+                           for Pair of Pairs loop
+                              if Pair.Body_Name =
+                                   Libadalang.Analysis.Ada_Node (Id)
+                              then
+                                 Initial_Symbols :=
+                                   VC.Null_Parts
+                                     (Initial_Symbols, Pair.Spec_Name,
+                                      To_List (Parts), Id, Initial);
+                              end if;
+                           end loop;
+                        end loop;
+                     end if;
+                  end;
+               end if;
+            end loop;
+         exception
+            when E : others =>
+               Report_Recoverable_Failure_Once
+                 (Rule       => "Verification",
+                  Operation  => "null the owning parts of out parameters",
+                  Source     => Ada_Text.Safe_Filename (Unit),
+                  Occurrence => E);
+         end;
+      end if;
       if Config.Verification_Mode then
          Initial_Symbols := VC.Prime_Old (Initial_Symbols, Post, Initial);
          --  The postcondition names the parameters as the declaration
@@ -17490,6 +18748,7 @@ package body Adalang_Analyzer.Flow_Interp is
          --  terms would only destroy the relational fact at downstream
          --  joins. The interval domain still iterates the loop.
          Summary_Mode := True;  --  adalang-analyzer: ignore Dead_Store -- rationale: read by nested Process_Node
+         Leak_Edge_Live := (others => False);
          States := (others => Empty_Flow_State);
          Symbolic_States := (others => VC.Empty_Symbolic_State);
          After_States := (others => Empty_Flow_State);
@@ -17529,6 +18788,7 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
       end loop;
       Finalize_Node (Subprogram);
+      Finalize_Leak_Scopes;
       Finalize_Output_Parameters;
       Finalize_Output_Globals;
       Finalize_Contract (Pre, Entry_State, Entry_Symbols, On_Entry);
@@ -17653,6 +18913,7 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
          Fixpoint_In_Progress := False;
          Finalize_Node (Subprogram);
+         Finalize_Leak_Scopes;
          if not Boundary_Supported then
             --  No state is consulted: every obligation is unsupported.
             Finalize_Node (Contract_Expression (Subprogram, "Pre"));

@@ -94,6 +94,8 @@ package body Adalang_Analyzer.Proof_Obligations is
             return "predicate-check";
          when Pointer_Dereference_Check =>
             return "pointer-dereference";
+         when Resource_Leak_Check =>
+            return "resource-leak";
          when Initialization_Check =>
             return "initialization-check";
          when Assertion_Check =>

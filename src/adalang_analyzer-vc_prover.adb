@@ -13798,6 +13798,113 @@ package body Adalang_Analyzer.VC_Prover is
          return Unknown_Outcome;
    end Decide_Not_Null;
 
+   --  Where Base is: the place a name settles, or the object a defining
+   --  name declares.
+   function Base_Place
+     (Base    : Libadalang.Analysis.Ada_Node'Class;
+      Context : Translation_Context) return Located_Object is
+   begin
+      if Libadalang.Analysis.Is_Null (Base) then
+         return Nowhere;
+      elsif Base.Kind = Libadalang.Common.Ada_Defining_Name then
+         return Resolved (Context, Libadalang.Analysis.Ada_Node (Base));
+      end if;
+      return Location (Base, Context);
+   exception
+      when others =>
+         return Nowhere;
+   end Base_Place;
+
+   function Decide_Parts_Null
+     (Base    : Libadalang.Analysis.Ada_Node'Class;
+      Paths   : Part_Path_List;
+      State   : Domain.Flow_State;
+      Symbols : Symbolic_State) return VC_Outcome
+   is
+      Context : Translation_Context :=
+        (State => State, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False, Expanded => 0);
+      Place : constant Located_Object := Base_Place (Base, Context);
+      Goal  : Unbounded_String := To_Unbounded_String ("true");
+   begin
+      if Libadalang.Analysis.Is_Null (Place.Object) then
+         Mark_Unsupported (Context, Base, Unsupported_Expression_Kind);
+      end if;
+      if Context.Supported then
+         for Path of Paths loop
+            declare
+               Part  : constant Located_Object :=
+                 (Object => Place.Object, Path => Place.Path & Path);
+               --  The value the part holds, read whether or not the
+               --  object is known to be initialized: an access part has
+               --  a value, null by default.
+               Token : constant String :=
+                 Symbol_For (Context, Part_Key (Part), Opaque_Sort);
+            begin
+               exit when not Context.Supported or else Token'Length = 0;
+               Goal :=
+                 Binary
+                   ("and", Goal, To_Unbounded_String ("(= " & Token & " 0)"));
+            end;
+         end loop;
+      end if;
+      if not Context.Supported then
+         return
+           (Result => VC_Unsupported,
+            Provenance => Unsupported_Provenance_For (Context, Base));
+      end if;
+      return Decide_Goal (Goal, Context);
+   exception
+      when others =>
+         return Unknown_Outcome;
+   end Decide_Parts_Null;
+
+   function Null_Parts
+     (Symbols : Symbolic_State;
+      Base    : Libadalang.Analysis.Ada_Node'Class;
+      Paths   : Part_Path_List;
+      Writer  : Libadalang.Analysis.Ada_Node'Class;
+      Flow    : Domain.Flow_State) return Symbolic_State
+   is
+      Context : constant Translation_Context :=
+        (State => Flow, Symbols => Symbols, Supported => Symbols.Supported,
+         Object_Bindings => Object_Binding_Vectors.Empty_Vector,
+         Failure_Reason => No_Unsupported_Reason,
+         Failure_Node => Libadalang.Analysis.No_Ada_Node,
+         Inlining_Path => Null_Unbounded_String, Depth => 0,
+         Priming_Old => False, Expanded => 0);
+      Place  : constant Located_Object := Base_Place (Base, Context);
+      Result : Symbolic_State := Symbols;
+      pragma Unreferenced (Writer);
+   begin
+      if not Symbols.Supported
+        or else Libadalang.Analysis.Is_Null (Place.Object)
+        or else Domain.Classify (Place.Object) /= Domain.Tracked
+      then
+         return Symbols;
+      end if;
+      for Path of Paths loop
+         declare
+            Part : constant Located_Object :=
+              (Object => Place.Object, Path => Place.Path & Path);
+         begin
+            Access_Value_Keys.Include (Root_Name (Part_Key (Part)), True);
+            Set_Binding
+              (Result,
+               (Key => Part_Key (Part), Sort => Opaque_Sort,
+                Term => To_Unbounded_String ("0")));
+         end;
+      end loop;
+      return Result;
+   exception
+      when others =>
+         return Symbols;
+   end Null_Parts;
+
    --  The condition under which Subject, the term of the discriminant a
    --  variant part depends on (Boolean when Is_Boolean), selects Variant:
    --  one of its choices, and for "others" none of the choices of the

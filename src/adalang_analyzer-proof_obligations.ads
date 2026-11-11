@@ -32,6 +32,7 @@ package Adalang_Analyzer.Proof_Obligations is
       Discriminant_Check,
       Predicate_Check,
       Pointer_Dereference_Check,
+      Resource_Leak_Check,
       Initialization_Check,
       Assertion_Check,
       Precondition_Check,

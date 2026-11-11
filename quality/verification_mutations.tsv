@@ -578,3 +578,15 @@ discriminants-other-kind	tests/verification_mutation_discriminants.adb	discrimin
 discriminants-out-no-guard	tests/verification_mutation_discriminants.adb	discriminant-check	Plain.Ssl	unproved	nothing selects the variant of the component given as an out actual.
 discriminants-generic-formal	tests/verification_mutation_discriminants.adb	assertion	Formal_Item.D = Before	unproved	the actual of a formal type may have defaults: an instance's parameter may then change its discriminant.
 discriminants-implicit-code	tests/verification_mutation_discriminants.adb	assertion	Counter = Seen	unproved	Finalize of a component of the local, run where the source shows no call, changes Counter.
+leaks-twice	tests/verification_mutation_resource_leaks.adb	resource-leak	X := new Bytes'(1 .. 3 => 0);	unproved	the first allocation is overwritten.
+leaks-lost-local	tests/verification_mutation_resource_leaks.adb	resource-leak	Lost_Buffer	unproved	an allocated local is never freed.
+leaks-busy-out-actual	tests/verification_mutation_resource_leaks.adb	resource-leak	Holder.Buffer	unproved	a non-null component is given as an out actual.
+leaks-component-no-pre	tests/verification_mutation_resource_leaks.adb	resource-leak	Into.Buffer := From;	unproved	nothing says the component overwritten is null.
+leaks-half-move	tests/verification_mutation_resource_leaks.adb	resource-leak	Half_Buffer	unproved	the local is moved on one path only.
+leaks-aggregate-in-out	tests/verification_mutation_resource_leaks.adb	resource-leak	Ctx := (Buffer => null, Last => 0);	unproved	the aggregate overwrites an in out parameter that may hold a buffer.
+leaks-silent-call	tests/verification_mutation_resource_leaks.adb	resource-leak	Silent_Buffer	unproved	the call says nothing of the value it is given back.
+leaks-in-out-as-out	tests/verification_mutation_resource_leaks.adb	resource-leak	Ctx	unproved	an in out parameter that may hold a buffer is given as an out actual.
+leaks-tmp-lost	tests/verification_mutation_resource_leaks.adb	resource-leak	Lost_Tmp	unproved	the _Tmp copy is never moved back.
+leaks-slots-out	tests/verification_mutation_resource_leaks.adb	resource-leak	S	unproved	slots of an in out parameter are given as an out actual.
+leaks-half-free	tests/verification_mutation_resource_leaks.adb	resource-leak	Half_Freed	unproved	freed on one path only.
+leaks-update-replaced	tests/verification_mutation_resource_leaks.adb	resource-leak	Ctx := Ctx'Update (Buffer => Buffer);	unproved	'Update replaces the owning component, which is lost: it is not moved by the value.

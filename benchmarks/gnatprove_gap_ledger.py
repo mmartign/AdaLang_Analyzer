@@ -59,7 +59,7 @@ CHECKS = [
     ("initialization of", "initialization", "initialization-check"),
     ("might not be initialized", "initialization", "initialization-check"),
     ("is not initialized", "initialization", "initialization-check"),
-    ("resource or memory leak", "ownership", None),
+    ("resource or memory leak", "ownership", "resource-leak"),
     ("non-aliasing", "ownership", None),
     ("aliasing", "ownership", None),
     ("Always_Terminates", "termination", "termination"),
