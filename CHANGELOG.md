@@ -5,7 +5,7 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.15.0] - 2026-11-12
 
 `--verify` raises and proves more of the runtime checks GNATprove raises:
 the range of a returned value, the bounds of the range of a `for` loop or a
@@ -107,6 +107,18 @@ measured.
 - The data dependencies of a call to a generic formal subprogram take a
   `null` default, which touches nothing, and a `<>` default resolved as
   above, where any default was taken to touch what is not known.
+
+### Known limitations
+
+- `FP-143` (`quality/known_analysis_issues.tsv`): the range check of the
+  value a function returns is a `Definite_Error` where the operation
+  returned overflows first, and so is never reached
+  (`function Bad return Integer is (Ident (Integer'Last) + 1);`). Seen on
+  one unit of the SPARK testsuite, on none of the corpora.
+- `FP-144`: `Overwritten_Assignment` takes an assignment to an object of an
+  enclosing subprogram for overwritten when the call between it and the
+  next assignment is recursive and reads the object through a nested
+  procedure.
 
 ## [1.14.0] - 2026-11-11
 
