@@ -149,14 +149,19 @@ Its regression and quality gates include a growing boundary-case corpus,
 adversarial verification mutations, proof-path evidence, self-analysis, and
 comparisons on independently authored Ada/SPARK projects.
 
-Across **5,181 proof obligations** that AdaLang Analyzer and GNATprove could
+Across **5,555 proof obligations** that AdaLang Analyzer and GNATprove could
 both evaluate at the same location in five independently authored,
 fully-proved corpora, the recorded comparisons contain:
 
 | Observed result | Count |
 | --- | ---: |
-| AdaLang called safe where GNATprove did not prove safe | **0** |
+| AdaLang called safe where GNATprove did not prove safe | **1** |
 | AdaLang called a definite error where GNATprove proved safe | **0** |
+
+The one check AdaLang calls safe holds: it is the preservation of a loop
+invariant in SPARKNaCl (`sparknacl-sign.adb`, line 604), on which
+GNATprove's provers reach their step limit. The loop's body writes no
+element the invariant speaks of but one it sets to 0.
 
 This is evidence of precision on AdaLang Analyzer's supported subset, not a
 claim of GNATprove-equivalent coverage: AdaLang returns `Unproved` or
@@ -262,12 +267,13 @@ sh tests/run_all.sh
 The gate builds the current sources and runs all regression, reporting,
 quality, model, performance, and verification suites. Its differential stage
 runs 34 clean and 49 deliberately broken units through GNATprove when that tool
-is installed, compares three of them with it check by check, and reports an
-explicit skip otherwise. A separate seeded
-mutation campaign guards all 18 enumerated obligation families against
-false-safe regressions. A proof-path evidence gate maps 94 abstract, flow,
-contract-transfer, and external-prover routes to every one of the 36 current
-`Proved_Safe` producer sites, including adversarial and solver-boundary cases.
+is installed, compares more than a dozen further fixtures with it check by
+check, and reports an explicit skip otherwise. A separate seeded
+mutation campaign guards all 19 enumerated obligation families against
+false-safe regressions. A proof-path evidence gate maps 109
+abstract-interpretation, flow, static-evaluation, contract-transfer, and
+external-prover routes to every one of the 47 current `Proved_Safe`
+producer sites, including adversarial and solver-boundary cases.
 
 ## Commercial support from Spazio IT
 

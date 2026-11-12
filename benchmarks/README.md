@@ -49,7 +49,7 @@ GNATprove output of 2026-10-02). A matched pair is a
 "both safe" is the number of pairs AdaLang proves too.
 
 **Across five independently-authored, fully-proved corpora (SPARKNaCl,
-Saatana, libkeccak, coap_spark, Tokeneer) — 5,226 proof obligations both
+Saatana, libkeccak, coap_spark, Tokeneer) — 5,555 proof obligations both
 tools could independently evaluate at the same location, spanning five
 different authors/origins and five structurally different domains —
 AdaLang has called safe one check that GNATprove could not prove, and
@@ -65,12 +65,12 @@ The `spark_testsuite` corpus is structurally different — 124 curated
 single-purpose regression tests from the AdaCore SPARK testsuite, each
 analyzed on its own generated project and compared individually (the
 testsuite reuses filenames across thousands of directories, so a global
-`(basename, line, kind)` match is not possible). Its 651 matched pairs
+`(basename, line, kind)` match is not possible). Its 692 matched pairs
 span far more distinct code shapes than the six real projects reach; its
 value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-11-01.md`.
+`proved-safe`. See `spark_testsuite/RESULTS_2026-11-11.md`.
 
 What the two zero columns don't show:
 
@@ -321,8 +321,9 @@ it's actually positioned as (`docs/src/positioning.md`): a fast,
 no-setup-required
 first pass.
 
-**Where the evidence is strong.** Zero false positives and zero possible
-unsoundness across 5,199 matched proof obligations spanning five
+**Where the evidence is strong.** Zero false positives, and one possible
+unsoundness that turns out to hold (the `sparknacl-sign.adb` loop
+invariant above), across 5,555 matched proof obligations spanning five
 independently-authored, fully-proved SPARK corpora — a hash family, two
 crypto primitives, a protocol parser, a security-critical access-control
 system — is the property that matters most for trusting a tool's output,
