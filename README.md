@@ -266,13 +266,13 @@ sh tests/run_all.sh
 
 The gate builds the current sources and runs all regression, reporting,
 quality, model, performance, and verification suites. Its differential stage
-runs 34 clean and 49 deliberately broken units through GNATprove when that tool
+runs 34 clean and 51 deliberately broken units through GNATprove when that tool
 is installed, compares more than a dozen further fixtures with it check by
 check, and reports an explicit skip otherwise. A separate seeded
 mutation campaign guards all 19 enumerated obligation families against
-false-safe regressions. A proof-path evidence gate maps 109
+false-safe regressions. A proof-path evidence gate maps 115
 abstract-interpretation, flow, static-evaluation, contract-transfer, and
-external-prover routes to every one of the 47 current `Proved_Safe`
+external-prover routes to every one of the 50 current `Proved_Safe`
 producer sites, including adversarial and solver-boundary cases.
 
 ## Commercial support from Spazio IT

@@ -5,6 +5,69 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+`--verify` raises and proves more of the runtime checks GNATprove raises:
+the range of a returned value, the bounds of the range of a `for` loop or a
+quantified expression, a `'Length` the other operand of a comparison
+converts, a division by a static value in a contract or a predicate, and
+the arithmetic of a loop invariant where another invariant of the loop is
+not proved.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+11,334 of the 15,043 checks GNATprove proves (was 11,152). 182 more are
+proved and none fewer: 65 range checks on the bounds of a range constraint
+(SPARKNaCl 46, CoAP-SPARK 7, libkeccak 6, Tokeneer 6), 38 on a returned
+value (CoAP-SPARK 37, libkeccak 1), 37 on a `'Length` (libkeccak), 30
+division checks (libkeccak 15, CoAP-SPARK 13, Saatana 2) and 12 overflow
+checks in loop invariants (libkeccak 11, SPARKNaCl 1). On the nine corpora
+with a `--verify` lane, 628 range checks are added (397 proved, 218
+unproved, 10 unsupported, 3 unreachable), 99 obligations that were
+`Unproved` are proved (85 divisions, 14 overflows), none that was proved is
+`Unproved`, none is removed, and no definite error is new or gone. On all ten
+corpora, every preset, findings are identical. On the SPARK testsuite both
+tools prove 324 of 704 pairs (was 312 of 692), with no possible
+unsoundness and no false positive. The two out-of-range returns of the
+seeded-defect programs, which had no check, are definite errors now.
+CPU time is up by 4% at most (libkeccak 197 s -> 204 s; CoAP-SPARK and AWS
+within 2%).
+
+### Added
+
+- A range check on the value a function returns: the expression of a
+  `return` statement, or that of an expression function, against the
+  result subtype of a function with an integer result, decided as an
+  assignment is. None where the value is a name, a call, a conversion or a
+  qualified expression whose own subtype is statically within the result
+  subtype: a compiler makes none there.
+- A range check on the bounds of `T range L .. H` in a `for` loop or a
+  quantified expression, `T` an integer subtype with static bounds: a
+  range that is not null has both its bounds in `T`. It is raised at the
+  parameter and reported as `K in T range L .. H`, proved when the range is
+  always null or when `L >= T'First` and `H <= T'Last` each hold -- from the
+  intervals of the bounds, from the subtype of a bound that is a name, a
+  call, a conversion or a qualified expression, or by the solvers -- and is
+  never a definite error. A loop's range is decided in each state the loop
+  is entered with. Until now nothing checked the assumption, which the
+  analysis makes, that the parameter is within `T`.
+
+### Changed
+
+- The range check of `X'Length` takes the type of the other operand where
+  Libadalang resolves a comparison or an operation as universal:
+  `(Bit_Len + 7) / 8 <= Data'Length` had no check, and has one against
+  the type of `Bit_Len` now. Never across `**`, whose right operand is a
+  `Natural`.
+- A division whose divisor has a static value other than 0 is proved where
+  no body the analysis walks has it: in a `Dynamic_Predicate`, a
+  `Default_Initial_Condition` or a `Contract_Cases` of a declaration
+  (`Bit_Length mod 8`, `First rem Byte'Size`). It was `Unproved` there.
+- An overflow check inside a leading loop invariant that the head of the
+  loop does not decide -- the head assumes the invariants only when each
+  is proved -- is decided in each state the loop is entered with and at the
+  start of the next iteration, as the invariant itself is, and proved when
+  proved in all of them.
+
 ## [1.14.0] - 2026-11-11
 
 A `--verify` release that checks resource leaks: an owning access value

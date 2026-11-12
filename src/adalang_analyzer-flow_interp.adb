@@ -10810,6 +10810,32 @@ package body Adalang_Analyzer.Flow_Interp is
       Loop_Variants   : Loop_Variant_Vectors.Vector;
       Summary_Mode : Boolean := False;
 
+      --  The overflow checks of a leading loop invariant, decided where the
+      --  invariant is evaluated: in each state the loop is entered with
+      --  (Check_Loop_VCs) and at the start of the next iteration of the
+      --  walk of one iteration (Prove_Header), which assumes the leading
+      --  invariants at the head as GNATprove does. Proved only when proved
+      --  in every one of them; what the head knows says nothing about them
+      --  when an invariant is not assumed there. Keyed by source range;
+      --  any failure while deciding makes none of them proved.
+      type Invariant_Overflow is record
+         Init_Seen, Init_OK, Next_Seen, Next_OK : Boolean := False;
+         --  The solvers proved it in one of the states.
+         By_Solver : Boolean := False;
+      end record;
+      package Invariant_Overflow_Maps is new
+        Ada.Containers.Indefinite_Hashed_Maps
+          (Key_Type        => String,
+           Element_Type    => Invariant_Overflow,
+           Hash            => Ada.Strings.Hash,
+           Equivalent_Keys => "=");
+      Invariant_Overflows       : Invariant_Overflow_Maps.Map;
+      Invariant_Overflows_Broken : Boolean := False;
+      --  The state an invariant's overflow checks are decided in.
+      type Invariant_State_Kind is (Loop_Entry_State, Next_Iteration_State);
+      type Invariant_Overflow_Verdict is
+        (Overflow_Unproved, Overflow_Proved, Overflow_Proved_By_Solver);
+
       --  The states a loop is entered with, as the first pass gives them
       --  to its head, for the loops with an invariant inside their body
       --  (Prove_Cuts): its initialization is proved from each of them.
@@ -11661,6 +11687,143 @@ package body Adalang_Analyzer.Flow_Interp is
          end;
       end Begin_Iteration;
 
+      procedure Note_Invariant_Overflows
+        (Condition : Libadalang.Analysis.Expr;
+         State     : Flow_State;
+         Symbols   : VC.Symbolic_State;
+         Where     : Invariant_State_Kind;
+         Supported : Boolean := True)
+      is
+         At_Entry : constant Boolean := Where = Loop_Entry_State;
+
+         function Holds
+           (Node : Libadalang.Analysis.Bin_Op)
+            return Invariant_Overflow_Verdict
+         is
+            Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+              Node.As_Expr.P_Expression_Type;
+            Name      : constant String := Langkit_Support.Text.To_UTF8
+              (Expr_Type.P_Canonical_Fully_Qualified_Name);
+            Bounds    : Abstract_Range;
+         begin
+            if not Supported then
+               return Overflow_Unproved;
+            elsif Arithmetic_Proved_Safe (Node.As_Expr, State) then
+               return Overflow_Proved;
+            end if;
+            Bounds := Overflow_Base_Range (Expr_Type, Node, State);
+            if not Bounds.Has_Low
+              and then not Bounds.Has_High
+              and then Name = "standard.integer"
+            then
+               Bounds := Type_Range (Expr_Type, State);
+            end if;
+            if not Bounds.Has_Low and then not Bounds.Has_High then
+               Bounds := Guaranteed_Base_Range (Expr_Type);
+            end if;
+            return
+              (if VC.Decide_Bounds (Node.As_Expr, Bounds, State, Symbols)
+                    .Result = VC.VC_Proved
+               then Overflow_Proved_By_Solver
+               else Overflow_Unproved);
+         exception
+            when others =>
+               return Overflow_Unproved;
+         end Holds;
+
+         procedure Visit (Node : Libadalang.Analysis.Ada_Node) is
+         begin
+            if Libadalang.Analysis.Is_Null (Node) then
+               return;
+            end if;
+            if Node.Kind in Libadalang.Common.Ada_Bin_Op_Range
+              and then Node.As_Bin_Op.F_Op in
+                Libadalang.Common.Ada_Op_Plus
+                  | Libadalang.Common.Ada_Op_Minus
+                  | Libadalang.Common.Ada_Op_Mult
+                  | Libadalang.Common.Ada_Op_Div
+                  | Libadalang.Common.Ada_Op_Pow
+              and then Origin_Of_Operator (Node.As_Bin_Op) /= Declared
+              and then not Libadalang.Analysis.Is_Null
+                             (Node.As_Expr.P_Expression_Type)
+              and then Node.As_Expr.P_Expression_Type.P_Is_Int_Type
+            then
+               declare
+                  Key  : constant String :=
+                    Langkit_Support.Slocs.Image (Node.Sloc_Range);
+                  Item : Invariant_Overflow :=
+                    (if Invariant_Overflows.Contains (Key)
+                     then Invariant_Overflows.Element (Key)
+                     else (others => <>));
+                  --  A check that failed in one state stays unproved: it
+                  --  is not decided again.
+                  Failed : constant Boolean :=
+                    (if At_Entry then Item.Init_Seen and then not Item.Init_OK
+                     else Item.Next_Seen and then not Item.Next_OK);
+                  Verdict : constant Invariant_Overflow_Verdict :=
+                    (if Failed then Overflow_Unproved
+                     else Holds (Node.As_Bin_Op));
+                  OK      : constant Boolean := Verdict /= Overflow_Unproved;
+               begin
+                  Item.By_Solver := Item.By_Solver
+                    or else Verdict = Overflow_Proved_By_Solver;
+                  if At_Entry then
+                     Item.Init_OK :=
+                       (if Item.Init_Seen then Item.Init_OK and then OK
+                        else OK);
+                     Item.Init_Seen := True;
+                  else
+                     Item.Next_OK :=
+                       (if Item.Next_Seen then Item.Next_OK and then OK
+                        else OK);
+                     Item.Next_Seen := True;
+                  end if;
+                  Invariant_Overflows.Include (Key, Item);
+               end;
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               Visit (Node.Child (Index));
+            end loop;
+         end Visit;
+      begin
+         if not Config.Verification_Mode then
+            return;
+         end if;
+         Visit (Libadalang.Analysis.Ada_Node (Condition));
+      exception
+         when others =>
+            Invariant_Overflows_Broken := True;
+      end Note_Invariant_Overflows;
+
+      --  Whether the solvers proved it in one of the states, when proved.
+      function Invariant_Overflow_By_Solver
+        (Expr : Libadalang.Analysis.Bin_Op) return Boolean
+      is
+         Key : constant String :=
+           Langkit_Support.Slocs.Image (Expr.Sloc_Range);
+      begin
+         return Invariant_Overflows.Contains (Key)
+           and then Invariant_Overflows.Element (Key).By_Solver;
+      end Invariant_Overflow_By_Solver;
+
+      function Invariant_Overflow_Proved
+        (Expr : Libadalang.Analysis.Bin_Op) return Boolean
+      is
+         Key : constant String :=
+           Langkit_Support.Slocs.Image (Expr.Sloc_Range);
+      begin
+         if Invariant_Overflows_Broken or else not Invariant_Overflows.Contains (Key)
+         then
+            return False;
+         end if;
+         declare
+            Item : constant Invariant_Overflow := Invariant_Overflows.Element (Key);
+         begin
+            return Item.Init_Seen and then Item.Init_OK
+              and then Item.Next_Seen and then Item.Next_OK;
+         end;
+      end Invariant_Overflow_Proved;
+
       procedure Check_Loop_VCs
         (Header  : CFG.Node_Id;
          State   : Flow_State;
@@ -11682,6 +11845,11 @@ package body Adalang_Analyzer.Flow_Interp is
                  Loop_Invariants.Element (Index);
             begin
                if Item.Header = Header and then Item.Leading then
+                  if not Is_Back then
+                     Note_Invariant_Overflows
+                       (Item.Condition, Start_State, Start_Symbols,
+                        Where => Loop_Entry_State);
+                  end if;
                   declare
                      Value  : constant Abstract_Bool :=
                        Boolean_Value (Item.Condition, Start_State);
@@ -13571,6 +13739,10 @@ package body Adalang_Analyzer.Flow_Interp is
                     Loop_Invariants.Element (Index);
                begin
                   if Item.Header = Header and then Item.Leading then
+                     Note_Invariant_Overflows
+                       (Item.Condition, State, Symbols,
+                        Where     => Next_Iteration_State,
+                        Supported => Path_Supported);
                      if not Path_Supported then
                         Item.Preservation := VC_Not_Discharged;
                         Remember_Inconclusive
@@ -15892,7 +16064,82 @@ package body Adalang_Analyzer.Flow_Interp is
          end if;
 
          begin
-            Expected := Attribute.P_Expected_Expression_Type;
+            begin
+               Expected := Attribute.P_Expected_Expression_Type;
+            exception
+               when others =>
+                  Expected := Libadalang.Analysis.No_Base_Type_Decl;
+            end;
+            --  An operand of an operator whose other operand has a type is
+            --  converted to that type, whatever Libadalang resolves the
+            --  expected type to ((Bit_Len + 7) / 8 <= Data'Length).
+            if (Libadalang.Analysis.Is_Null (Expected)
+                or else Is_Universal (Expected))
+              and then Context.Kind in Libadalang.Common.Ada_Bin_Op_Range
+              and then Context.As_Bin_Op.F_Op.Kind /=
+                Libadalang.Common.Ada_Op_Pow
+            then
+               declare
+                  use Langkit_Support.Slocs;
+                  Op    : constant Libadalang.Analysis.Bin_Op :=
+                    Context.As_Bin_Op;
+                  Other : constant Libadalang.Analysis.Expr :=
+                    (if Compare (Op.F_Left.Sloc_Range,
+                                 Start_Sloc (Attribute.Sloc_Range)) = Inside
+                     then Op.F_Right else Op.F_Left);
+                  --  The type of the first operand inside E that has one:
+                  --  Libadalang can take a whole operation for a universal
+                  --  one when an operand of it is.
+                  function Typed (E : Libadalang.Analysis.Expr)
+                    return Libadalang.Analysis.Base_Type_Decl
+                  is
+                     Found : Libadalang.Analysis.Base_Type_Decl;
+                  begin
+                     if Libadalang.Analysis.Is_Null (E) then
+                        return Libadalang.Analysis.No_Base_Type_Decl;
+                     end if;
+                     begin
+                        Found := E.P_Expression_Type;
+                     exception
+                        when others =>
+                           Found := Libadalang.Analysis.No_Base_Type_Decl;
+                     end;
+                     if not Libadalang.Analysis.Is_Null (Found)
+                       and then Found.P_Is_Int_Type
+                       and then not Is_Universal (Found)
+                     then
+                        return Found;
+                     end if;
+                     case E.Kind is
+                        when Libadalang.Common.Ada_Paren_Expr =>
+                           return Typed (E.As_Paren_Expr.F_Expr);
+                        when Libadalang.Common.Ada_Un_Op =>
+                           return Typed (E.As_Un_Op.F_Expr);
+                        when Libadalang.Common.Ada_Bin_Op_Range =>
+                           --  The right operand of "**" is a Natural
+                           --  whatever the type of the power.
+                           Found := Typed (E.As_Bin_Op.F_Left);
+                           return
+                             (if Libadalang.Analysis.Is_Null (Found)
+                                and then E.As_Bin_Op.F_Op.Kind /=
+                                  Libadalang.Common.Ada_Op_Pow
+                              then Typed (E.As_Bin_Op.F_Right) else Found);
+                        when others =>
+                           return Libadalang.Analysis.No_Base_Type_Decl;
+                     end case;
+                  end Typed;
+
+                  Typ   : constant Libadalang.Analysis.Base_Type_Decl :=
+                    Typed (Other);
+               begin
+                  if not Libadalang.Analysis.Is_Null (Typ)
+                    and then Typ.P_Is_Int_Type
+                    and then not Is_Universal (Typ)
+                  then
+                     Expected := Typ;
+                  end if;
+               end;
+            end if;
             if Libadalang.Analysis.Is_Null (Expected)
               or else not Expected.P_Is_Int_Type
               or else Is_Universal (Expected)
@@ -15977,6 +16224,269 @@ package body Adalang_Analyzer.Flow_Interp is
                Occurrence => E);
       end Finalize_Length_Check;
 
+      --  The static range of the subtype of E's value, as its own checks
+      --  guarantee it: a name of an object, a function call, a conversion,
+      --  a component, a qualified expression. Unknown_Range otherwise: an
+      --  operation yields a value of the base type (Libadalang gives it
+      --  the first subtype), and the bounds of a null array need not be
+      --  in its index subtype.
+      function Own_Subtype_Range
+        (E : Libadalang.Analysis.Expr) return Abstract_Range
+      is
+         Inner : Libadalang.Analysis.Expr := E;
+         Typ   : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         while not Libadalang.Analysis.Is_Null (Inner)
+           and then Inner.Kind = Libadalang.Common.Ada_Paren_Expr
+         loop
+            Inner := Inner.As_Paren_Expr.F_Expr;
+         end loop;
+         if Libadalang.Analysis.Is_Null (Inner)
+           or else Inner.Kind not in Libadalang.Common.Ada_Identifier
+             | Libadalang.Common.Ada_Dotted_Name
+             | Libadalang.Common.Ada_Call_Expr
+             | Libadalang.Common.Ada_Qual_Expr
+         then
+            return Unknown_Range;
+         end if;
+         Typ := Inner.P_Expression_Type;
+         if Libadalang.Analysis.Is_Null (Typ) or else not Typ.P_Is_Int_Type
+         then
+            return Unknown_Range;
+         end if;
+         return Type_Range (Typ, Empty_Flow_State);
+      exception
+         when others =>
+            return Unknown_Range;
+      end Own_Subtype_Range;
+
+      --  A range constraint T range L .. H of a for loop or a quantified
+      --  expression: a range that is not null has both its bounds in T.
+      --  Decided as the stronger L >= T'First and H <= T'Last, each on its
+      --  own, or as a range that is always null; never an error. A for
+      --  loop's range is evaluated once, on entry: it is decided in each
+      --  state the loop is entered with, not in that of its head.
+      procedure Finalize_Constraint_Range
+        (Node      : Libadalang.Analysis.Ada_Node'Class;
+         Container : CFG.Node_Id)
+      is
+         Message : constant String :=
+           "a bound of the range is outside the subtype it constrains";
+         Spec    : Libadalang.Analysis.For_Loop_Spec;
+         Ind     : Libadalang.Analysis.Discrete_Subtype_Indication;
+         Typ     : Libadalang.Analysis.Base_Type_Decl;
+         Low     : Libadalang.Analysis.Expr;
+         High    : Libadalang.Analysis.Expr;
+         Target  : Abstract_Range;
+         Where   : Libadalang.Analysis.Ada_Node;
+         Proved  : Boolean := True;
+         External : Boolean := False;
+         Seen    : Boolean := False;
+         --  The range is reported with its parameter: "K in T range L .. H".
+         Operation_Text : Ada.Strings.Unbounded.Unbounded_String;
+
+         function Operation return String
+         is (Ada.Strings.Unbounded.To_String (Operation_Text));
+
+         procedure Decide (State : Flow_State; Symbols : VC.Symbolic_State)
+         is
+            Low_Range  : constant Abstract_Range := Range_Value (Low, State);
+            High_Range : constant Abstract_Range := Range_Value (High, State);
+            Low_Own    : constant Abstract_Range := Own_Subtype_Range (Low);
+            High_Own   : constant Abstract_Range := Own_Subtype_Range (High);
+            Low_OK     : Boolean :=
+              (Low_Range.Has_Low and then Low_Range.Low >= Target.Low)
+              or else (Low_Own.Has_Low and then Low_Own.Low >= Target.Low);
+            High_OK    : Boolean :=
+              (High_Range.Has_High and then High_Range.High <= Target.High)
+              or else
+                (High_Own.Has_High and then High_Own.High <= Target.High);
+         begin
+            Seen := True;
+            if (Low_Range.Has_Low and then High_Range.Has_High
+                and then Low_Range.Low > High_Range.High)
+              or else (Low_OK and then High_OK)
+            then
+               return;
+            end if;
+            --  Decide_Bounds takes a range with both bounds: the other one
+            --  holds of any value.
+            if not Low_OK then
+               Low_OK := VC.Decide_Bounds
+                 (Low,
+                  (Has_Low => True, Low => Target.Low,
+                   Has_High => True, High => Long_Long_Integer'Last),
+                  State, Symbols).Result = VC.VC_Proved;
+            end if;
+            if Low_OK and then not High_OK then
+               High_OK := VC.Decide_Bounds
+                 (High,
+                  (Has_Low => True, Low => Long_Long_Integer'First,
+                   Has_High => True, High => Target.High),
+                  State, Symbols).Result = VC.VC_Proved;
+            end if;
+            External := True;
+            Proved := Proved and then Low_OK and then High_OK;
+         end Decide;
+      begin
+         if Node.Kind /= Libadalang.Common.Ada_For_Loop_Spec
+           or else not Config.Verification_Mode
+         then
+            return;
+         end if;
+         Spec := Node.As_For_Loop_Spec;
+         if Libadalang.Analysis.Is_Null (Spec.F_Iter_Expr)
+           or else Spec.F_Iter_Expr.Kind /=
+             Libadalang.Common.Ada_Discrete_Subtype_Indication
+         then
+            return;
+         end if;
+         Ind := Spec.F_Iter_Expr.As_Discrete_Subtype_Indication;
+         if Libadalang.Analysis.Is_Null (Ind.F_Constraint)
+           or else Ind.F_Constraint.Kind /=
+             Libadalang.Common.Ada_Range_Constraint
+         then
+            return;
+         end if;
+         declare
+            Item : constant Libadalang.Analysis.Expr :=
+              Ind.F_Constraint.As_Range_Constraint.F_Range.F_Range;
+         begin
+            if Item.Kind /= Libadalang.Common.Ada_Bin_Op
+              or else Item.As_Bin_Op.F_Op.Kind /=
+                Libadalang.Common.Ada_Op_Double_Dot
+            then
+               return;
+            end if;
+            Low := Item.As_Bin_Op.F_Left;
+            High := Item.As_Bin_Op.F_Right;
+         end;
+         Typ := Ind.F_Name.P_Name_Designated_Type;
+         if Libadalang.Analysis.Is_Null (Typ) or else not Typ.P_Is_Int_Type
+         then
+            return;
+         end if;
+         Where := Libadalang.Analysis.Ada_Node (Spec.F_Var_Decl.F_Id);
+         Operation_Text := Ada.Strings.Unbounded.To_Unbounded_String
+           (Ada_Text.Node_Text (Spec));
+         Target := Type_Range (Typ, Empty_Flow_State);
+         if not Boundary_Supported then
+            Record_Unsupported (Unit, Where, Proof.Range_Check, Message);
+            return;
+         elsif Unreached (Container) then
+            Record_Unreachable
+              (Unit, Where, Proof.Range_Check,
+               "the containing CFG node is unreachable");
+            return;
+         elsif not Target.Has_Low or else not Target.Has_High then
+            Record_Unproved
+              (Unit, Where, Proof.Range_Check, Proof.Abstract_Interpretation,
+               "range-check failure is not established, but absence is " &
+                 "not proved",
+               Imprecision => "the bounds of the subtype are not static",
+               Final => True, Operation => Operation);
+            return;
+         end if;
+
+         if Spec.Parent.Kind = Libadalang.Common.Ada_For_Loop_Stmt then
+            for View of Entry_Views loop
+               if View.Header = Container then
+                  Decide (View.State, View.Symbols);
+               end if;
+            end loop;
+         else
+            Decide (State_At (Container), Symbols_At (Container));
+         end if;
+
+         if Seen and then Proved then
+            --  proof-path: constraint-range
+            Record_Proved_Safe
+              (Unit, Where, Proof.Range_Check,
+               (if External then Proof.External_Prover
+                else Proof.Abstract_Interpretation),
+               "both bounds of the range are within the subtype it " &
+                 "constrains, or the range is null",
+               "bounds within the constrained subtype", Final => True,
+               Operation => Operation);
+         else
+            Record_Unproved
+              (Unit, Where, Proof.Range_Check, Proof.Abstract_Interpretation,
+               "range-check failure is not established, but absence is " &
+                 "not proved",
+               Imprecision =>
+                 "the bounds of the range are not shown within the " &
+                   "subtype it constrains",
+               Final => True, Operation => Operation);
+         end if;
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize constraint range check",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Constraint_Range;
+
+      --  The value a function returns is converted to its result subtype:
+      --  that of a return statement, or the expression of an expression
+      --  function. A scalar result has a range check there.
+      procedure Finalize_Result_Range
+        (Node      : Libadalang.Analysis.Ada_Node'Class;
+         Container : CFG.Node_Id)
+      is
+         Value : Libadalang.Analysis.Expr := Libadalang.Analysis.No_Expr;
+         Typ   : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         if Subprogram.Kind not in Libadalang.Common.Ada_Subp_Body
+                     | Libadalang.Common.Ada_Expr_Function
+         then
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Return_Stmt then
+            Value := Node.As_Return_Stmt.F_Return_Expr;
+         elsif Subprogram.Kind = Libadalang.Common.Ada_Expr_Function
+           and then Libadalang.Analysis.Ada_Node (Node) =
+             Libadalang.Analysis.Ada_Node (Subprogram.As_Expr_Function.F_Expr)
+         then
+            Value := Node.As_Expr;
+         end if;
+         if Libadalang.Analysis.Is_Null (Value)
+           or else Libadalang.Analysis.Is_Null
+                     (Subprogram.F_Subp_Spec.F_Subp_Returns)
+         then
+            return;
+         end if;
+         Typ := Designated_Type (Subprogram.F_Subp_Spec.F_Subp_Returns);
+         if Libadalang.Analysis.Is_Null (Typ)
+           or else not Typ.P_Is_Int_Type
+         then
+            return;
+         end if;
+         --  No check where the value's subtype is statically within the
+         --  result subtype: a compiler makes none there.
+         declare
+            Own    : constant Abstract_Range := Own_Subtype_Range (Value);
+            Result : constant Abstract_Range :=
+              Type_Range (Typ, Empty_Flow_State);
+         begin
+            if Own.Has_Low and then Own.Has_High
+              and then Result.Has_Low and then Result.Has_High
+              and then Own.Low >= Result.Low and then Own.High <= Result.High
+            then
+               return;
+            end if;
+         end;
+         Finalize_Range_Check
+           (Value, Typ, Container, Rules.Known_Range_Check_Failure,
+            "returned value is outside the result subtype range");
+      exception
+         when E : others =>
+            Report_Recoverable_Failure_Once
+              (Rule       => "Verification",
+               Operation  => "finalize result range check",
+               Source     => Ada_Text.Safe_Filename (Unit),
+               Occurrence => E);
+      end Finalize_Result_Range;
+
       --  As Finalize_Range_Check, for Division_By_Zero_Check via
       --  Check_Division_By_Zero (see FP-036).
       procedure Finalize_Division_Check
@@ -16037,6 +16547,17 @@ package body Adalang_Analyzer.Flow_Interp is
             Record_Unreachable
               (Unit, Expr, Proof.Integer_Overflow_Check,
                "the containing CFG node is unreachable");
+         elsif Invariant_Overflow_Proved (Expr) then
+            --  proof-path: overflow-invariant-iterations
+            Record_Proved_Safe
+              (Unit, Expr, Proof.Integer_Overflow_Check,
+               (if Invariant_Overflow_By_Solver (Expr)
+                then Proof.External_Prover
+                else Proof.Abstract_Interpretation),
+               "the arithmetic result fits its base type where the loop " &
+                 "is entered and at the start of each next iteration",
+               "proved in each state the invariant is evaluated in",
+               Final => True);
          else
             Check_Integer_Overflow
               (Unit, Expr,
@@ -18016,6 +18537,8 @@ package body Adalang_Analyzer.Flow_Interp is
          Finalize_Predicate_Checks (Node, Here);
          Finalize_Dereference_Check (Node, Here);
          Finalize_Discriminant_Check (Node, Here);
+         Finalize_Result_Range (Node, Here);
+         Finalize_Constraint_Range (Node, Here);
          if Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
             Finalize_Leak_Assignment (Node.As_Assign_Stmt, Here);
          end if;

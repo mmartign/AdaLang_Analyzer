@@ -12,6 +12,8 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with GNATCOLL.GMP.Integers;
+
 with Langkit_Support.Text;
 with Libadalang.Common;
 
@@ -218,6 +220,28 @@ package body Adalang_Analyzer.Checks.Expressions is
       end case;
    end Relational_Bound;
 
+   --  The divisor's static value: a literal, a named number, a static
+   --  attribute ('Size of a scalar type...). Only a value: the flow pass
+   --  can then never answer otherwise at the same node.
+   function Divisor_Excludes_Zero
+     (Divisor : Libadalang.Analysis.Expr) return Boolean
+   is
+      Value : constant Abstract_Int := Integer_Value (Divisor);
+   begin
+      if Value.Known then
+         return Value.Value /= 0;
+      end if;
+      if Divisor.Kind = Libadalang.Common.Ada_Attribute_Ref
+        and then Divisor.P_Is_Static_Expr
+      then
+         return GNATCOLL.GMP.Integers.Image (Divisor.P_Eval_As_Int) /= "0";
+      end if;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Divisor_Excludes_Zero;
+
    procedure Analyze_Binary_Expression  --  adalang-analyzer: ignore Cyclomatic_Complexity
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Expr : Libadalang.Analysis.Bin_Op)
@@ -257,6 +281,25 @@ package body Adalang_Analyzer.Checks.Expressions is
                Explanation =>
                  "Static evaluation resolved the divisor to zero.",
                Evidence => "right operand => 0");
+         elsif Verification_Mode
+           and then Divisor_Excludes_Zero (Expr.F_Right)
+         then
+            --  The divisor has a static value other than zero. This is what
+            --  decides a division no body the flow pass walks contains: in
+            --  a contract, a predicate, a default initial condition.
+            --  proof-path: division-static
+            Adalang_Analyzer.Proof_Obligations.Register_At
+              (Unit             => Unit,
+               Node             => Expr.F_Right,
+               Kind             =>
+                 Adalang_Analyzer.Proof_Obligations.Division_By_Zero_Check,
+               Status           =>
+                 Adalang_Analyzer.Proof_Obligations.Proved_Safe,
+               Method           =>
+                 Adalang_Analyzer.Proof_Obligations.Static_Evaluation,
+               Abstract_State   => "right operand is a static nonzero value",
+               Explanation      => "the divisor is a static value other than 0",
+               Configuration_Id => Assurance_Profile_Name);
          else
             Adalang_Analyzer.Proof_Obligations.Register_At
               (Unit               => Unit,

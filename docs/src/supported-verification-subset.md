@@ -51,9 +51,9 @@ the section it links to has the whole of its proof basis and boundary.
 
 | Obligation | Supported proof basis | Current boundary |
 |---|---|---|
-| Division by zero | Exact/range exclusion of zero; otherwise scalar `divisor /= 0` VC | Integer scalar divisor only |
+| Division by zero | Exact/range exclusion of zero; otherwise scalar `divisor /= 0` VC; where no body the analysis walks has the division (a contract, a predicate, a default initial condition of a declaration), a divisor whose static value is not 0 | Integer scalar divisor only |
 | [Integer overflow](#integer-overflow) | Operation base-type range; otherwise scalar bounds VC | Integer `+`, `-`, `*`, `/`, and selected power checks |
-| [Range](#range) | Both bounds of the target subtype, resolved as of its elaboration; otherwise scalar bounds VC against those same two bounds | Integer scalar initialization, assignment, and conversion; the bounds of a slice; an actual parameter and what an `out` or `in out` formal gives back; the conversion of `X'Length` |
+| [Range](#range) | Both bounds of the target subtype, resolved as of its elaboration; otherwise scalar bounds VC against those same two bounds | Integer scalar initialization, assignment, and conversion; the bounds of a slice; an actual parameter and what an `out` or `in out` formal gives back; the conversion of `X'Length`; the value a function returns; the bounds of a range constraint of a `for` loop or a quantified expression |
 | [Index](#index) | The indexed object's own bounds per dimension; otherwise scalar bounds VC against those bounds, an own-range `for` loop, or the object's own `'First` and `'Last` taken as symbols | Array objects and scalar indices; each bound of a slice that is the target of an assignment |
 | [Length](#length) | An aggregate with an `others` choice; otherwise a scalar VC that the two lengths are equal in each dimension | An array given to a target, where a compiler keeps the check; the operands of `and`, `or` and `xor` on arrays |
 | [Predicate](#predicates) | The predicate of the subtype as a scalar Boolean VC, of the value given or of the object as the state knows its components once it is written | A value given to an object, to a part of one or to a formal, in SPARK code; none where the value already has the predicates of its own subtype |
@@ -105,7 +105,7 @@ blocked upstream by an undischarged leading invariant.
 **Proof basis.** Both bounds of the target subtype, resolved as of its
 elaboration; otherwise scalar bounds VC against those same two bounds.
 
-**Boundary.** The check is raised in four places:
+**Boundary.** The check is raised in six places:
 
 - **Initialization, assignment and conversion.** Integer scalar
   initialization, assignment, and conversion into a signed or modular
@@ -144,6 +144,30 @@ elaboration; otherwise scalar bounds VC against those same two bounds.
   its own its base range is the implementation's to choose: the check is
   proved when the length is within the declared range and its opposites,
   which every base range has (RM 3.5.4 (9)), and is `Unproved` otherwise.
+  The type is that of the other operand where the length is an operand of a
+  binary operator and Libadalang resolves the operation as universal: in
+  `(Bit_Len + 7) / 8 <= Data'Length` the first operand inside it that has
+  one (`Bit_Len`), never the right operand of `**`, which is a `Natural`
+  whatever the type of the power.
+- **The value a function returns.** The expression of a `return`
+  statement, or that of an expression function, against the result
+  subtype of a function with an integer result; decided as an assignment
+  is. None where the value is a name, a call, a conversion or a qualified
+  expression whose own subtype is statically within the result subtype:
+  a compiler makes none there.
+- **The bounds of a range constraint.** In `for K in T range L .. H`, of a
+  loop or a quantified expression, `T` an integer subtype with static
+  bounds: a range that is not null has both its bounds in `T`. The check
+  is raised at `K` and reported as `K in T range L .. H`. It is proved when
+  the range is always null, or when `L >= T'First` and `H <= T'Last` each
+  hold, which is stronger: from the intervals of the bounds, from the
+  subtype of a bound that is a name, a call, a conversion or a qualified
+  expression (never from that of an operation, whose value is of the base
+  type, nor from `'First` or `'Last`, which a null array need not have in
+  its index subtype), or by a scalar VC. Never a `Definite_Error`. A loop's
+  range is evaluated once, on entry, and decided in each state the loop is
+  entered with; that of a quantified expression where the expression is
+  evaluated, after the guards before it.
 
 The range a stored value is checked against is the one the declaration of
 the target gives: the constraint of `Held : Integer range 1 .. 5`, of a
@@ -665,6 +689,16 @@ A missing or non-final `others`, a multi-choice or discontiguous case
 alternative, a third independent conditional along any single path (nested
 or sequential), nested loops, calls, or unsupported transfers remain outside
 this subset.
+
+**The checks of a leading invariant.** An overflow check inside a leading
+invariant is decided at the head, as the invariant is evaluated there; when
+the head does not decide it -- it assumes the loop's invariants only when
+each is proved, so one that is not leaves it knowing little -- it is
+decided in each state the loop is entered with and at the start of the
+next iteration of the walk above, which assumes the leading invariants at
+the head as GNATprove does, and proved when proved in every one of them.
+So the overflow of `Offset + Remaining` in `Offset + Remaining =
+Data'Length` is proved where another invariant of the loop is not.
 
 **Loop variant progress.** Proved by a strict two-state scalar progress VC
 plus static base-type bounds, for one leading, single-component `Increases`
@@ -2153,7 +2187,8 @@ can have where the loop is entered, nor above the greatest `H` can; a
 bound of which the state says nothing is the one a declaration would take
 from it, so `Index'Last` and a constant are their values. Over `T range
 L .. H` it is within that and within `T` as well: a range that is not null
-has both its bounds in the subtype it constrains. So `X (K)` under `for all
+has both its bounds in the subtype it constrains, which the range check of
+the constraint asks (see [Range](#range)). So `X (K)` under `for all
 K in Index range 0 .. Last` is an index within an array over `Index`,
 whatever `Last` is, and `X (K + 1)` is not. In the verification condition
 of a check inside the predicate of a quantified expression over `L .. H`,

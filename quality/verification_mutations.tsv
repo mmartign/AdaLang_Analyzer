@@ -590,3 +590,16 @@ leaks-tmp-lost	tests/verification_mutation_resource_leaks.adb	resource-leak	Lost
 leaks-slots-out	tests/verification_mutation_resource_leaks.adb	resource-leak	S	unproved	slots of an in out parameter are given as an out actual.
 leaks-half-free	tests/verification_mutation_resource_leaks.adb	resource-leak	Half_Freed	unproved	freed on one path only.
 leaks-update-replaced	tests/verification_mutation_resource_leaks.adb	resource-leak	Ctx := Ctx'Update (Buffer => Buffer);	unproved	'Update replaces the owning component, which is lost: it is not moved by the value.
+contract-checks-predicate-divisor	tests/verification_mutation_contract_checks.adb	division-by-zero	Pair.B	unproved	a predicate divides by a component that can be zero.
+contract-checks-case-divisor	tests/verification_mutation_contract_checks.adb	division-by-zero	Div	unproved	a contract case divides by a parameter that can be zero.
+contract-checks-length-operand	tests/verification_mutation_contract_checks.adb	range-check	Data'Length	unproved	the length of an array over Natural can exceed Natural'Last.
+contract-checks-quantifier-bound	tests/verification_mutation_contract_checks.adb	range-check	K3 in Index_16 range 0 .. I	unproved	the upper bound of the range is any Integer_32.
+contract-checks-base-type-bound	tests/verification_mutation_contract_checks.adb	range-check	K5 in Small range 1 .. J + 1	unproved	J + 1 is computed in the base type and can be 11.
+contract-checks-null-array-bound	tests/verification_mutation_contract_checks.adb	range-check	K6 in Positive range X'First .. 5	unproved	the first bound of a null array need not be Positive.
+contract-checks-invariant-bound	tests/verification_mutation_contract_checks.adb	range-check	K4 in Index_64 range J .. Lim	unproved	Lim is any Integer_32 in the invariant's range.
+contract-checks-loop-bound	tests/verification_mutation_contract_checks.adb	range-check	L1 in Index_16 range 0 .. N	unproved	the upper bound of the for loop is any Integer_32.
+contract-checks-result-record	tests/verification_mutation_contract_checks.adb	range-check	(Ctx.Last_Read - Ctx.Start + 1)	unproved	nothing relates Start and Last_Read: the size can be negative.
+contract-checks-result-natural	tests/verification_mutation_contract_checks.adb	range-check	(X - 1)	unproved	X - 1 is -1 when X is 0.
+contract-checks-result-subtype	tests/verification_mutation_contract_checks.adb	range-check	(Y + 1)	unproved	Y + 1 is 11 when Y is 10.
+contract-checks-other-array-bound	tests/verification_mutation_contract_checks.adb	range-check	K11 in N32 range X'First .. I	unproved	the loop runs over Y: X can be null, with a first bound below 0.
+contract-checks-invariant-overflow	tests/verification_mutation_contract_checks.adb	integer-overflow	Offset + Remaining	unproved	Offset grows without bound; the invariant does not limit the sum.

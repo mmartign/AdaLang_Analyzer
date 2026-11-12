@@ -3,11 +3,16 @@ set -eu
 
 analyzer=${ANALYZER:-./bin/adalang_analyzer}
 source_file=src/adalang_analyzer-flow_interp.adb
+#  The static pass proves some obligations too: its producers are tagged the
+#  same way, but register a status rather than call Record_Proved_Safe.
+static_file=src/adalang_analyzer-checks-expressions.adb
 manifest=quality/proof_path_evidence.tsv
 work=$(mktemp -d "${TMPDIR:-/tmp}/adalang-proof-paths.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
 grep -Eo 'proof-path: [a-z0-9-]+' "$source_file" |
+  sed 's/.*proof-path: //' | sort -u >"$work/flow-producers"
+grep -Eho 'proof-path: [a-z0-9-]+' "$source_file" "$static_file" |
   sed 's/.*proof-path: //' | sort -u >"$work/source-producers"
 awk -F '\t' '!/^#/ && NF {print $2}' "$manifest" |
   sort -u >"$work/manifest-producers"
@@ -18,10 +23,11 @@ if ! cmp -s "$work/source-producers" "$work/manifest-producers"; then
 fi
 
 producer_calls=$(grep -Ec '^[[:space:]]+Record_Proved_Safe$' "$source_file")
+flow_tags=$(wc -l <"$work/flow-producers" | tr -d ' ')
 producer_tags=$(wc -l <"$work/source-producers" | tr -d ' ')
-if [ "$producer_calls" -ne "$producer_tags" ]; then
+if [ "$producer_calls" -ne "$flow_tags" ]; then
    echo "Record_Proved_Safe producer/tag count mismatch:" \
-     "$producer_calls calls, $producer_tags tags" >&2
+     "$producer_calls calls, $flow_tags tags" >&2
    exit 1
 fi
 if ! awk '

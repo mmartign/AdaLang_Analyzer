@@ -62,8 +62,8 @@ h02.adb	287	BAD	division-by-zero	definite-error
 h02.adb	299	BAD	division-by-zero	unproved
 h02.adb	313	BAD	division-by-zero	unproved
 h02.adb	329	BAD	division-by-zero	unproved
-h02.adb	335	BAD	range-check	no-obligation
-h02.adb	337	BAD	range-check	no-obligation
+h02.adb	335	BAD	range-check	definite-error
+h02.adb	337	BAD	range-check	definite-error
 h02.adb	346	BAD	division-by-zero	unproved
 h02.adb	362	BAD	division-by-zero	unproved
 h02.adb	378	BAD	division-by-zero	definite-error
