@@ -14,23 +14,35 @@ converts, a division by a static value in a contract or a predicate, and
 the arithmetic of a loop invariant where another invariant of the loop is
 not proved.
 
+It also verifies the generic units of imported projects that SPARK code
+instantiates -- SPARKlib's containers, say -- as GNATprove does, and decides
+the termination and the data dependencies of a call to a generic formal
+subprogram from the subprograms the instantiations give it.
+
 What to expect: on the five corpora of the gap ledger, `--verify` proves
-11,334 of the 15,043 checks GNATprove proves (was 11,152). 182 more are
-proved and none fewer: 65 range checks on the bounds of a range constraint
-(SPARKNaCl 46, CoAP-SPARK 7, libkeccak 6, Tokeneer 6), 38 on a returned
-value (CoAP-SPARK 37, libkeccak 1), 37 on a `'Length` (libkeccak), 30
-division checks (libkeccak 15, CoAP-SPARK 13, Saatana 2) and 12 overflow
-checks in loop invariants (libkeccak 11, SPARKNaCl 1). On the nine corpora
-with a `--verify` lane, 628 range checks are added (397 proved, 218
-unproved, 10 unsupported, 3 unreachable), 99 obligations that were
-`Unproved` are proved (85 divisions, 14 overflows), none that was proved is
-`Unproved`, none is removed, and no definite error is new or gone. On all ten
-corpora, every preset, findings are identical. On the SPARK testsuite both
-tools prove 324 of 704 pairs (was 312 of 692), with no possible
+11,436 of the 15,043 checks GNATprove proves, 76.0% (was 11,152, 74.1%).
+284 more are proved and none fewer. Of the runtime checks: 65 range checks
+on the bounds of a range constraint (SPARKNaCl 46, CoAP-SPARK 7, libkeccak
+6, Tokeneer 6), 38 on a returned value (CoAP-SPARK 37, libkeccak 1), 37 on
+a `'Length` (libkeccak), 30 division checks (libkeccak 15, CoAP-SPARK 13,
+Saatana 2) and 12 overflow checks in loop invariants (libkeccak 11,
+SPARKNaCl 1). Of the generic units of imported projects and the calls to
+generic formal subprograms: 66 termination checks (SPARKlib 62, CoAP-SPARK
+3, libkeccak 1) and, in SPARKlib, 29 data dependencies, 6 preconditions and
+1 postcondition. On the nine corpora with a `--verify` lane, 628
+range checks are added (397 proved, 218 unproved, 10 unsupported, 3
+unreachable), CoAP-SPARK, which instantiates SPARKlib containers, has 2,241
+obligations in SPARKlib files (1,155 proved, 500 unproved, 586
+unsupported), 108 obligations that were `Unproved` are proved (85
+divisions, 14 overflows, 9 termination checks), none that was proved is
+`Unproved`, none is removed, and no definite error is new or gone. On all
+ten corpora, every preset, findings are identical. On the SPARK testsuite
+both tools prove 324 of 704 pairs (was 312 of 692), with no possible
 unsoundness and no false positive. The two out-of-range returns of the
 seeded-defect programs, which had no check, are definite errors now.
 CPU time is up by 4% at most (libkeccak 197 s -> 204 s; CoAP-SPARK and AWS
-within 2%).
+within 2%); the generic units of imported projects add none that can be
+measured.
 
 ### Added
 
@@ -50,6 +62,19 @@ within 2%).
   never a definite error. A loop's range is decided in each state the loop
   is entered with. Until now nothing checked the assumption, which the
   analysis makes, that the parameter is within `T`.
+- With `--verify`, the generic units of imported projects that SPARK code
+  of the run instantiates, directly or through another of them, are
+  verified too, unless they say `SPARK_Mode` is `Off`: their obligations
+  are reported at their places in their files, as GNATprove reports the
+  checks of an instance, and their instances are analyzed as those of the
+  run's own generic units. No finding in those files is reported; the
+  other sources of an imported project are still only used to resolve
+  names.
+- The termination check of a subprogram of a generic package without
+  `Always_Terminates` that an instantiation puts in a package with it, as
+  GNATprove raises it in the instance; and the termination check, proved,
+  of a generic formal procedure with a `null` default that an
+  instantiation takes, in a generic package that must terminate.
 
 ### Changed
 
@@ -67,6 +92,21 @@ within 2%).
   is proved -- is decided in each state the loop is entered with and at the
   start of the next iteration, as the invariant itself is, and proved when
   proved in all of them.
+- A call to a generic formal subprogram returns when the subprogram that
+  each instantiation of its generic in the run gives it is seen to return,
+  following a formal given to a nested generic to the instantiations of
+  the enclosing one. It was always `Unproved`. A `null` default returns;
+  a `<>` default is taken to be the primitive of the actual type of the
+  formal's first parameter that has the formal's name and number of
+  parameters, or else the predefined operator: `=` and `/=` of a
+  nonlimited type whose equality is that of its scalar and access parts,
+  an ordering operator of a scalar type or of an array of discrete
+  components -- unless another subprogram of the name, whose first
+  parameter may be of that type, is declared around the instantiation or
+  in a package a use clause there names, which could be the one taken.
+- The data dependencies of a call to a generic formal subprogram take a
+  `null` default, which touches nothing, and a `<>` default resolved as
+  above, where any default was taken to touch what is not known.
 
 ## [1.14.0] - 2026-11-11
 

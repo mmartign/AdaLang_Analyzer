@@ -33,7 +33,10 @@ sources. Project files are evaluated with GPR2, including scenario variables,
 `case` statements, naming rules, source exclusions, recursive source
 directories, and project extension. The visible Ada sources of the root
 project are analyzed. The sources of the projects it imports are not
-analyzed, but they are used to resolve the names that refer to them. The
+analyzed, but they are used to resolve the names that refer to them. With
+`--verify`, the generic units of imported projects that SPARK code of the
+root project instantiates are verified as well, as GNATprove does: their
+proof obligations are reported, no finding in them is. The
 preprocessing a project asks for with `-gnateD` and `-gnatep` compiler
 switches is applied before a source is parsed; a source with preprocessor
 directives given without a project does not parse and is not analyzed. As

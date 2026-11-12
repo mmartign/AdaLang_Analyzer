@@ -20203,6 +20203,110 @@ package body Adalang_Analyzer.Flow_Interp is
       end loop;
    end Verify_Instances;
 
+   function Imported_Generics
+     (Ctx   : Libadalang.Analysis.Analysis_Context;
+      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector)
+      return Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector
+   is
+      package File_Vectors renames
+        Adalang_Analyzer.Project_Files.File_Name_Vectors;
+
+      --  The sources of the imported projects, and whether one was taken.
+      package Source_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+        (Key_Type        => String,
+         Element_Type    => Boolean,
+         Hash            => Ada.Strings.Hash,
+         Equivalent_Keys => "=");
+
+      Lookup  : constant File_Vectors.Vector :=
+        Adalang_Analyzer.Project_Files.Lookup_Sources (Files);
+      Sources : Source_Maps.Map;
+      Result  : File_Vectors.Vector;
+      Next    : Positive := 1;
+
+      procedure Add (Name : String) is
+         Place : constant Source_Maps.Cursor := Sources.Find (Name);
+      begin
+         if Source_Maps.Has_Element (Place)
+           and then not Source_Maps.Element (Place)
+         then
+            Sources.Replace_Element (Place, True);
+            Result.Append (Name);
+         end if;
+      end Add;
+
+      function Visit
+        (Node : Libadalang.Analysis.Ada_Node'Class)
+         return Libadalang.Common.Visit_Status is
+      begin
+         if Node.Kind in Libadalang.Common.Ada_Generic_Instantiation then
+            declare
+               Inst : constant Libadalang.Analysis.Generic_Instantiation :=
+                 Node.As_Generic_Instantiation;
+               Gen  : constant Libadalang.Analysis.Generic_Decl :=
+                 Inst.P_Designated_Generic_Decl;
+               Mode : SPARK_Mode_State;
+               Part : Libadalang.Analysis.Body_Node;
+            begin
+               if not Libadalang.Analysis.Is_Null (Gen)
+                 and then Declared_In_SPARK (Inst)
+               then
+                  Mode := Explicit_SPARK_Mode (Gen);
+                  if not (Mode.Has_Mode and then Mode.Is_Off) then
+                     Add (Gen.Unit.Get_Filename);
+                     Part := Gen.P_Body_Part_For_Decl;
+                     if not Libadalang.Analysis.Is_Null (Part) then
+                        Add (Part.Unit.Get_Filename);
+                     end if;
+                  end if;
+               end if;
+            exception
+               when Exc : others =>
+                  Log_Verbose_Once
+                    ("the generic unit of an instantiation was not taken: " &
+                     Ada.Exceptions.Exception_Message (Exc));
+            end;
+         end if;
+         return Libadalang.Common.Into;
+      end Visit;
+
+      procedure Scan (Filename : String) is
+         Unit : constant Libadalang.Analysis.Analysis_Unit :=
+           Ctx.Get_From_File (Filename);
+      begin
+         if not Unit.Has_Diagnostics
+           and then not Libadalang.Analysis.Is_Null (Unit.Root)
+         then
+            Unit.Root.Traverse (Visit'Access);
+         end if;
+      exception
+         when Exc : others =>
+            Log_Verbose_Once
+              ("the instantiations of " & Filename & " were not scanned: " &
+               Ada.Exceptions.Exception_Message (Exc));
+      end Scan;
+   begin
+      if not Config.Verification_Mode then
+         return Result;
+      end if;
+      --  Lookup is Files followed by the sources of the imported projects.
+      for Index in Files.Last_Index + 1 .. Lookup.Last_Index loop
+         Sources.Include (Lookup.Element (Index), False);
+      end loop;
+      if Sources.Is_Empty then
+         return Result;
+      end if;
+      for F of Files loop
+         Scan (F);
+      end loop;
+      --  A generic taken in turn instantiates others.
+      while Next <= Result.Last_Index loop
+         Scan (Result.Element (Next));
+         Next := Next + 1;
+      end loop;
+      return Result;
+   end Imported_Generics;
+
 begin
    VC.Set_Function_Oracle (Is_Function_Of_Arguments'Access);
    VC.Set_Relaxed_Oracle (Has_Relaxed_Initialization'Access);

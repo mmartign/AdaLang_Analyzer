@@ -53,6 +53,17 @@ package Adalang_Analyzer.Flow_Interp is
    --  intentionally run after ordinary AST checks so it can refine their
    --  Unproved obligation records to guarded final outcomes.
 
+   function Imported_Generics
+     (Ctx   : Libadalang.Analysis.Analysis_Context;
+      Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector)
+      return Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector;
+   --  The files (declaration and body) of the generic units of imported
+   --  projects that SPARK code of Files instantiates, directly or through
+   --  another of them, unless the generic unit says SPARK_Mode Off. The
+   --  proof obligations of their instances are part of the run, as they
+   --  are for GNATprove, but nothing in them is reported. Empty unless
+   --  verifying.
+
    procedure Verify_Instances
      (Ctx   : Libadalang.Analysis.Analysis_Context;
       Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector);

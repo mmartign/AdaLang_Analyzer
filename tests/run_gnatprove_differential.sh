@@ -1385,4 +1385,90 @@ print(f"contract checks: {agreed} checks proved here, each proved by "
       f"GNATprove; GNATprove refuses the {seeded} claims the mutations seed")
 PYTHON
 
+#  The generic units of an imported project, project by project: no
+#  termination or data-dependency check proved here is refused by
+#  GNATprove, which proves each of them at its place in the good project
+#  (in a seeded one it may stop before reporting one); and GNATprove
+#  refuses the check each seeded project leaves unproved here.
+imported_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-imported.XXXXXX")
+imported_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-imported.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$pieces_results" "$pieces_log" "$kept_results" "$kept_log" "$checks_results" "$checks_log" "$imported_results" "$imported_log"' \
+  EXIT HUP INT TERM
+
+imported_agreed=0
+for case in good:- spin:Irreflexive counter:Lt homograph:Lt; do
+   project=${case%%:*}
+   seeded=${case#*:}
+   status=0
+   "$analyzer" -P "tests/verification_imported_generics/$project.gpr" \
+     --verify -q --format=json --output="$imported_results" \
+     >/dev/null 2>&1 || status=$?
+   if [ "$status" -gt 1 ]; then
+      echo "AdaLang Analyzer imported-generics $project run failed with" \
+        "status $status" >&2
+      exit "$status"
+   fi
+   "$gnatprove" -P "tests/verification_imported_generics/$project.gpr" \
+     --mode=all --level=1 --report=all --output=oneline \
+     >"$imported_log" 2>&1 || true
+   agreed=$(python3 - "$imported_results" "$imported_log" "$project" \
+     "$seeded" <<'PYTHON'
+import json
+import os
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+project, seeded = sys.argv[3], sys.argv[4]
+
+
+def fail(message):
+    print(f"gnatprove differential: imported generics, {project}: {message}",
+          file=sys.stderr)
+    sys.exit(1)
+
+
+proved, refused = set(), []
+for line in log:
+    found = re.match(r"([a-z_]+\.ad[bs]):(\d+):(\d+): ([a-z]+): (.*)", line)
+    if not found:
+        continue
+    place = (found.group(1), int(found.group(2)), int(found.group(3)))
+    if found.group(4) == "info":
+        proved.add(place)
+    elif found.group(4) in ("low", "medium", "high", "error"):
+        refused.append(found.group(5))
+if not proved:
+    fail("GNATprove proved nothing: " + " ".join(log[-5:]))
+
+agreed = 0
+for item in report["proofObligations"]:
+    if item["kind"] not in ("termination", "data-dependencies"):
+        continue
+    name = item["operation"].removeprefix("Global of ")
+    if item["status"] == "proved-safe":
+        place = (os.path.basename(item["file"]), item["line"], item["column"])
+        if any(f'"{name}"' in text and ("Global" in text) ==
+               (item["kind"] == "data-dependencies") for text in refused):
+            fail(f"proved here, refused by GNATprove: {item['operation']}")
+        if place in proved:
+            agreed += 1
+        elif seeded == "-":
+            fail(f"proved here, not by GNATprove: {place} {item['operation']}")
+    elif name == seeded and not any(f'"{seeded}"' in text
+                                    for text in refused):
+        fail(f"GNATprove does not refuse the seeded {item['kind']} of "
+             f"{seeded}")
+if seeded != "-" and not any(f'"{seeded}"' in text for text in refused):
+    fail(f"GNATprove does not refuse {seeded}")
+print(agreed)
+PYTHON
+)
+   imported_agreed=$((imported_agreed + agreed))
+done
+echo "imported generics: $imported_agreed termination and data-dependency" \
+  "checks proved here, each proved by GNATprove; GNATprove refuses the 3" \
+  "seeded ones"
+
 echo "GNATprove differential tests passed"

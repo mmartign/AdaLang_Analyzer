@@ -1,0 +1,7 @@
+with "lib/lib.gpr";
+project Counter is
+   for Source_Dirs use ("counter");
+   for Object_Dir use "../../obj/verification_imported_generics/counter";
+   for Create_Missing_Dirs use "True";
+   for Main use ();
+end Counter;

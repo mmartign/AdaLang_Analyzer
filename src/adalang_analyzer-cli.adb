@@ -860,6 +860,28 @@ package body Adalang_Analyzer.CLI is
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    end Process_File;
 
+   --  The proof obligations of a source of an imported project that holds
+   --  a generic unit the run instantiates (Flow_Interp.Imported_Generics).
+   --  Nothing in it is reported: the file is not one the run analyzes.
+   procedure Verify_Imported_File
+     (Filename : String; Ctx : Libadalang.Analysis.Analysis_Context)
+   is
+      Unit : constant Libadalang.Analysis.Analysis_Unit :=
+        Ctx.Get_From_File (Filename);
+   begin
+      if Unit.Has_Diagnostics then
+         return;
+      end if;
+      Report.Set_Muted (True);
+      Adalang_Analyzer.Flow_Interp.Verify_Unit (Unit);
+      Adalang_Analyzer.Termination.Verify_Unit (Unit);
+      Adalang_Analyzer.Flow_Contracts.Verify_Unit (Unit);
+      Report.Set_Muted (False);
+   exception
+      when others =>
+         Report.Set_Muted (False);
+   end Verify_Imported_File;
+
    --  Best-effort fallback for the "gnatls" lookup below: when it is not on
    --  PATH, an Alire-managed toolchain may still be present locally (e.g.
    --  the binary was built with "alr build" but is now being run directly
@@ -1037,6 +1059,9 @@ package body Adalang_Analyzer.CLI is
 
    procedure Run is
       Files_To_Process   : File_Name_Vectors.Vector;
+      --  Sources of imported projects holding generic units that the run
+      --  instantiates in SPARK code: verified for their obligations alone.
+      Imported_Generic_Files : File_Name_Vectors.Vector;
       Project_Gpr_Files  : File_Name_Vectors.Vector;
       Seen_Projects      : File_Name_Vectors.Vector;
       Scenario_Vars      : File_Name_Vectors.Vector;
@@ -1763,7 +1788,24 @@ package body Adalang_Analyzer.CLI is
             Adalang_Analyzer.Subprogram_Summaries.Reset;
             Adalang_Analyzer.Termination.Reset;
             Adalang_Analyzer.Flow_Contracts.Reset;
+            --  Their summaries, and the instantiations they hold, are
+            --  needed by the run's own obligations.
+            Imported_Generic_Files :=
+              Adalang_Analyzer.Flow_Interp.Imported_Generics
+                (Summary_Ctx, Files_To_Process);
+            if not Imported_Generic_Files.Is_Empty then
+               Log_Verbose
+                 ("Generic units of imported projects: " &
+                  To_Decimal
+                    (Natural (File_Name_Vectors.Length
+                                (Imported_Generic_Files))) &
+                  " sources verified, nothing in them reported");
+            end if;
             for F of Files_To_Process loop
+               Adalang_Analyzer.Subprogram_Summaries.Scan_Unit
+                 (Summary_Ctx.Get_From_File (F));
+            end loop;
+            for F of Imported_Generic_Files loop
                Adalang_Analyzer.Subprogram_Summaries.Scan_Unit
                  (Summary_Ctx.Get_From_File (F));
             end loop;
@@ -1788,7 +1830,15 @@ package body Adalang_Analyzer.CLI is
       end loop;
 
       if Verification_Mode then
-         Adalang_Analyzer.Flow_Interp.Verify_Instances (Ctx, Files_To_Process);
+         for F of Imported_Generic_Files loop
+            Verify_Imported_File (F, Ctx);
+         end loop;
+         declare
+            All_Files : File_Name_Vectors.Vector := Files_To_Process;
+         begin
+            All_Files.Append_Vector (Imported_Generic_Files);
+            Adalang_Analyzer.Flow_Interp.Verify_Instances (Ctx, All_Files);
+         end;
       end if;
 
       if Rule_States (Circular_Package_Dependency) = Enabled then

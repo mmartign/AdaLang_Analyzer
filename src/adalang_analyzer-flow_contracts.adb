@@ -2893,6 +2893,40 @@ package body Adalang_Analyzer.Flow_Contracts is
                Actual := Libadalang.Analysis.Actual (Pair).As_Expr;
             end if;
          end loop;
+         --  No actual is written: the default. A null procedure touches
+         --  nothing; <> takes the subprogram of its name visible at the
+         --  instantiation (Ada RM 12.6(10)).
+         if Formal.Kind in Libadalang.Common.Ada_Formal_Subp_Decl then
+            if not Termination.Given_In (Node, Actual) then
+               Actual := Formal.As_Formal_Subp_Decl.F_Default_Expr;
+            end if;
+            if not Libadalang.Analysis.Is_Null (Actual)
+              and then Actual.Kind = Libadalang.Common.Ada_Null_Literal
+            then
+               return;
+            elsif not Libadalang.Analysis.Is_Null (Actual)
+              and then Actual.Kind = Libadalang.Common.Ada_Box_Expr
+            then
+               declare
+                  Decl       : Libadalang.Analysis.Basic_Decl;
+                  Predefined : Boolean;
+               begin
+                  Termination.Resolve_Box (Node, Formal, Decl, Predefined);
+                  if Predefined then
+                     return;
+                  elsif Libadalang.Analysis.Is_Null (Decl) then
+                     Kept := False;
+                  elsif Decl.Kind in Libadalang.Common.Ada_Formal_Subp_Decl
+                  then
+                     Kept := Kept
+                       and then Actuals_Keep_To_Themselves (Decl, Depth + 1);
+                  else
+                     Kept := Kept and then Touches_Nothing_Outside (Decl, Node);
+                  end if;
+                  return;
+               end;
+            end if;
+         end if;
          if Libadalang.Analysis.Is_Null (Actual)
            or else Actual.Kind not in Libadalang.Common.Ada_Name
          then

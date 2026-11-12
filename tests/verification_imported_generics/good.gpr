@@ -1,0 +1,7 @@
+with "lib/lib.gpr";
+project Good is
+   for Source_Dirs use ("good");
+   for Object_Dir use "../../obj/verification_imported_generics/good";
+   for Create_Missing_Dirs use "True";
+   for Main use ();
+end Good;

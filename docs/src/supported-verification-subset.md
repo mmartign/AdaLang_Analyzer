@@ -820,20 +820,44 @@ right-folded the same way the `elsif` chain is.
 - and every subprogram it calls seen to return in the same way from its own
   body.
 
+A call to a generic formal subprogram returns when the subprogram that each
+instantiation of its generic in the run gives it is seen to return,
+following a formal given another formal of an enclosing generic to that
+one's instantiations: the actual it names, the null procedure of a `null`
+default, or, for a `<>` default, the subprogram of its name visible at the
+instantiation. That one is taken to be the primitive of the actual type of
+the formal's first parameter that has the formal's name and number of
+parameters; with none, for `=` and `/=` of a nonlimited type whose
+equality is that of its scalar and access parts (no record with a variant
+part) and for an ordering operator of a scalar type or of an array of
+discrete components, the predefined operator. A `<>` default is not
+resolved when another subprogram or entry of that name and number of
+parameters, whose first parameter may be of that type, is declared in a
+declarative region around the instantiation, in the generic formal part
+of one, in a parent unit, or in a package or among the primitives of a
+type that a use clause there names: it could be the one visible.
+
 A predefined operation, an intrinsic, an instance of `Unchecked_Conversion`
 or `Unchecked_Deallocation` and a function of a language-defined or GNAT
 library unit are taken to return.
 
 **Boundary.** Raised for each function, and for each procedure that has the
-aspect `Always_Terminates` or is declared in a package that has it, at the
-name in its first declaration, unless `SPARK_Mode` is `Off` there.
+aspect `Always_Terminates` or is declared in a package that has it -- or in
+a generic package without it that an instantiation of the run puts in such
+a package --, at the name in its first declaration, unless `SPARK_Mode` is
+`Off` there. Raised as well, and proved, at a generic formal procedure
+whose default is `null`, in a generic package that must terminate, when an
+instantiation of the run takes the default: the null procedure returns.
 
 `Unproved`:
 
 - for a `while` or plain loop, even one with a loop variant;
 - for iteration through a user-defined iterator;
-- for a call to a generic formal subprogram, a library procedure, an
-  imported subprogram or one whose body is not among the sources;
+- for a call to a generic formal subprogram that an instantiation gives a
+  subprogram not shown to return, or a `<>` default not resolved, or whose
+  generic the run does not instantiate;
+- for a call to a library procedure, an imported subprogram or one whose
+  body is not among the sources;
 - and for a caller of any subprogram that is not itself shown to return,
   which GNATprove proves on the assumption that the callee does.
 
@@ -860,7 +884,10 @@ visible) or, when it has none, worked out from its body in the same way.
   mode `in` seen from an instance by the actual of the instantiation.
 - A generic formal subprogram without a `Global` aspect touches nothing
   when every instantiation of its generic among the sources gives it a
-  subprogram that touches nothing. An instance of a generic subprogram
+  subprogram that touches nothing: a `null` default touches nothing, a
+  `<>` default is the subprogram it is resolved to under
+  [Termination](#termination), and one that is not resolved touches what
+  is not known. An instance of a generic subprogram
   touches what the generic's `Global` aspect says; an instance of
   `Unchecked_Conversion` or `Unchecked_Deallocation` touches nothing but
   its parameters.
@@ -1671,6 +1698,15 @@ When the generic unit of an instantiation of the run cannot be found, which
 leaves an instance unseen, no generic unit is analyzed again.
 These analyses change obligations only: what they find is not reported
 again.
+
+A generic unit of an imported project that SPARK code of the run
+instantiates -- a SPARKlib container, say --, directly or through another
+such unit, is part of the run too, unless it says `SPARK_Mode` is `Off`:
+the files of its declaration and body are verified, their obligations
+reported at their places in them, as GNATprove reports the checks of an
+instance, and its instances are analyzed as above. No finding in those
+files is reported: the run does not analyze them. The other sources of an
+imported project are only used to resolve names.
 
 ## Objects and effects the analysis does not follow
 
