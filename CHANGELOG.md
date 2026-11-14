@@ -81,7 +81,13 @@ corpora are within 3%.
   later statement that can run a body declared in that subprogram which
   reads the object -- a call of a subprogram declared there, one that does
   not resolve or dispatches, an access value taken -- now reads it; a call
-  of a subprogram declared outside does not.
+  of a subprogram declared outside does not. Whether a body nested in the
+  subprogram reads the object, for such an object as for a local one, is
+  asked only once a later write is found to overwrite it, with the same
+  findings: the question resolves every name of the nested bodies, and
+  asked of every assignment it took 30% of the CPU time of the analyzer
+  on its own source (147 s -> 104 s on macOS, 15% under 1.15.0's), which
+  put the performance smoke test past its limit on the macOS runner.
 
 ### Added
 
