@@ -155,14 +155,17 @@ fully-proved corpora, the recorded comparisons contain:
 
 | Observed result | Count |
 | --- | ---: |
-| AdaLang called safe where GNATprove did not prove safe | **2** |
+| AdaLang called safe where GNATprove did not prove safe | **9** |
 | AdaLang called a definite error where GNATprove proved safe | **0** |
 
-The two checks AdaLang calls safe hold: they are the preservations of two
-invariants of one loop in SPARKNaCl (`sparknacl-sign.adb`, lines 604 and
-589), on which GNATprove's provers reach their step limit. An iteration of
-the loop writes none of the elements either invariant speaks of on the
-next one but the one it sets to 0.
+The nine checks AdaLang calls safe hold, GNATprove's provers reaching their
+time or step limit on each. Two are the preservations of two invariants of
+one loop in SPARKNaCl (`sparknacl-sign.adb`, lines 604 and 589): an
+iteration of the loop writes none of the elements either invariant speaks
+of on the next one but the one it sets to 0. Seven are the precondition of
+`Set_Scalar` in the setters of a 16-bit field that RecordFlux generates for
+CoAP-SPARK: `Fits_Into (Val, 16)` of a value of a type `range 0 .. 2**16 -
+1`.
 
 This is evidence of precision on AdaLang Analyzer's supported subset, not a
 claim of GNATprove-equivalent coverage: AdaLang returns `Unproved` or
