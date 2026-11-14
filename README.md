@@ -155,13 +155,14 @@ fully-proved corpora, the recorded comparisons contain:
 
 | Observed result | Count |
 | --- | ---: |
-| AdaLang called safe where GNATprove did not prove safe | **1** |
+| AdaLang called safe where GNATprove did not prove safe | **2** |
 | AdaLang called a definite error where GNATprove proved safe | **0** |
 
-The one check AdaLang calls safe holds: it is the preservation of a loop
-invariant in SPARKNaCl (`sparknacl-sign.adb`, line 604), on which
-GNATprove's provers reach their step limit. The loop's body writes no
-element the invariant speaks of but one it sets to 0.
+The two checks AdaLang calls safe hold: they are the preservations of two
+invariants of one loop in SPARKNaCl (`sparknacl-sign.adb`, lines 604 and
+589), on which GNATprove's provers reach their step limit. An iteration of
+the loop writes none of the elements either invariant speaks of on the
+next one but the one it sets to 0.
 
 This is evidence of precision on AdaLang Analyzer's supported subset, not a
 claim of GNATprove-equivalent coverage: AdaLang returns `Unproved` or

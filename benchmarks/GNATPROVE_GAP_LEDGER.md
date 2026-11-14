@@ -1,12 +1,12 @@
 # What separates `--verify` from GNATprove: a ledger
 
-Recorded 2026-11-12 with AdaLang Analyzer 1.15.0, against the GNATprove
+Recorded 2026-11-14 with AdaLang Analyzer 1.15.1, against the GNATprove
 output saved by the 2026-10-02 runs of the five fully proved corpora
 (`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`). The ledger
 was started on 2026-10-05. What each release has added since is in
 `CHANGELOG.md`, and earlier states of the ledger are in the Git history.
 
-The per-corpus comparisons (`<corpus>/RESULTS_2026-11-12.md`) answer one
+The per-corpus comparisons (`<corpus>/RESULTS_2026-11-14.md`) answer one
 question: where both tools have exactly one obligation of a kind on a line,
 do they ever disagree? This ledger asks the other one: of everything
 GNATprove proves, how much does AdaLang prove, and what happens to the rest?
@@ -16,31 +16,35 @@ pair.
 ## Where it stands
 
 Of the 15,043 checks GNATprove proves on the five corpora, AdaLang proves
-11,436. It has an obligation that it does not decide for 2,859 more (2,820
+11,683. It has an obligation that it does not decide for 2,612 more (2,573
 unproved, 39 unsupported), finds 1 in code that is never reached, and
 has no obligation for 747. In the other
-direction it proves one of the 22 checks GNATprove leaves unproved, the
-preservation of `for all K in Index_64 range I .. 63 => XL (K) = 0` in
-`sparknacl-sign.adb` (line 604), which holds: the loop's body writes no
-element above `I` and sets `XL (I)` to 0, and GNATprove's provers reach
-their step limit on it. It reports no definite error on a check GNATprove
-proves.
+direction it proves two of the 22 checks GNATprove leaves unproved, the
+preservation of two invariants of one loop in `sparknacl-sign.adb`, both of
+which hold and on both of which GNATprove's provers reach their step limit:
+`for all K in Index_64 range I .. 63 => XL (K) = 0` (line 604) -- the
+loop's body writes no element above `I` and sets `XL (I)` to 0 -- and
+`for all K in Index_64 range I - 11 .. I32'Min (50, I - 1) => XL (K) in
+PRL` (line 589) -- the loop goes down from 62, an iteration writes `XL (I -
+32 .. I - 12)` and `XL (I)` only, and the inner loop's invariant at line
+502 gives the range at its exit. It reports no definite error on a check
+GNATprove proves.
 
 By kind, summed over the per-corpus tables below, AdaLang proves:
 
-- 2,362 of GNATprove's 2,938 preconditions, those of the subprogram
+- 2,400 of GNATprove's 2,938 preconditions, those of the subprogram
   an instance gives a generic formal subprogram among them, which AdaLang
   raises since 1.12.2, those of an operator a generic unit hides behind an
   abstract function and of a renaming, since 1.12.3, and those that read a
   component of an element of an array of records (RecordFlux's
   `Ctx.Cursors (F)`), since 1.13.1;
-- 1,489 of its 2,372 range checks, those on an element of an
+- 1,595 of its 2,372 range checks, those on an element of an
   array read at an index whose value is not known among them, which
   AdaLang reads in the contents of the array's value since 1.13.0, and
   those on the value a function returns and on the bounds of the range
   constraint of a `for` loop or a quantified expression, which it raises
   since 1.15.0;
-- 342 of its 522 index checks, those at each bound of a slice
+- 357 of its 522 index checks, those at each bound of a slice
   that is the target of an assignment among them, which AdaLang raises
   since 1.11.2;
 - 1,670 of its 1,703 initializations of an object, in
@@ -48,7 +52,7 @@ By kind, summed over the per-corpus tables below, AdaLang proves:
   from outside is initialized on entry and checked at each call, a global
   of mode `Output` is given a value by the calls that list it so, and
   records and whole arrays are followed part by part;
-- 100 of its 136 initialization checks, the reads of an object
+- 102 of its 136 initialization checks, the reads of an object
   with relaxed initialization, which AdaLang follows as a whole since
   1.13.2 and, for an array, element by element since 1.13.3: an element
   or a slice has a value where it is given one, where an `out` parameter
@@ -100,7 +104,7 @@ By kind, summed over the per-corpus tables below, AdaLang proves:
 
 What is left:
 
-- **Unproved (2,820).** AdaLang has the obligation and does not decide it.
+- **Unproved (2,573).** AdaLang has the obligation and does not decide it.
   The per-corpus tables below give the reason it reports for each.
 - **Unsupported (39).** The obligation is in a subprogram that
   `--verify` leaves outside the verified subset, almost all for a
@@ -158,8 +162,8 @@ GNATprove proves 15043 checks on these 5 corpora. What AdaLang does with each of
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 11436 | 76.0% |
-| unproved | 2820 | 18.7% |
+| proved-safe | 11683 | 77.7% |
+| unproved | 2573 | 17.1% |
 | unsupported | 39 | 0.3% |
 | unreachable | 1 | 0.0% |
 | no obligation here | 597 | 4.0% |
@@ -168,13 +172,13 @@ GNATprove proves 15043 checks on these 5 corpora. What AdaLang does with each of
 
 | Corpus | Proved by GNATprove | AdaLang proved | Unproved | Unsupported | Unreachable | No obligation here | No such kind | File without obligations |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| sparknacl | 2446 | 1937 | 434 | 0 | 0 | 61 | 14 | 0 |
-| saatana | 367 | 237 | 121 | 0 | 0 | 9 | 0 | 0 |
-| libkeccak | 3321 | 2435 | 735 | 2 | 0 | 82 | 67 | 0 |
-| coap_spark | 6795 | 5143 | 1273 | 37 | 1 | 301 | 36 | 4 |
-| tokeneer | 2114 | 1684 | 257 | 0 | 0 | 144 | 28 | 1 |
+| sparknacl | 2446 | 1944 | 427 | 0 | 0 | 61 | 14 | 0 |
+| saatana | 367 | 256 | 102 | 0 | 0 | 9 | 0 | 0 |
+| libkeccak | 3321 | 2486 | 684 | 2 | 0 | 82 | 67 | 0 |
+| coap_spark | 6795 | 5311 | 1105 | 37 | 1 | 301 | 36 | 4 |
+| tokeneer | 2114 | 1686 | 255 | 0 | 0 | 144 | 28 | 1 |
 
-Disagreements: 1 checks AdaLang proved that GNATprove did not, 0 definite errors on checks GNATprove proved.
+Disagreements: 2 checks AdaLang proved that GNATprove did not, 0 definite errors on checks GNATprove proved.
 
 ## With GNATprove's verdicts read in
 
@@ -187,24 +191,24 @@ proved, and gives the figures of the table above:
 
 | Corpus | Proved by GNATprove | Proved by AdaLang too | GNATprove's verdict alone, on an AdaLang obligation | GNATprove's verdict alone, no AdaLang obligation | A definite error for AdaLang |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| sparknacl | 2,446 | 1,937 | 434 | 75 | 0 |
-| saatana | 367 | 237 | 121 | 9 | 0 |
-| libkeccak | 3,321 | 2,435 | 737 | 149 | 0 |
-| coap_spark | 6,795 | 5,143 | 1,311 | 341 | 0 |
-| tokeneer | 2,114 | 1,684 | 257 | 173 | 0 |
-| All five | 15,043 | 11,436 | 2,860 | 747 | 0 |
+| sparknacl | 2,446 | 1,944 | 427 | 75 | 0 |
+| saatana | 367 | 256 | 102 | 9 | 0 |
+| libkeccak | 3,321 | 2,486 | 686 | 149 | 0 |
+| coap_spark | 6,795 | 5,311 | 1,143 | 341 | 0 |
+| tokeneer | 2,114 | 1,686 | 255 | 173 | 0 |
+| All five | 15,043 | 11,683 | 2,613 | 747 | 0 |
 
-The second column is what AdaLang proves; it is 11,436 with the logs and
+The second column is what AdaLang proves; it is 11,683 with the logs and
 without them. The third and fourth are GNATprove's work, reported as
-GNATprove's: 2,860 checks on an obligation AdaLang has and did not prove
-(the 2,820 unproved, the 39 unsupported and the 1 unreachable above) and
+GNATprove's: 2,613 checks on an obligation AdaLang has and did not prove
+(the 2,573 unproved, the 39 unsupported and the 1 unreachable above) and
 747 for which it
 has no obligation. Nothing is left over, which is all that "the gap is
 zero" means here: with GNATprove's log beside it, an AdaLang report says
 of each of the 15,043 checks who proved it. It does not mean AdaLang proves
 them. The logs also hold 13 checks justified in Tokeneer and 22 GNATprove
 did not prove (8 in SPARKNaCl, 14 in CoAP-SPARK), of which AdaLang proves
-1, the preservation in `sparknacl-sign.adb` said above.
+2, the preservations in `sparknacl-sign.adb` said above.
 
 That the analyzer and `gnatprove_gap_ledger.py` pair alike is tested on a
 small case by `tests/run_gnatprove_import.sh`; that they give the same
@@ -289,14 +293,14 @@ GNATprove reports 2454 checks (2463 messages, a check of a generic unit being re
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 1937 | 79.2% |
-| unproved | 434 | 17.7% |
+| proved-safe | 1944 | 79.5% |
+| unproved | 427 | 17.5% |
 | no obligation here | 61 | 2.5% |
 | no such obligation kind | 14 | 0.6% |
 
 | GNATprove check | Proved | AdaLang proved | Unproved | Unsupported | No obligation | Definite error |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| range check | 585 | 461 | 84 | 0 | 40 | 0 |
+| range check | 585 | 466 | 79 | 0 | 40 | 0 |
 | initialization of | 356 | 346 | 10 | 0 | 0 | 0 |
 | data dependencies | 198 | 198 | 0 | 0 | 0 | 0 |
 | assertion | 187 | 101 | 86 | 0 | 0 | 0 |
@@ -306,8 +310,8 @@ GNATprove reports 2454 checks (2463 messages, a check of a generic unit being re
 | precondition | 123 | 101 | 22 | 0 | 0 | 0 |
 | initialization check | 105 | 90 | 13 | 0 | 2 | 0 |
 | Always_Terminates | 103 | 79 | 24 | 0 | 0 | 0 |
-| loop invariant initialization | 81 | 43 | 38 | 0 | 0 | 0 |
-| loop invariant preservation | 79 | 37 | 42 | 0 | 0 | 0 |
+| loop invariant initialization | 81 | 44 | 37 | 0 | 0 | 0 |
+| loop invariant preservation | 79 | 38 | 41 | 0 | 0 | 0 |
 | length check | 67 | 60 | 7 | 0 | 0 | 0 |
 | predicate check | 58 | 40 | 15 | 0 | 3 | 0 |
 | postcondition | 29 | 7 | 22 | 0 | 0 | 0 |
@@ -330,7 +334,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 | Status | Reason | Checks |
 | --- | ---: | ---: |
-| unproved | the invariant is not at the loop-head cut point | 73 |
+| unproved | the invariant is not at the loop-head cut point | 71 |
 | unproved | the current range domain does not certify the result | 46 |
 | unproved | the expression conflicts with its symbolic scalar sort | 43 |
 | unproved | abstract interpretation and the scalar VC portfolio did not certify it | 40 |
@@ -345,7 +349,8 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 ### Disagreements
 
-- AdaLang proved, GNATprove did not: 1
+- AdaLang proved, GNATprove did not: 2
+  - `sparknacl-sign.adb:589:16` loop invariant
   - `sparknacl-sign.adb:604:55` loop invariant
 - AdaLang reports a definite error, GNATprove proved: 0
 
@@ -353,7 +358,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 | Kind | Obligations | Proved | Unproved | Unsupported |
 | --- | ---: | ---: | ---: | ---: |
-| assertion | 81 | 14 | 67 | 0 |
+| assertion | 81 | 15 | 66 | 0 |
 | division-by-zero | 39 | 39 | 0 | 0 |
 | index-check | 953 | 949 | 4 | 0 |
 | initialization-check | 2596 | 2506 | 90 | 0 |
@@ -369,16 +374,16 @@ GNATprove reports 367 checks (376 messages, a check of a generic unit being repe
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 237 | 64.6% |
-| unproved | 121 | 33.0% |
+| proved-safe | 256 | 69.8% |
+| unproved | 102 | 27.8% |
 | no obligation here | 9 | 2.5% |
 
 | GNATprove check | Proved | AdaLang proved | Unproved | Unsupported | No obligation | Definite error |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| range check | 103 | 61 | 35 | 0 | 7 | 0 |
+| range check | 103 | 69 | 27 | 0 | 7 | 0 |
 | division check | 44 | 44 | 0 | 0 | 0 | 0 |
-| overflow check | 31 | 11 | 20 | 0 | 0 | 0 |
-| index check | 29 | 21 | 6 | 0 | 2 | 0 |
+| overflow check | 31 | 15 | 16 | 0 | 0 | 0 |
+| index check | 29 | 22 | 5 | 0 | 2 | 0 |
 | precondition | 22 | 10 | 12 | 0 | 0 | 0 |
 | length check | 20 | 11 | 9 | 0 | 0 | 0 |
 | data dependencies | 20 | 20 | 0 | 0 | 0 | 0 |
@@ -387,8 +392,8 @@ GNATprove reports 367 checks (376 messages, a check of a generic unit being repe
 | postcondition | 13 | 3 | 10 | 0 | 0 | 0 |
 | assertion | 10 | 2 | 8 | 0 | 0 | 0 |
 | Always_Terminates | 10 | 10 | 0 | 0 | 0 | 0 |
-| loop invariant initialization | 9 | 1 | 8 | 0 | 0 | 0 |
-| loop invariant preservation | 9 | 1 | 8 | 0 | 0 | 0 |
+| loop invariant initialization | 9 | 4 | 5 | 0 | 0 | 0 |
+| loop invariant preservation | 9 | 4 | 5 | 0 | 0 | 0 |
 | initialization check | 6 | 5 | 1 | 0 | 0 | 0 |
 | predicate check | 5 | 5 | 0 | 0 | 0 | 0 |
 | loop variant | 4 | 0 | 4 | 0 | 0 | 0 |
@@ -405,18 +410,18 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 | Status | Reason | Checks |
 | --- | ---: | ---: |
-| unproved | the current range domain does not certify the result | 16 |
-| unproved | the invariant is not at the loop-head cut point | 16 |
-| unproved | slice bound and array bound ranges remain inconclusive | 14 |
 | unproved | current contract transfer does not certify safety | 12 |
 | unproved | this expression form is outside the scalar VC subset | 12 |
-| unproved | the current non-relational range domain is inconclusive | 10 |
+| unproved | the current range domain does not certify the result | 12 |
+| unproved | slice bound and array bound ranges remain inconclusive | 12 |
+| unproved | the invariant is not at the loop-head cut point | 10 |
 | unproved | the slice range is not written as two bounds | 9 |
+| unproved | the current non-relational range domain is inconclusive | 9 |
 | unproved | static evaluation is inconclusive | 6 |
 | unproved | the required bounds are not statically known | 6 |
-| unproved | the callee is not a plain expression function | 5 |
 | unproved | the variant is not at the loop-head cut point | 4 |
 | unproved | the blocking object is not known to be initialized | 2 |
+| unproved | abstract interpretation and the scalar VC portfolio did not certify it | 2 |
 
 ### Disagreements
 
@@ -444,33 +449,33 @@ GNATprove reports 3321 checks (20673 messages, a check of a generic unit being r
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 2435 | 73.3% |
-| unproved | 735 | 22.1% |
+| proved-safe | 2486 | 74.9% |
+| unproved | 684 | 20.6% |
 | unsupported | 2 | 0.1% |
 | no obligation here | 82 | 2.5% |
 | no such obligation kind | 67 | 2.0% |
 
 | GNATprove check | Proved | AdaLang proved | Unproved | Unsupported | No obligation | Definite error |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| range check | 631 | 467 | 113 | 0 | 51 | 0 |
-| overflow check | 569 | 402 | 162 | 0 | 5 | 0 |
+| range check | 631 | 475 | 105 | 0 | 51 | 0 |
+| overflow check | 569 | 423 | 141 | 0 | 5 | 0 |
 | initialization of | 344 | 342 | 1 | 0 | 1 | 0 |
 | division check | 306 | 295 | 11 | 0 | 0 | 0 |
-| precondition | 273 | 202 | 61 | 1 | 9 | 0 |
-| index check | 199 | 113 | 71 | 0 | 15 | 0 |
+| precondition | 273 | 203 | 60 | 1 | 9 | 0 |
+| index check | 199 | 125 | 59 | 0 | 15 | 0 |
 | data dependencies | 155 | 150 | 5 | 0 | 0 | 0 |
 | predicate check | 154 | 81 | 72 | 0 | 1 | 0 |
 | loop invariant initialization | 114 | 85 | 29 | 0 | 0 | 0 |
-| loop invariant preservation | 114 | 41 | 73 | 0 | 0 | 0 |
+| loop invariant preservation | 114 | 43 | 71 | 0 | 0 | 0 |
 | assertion | 90 | 31 | 59 | 0 | 0 | 0 |
 | flow dependencies | 81 | 81 | 0 | 0 | 0 | 0 |
-| postcondition | 79 | 33 | 45 | 1 | 0 | 0 |
+| postcondition | 79 | 38 | 40 | 1 | 0 | 0 |
 | length check | 74 | 64 | 10 | 0 | 0 | 0 |
 | Always_Terminates | 46 | 46 | 0 | 0 | 0 | 0 |
 | non-aliasing | 37 | 0 | 0 | 0 | 37 | 0 |
 | contract case | 28 | 0 | 0 | 0 | 28 | 0 |
 | loop variant | 21 | 0 | 21 | 0 | 0 | 0 |
-| initialization check | 4 | 2 | 2 | 0 | 0 | 0 |
+| initialization check | 4 | 4 | 0 | 0 | 0 | 0 |
 | contract or exit cases | 2 | 0 | 0 | 0 | 2 | 0 |
 
 Where AdaLang has no obligation of the kind at the place:
@@ -486,15 +491,15 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 | Status | Reason | Checks |
 | --- | ---: | ---: |
-| unproved | the current range domain does not certify the result | 161 |
-| unproved | slice bound and array bound ranges remain inconclusive | 72 |
+| unproved | the current range domain does not certify the result | 140 |
 | unproved | the scalar VC portfolio did not certify the predicate | 72 |
-| unproved | the scalar loop preservation VC was not discharged | 68 |
-| unproved | the required bounds are not statically known | 57 |
-| unproved | the current non-relational range domain is inconclusive | 44 |
+| unproved | slice bound and array bound ranges remain inconclusive | 67 |
+| unproved | the scalar loop preservation VC was not discharged | 66 |
+| unproved | the required bounds are not statically known | 45 |
+| unproved | the current non-relational range domain is inconclusive | 41 |
 | unproved | current contract transfer does not certify safety | 40 |
 | unproved | abstract interpretation and the scalar VC portfolio did not certify it | 39 |
-| unproved | exit states do not imply the contract | 33 |
+| unproved | exit states do not imply the contract | 28 |
 | unproved | the scalar loop initialization VC was not discharged | 24 |
 | unproved | exactly one Increases or Decreases component is required | 19 |
 | unproved | Ada division semantics require a provably nonzero divisor | 19 |
@@ -514,14 +519,14 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | flow-dependencies | 8 | 3 | 5 | 0 |
 | index-check | 685 | 658 | 27 | 0 |
 | initialization-check | 4680 | 4070 | 606 | 4 |
-| integer-overflow | 1026 | 754 | 272 | 0 |
+| integer-overflow | 1026 | 763 | 263 | 0 |
 | length-check | 20 | 20 | 0 | 0 |
 | loop-invariant-initialization | 17 | 6 | 11 | 0 |
 | loop-invariant-preservation | 17 | 1 | 16 | 0 |
 | loop-variant | 2 | 0 | 2 | 0 |
 | postcondition | 3 | 0 | 3 | 0 |
 | precondition | 19 | 4 | 15 | 0 |
-| range-check | 1619 | 628 | 991 | 0 |
+| range-check | 1619 | 634 | 985 | 0 |
 | termination | 4 | 3 | 1 | 0 |
 
 ## coap_spark
@@ -532,8 +537,8 @@ GNATprove reports 6809 checks (7423 messages, a check of a generic unit being re
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 5143 | 75.7% |
-| unproved | 1273 | 18.7% |
+| proved-safe | 5311 | 78.2% |
+| unproved | 1105 | 16.3% |
 | unsupported | 37 | 0.5% |
 | unreachable | 1 | 0.0% |
 | no obligation here | 301 | 4.4% |
@@ -542,20 +547,20 @@ GNATprove reports 6809 checks (7423 messages, a check of a generic unit being re
 
 | GNATprove check | Proved | AdaLang proved | Unproved | Unsupported | No obligation | Definite error |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| precondition | 2294 | 1881 | 327 | 12 | 74 | 0 |
+| precondition | 2294 | 1918 | 290 | 12 | 74 | 0 |
 | Always_Terminates | 869 | 788 | 79 | 0 | 2 | 0 |
-| range check | 845 | 443 | 257 | 2 | 143 | 0 |
+| range check | 845 | 528 | 172 | 2 | 143 | 0 |
 | postcondition | 379 | 180 | 197 | 0 | 2 | 0 |
 | pointer dereference check | 336 | 317 | 8 | 2 | 9 | 0 |
-| assertion | 299 | 239 | 56 | 3 | 0 | 0 |
-| overflow check | 278 | 143 | 119 | 0 | 16 | 0 |
+| assertion | 299 | 245 | 50 | 3 | 0 | 0 |
+| overflow check | 278 | 181 | 81 | 0 | 16 | 0 |
 | initialization of | 277 | 263 | 6 | 7 | 1 | 0 |
 | division check | 265 | 265 | 0 | 0 | 0 | 0 |
 | resource or memory leak | 211 | 183 | 19 | 8 | 1 | 0 |
 | predicate check | 181 | 57 | 79 | 0 | 45 | 0 |
 | discriminant check | 135 | 129 | 2 | 3 | 1 | 0 |
 | length check | 108 | 92 | 13 | 0 | 3 | 0 |
-| index check | 96 | 35 | 60 | 0 | 1 | 0 |
+| index check | 96 | 37 | 58 | 0 | 1 | 0 |
 | loop invariant preservation | 47 | 28 | 19 | 0 | 0 | 0 |
 | loop invariant initialization | 47 | 36 | 11 | 0 | 0 | 0 |
 | data dependencies | 42 | 35 | 5 | 0 | 2 | 0 |
@@ -582,18 +587,18 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 | Status | Reason | Checks |
 | --- | ---: | ---: |
-| unproved | current contract transfer does not certify safety | 248 |
-| unproved | the required bounds are not statically known | 133 |
-| unproved | slice bound and array bound ranges remain inconclusive | 121 |
+| unproved | current contract transfer does not certify safety | 233 |
+| unproved | slice bound and array bound ranges remain inconclusive | 107 |
 | unproved | exit states do not imply the contract | 105 |
-| unproved | the current non-relational range domain is inconclusive | 84 |
-| unproved | this attribute is outside the scalar VC subset | 81 |
+| unproved | the required bounds are not statically known | 99 |
 | unproved | this expression form is outside the scalar VC subset | 64 |
 | unproved | the scalar VC portfolio did not certify the predicate | 44 |
+| unproved | this attribute is outside the scalar VC subset | 41 |
 | unsupported | outside bounded verification subset | 37 |
-| unproved | the callee is not a plain expression function | 35 |
+| unproved | the callee is not a plain expression function | 33 |
 | unproved | this operator is outside the scalar VC subset | 30 |
-| unproved | the current range domain does not certify the result | 30 |
+| unproved | the current range domain does not certify the result | 28 |
+| unproved | abstract interpretation and the scalar VC portfolio did not certify it | 27 |
 
 ### Disagreements
 
@@ -611,13 +616,13 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | flow-dependencies | 3 | 3 | 0 | 0 |
 | index-check | 882 | 837 | 25 | 20 |
 | initialization-check | 12288 | 11396 | 519 | 373 |
-| integer-overflow | 1119 | 511 | 523 | 85 |
+| integer-overflow | 1119 | 546 | 488 | 85 |
 | length-check | 19 | 11 | 2 | 6 |
 | pointer-dereference | 77 | 57 | 20 | 0 |
 | postcondition | 44 | 5 | 38 | 1 |
-| precondition | 203 | 49 | 133 | 21 |
+| precondition | 203 | 50 | 132 | 21 |
 | predicate-check | 32 | 0 | 32 | 0 |
-| range-check | 1327 | 492 | 723 | 111 |
+| range-check | 1327 | 498 | 717 | 111 |
 | resource-leak | 9 | 6 | 3 | 0 |
 | termination | 70 | 37 | 33 | 0 |
 
@@ -631,8 +636,8 @@ GNATprove reports 2127 checks (2205 messages, a check of a generic unit being re
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 1684 | 79.7% |
-| unproved | 257 | 12.2% |
+| proved-safe | 1686 | 79.8% |
+| unproved | 255 | 12.1% |
 | no obligation here | 144 | 6.8% |
 | no such obligation kind | 28 | 1.3% |
 | file without any obligation | 1 | 0.0% |
@@ -653,7 +658,7 @@ GNATprove reports 2127 checks (2205 messages, a check of a generic unit being re
 | predicate check | 23 | 0 | 23 | 0 | 0 | 0 |
 | refined post | 19 | 0 | 0 | 0 | 19 | 0 |
 | loop invariant initialization | 19 | 8 | 11 | 0 | 0 | 0 |
-| loop invariant preservation | 19 | 3 | 16 | 0 | 0 | 0 |
+| loop invariant preservation | 19 | 5 | 14 | 0 | 0 | 0 |
 | invariant check | 9 | 0 | 0 | 0 | 9 | 0 |
 | assertion | 3 | 0 | 2 | 0 | 1 | 0 |
 
@@ -677,8 +682,8 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | unproved | State is used and is not listed | 16 |
 | unproved | this expression form is outside the scalar VC subset | 15 |
 | unproved | the current non-relational range domain is inconclusive | 14 |
-| unproved | the scalar loop preservation VC was not discharged | 11 |
 | unproved | the required bounds are not statically known | 9 |
+| unproved | the scalar loop preservation VC was not discharged | 9 |
 | unproved | the two lengths are not known to be equal | 8 |
 | unproved | the current range domain does not certify the result | 7 |
 
@@ -691,7 +696,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 | Kind | Obligations | Proved | Unproved | Unsupported |
 | --- | ---: | ---: | ---: | ---: |
-| assertion | 19 | 3 | 16 | 0 |
+| assertion | 19 | 5 | 14 | 0 |
 | division-by-zero | 10 | 10 | 0 | 0 |
 | index-check | 270 | 194 | 66 | 10 |
 | initialization-check | 5203 | 4457 | 706 | 40 |
