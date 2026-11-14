@@ -5,6 +5,99 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.15.2] - 2026-11-14
+
+`--verify` reads more of what contracts and types say. The precondition of
+a generic subprogram holds in its body, as that of any subprogram declared
+apart from its body does; the predicate of the subtype of a component of a
+parameter holds of that part on entry, as the parameter's own does; a call
+of a function renaming is a call of the expression function it renames;
+and `2 ** Bits` is a number once `Bits` is bound to one. Two analyzer
+faults are fixed: a returned value's range check after an overflow that
+always occurs (FP-143) and `Overwritten_Assignment` across a recursive
+call (FP-144).
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+11,789 of the 15,043 checks GNATprove proves, 78.4% (was 11,683, 77.7%).
+106 more are proved and none fewer: 93 preconditions, 4 dereference
+checks, 3 postconditions, 3 overflow checks and 3 assertions (CoAP-SPARK
+101, libkeccak 5). Measured one at a time, the precondition of a generic
+subprogram gives 53 of them, the predicates of components 34 and the
+renamed expression function with the power 19 (which need both). On the
+nine corpora with a `--verify` lane, 470 obligations that were `Unproved`
+are proved (CoAP-SPARK 446, libkeccak 22, CubedOS 1, GNATCOLL 1), none
+that was proved is `Unproved`, none is added or removed, and no definite
+error is new or gone; 4 initialization checks of an `out` parameter of a
+generic subprogram are raised at its name in the generic declaration
+instead of in the body, with the verdict they had. On all ten corpora,
+every preset, findings are identical. On the SPARK testsuite both tools
+prove 327 of 704 pairs, with no possible unsoundness and no false
+positive; one obligation is gone, the range check of FP-143. Seven more
+checks AdaLang proves are ones GNATprove leaves unproved: the precondition
+`Fits_Into (Val, Natural (Field_Size (Ctx, Fld)))` of `Set_Scalar` in the
+setters of a 16-bit field RecordFlux generates for CoAP-SPARK, which holds
+(`Val` is of a type `range 0 .. 2**16 - 1`, the field is 16 bits wide) and
+on which GNATprove's provers reach their time and step limit. CPU time is
+up by 18% on CoAP-SPARK (367 s -> 433 s), where the predicates of the
+message contexts of a session context are now assumed on entry; the other
+corpora are within 3%.
+
+### Changed
+
+- The precondition and postcondition of a generic subprogram, written in
+  the names of its generic declaration, are carried to the names of its
+  body, as those of any subprogram declared apart from its body are, where
+  the two conform parameter by parameter. They were assumed of names the
+  body never reads (RecordFlux's `Generic_Set_Token`, `Generic_Get_*`).
+- On entry to a subprogram of SPARK code, the predicates of the subtypes
+  of the components of an `in` or `in out` record parameter, and of their
+  components in turn, are taken to hold of those parts, as the
+  parameter's own are: SPARK checks a predicate at every assignment to an
+  object or to a part of one. Through the full view of a private type and
+  an untagged derivation; not into a variant part, an array or what an
+  access value designates. RecordFlux's session contexts hold message
+  contexts (`Ctx.P.Request_Ctx`) whose type has the predicate
+  `Valid_Context (...)`.
+- A call of a function renaming (`function Fits_Into (V : U64; Bits :
+  Natural) return Boolean renames RFLX_Arithmetic.Fits_Into`) is read as
+  a call of the expression function it renames, where the formals of both
+  have the same names in the same order.
+- A power `B ** N` whose base is known and whose exponent's term is a
+  numeral -- a formal of an expression function bound to one, `Bits` in
+  `(if Bits < U64'Size then V < 2 ** Bits)` -- is its value, of any size;
+  in a modular type only below the modulus.
+
+### Fixed
+
+- FP-143: under `--verify`, the range check of the value a function
+  returns was a `Definite_Error` where the expression returned is an
+  operation whose overflow check always fails first: `function Bad return
+  Integer is (Ident (Integer'Last) + 1)`, whose expression is in
+  parentheses, which hid the overflow. No range check is raised behind
+  such an overflow, as none is of an initial value (FP-100).
+- FP-144: `Overwritten_Assignment` reported "Flag := True; Walk (Depth -
+  1); Flag := Saved;" where `Flag` belongs to an enclosing subprogram and
+  the recursive `Walk` reads it through a procedure declared there. A
+  later statement that can run a body declared in that subprogram which
+  reads the object -- a call of a subprogram declared there, one that does
+  not resolve or dispatches, an access value taken -- now reads it; a call
+  of a subprogram declared outside does not.
+
+### Added
+
+- `tests/verification_contract_reach` holds checks the precondition of a
+  generic subprogram, the predicate of a component of a parameter (two
+  deep, and through a private type's full view), a renamed expression
+  function and a power with a formal exponent let `--verify` prove, each
+  proved by GNATprove; `tests/verification_mutation_contract_reach` holds
+  six that do not hold (a precondition without the parity the body needs,
+  a predicate that allows `Low = High`, a component without one, a value
+  that needs five bits, a renaming whose formals are named in another
+  order, `2 ** 8` in a type of modulus 256), each refused by GNATprove and
+  left `Unproved`.
+- Three precision cases of `Overwritten_Assignment` for objects of an
+  enclosing subprogram (`quality/precision_corpus.tsv`, 625 cases).
+
 ## [1.15.1] - 2026-11-14
 
 `--verify` proves more of the checks it raises in and after loops. A loop
