@@ -5,6 +5,88 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.15.1] - 2026-11-14
+
+`--verify` proves more of the checks it raises in and after loops. A loop
+changes only what it writes: what is known of an object the loop does not
+write holds in the loop and after it, as GNATprove has it; and a bound of
+a `for` loop's range that the loop does not write keeps its value on
+entry. It also knows the bounds of an array an access value designates are
+in its index subtype, translates `T'Min` and `T'Max`, and no longer takes
+a call to write what the index or the bounds of a slice actual read. No
+obligation is added or removed.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+11,683 of the 15,043 checks GNATprove proves, 77.7% (was 11,436, 76.0%).
+247 more are proved and none fewer: 106 range checks, 63 overflow checks,
+38 preconditions, 15 index checks, 12 loop invariants, 6 assertions, 5
+postconditions and 2 initialization checks (CoAP-SPARK 168, libkeccak 51,
+Saatana 19, SPARKNaCl 7, Tokeneer 2). Measured one at a time, the frame of
+a loop gives 134 of them, the bounds of a `for` loop's range 58, the
+bounds of a designated array 46, `T'Min`/`T'Max` 41 and the actuals of
+calls 26; some need two at once. On the nine corpora with a `--verify`
+lane, 380 obligations that were `Unproved` are proved (CoAP-SPARK 210,
+libkeccak 66, GNATCOLL 54, Saatana 19, AWS 11, SPARKNaCl 9, CubedOS 7,
+Tokeneer 4), none that was proved is `Unproved`, none is added or removed,
+and no definite error is new or gone. On all ten corpora, every preset,
+findings are identical. On the SPARK testsuite both tools prove 327 of 704
+pairs (was 324), with no possible unsoundness and no false positive. One
+more check AdaLang proves is one GNATprove leaves unproved: the
+preservation of the loop invariant at `sparknacl-sign.adb:589`, which
+holds and on which GNATprove's provers reach their step limit, with
+SPARKNaCl's own switches too, as on the one at line 604 of the same loop.
+CPU time is up by 10% at most (SPARKNaCl 64 s -> 71 s); the other corpora
+are within 3%.
+
+### Changed
+
+- The head of a loop keeps what is known where the loop is entered of a
+  local object or a parameter of the subprogram that nothing in the loop
+  writes -- by an assignment to it or a part of it, as the actual of an
+  `out` or `in out` parameter, or by a write reference -- and so does the
+  code after the loop. An object of a type other than a scalar or an
+  array of scalars keeps it only where the loop makes no call and writes
+  nothing through an access value; nothing is kept where the loop makes a
+  dispatching call or a call of an unknown callee, instantiates a
+  generic, names a subprogram declared in a body or writes through a
+  renaming, nor of a renaming, an aliased parameter, an object that is not
+  tracked or one that may share storage with another. Under `--verify`
+  only. Until now only constants, `in` parameters and the bounds of arrays
+  were known there, and an outer loop's invariant was lost inside an inner
+  loop that did not touch its objects.
+- A bound of a `for` loop's range built from objects the loop does not
+  write is the value it had on entry, which Ada evaluates once: `for I in
+  0 .. M - 1`, `M` a variable the loop leaves alone, knows `I < M`.
+- The bounds of an array an access value designates (`Buffer'First`,
+  `Ctx.Buffer'Length`) belong to its index subtype where the array is not
+  null, as those of an array object do.
+- `T'Min (L, R)` and `T'Max (L, R)` of an integer or enumeration subtype
+  are translated to the solvers: the lesser and the greater operand.
+- A call in SPARK code under `--verify` whose `out` or `in out` actual is
+  an element or a slice of a name made of selections writes the array that
+  name denotes: the objects its index or bounds read keep what is known of
+  them (`Offset` and `Ctx` in `Fill (Digest (Digest'First + Offset ..
+  Digest'First + Offset + (Ctx.Rate - 1)))`). They were forgotten, both
+  in the symbolic state and in the intervals.
+- A loop whose invariants are proved, which the second pass summarizes by
+  them, starts each iteration from what holds on every iteration (the
+  above, taken from the edge into the loop) and the invariants. It started
+  from the invariants alone, so that proving a loop's invariants could
+  lose what the precondition said of the objects it does not write.
+
+### Added
+
+- `tests/verification_loop_frame` holds checks the frame of a loop, the
+  bounds of a loop's range, a designated array's bounds, `T'Min` and the
+  actuals of a call let `--verify` prove, each proved by GNATprove;
+  `tests/verification_mutation_loop_frame` holds twelve that do not hold
+  (an object the loop assigns, passes as an `in out` actual, writes
+  through a nested procedure or a renaming, or in a `while` loop; elements
+  the loop writes; a bound it writes; a designated array that may be null
+  and the second dimension of one; `'Max`; an index variable that is an
+  actual of its own; an object a summarized loop writes), each refused by
+  GNATprove and left `Unproved`.
+
 ## [1.15.0] - 2026-11-12
 
 `--verify` raises and proves more of the runtime checks GNATprove raises:
