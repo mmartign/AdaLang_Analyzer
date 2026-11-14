@@ -603,3 +603,15 @@ contract-checks-result-natural	tests/verification_mutation_contract_checks.adb	r
 contract-checks-result-subtype	tests/verification_mutation_contract_checks.adb	range-check	(Y + 1)	unproved	Y + 1 is 11 when Y is 10.
 contract-checks-other-array-bound	tests/verification_mutation_contract_checks.adb	range-check	K11 in N32 range X'First .. I	unproved	the loop runs over Y: X can be null, with a first bound below 0.
 contract-checks-invariant-overflow	tests/verification_mutation_contract_checks.adb	integer-overflow	Offset + Remaining	unproved	Offset grows without bound; the invariant does not limit the sum.
+loop-frame-assigned	tests/verification_mutation_loop_frame.adb	range-check	K + RA	unproved	the loop assigns RA: its value before the loop is gone.
+loop-frame-in-out-actual	tests/verification_mutation_loop_frame.adb	range-check	K + RP	unproved	the loop passes RP as an in out actual.
+loop-frame-nested-procedure	tests/verification_mutation_loop_frame.adb	range-check	K + RN	unproved	a procedure nested in the subprogram, called in the loop, writes RN.
+loop-frame-renaming	tests/verification_mutation_loop_frame.adb	range-check	K + RM	unproved	the loop writes RM through the renaming RR.
+loop-frame-while	tests/verification_mutation_loop_frame.adb	range-check	K + RW	unproved	a while loop assigns RW.
+loop-frame-elements	tests/verification_mutation_loop_frame.adb	range-check	A (0)	unproved	the loop writes the elements of A: 255 is not in S64.
+loop-frame-written-bound	tests/verification_mutation_loop_frame.adb	range-check	I	unproved	the loop writes M, a bound of its range: the range is still 0 .. 9.
+loop-frame-null-designated	tests/verification_mutation_loop_frame.adb	range-check	(P'First)	unproved	a null designated array may have bounds outside its index subtype.
+loop-frame-second-dimension	tests/verification_mutation_loop_frame.adb	range-check	(P'First (2))	unproved	the second index subtype of the designated array is Natural, not Positive.
+loop-frame-max	tests/verification_mutation_loop_frame.adb	range-check	Natural'Max (A, B) - A	unproved	Max (A, B) - A is B - A where B > A.
+loop-frame-index-actual	tests/verification_mutation_loop_frame.adb	range-check	Offset	unproved	Offset is the actual of an in out parameter of its own: the call writes it.
+loop-frame-summarized-written	tests/verification_mutation_loop_frame.adb	range-check	X	unproved	X is written by a loop summarized by its proved invariant: X = N after it, not 0.

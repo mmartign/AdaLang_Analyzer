@@ -1764,8 +1764,10 @@ package body Adalang_Analyzer.VC_Prover is
    --  made, so two values that designate the same object, which are the
    --  same token, give the same bounds; a value the state knows nothing
    --  of is a token nothing is known of either. The length is tied to the
-   --  two bounds as for an array object. Empty where Prefix has no token:
-   --  then Context says why.
+   --  two bounds as for an array object, and where the array is not null
+   --  its bounds belong to its index subtype, as those of an array object
+   --  do (RM 3.6.1). Empty where Prefix has no token: then Context says
+   --  why.
    function Access_Bounds_Term
      (Prefix  : Libadalang.Analysis.Name;
       Name    : String;
@@ -1804,6 +1806,69 @@ package body Adalang_Analyzer.VC_Prover is
          if not Context.Symbols.Assumptions.Contains (Link) then
             Context.Symbols.Assumptions.Append (Link);
          end if;
+         --  Both bounds of a designated array that is not null belong to
+         --  its index subtype, as those of any array object do.
+         declare
+            --  The range of the index subtype of the one-dimensional
+            --  integer array type Prefix designates; unknown otherwise.
+            function Index_Range return Domain.Abstract_Range is
+               Designated : constant Libadalang.Analysis.Base_Type_Decl :=
+                 Prefix.P_Expression_Type.P_Accessed_Type;
+               Index      : Libadalang.Analysis.Base_Type_Decl;
+
+               --  True when the array type has a second index.
+               function Second_Index return Boolean is
+               begin
+                  return not Libadalang.Analysis.Is_Null
+                    (Designated.P_Index_Type (1));
+               exception
+                  when others =>
+                     return False;
+               end Second_Index;
+            begin
+               if Libadalang.Analysis.Is_Null (Designated)
+                 or else not Designated.P_Is_Array_Type
+                 or else Second_Index
+               then
+                  return Domain.Unknown_Range;
+               end if;
+               Index := Designated.P_Index_Type (0);
+               if Libadalang.Analysis.Is_Null (Index)
+                 or else not Index.P_Is_Int_Type
+               then
+                  return Domain.Unknown_Range;
+               end if;
+               return Eval.Type_Range (Index, Domain.Empty_Flow_State);
+            exception
+               when others =>
+                  return Domain.Unknown_Range;
+            end Index_Range;
+
+            Within : constant Domain.Abstract_Range := Index_Range;
+            Low    : constant Unbounded_String :=
+              (if Within.Has_Low
+               then To_Unbounded_String
+                      ("(=> (<= " & First & " " & Last & ") (<= " &
+                       SMT_Integer (Within.Low) & " " & First & "))")
+               else Null_Unbounded_String);
+            High   : constant Unbounded_String :=
+              (if Within.Has_High
+               then To_Unbounded_String
+                      ("(=> (<= " & First & " " & Last & ") (<= " &
+                       Last & " " & SMT_Integer (Within.High) & "))")
+               else Null_Unbounded_String);
+         begin
+            if Length (Low) > 0
+              and then not Context.Symbols.Assumptions.Contains (Low)
+            then
+               Context.Symbols.Assumptions.Append (Low);
+            end if;
+            if Length (High) > 0
+              and then not Context.Symbols.Assumptions.Contains (High)
+            then
+               Context.Symbols.Assumptions.Append (High);
+            end if;
+         end;
          return To_Unbounded_String
            (if Name = "first" then First
             elsif Name = "last" then Last
@@ -2384,6 +2449,14 @@ package body Adalang_Analyzer.VC_Prover is
    end Location;
 
    Relaxed : Relaxed_Oracle := null;
+   --  Whether a for loop writes what a name in a bound of its range
+   --  denotes (Set_Loop_Fixed_Oracle); null: taken to.
+   Loop_Fixed : Loop_Fixed_Oracle := null;
+
+   procedure Set_Loop_Fixed_Oracle (Oracle : Loop_Fixed_Oracle) is
+   begin
+      Loop_Fixed := Oracle;
+   end Set_Loop_Fixed_Oracle;
 
    procedure Set_Relaxed_Oracle (Oracle : Relaxed_Oracle) is
    begin
@@ -4686,6 +4759,64 @@ package body Adalang_Analyzer.VC_Prover is
                               return Null_Unbounded_String;
                            end if;
                            return Integer_Term (Operand, Context);
+                        end;
+                     end if;
+
+                     --  T'Min (L, R) and T'Max (L, R) of an integer (or
+                     --  enumeration, by positions) subtype: the lesser and
+                     --  the greater of the two operands.
+                     if Attr_Name in "min" | "max" then
+                        declare
+                           Sort_Info : constant Sort_Resolution :=
+                             Expression_Sort (Node);
+                           Left, Right : Libadalang.Analysis.Expr;
+                           Count : Natural := 0;
+                        begin
+                           if Call.F_Suffix.Kind =
+                             Libadalang.Common.Ada_Assoc_List
+                           then
+                              for Index in 1 .. Call.F_Suffix.Children_Count
+                              loop
+                                 Count := Count + 1;
+                                 if Call.F_Suffix.Child (Index).Kind =
+                                   Libadalang.Common.Ada_Param_Assoc
+                                 then
+                                    if Count = 1 then
+                                       Left := Call.F_Suffix.Child (Index)
+                                         .As_Param_Assoc.F_R_Expr;
+                                    elsif Count = 2 then
+                                       Right := Call.F_Suffix.Child (Index)
+                                         .As_Param_Assoc.F_R_Expr;
+                                    end if;
+                                 end if;
+                              end loop;
+                           end if;
+                           if not Sort_Info.Supported
+                             or else Sort_Info.Sort /= Integer_Sort
+                             or else Count /= 2
+                             or else Libadalang.Analysis.Is_Null (Left)
+                             or else Libadalang.Analysis.Is_Null (Right)
+                           then
+                              Mark_Unsupported
+                                (Context, Node, Unsupported_Attribute);
+                              return Null_Unbounded_String;
+                           end if;
+                           declare
+                              L : constant String :=
+                                To_String (Integer_Term (Left, Context));
+                              R : constant String :=
+                                To_String (Integer_Term (Right, Context));
+                           begin
+                              if not Context.Supported
+                                or else L'Length = 0 or else R'Length = 0
+                              then
+                                 return Null_Unbounded_String;
+                              end if;
+                              return To_Unbounded_String
+                                ("(ite (<= " & L & " " & R & ") " &
+                                 (if Attr_Name = "min" then L & " " & R
+                                  else R & " " & L) & ")");
+                           end;
                         end;
                      end if;
 
@@ -13302,6 +13433,27 @@ package body Adalang_Analyzer.VC_Prover is
          return Integer_Sort;
    end Parameter_Sort;
 
+   --  The for loop statement whose range is Iteration; null for the
+   --  range of a quantified expression or of a declaration.
+   function For_Loop_Of_Range (Iteration : Libadalang.Analysis.Ada_Node'Class)
+     return Libadalang.Analysis.Ada_Node
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Iteration);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind = Libadalang.Common.Ada_For_Loop_Stmt then
+            return Current;
+         elsif Current.Kind in Libadalang.Common.Ada_Quantified_Expr
+                             | Libadalang.Common.Ada_Basic_Decl
+         then
+            return Libadalang.Analysis.No_Ada_Node;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return Libadalang.Analysis.No_Ada_Node;
+   end For_Loop_Of_Range;
+
    procedure Loop_Bound_Terms
      (Iteration  : Libadalang.Analysis.Ada_Node'Class;
       Context    : in out Translation_Context;
@@ -13310,8 +13462,9 @@ package body Adalang_Analyzer.VC_Prover is
       High       : out Unbounded_String)  --  adalang-analyzer: ignore Swappable_Parameters
    is
       --  True when Expr is built only from literals, names whose value
-      --  cannot change, and bounds of array objects: its value on any
-      --  iteration is its value when the loop was entered.
+      --  cannot change or that the loop does not write (Loop_Fixed), and
+      --  bounds of array objects: its value on any iteration is its value
+      --  when the loop was entered.
       function Fixed (Expr : Libadalang.Analysis.Ada_Node'Class) return Boolean
       is
       begin
@@ -13350,7 +13503,14 @@ package body Adalang_Analyzer.VC_Prover is
                     or else Names_Subtype (Expr.As_Attribute_Ref.F_Prefix));
             when others =>
                return Enum_Literal_Position (Expr).Known
-                 or else Eval.Is_Elaboration_Stable (Expr);
+                 or else Eval.Is_Elaboration_Stable (Expr)
+                 or else (Loop_Fixed /= null
+                          and then Expr.Kind in
+                            Libadalang.Common.Ada_Identifier
+                              | Libadalang.Common.Ada_Dotted_Name
+                          and then Loop_Fixed
+                            (Libadalang.Analysis.Ada_Node (Expr),
+                             For_Loop_Of_Range (Iteration)));
          end case;
       end Fixed;
 

@@ -658,10 +658,15 @@ checked where the pragma stands as everywhere else.
 For a loop over a range, the invariant is checked at the start of the next
 iteration: the parameter had a value other than the last one of the range
 and now has the one after it (before it, with `reverse`), the range being
-that of the bounds where the loop was entered. Where a bound may change
-during the loop, or the range is not one of these forms, the parameter has
-a value of its own there that nothing relates to the one before (FP-139:
-1.12.3 checked the next iteration with the value it had). A range is
+that of the bounds where the loop was entered. A bound is that of entry
+where it is built from literals, constants and parameters of mode `in`,
+bounds of arrays, and objects the loop does not write (see "What every
+iteration starts from"): Ada evaluates the range once, where the loop is
+entered, so `for I in 0 .. M - 1`, `M` a variable the loop leaves alone,
+knows `I < M` in its body. Where a bound may change during the loop, or the
+range is not one of these forms, the parameter has a value of its own there
+that nothing relates to the one before (FP-139: 1.12.3 checked the next
+iteration with the value it had). A range is
 `L .. H`, `X'Range`, a subtype, or `T range L .. H`.
 
 **What every iteration starts from.** The head of a loop knows, each time
@@ -669,9 +674,26 @@ round, the bounds of arrays, and what is known of the value of an object
 declared outside the loop that holds the one it was declared with: a
 constant, or a formal parameter or generic formal object of mode `in` -- of
 an array only in SPARK code, where no other name writes it, its contents
-included. The proofs of preservation above, and those of an invariant
-inside the body, start from that and from the leading invariants; what the
-code before the loop established of anything else is not known there.
+included. Under `--verify` it knows as well what is known where the loop is
+entered of a local object or a parameter of the subprogram that nothing in
+the loop writes, as GNATprove does: a loop changes only what it writes. The
+loop writes an object it assigns or a part of, passes as the actual of an
+`out` or `in out` parameter, or names in a write reference; and every
+object, when it makes a dispatching call or one of an unknown callee,
+instantiates a generic, names a subprogram declared in a body (which may
+write the objects around it) or writes through a renaming. An object of a
+type other than a scalar or an array of scalars keeps what is known of it
+only where the loop makes no call and writes nothing through an access
+value; a renaming, an aliased parameter, an object that is not tracked or
+one that may share storage with another keeps nothing. What is known of
+such an object holds after the loop too, its exit being its head. The
+proofs of preservation above, and those of an invariant inside the body,
+start from that and from the leading invariants; what the code before the
+loop established of anything else is not known there. A loop whose leading
+invariants are proved, which the second pass of the run summarizes by
+them, starts each iteration from the same and the invariants, taken from
+the edge into the loop; where two edges from outside the loop reach its
+head, from the invariants alone.
 
 **Where a loop over a range is left.** A `for` loop over a range whose
 bounds cannot change during the loop, shown not to be empty where the loop
@@ -982,7 +1004,8 @@ limit of eight bodies -- called with arguments or without an argument list (`Inv
 `Pkg.Ready`), the body being read where the call stands, with what is known
 there of the objects it names. `T'Pos (X)` is `X`, and `T'Val (N)` is
 `N`: an integer is its own position, and the term of an enumeration value is
-its position. Integer `/`, `mod`, and `rem` are translated only when the divisor
+its position. `T'Min (L, R)` and `T'Max (L, R)` of an integer or an
+enumeration subtype are the lesser and the greater of `L` and `R`. Integer `/`, `mod`, and `rem` are translated only when the divisor
 is provably nonzero and their Ada sign semantics are encoded: a nonzero
 literal, a name whose interval excludes zero or whose value is known and
 not zero (a named number, a constant), or an attribute or an
@@ -1162,9 +1185,11 @@ of a null array are values of the type and no more: `(0 .. -1)` and
 Where `X` is an access value that designates a one-dimensional array --
 `Buffer'First`, `Ctx.Buffer'Length` -- each of the three is a function of
 the token of the value (see "Access values"), one function for each
-attribute and access type, tied to the others as for an array object. The
-bounds of the object an access value designates are fixed when the object
-is made: two access values with the same token designate the same object
+attribute and access type, tied to the others as for an array object, and
+both bounds belong to the index subtype unless the array is null, as for
+an array object: of `Bytes_Ptr`, an access to an array over `Natural`,
+`P'First` is a `Natural` where `P'Length > 0`. The bounds of the object an
+access value designates are fixed when the object is made: two access values with the same token designate the same object
 and give the same bounds, and nothing is known of the bounds behind a
 token nothing is known of. That the access value is not null is a check of
 its own (see "Dereferences").
@@ -1989,7 +2014,14 @@ completes when that is resolved exactly. Two components of one record
 (`Ctx.Inner` and `Ctx.Data (1 .. N)`) share no storage, nor does a formal
 of mode `in` of a scalar type, which is given a copy, share any with what
 the call writes; and the objects an index or the bounds of a slice name
-in an actual are read when the call is made, not written by it.
+in an actual are read when the call is made, not written by it. So it is
+of any call in SPARK code under `--verify`: where the actual of an `out` or
+`in out` parameter is an element or a slice of a name made of selections
+only -- `Fill (Digest (Digest'First + Offset .. Digest'First + Offset +
+(Ctx.Rate - 1)))` -- the call writes the array that name denotes, and
+`Offset` and `Ctx` keep what is known of them, unless an index or a bound
+names a renaming, an aliased object or one that is not tracked, or the
+array is reached through an access value.
 
 `F'Old` is the value the actual of `F` had when the call was made, for a
 formal of mode `in` or `in out`: after `Step (Ctx.Inner)`, whose

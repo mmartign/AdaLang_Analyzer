@@ -293,6 +293,15 @@ package Adalang_Analyzer.VC_Prover is
 
    procedure Set_Relaxed_Oracle (Oracle : Relaxed_Oracle);
 
+   type Loop_Fixed_Oracle is access function
+     (Name      : Libadalang.Analysis.Ada_Node;
+      Loop_Node : Libadalang.Analysis.Ada_Node) return Boolean;
+   procedure Set_Loop_Fixed_Oracle (Oracle : Loop_Fixed_Oracle);
+   --  Asked of a name in a bound of the range of a for loop: True when
+   --  the loop writes nothing it denotes. Ada evaluates the range once,
+   --  where the loop is entered, so such a bound has its value on entry
+   --  all through the loop (Loop_Bound_Terms).
+
    Default_Solver_Time_Limit : constant := 2_000;
    procedure Set_Solver_Time_Limit (Milliseconds : Positive);
    --  The time each solver is given for one query, in milliseconds;

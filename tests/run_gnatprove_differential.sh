@@ -147,7 +147,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 51 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 53 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -189,7 +189,9 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_dereferences \
   verification_translation_pieces \
   verification_contract_checks \
-  verification_mutation_contract_checks; do
+  verification_mutation_contract_checks \
+  verification_loop_frame \
+  verification_mutation_loop_frame; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -1385,6 +1387,96 @@ print(f"contract checks: {agreed} checks proved here, each proved by "
       f"GNATprove; GNATprove refuses the {seeded} claims the mutations seed")
 PYTHON
 
+#  The frame of a loop, check by check: each range, index, overflow and
+#  division check proved in verification_loop_frame is not refused by
+#  GNATprove at its line, and GNATprove refuses each claim the mutations
+#  of verification_mutation_loop_frame seed.
+frame_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-frame.XXXXXX")
+frame_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-frame.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$pieces_results" "$pieces_log" "$kept_results" "$kept_log" "$checks_results" "$checks_log" "$frame_results" "$frame_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$frame_results" \
+  tests/verification_loop_frame.ads \
+  tests/verification_loop_frame.adb \
+  tests/verification_mutation_loop_frame.ads \
+  tests/verification_mutation_loop_frame.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer loop frame run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_loop_frame.adb \
+  verification_mutation_loop_frame.adb >"$frame_log" 2>&1 || true
+
+python3 - "$frame_results" "$frame_log" quality/verification_mutations.tsv <<'PYTHON'
+import json
+import os
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = {"range-check": ("range check",),
+         "index-check": ("index check",),
+         "integer-overflow": ("overflow check",),
+         "division-by-zero": ("division check", "divide by zero")}
+clean = "verification_loop_frame"
+broken = "verification_mutation_loop_frame"
+
+
+def fail(message):
+    print("gnatprove differential: loop frame: " + message,
+          file=sys.stderr)
+    sys.exit(1)
+
+
+proved, refused = set(), set()
+for line in log:
+    found = re.match(r"(verification_[a-z_]+)\.ad[bs]:(\d+):\d+: (.*)", line)
+    if not found:
+        continue
+    text = found.group(3)
+    for kind, words in kinds.items():
+        if any(word in text for word in words):
+            place = (found.group(1), int(found.group(2)), kind)
+            (proved if text.startswith("info: ") else refused).add(place)
+if not proved:
+    fail("GNATprove proved nothing: " + " ".join(log[-5:]))
+
+where = {}
+agreed = 0
+for item in report["proofObligations"]:
+    unit = os.path.basename(item["file"]).split(".")[0]
+    if unit not in (clean, broken) or item["kind"] not in kinds:
+        continue
+    key = (unit, item["line"], item["kind"])
+    if unit == broken:
+        where.setdefault((item["kind"], item["operation"]), key)
+    if unit == clean and item["status"] == "proved-safe":
+        if key in refused:
+            fail(f"proved here, refused by GNATprove: {key}")
+        if key in proved:
+            agreed += 1
+
+seeded = 0
+for row in open(sys.argv[3]):
+    field = row.rstrip("\n").split("\t")
+    if row.startswith("#") or len(field) < 5 or \
+       field[1] != "tests/" + broken + ".adb":
+        continue
+    key = where.get((field[2], field[3]))
+    if key is None:
+        fail(f"no obligation for {field[0]}")
+    if key not in refused:
+        fail(f"GNATprove does not refuse {field[0]}: {key}")
+    seeded += 1
+print(f"loop frame: {agreed} checks proved here, each proved by "
+      f"GNATprove; GNATprove refuses the {seeded} claims the mutations seed")
+PYTHON
+
 #  The generic units of an imported project, project by project: no
 #  termination or data-dependency check proved here is refused by
 #  GNATprove, which proves each of them at its place in the good project
@@ -1392,7 +1484,7 @@ PYTHON
 #  refuses the check each seeded project leaves unproved here.
 imported_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-imported.XXXXXX")
 imported_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-imported.XXXXXX")
-trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$pieces_results" "$pieces_log" "$kept_results" "$kept_log" "$checks_results" "$checks_log" "$imported_results" "$imported_log"' \
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$pieces_results" "$pieces_log" "$kept_results" "$kept_log" "$checks_results" "$checks_log" "$frame_results" "$frame_log" "$imported_results" "$imported_log"' \
   EXIT HUP INT TERM
 
 imported_agreed=0

@@ -77,6 +77,10 @@ project Verification_Differential_Broken is
       "verification_contract_checks.ads",
       "verification_contract_checks.adb",
       "verification_mutation_contract_checks.ads",
-      "verification_mutation_contract_checks.adb");
+      "verification_mutation_contract_checks.adb",
+      "verification_loop_frame.ads",
+      "verification_loop_frame.adb",
+      "verification_mutation_loop_frame.ads",
+      "verification_mutation_loop_frame.adb");
    for Object_Dir use "../obj/verification_differential_broken";
 end Verification_Differential_Broken;
