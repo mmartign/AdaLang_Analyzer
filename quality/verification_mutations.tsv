@@ -615,3 +615,9 @@ loop-frame-second-dimension	tests/verification_mutation_loop_frame.adb	range-che
 loop-frame-max	tests/verification_mutation_loop_frame.adb	range-check	Natural'Max (A, B) - A	unproved	Max (A, B) - A is B - A where B > A.
 loop-frame-index-actual	tests/verification_mutation_loop_frame.adb	range-check	Offset	unproved	Offset is the actual of an in out parameter of its own: the call writes it.
 loop-frame-summarized-written	tests/verification_mutation_loop_frame.adb	range-check	X	unproved	X is written by a loop summarized by its proved invariant: X = N after it, not 0.
+contract-reach-generic-range	tests/verification_mutation_contract_reach.adb	precondition	Half (X)	unproved	the precondition of Generic_Any gives X in 0 .. 100, not that X is even.
+contract-reach-loose-predicate	tests/verification_mutation_contract_reach.adb	range-check	H.L.High - H.L.Low	unproved	the predicate of Loose_Pair allows Low = High: the difference may be 0.
+contract-reach-no-predicate	tests/verification_mutation_contract_reach.adb	range-check	H.P.High - H.P.Low	unproved	Plain_Pair has no predicate: High may be below Low.
+contract-reach-five-bits	tests/verification_mutation_contract_reach.adb	precondition	Store (Base_Integer (N))	unproved	Five_Bits'Last = 16 does not fit into 4 bits (16 < 2 ** 4 is false).
+contract-reach-swapped-renaming	tests/verification_mutation_contract_reach.adb	precondition	Need_Positive (Swapped (3, 10))	unproved	a renaming's formals stand for the renamed function's by position: Swapped (3, 10) = Minus (3, 10) = -7.
+contract-reach-modular-power	tests/verification_mutation_contract_reach.adb	precondition	Need_Nonzero (Power (8))	unproved	2 ** 8 in a type of modulus 256 is 0.

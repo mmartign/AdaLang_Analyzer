@@ -430,6 +430,77 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          return True;
    end Read_By_Nested_Body;
 
+   --  Whether running Node can run a body declared in Owner: Node calls a
+   --  subprogram declared there (at any depth, the one Node is in among
+   --  them), makes a call that does not resolve or dispatches, or takes
+   --  the access value of something, which what it is given to may call.
+   --  A call of a subprogram declared outside Owner cannot run a body
+   --  declared in it otherwise (FP-144: "Width := 0; Append (Result, Item);
+   --  Width := Item'Length;" overwrites, Ada.Strings.Unbounded.Append
+   --  running no body of the procedure that declares Width).
+   function May_Run_Body_Of
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Owner : Libadalang.Analysis.Subp_Body) return Boolean
+   is
+      function Inside_Owner
+        (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+      is
+         Current : Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.Ada_Node (Decl);
+      begin
+         while not Libadalang.Analysis.Is_Null (Current) loop
+            if Current = Libadalang.Analysis.Ada_Node (Owner) then
+               return True;
+            end if;
+            Current := Current.Parent;
+         end loop;
+         return False;
+      end Inside_Owner;
+
+      function Visit
+        (Current : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Current) then
+            return False;
+         elsif Current.Kind = Libadalang.Common.Ada_Attribute_Ref then
+            if Canonical_Text (Current.As_Attribute_Ref.F_Attribute) in
+              "access" | "unchecked_access" | "unrestricted_access"
+            then
+               return True;
+            end if;
+         elsif Current.Kind in Libadalang.Common.Ada_Name
+           and then Current.As_Name.P_Is_Call
+         then
+            declare
+               Callee : constant Libadalang.Analysis.Basic_Decl :=
+                 Current.As_Name.P_Referenced_Decl;
+            begin
+               --  A predefined operator resolves to no declaration.
+               if Libadalang.Analysis.Is_Null (Callee) then
+                  if Current.Kind not in Libadalang.Common.Ada_Op then
+                     return True;
+                  end if;
+               elsif Inside_Owner (Callee)
+                 or else Current.As_Name.P_Is_Dispatching_Call
+               then
+                  return True;
+               end if;
+            end;
+         end if;
+         for Index in 1 .. Current.Children_Count loop
+            if Visit (Current.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Visit;
+   begin
+      return Visit (Node);
+   exception
+      when others =>
+         return True;
+   end May_Run_Body_Of;
+
    --  Whether the procedure Call invokes applies pragma Inspection_Point in
    --  its body, the RM H.3.2 way to keep a value observable -- e.g. a
    --  "Sanitize (Key);" that zeroes secret material and then inspects it so
@@ -725,10 +796,33 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                                (Decl, Subprogram)
                              and then not Renames_Nonlocal_Object
                                (Decl, Subprogram);
+                           --  An object of a subprogram the assignment is
+                           --  nested in, which the bodies declared there
+                           --  can read too (FP-144).
+                           Owner : constant Libadalang.Analysis.Subp_Body :=
+                             (if Decl.Kind = Libadalang.Common.Ada_Object_Decl
+                              then Data_Flow.Enclosing_Subprogram (Decl)
+                              else Libadalang.Analysis.No_Subp_Body);
+                           Up_Level : constant Boolean :=
+                             not Target_Is_Local
+                             and then not Libadalang.Analysis.Is_Null (Owner)
+                             and then not Libadalang.Analysis.Is_Null
+                               (Subprogram)
+                             and then Libadalang.Analysis.Ada_Node (Owner) /=
+                               Libadalang.Analysis.Ada_Node (Subprogram);
+                           Up_Level_Read : constant Boolean :=
+                             Up_Level
+                             and then Read_By_Nested_Body (Decl, Owner, Stmt);
                         begin
-                           --  A nested body reading Decl may run from any
-                           --  later call, so no later write provably
-                           --  overwrites an unread value.
+                           --  A nested body reading a local Decl may run
+                           --  from any later call, so no later write
+                           --  provably overwrites an unread value. For an
+                           --  up-level object that a body nested in the
+                           --  subprogram that declares it reads, a later
+                           --  statement that can run such a body reads it
+                           --  ("Flag := True; Walk (Depth - 1); Flag :=
+                           --  Saved;" in a recursive Walk that calls a
+                           --  procedure reading Flag, FP-144).
                            if not Target_Is_Local
                              or else not Read_By_Nested_Body
                                (Decl, Subprogram, Stmt)
@@ -743,6 +837,10 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                                       (Later, Assignment)
                                       or else May_Leave_Statement_List
                                         (Later, Target_Is_Local)
+                                      or else
+                                        (Up_Level_Read
+                                         and then May_Run_Body_Of
+                                           (Later, Owner))
                                     then
                                        exit;  --  adalang-analyzer: ignore No_Exit
                                     elsif Data_Flow.Same_Assigned_Target

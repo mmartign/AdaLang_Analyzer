@@ -274,6 +274,64 @@ package body Adalang_Analyzer.VC_Prover is
    function Natural_Image (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
+   --  The numeral of Base ** Exponent, of any size: SMT-LIB integers are
+   --  unbounded, so 2 ** 63 and above are numerals as any other. Base is
+   --  a small natural number (at most 1_024).
+   function Power_Numeral
+     (Base : Long_Long_Integer; Exponent : Natural) return String
+   is
+      --  Decimal digits, the most significant first.
+      Number : Unbounded_String := To_Unbounded_String ("1");
+
+      function Digit (Value : Long_Long_Integer) return Character is
+        (Character'Val (Character'Pos ('0') + Integer (Value mod 10)));
+   begin
+      for Step in 1 .. Exponent loop
+         declare
+            Decimal : constant String := To_String (Number);
+            Carry   : Long_Long_Integer := 0;
+            Next    : Unbounded_String;
+         begin
+            for Index in reverse Decimal'Range loop
+               Carry := Carry +
+                 Long_Long_Integer
+                   (Character'Pos (Decimal (Index)) - Character'Pos ('0')) *
+                 Base;
+               Next := Digit (Carry) & Next;
+               Carry := Carry / 10;
+            end loop;
+            while Carry > 0 loop
+               Next := Digit (Carry) & Next;
+               Carry := Carry / 10;
+            end loop;
+            --  0 ** N, N > 0: one zero.
+            while Length (Next) > 1 and then Element (Next, 1) = '0' loop
+               Delete (Next, 1, 1);
+            end loop;
+            Number := Next;
+         end;
+      end loop;
+      return To_String (Number);
+   end Power_Numeral;
+
+   --  The value of Term where it is a numeral of at most three digits.
+   function Small_Numeral
+     (Term : String; Value : out Natural) return Boolean
+   is
+   begin
+      Value := 0;
+      if Term'Length not in 1 .. 3 then
+         return False;
+      end if;
+      for C of Term loop
+         if C not in '0' .. '9' then
+            return False;
+         end if;
+         Value := Value * 10 + (Character'Pos (C) - Character'Pos ('0'));
+      end loop;
+      return True;
+   end Small_Numeral;
+
    --  A term that is not a symbol or a literal is bound once by a "let":
    --  written out three times, a nest of them grows exponentially.
    function Abs_Of (Term : String) return String is
@@ -5085,16 +5143,47 @@ package body Adalang_Analyzer.VC_Prover is
 
                   when Libadalang.Common.Ada_Op_Pow =>
                      --  A power Eval folds is a number (Integer_Value
-                     --  reduces a modular one). Any other needs a bounded
-                     --  case-split over the exponent's range to map onto
-                     --  SMT, and is not yet encoded.
+                     --  reduces a modular one). So is one of a base Eval
+                     --  folds and an exponent whose term is a numeral, as
+                     --  a formal of an expression function is once bound
+                     --  ("2 ** Bits", Bits = 4); in a modular type only
+                     --  below the modulus, where nothing is reduced. Any
+                     --  other needs a bounded case-split over the
+                     --  exponent's range to map onto SMT, and is not yet
+                     --  encoded.
                      declare
-                        Value : constant Domain.Abstract_Int :=
+                        Value    : constant Domain.Abstract_Int :=
                           Eval.Integer_Value (Node, Context.State);
+                        Base     : Domain.Abstract_Int;
+                        Exponent : Natural;
                      begin
                         if Value.Known then
                            return To_Unbounded_String
                              (SMT_Integer (Value.Value));
+                        end if;
+                        Base := Eval.Integer_Value (Expr.F_Left, Context.State);
+                        if Base.Known
+                          and then Base.Value in 0 .. 1_024
+                          and then Small_Numeral (To_String (Right), Exponent)
+                          and then Exponent <= 256
+                        then
+                           declare
+                              Number     : constant String :=
+                                Power_Numeral (Base.Value, Exponent);
+                              Is_Modular : Boolean;
+                              Modulus    : constant Domain.Abstract_Int :=
+                                Eval.Expression_Modulus (Node, Is_Modular);
+                           begin
+                              if not Is_Modular
+                                or else
+                                  (Modulus.Known
+                                   and then Number'Length <= 18
+                                   and then Long_Long_Integer'Value (Number) <
+                                     Modulus.Value)
+                              then
+                                 return To_Unbounded_String (Number);
+                              end if;
+                           end;
                         end if;
                      end;
                      Mark_Unsupported (Context, Node, Unsupported_Operator);
@@ -6161,6 +6250,59 @@ package body Adalang_Analyzer.VC_Prover is
       return Result;
    end Formal_Count;
 
+   --  The names of the formals of Spec, in order, each followed by a comma.
+   function Formal_Names
+     (Spec : Libadalang.Analysis.Base_Subp_Spec) return String
+   is
+      Result : Unbounded_String;
+   begin
+      for Param of Spec.P_Params loop
+         for Id of Param.F_Ids loop
+            Append
+              (Result,
+               Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+                 (Adalang_Analyzer.Ada_Text.Node_Text (Id)) & ",");
+         end loop;
+      end loop;
+      return To_String (Result);
+   end Formal_Names;
+
+   --  The subprogram a call of Decl runs: for a renaming-as-declaration
+   --  ("function Fits (V : U64; Bits : Natural) return Boolean renames
+   --  Fits_Into"), the one it renames, where the formals of both have the
+   --  same names in the same order; Decl otherwise. The formals of a
+   --  renaming stand for those of the renamed subprogram by position, and
+   --  Body_Formal binds those of an expression function by name.
+   function Renamed_Callee
+     (Decl  : Libadalang.Analysis.Basic_Decl;
+      Depth : Natural := 0) return Libadalang.Analysis.Basic_Decl
+   is
+      Target : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Decl)
+        or else Decl.Kind /= Libadalang.Common.Ada_Subp_Renaming_Decl
+        or else Depth >= 4
+      then
+         return Decl;
+      end if;
+      Target :=
+        Decl.As_Subp_Renaming_Decl.F_Renames.F_Renamed_Object
+          .P_Referenced_Decl;
+      if Libadalang.Analysis.Is_Null (Target)
+        or else Libadalang.Analysis.Is_Null (Target.P_Subp_Spec_Or_Null)
+        or else Formal_Names
+                  (Libadalang.Analysis.Base_Subp_Spec
+                     (Decl.As_Subp_Renaming_Decl.F_Subp_Spec)) /=
+                Formal_Names (Target.P_Subp_Spec_Or_Null)
+      then
+         return Decl;
+      end if;
+      return Renamed_Callee (Target, Depth + 1);
+   exception
+      when others =>
+         return Decl;
+   end Renamed_Callee;
+
    function Inlined_Call_Term
      (Call    : Libadalang.Analysis.Name'Class;
       Context : in out Translation_Context;
@@ -6187,6 +6329,7 @@ package body Adalang_Analyzer.VC_Prover is
          return Null_Unbounded_String;
       end if;
 
+      Decl := Renamed_Callee (Decl);
       if Decl.Kind = Libadalang.Common.Ada_Subp_Decl then
          Decl := Libadalang.Analysis.Basic_Decl
            (Decl.As_Subp_Decl.P_Body_Part (Imprecise_Fallback => True));
@@ -7924,7 +8067,8 @@ package body Adalang_Analyzer.VC_Prover is
      (State     : Symbolic_State;
       Object    : Libadalang.Analysis.Ada_Node'Class;
       Predicate : Libadalang.Analysis.Expr;
-      Flow      : Domain.Flow_State) return Symbolic_State
+      Flow      : Domain.Flow_State;
+      Part      : String := "") return Symbolic_State
    is
       Result  : Symbolic_State := State;
       Any     : Boolean := False;
@@ -7944,6 +8088,7 @@ package body Adalang_Analyzer.VC_Prover is
          then (Object => Libadalang.Analysis.Ada_Node (Object),
                Path   => Null_Unbounded_String)
          else Location (Object, Part_Context (State, Frame)));
+      Place.Path := Place.Path & Part;
       if Libadalang.Analysis.Is_Null (Place.Object)
         or else Domain.Classify (Place.Object) /= Domain.Tracked
         or else Domain.Flow_Initialization (Flow, Place.Object) /=

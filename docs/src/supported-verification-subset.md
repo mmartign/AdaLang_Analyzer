@@ -605,7 +605,8 @@ operand by operand. The postcondition is evaluated in the state at the normal ex
 Where the subprogram is outside the verified subset these obligations are
 `Unsupported`.
 
-A precondition or postcondition written on a separate spec applies to the
+A precondition or postcondition written on a separate spec -- the generic
+declaration of a generic subprogram among them -- applies to the
 body only when the spec resolves precisely and conforms to the body
 parameter by parameter (same names, modes, and type text, in order); each
 spec parameter then denotes the same value as its body counterpart, at entry
@@ -1002,7 +1003,15 @@ parts of an object that its name settles (see "Parts of an object"), and
 side-effect-free expression functions that can be inlined within the depth
 limit of eight bodies -- called with arguments or without an argument list (`Inv`,
 `Pkg.Ready`), the body being read where the call stands, with what is known
-there of the objects it names. `T'Pos (X)` is `X`, and `T'Val (N)` is
+there of the objects it names. A call of a function renaming (`function Fits
+(V : U64; Bits : Natural) return Boolean renames Fits_Into`) is a call of
+the function it renames, where the formals of both have the same names in
+the same order; otherwise it is opaque, the formals of a renaming standing
+for those of the renamed function by position. A power `B ** N` whose base
+has a known value and whose exponent is a numeral where the body is read --
+a formal bound to one, as `Bits` of `(if Bits < U64'Size then V < 2 **
+Bits)` is in `Fits_Into (V, 4)` -- is its value, of any size; in a modular
+type only below the modulus. `T'Pos (X)` is `X`, and `T'Val (N)` is
 `N`: an integer is its own position, and the term of an enumeration value is
 its position. `T'Min (L, R)` and `T'Max (L, R)` of an integer or an
 enumeration subtype are the lesser and the greater of `L` and `R`. Integer `/`, `mod`, and `rem` are translated only when the divisor
@@ -1627,7 +1636,12 @@ one and every type derived from it. It is taken as holding of a record or
 an array object at two places:
 
 - of a parameter of mode `in` or `in out` where a subprogram that is SPARK
-  code is entered;
+  code is entered, and there of each component of such a parameter whose
+  subtype has a predicate, and of the components of those in turn: through
+  the full view of a private type and an untagged derivation, not into a
+  variant part, where the component may not exist, nor into an array or
+  what an access value designates (`Ctx.P.Request_Ctx`, the message context
+  of a RecordFlux session context, has the predicate of the context type);
 - of an object, or of a part of one that its name settles, that was the
   actual of an `in out` or `out` parameter, where a call of a callee that
   is SPARK code returns. The predicate is that of the subtype of the

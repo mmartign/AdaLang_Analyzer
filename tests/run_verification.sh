@@ -175,6 +175,8 @@ contract_checks=$(mktemp "${TMPDIR:-/tmp}/adalang-contract-checks.XXXXXX")
 imported_generics=$(mktemp "${TMPDIR:-/tmp}/adalang-imported-generics.XXXXXX")
 loop_frame=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-frame.XXXXXX")
 loop_frame_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-frame-broken.XXXXXX")
+contract_reach=$(mktemp "${TMPDIR:-/tmp}/adalang-contract-reach.XXXXXX")
+contract_reach_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-contract-reach-broken.XXXXXX")
 formal_contracts=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts.XXXXXX")
 formal_contracts_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts-broken.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
@@ -199,6 +201,7 @@ fp097=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp097.XXXXXX")
 fp098=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp098.XXXXXX")
 fp099=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp099.XXXXXX")
 fp100=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp100.XXXXXX")
+fp143=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp143.XXXXXX")
 symbolic_bounds=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-symbolic-bounds.XXXXXX")
 symbolic_dimensions=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-symbolic-dimensions.XXXXXX")
 fp101=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp101.XXXXXX")
@@ -207,7 +210,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -1608,6 +1611,33 @@ if ! grep -F '"kind": "range-check"' "$fp100" |
 then
    echo "FP-100: a value outside its subtype, computed without overflow," \
      "is no longer a definite range-check error" >&2
+   exit 1
+fi
+
+#  FP-143: the same for the value an expression function returns, which
+#  is in parentheses: the overflow alone is the definite error.
+run_json "$fp143" tests/verification_fp143_overflow_before_result.ads
+if ! grep -F '"kind": "integer-overflow"' "$fp143" |
+  grep -F "\"operation\": \"Ident (Integer'Last) + 1\"" |
+  grep -F '"status": "definite-error"' >/dev/null
+then
+   echo "FP-143: the overflow of a returned value that always overflows" \
+     "is not a definite error" >&2
+   exit 1
+fi
+if grep -F '"kind": "range-check"' "$fp143" |
+  grep -F "\"operation\": \"(Ident (Integer'Last) + 1)\"" >/dev/null
+then
+   echo "FP-143: the range check of a returned value behind an overflow" \
+     "that always occurs was raised" >&2
+   exit 1
+fi
+if ! grep -F '"kind": "range-check"' "$fp143" |
+  grep -F '"operation": "(Ident (-5) + 2)"' |
+  grep -F '"status": "definite-error"' >/dev/null
+then
+   echo "FP-143: a returned value outside the result subtype, computed" \
+     "without overflow, is no longer a definite range-check error" >&2
    exit 1
 fi
 
@@ -3822,6 +3852,46 @@ for operation in 'K + RA' 'K + RP' 'K + RN' 'K + RM' 'K + RW' 'I' \
 do
    must_not_prove "$loop_frame_broken" range-check "$operation" \
      'loop frame: mutation'
+done
+
+#  What a contract reaches: the precondition of a generic subprogram, which
+#  its declaration names in its own names, holds in the body; the predicate
+#  of the subtype of a component of a parameter holds of that part on
+#  entry (a component of a component, one of a private type whose full
+#  view has it); an expression function called through a renaming is the
+#  one it renames; a power whose exponent is a formal bound to a numeral
+#  is a number. GNATprove 16.1.0 proves each.
+#  verification_mutation_contract_reach has what does not hold: a
+#  precondition that does not give what the body needs, a predicate that
+#  allows Low = High, a component without one, a value that needs five
+#  bits, a renaming whose formals are named in another order, a modular
+#  power that wraps to 0.
+run_json_pair "$contract_reach" tests/verification_contract_reach
+must_prove "$contract_reach" precondition 'Half (X)' external-prover \
+  'contract reach: generic precondition'
+must_prove "$contract_reach" range-check 'X' abstract-interpretation \
+  'contract reach: generic precondition'
+for operation in 'H.P.High - H.P.Low' 'O.H.P.High - O.H.P.Low'; do
+   must_prove "$contract_reach" integer-overflow "$operation" \
+     external-prover 'contract reach: component predicate'
+   must_prove "$contract_reach" range-check "$operation" external-prover \
+     'contract reach: component predicate'
+done
+must_prove "$contract_reach" range-check 'S.W.Last - S.W.First' \
+  external-prover 'contract reach: component predicate of a full view'
+must_prove "$contract_reach" precondition 'Store (Base_Integer (N))' \
+  external-prover 'contract reach: renamed expression function, power'
+run_json_pair "$contract_reach_broken" \
+  tests/verification_mutation_contract_reach
+for operation in 'Half (X)' 'Store (Base_Integer (N))' \
+  'Need_Positive (Swapped (3, 10))' 'Need_Nonzero (Power (8))'
+do
+   must_not_prove "$contract_reach_broken" precondition "$operation" \
+     'contract reach: mutation'
+done
+for operation in 'H.L.High - H.L.Low' 'H.P.High - H.P.Low'; do
+   must_not_prove "$contract_reach_broken" range-check "$operation" \
+     'contract reach: mutation'
 done
 
 #  The generic units of an imported project that SPARK code of the run

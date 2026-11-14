@@ -5198,6 +5198,151 @@ package body Adalang_Analyzer.Flow_Interp is
       return Predicate_Maps.Element (Position);
    end Subtype_Predicates;
 
+   --  A predicate of the subtype of a component, and the path of that
+   --  component (".c", ".c.d") in the object.
+   type Component_Predicate is record
+      Path      : Ada.Strings.Unbounded.Unbounded_String;
+      Predicate : Libadalang.Analysis.Expr;
+   end record;
+
+   package Component_Predicate_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Component_Predicate);
+
+   package Component_Predicate_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Component_Predicate_Vectors.Vector,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=",
+      "="             => Component_Predicate_Vectors."=");
+   Known_Component_Predicates : Component_Predicate_Maps.Map;
+
+   --  The predicates of the subtypes of the components of a record type
+   --  Typ, and of their components in turn: through the full view of a
+   --  private type and an untagged derivation without extension; not into
+   --  a variant part, where the component may not exist, nor into an array
+   --  or what an access value designates. Each holds of the part of an
+   --  object of Typ its path gives wherever the object has a value: SPARK
+   --  checks a predicate at every assignment to an object or to a part of
+   --  one. None when the type cannot be read.
+   function Component_Predicates
+     (Typ : Libadalang.Analysis.Base_Type_Decl'Class)
+      return Component_Predicate_Vectors.Vector
+   is
+      Result : Component_Predicate_Vectors.Vector;
+
+      procedure Collect
+        (Of_Type : Libadalang.Analysis.Base_Type_Decl'Class;
+         Path    : String;
+         Depth   : Natural);
+
+      procedure Components
+        (Node  : Libadalang.Analysis.Ada_Node'Class;
+         Path  : String;
+         Depth : Natural) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node)
+           or else Node.Kind = Libadalang.Common.Ada_Variant_Part
+         then
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Component_Decl then
+            declare
+               Comp      : constant Libadalang.Analysis.Component_Decl :=
+                 Node.As_Component_Decl;
+               Comp_Type : constant Libadalang.Analysis.Base_Type_Decl :=
+                 Comp.F_Component_Def.F_Type_Expr.P_Designated_Type_Decl;
+            begin
+               if Libadalang.Analysis.Is_Null (Comp_Type)
+                 or else Comp_Type.P_Is_Access_Type
+                 or else Comp_Type.P_Is_Array_Type
+               then
+                  return;
+               end if;
+               for Id of Comp.F_Ids loop
+                  declare
+                     Inner : constant String :=
+                       Path & "." & Text_Utils.Normalize_Rule_Name
+                                      (Ada_Text.Node_Text (Id));
+                  begin
+                     for Predicate of Subtype_Predicates (Comp_Type) loop
+                        Result.Append
+                          ((Path      =>
+                              Ada.Strings.Unbounded.To_Unbounded_String
+                                (Inner),
+                            Predicate => Predicate));
+                     end loop;
+                     Collect (Comp_Type, Inner, Depth + 1);
+                  end;
+               end loop;
+            end;
+            return;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            Components (Node.Child (Index), Path, Depth);
+         end loop;
+      end Components;
+
+      procedure Collect
+        (Of_Type : Libadalang.Analysis.Base_Type_Decl'Class;
+         Path    : String;
+         Depth   : Natural)
+      is
+         Decl : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Of_Type) or else Depth > 4 then
+            return;
+         end if;
+         Decl := Of_Type.P_Base_Subtype;
+         if Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.P_Is_Scalar_Type
+           or else Decl.P_Is_Access_Type
+           or else Decl.P_Is_Array_Type
+         then
+            return;
+         elsif Decl.P_Is_Private then
+            if not Libadalang.Analysis.Is_Null (Decl.P_Full_View)
+              and then not Libadalang.Analysis."=" (Decl.P_Full_View, Decl)
+            then
+               Collect (Decl.P_Full_View, Path, Depth + 1);
+            end if;
+            return;
+         elsif Decl.Kind not in Libadalang.Common.Ada_Concrete_Type_Decl then
+            return;
+         end if;
+         declare
+            Def : constant Libadalang.Analysis.Type_Def :=
+              Decl.As_Type_Decl.F_Type_Def;
+         begin
+            if Def.Kind = Libadalang.Common.Ada_Record_Type_Def then
+               Components (Def.As_Record_Type_Def.F_Record_Def, Path, Depth);
+            elsif Def.Kind = Libadalang.Common.Ada_Derived_Type_Def
+              and then Libadalang.Analysis.Is_Null
+                (Def.As_Derived_Type_Def.F_Record_Extension)
+              and then Def.As_Derived_Type_Def.F_Interfaces.Children_Count = 0
+            then
+               Collect
+                 (Def.As_Derived_Type_Def.F_Subtype_Indication
+                    .P_Designated_Type_Decl, Path, Depth + 1);
+            end if;
+         end;
+      end Collect;
+
+      Key : Libadalang.Analysis.Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) then
+         return Result;
+      end if;
+      Key := Libadalang.Analysis.Ada_Node (Typ);
+      if Known_Component_Predicates.Contains (Key) then
+         return Known_Component_Predicates.Element (Key);
+      end if;
+      Collect (Typ, "", 0);
+      Known_Component_Predicates.Insert (Key, Result);
+      return Result;
+   exception
+      when others =>
+         return Component_Predicate_Vectors.Empty_Vector;
+   end Component_Predicates;
+
    --  The subprograms that evaluating a predicate runs: those its
    --  expression calls, and those their bodies call in turn. Opaque when
    --  that cannot be told -- a call that does not resolve, one that gives
@@ -7599,7 +7744,11 @@ package body Adalang_Analyzer.Flow_Interp is
       State : Flow_State) return Boolean
    is
    begin
-      if Node.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+      --  The expression of an expression function is in parentheses
+      --  (FP-143).
+      if Node.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Known_Arithmetic_Overflow (Node.As_Paren_Expr.F_Expr, State);
+      elsif Node.Kind not in Libadalang.Common.Ada_Bin_Op_Range
         or else Node.As_Bin_Op.F_Op not in
           Libadalang.Common.Ada_Op_Plus
             | Libadalang.Common.Ada_Op_Minus
@@ -7655,7 +7804,10 @@ package body Adalang_Analyzer.Flow_Interp is
       Symbols : VC.Symbolic_State) return Boolean
    is
    begin
-      if Node.Kind not in Libadalang.Common.Ada_Bin_Op_Range
+      if Node.Kind = Libadalang.Common.Ada_Paren_Expr then
+         return Arithmetic_Overflow_Refuted
+           (Node.As_Paren_Expr.F_Expr, State, Symbols);
+      elsif Node.Kind not in Libadalang.Common.Ada_Bin_Op_Range
         or else Node.As_Bin_Op.F_Op not in
           Libadalang.Common.Ada_Op_Plus
             | Libadalang.Common.Ada_Op_Minus
@@ -11449,12 +11601,13 @@ package body Adalang_Analyzer.Flow_Interp is
       --  Contracts written on a separate spec name the spec's parameter
       --  defining names, while the body's state is keyed by the body's own
       --  (FP-085). Parameter_Pairs lists each body parameter with its spec
-      --  counterpart, so contract facts can be carried across. It is empty
-      --  unless the spec resolves precisely and conforms parameter by
-      --  parameter (same names, modes and type text, in order):
-      --  Libadalang's decl-part resolution is not reliable for same-name
-      --  overloads, and a wrong pairing would attach one overload's
-      --  contract to another's body.
+      --  counterpart, so contract facts can be carried across; for a
+      --  generic subprogram, with those of the subprogram its generic
+      --  declaration declares. It is empty unless the spec resolves
+      --  precisely and conforms parameter by parameter (same names, modes
+      --  and type text, in order): Libadalang's decl-part resolution is not
+      --  reliable for same-name overloads, and a wrong pairing would attach
+      --  one overload's contract to another's body.
       type Parameter_Pair is record
          Spec_Name : Libadalang.Analysis.Ada_Node;
          Body_Name : Libadalang.Analysis.Ada_Node;
@@ -11523,10 +11676,18 @@ package body Adalang_Analyzer.Flow_Interp is
          --  property error reaches the handler below instead of escaping
          --  Verify_Subprogram's elaboration and aborting the whole file.
          Decl_Part := Subprogram.P_Decl_Part (Imprecise_Fallback => False);
+         if not Libadalang.Analysis.Is_Null (Decl_Part)
+           and then Decl_Part.Kind = Libadalang.Common.Ada_Generic_Subp_Decl
+         then
+            Decl_Part :=
+              Libadalang.Analysis.Basic_Decl
+                (Decl_Part.As_Generic_Subp_Decl.F_Subp_Decl);
+         end if;
          if Libadalang.Analysis.Is_Null (Decl_Part)
            or else Decl_Part.Kind not in
              Libadalang.Common.Ada_Subp_Decl
                | Libadalang.Common.Ada_Abstract_Subp_Decl
+               | Libadalang.Common.Ada_Generic_Subp_Internal
            or else Squeezed (Ada_Text.Node_Text
                     (Decl_Part.P_Defining_Name))
              /= Squeezed (Ada_Text.Node_Text (Subprogram.P_Defining_Name))
@@ -19512,8 +19673,11 @@ package body Adalang_Analyzer.Flow_Interp is
       --  parameter the subprogram is given a value of, where the
       --  subprogram is SPARK code: a parameter is of its subtype, which a
       --  predicate is part of. That is the caller's obligation, which
-      --  --verify does not raise. A parameter is named as the contract
-      --  names it.
+      --  --verify does not raise. So are those of the subtypes of its
+      --  components (Component_Predicates) of the parts they are: SPARK
+      --  keeps them at every assignment to a part (a RecordFlux session
+      --  context's message contexts, Ctx.P.Request_Ctx). A parameter is
+      --  named as the contract names it.
       procedure Assume_Parameter_Predicates
         (Symbols : in out VC.Symbolic_State;
          Flow    : Flow_State;
@@ -19562,6 +19726,9 @@ package body Adalang_Analyzer.Flow_Interp is
                   Predicates : constant Predicate_Vectors.Vector :=
                     Subtype_Predicates
                       (Param.F_Type_Expr.P_Designated_Type_Decl);
+                  Parts      : constant Component_Predicate_Vectors.Vector :=
+                    Component_Predicates
+                      (Param.F_Type_Expr.P_Designated_Type_Decl);
                begin
                   for Id of Param.F_Ids loop
                      for Predicate of Predicates loop
@@ -19572,6 +19739,17 @@ package body Adalang_Analyzer.Flow_Interp is
                                 Contract_Name
                                   (Libadalang.Analysis.Ada_Node (Id)),
                                 Predicate, Flow);
+                        end if;
+                     end loop;
+                     for Part of Parts loop
+                        if not Runs_This (Part.Predicate) then
+                           Symbols :=
+                             VC.Assume_Predicate
+                               (Symbols,
+                                Contract_Name
+                                  (Libadalang.Analysis.Ada_Node (Id)),
+                                Part.Predicate, Flow,
+                                Ada.Strings.Unbounded.To_String (Part.Path));
                         end if;
                      end loop;
                   end loop;

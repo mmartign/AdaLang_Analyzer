@@ -122,15 +122,17 @@ package Adalang_Analyzer.VC_Prover is
      (State     : Symbolic_State;
       Object    : Libadalang.Analysis.Ada_Node'Class;
       Predicate : Libadalang.Analysis.Expr;
-      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State)
+      Flow      : Adalang_Analyzer.Flow_Domain.Flow_State;
+      Part      : String := "")
       return Symbolic_State;
    --  State with Predicate assumed of a record object: the one whose
    --  defining name Object is, or the one, or the part of one, that Object
-   --  names. Predicate is the predicate aspect of a type or subtype
-   --  declaration, written in terms of the current instance. It is taken
-   --  part by part, as Assume takes a condition. State as it is where the
-   --  object is not initialized in Flow or nothing could be taken. It is
-   --  for the caller to say this only where the predicate holds.
+   --  names; of its component Part (".c", ".c.d") where Part is not empty.
+   --  Predicate is the predicate aspect of a type or subtype declaration,
+   --  written in terms of the current instance. It is taken part by part,
+   --  as Assume takes a condition. State as it is where the object is not
+   --  initialized in Flow or nothing could be taken. It is for the caller
+   --  to say this only where the predicate holds.
 
    function Decide_Predicate
      (Predicate : Libadalang.Analysis.Expr;
