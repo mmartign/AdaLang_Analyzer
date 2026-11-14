@@ -16,6 +16,7 @@ with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;  use Adalang_Analyzer.Ada_Text;
+with Adalang_Analyzer.Node_Memo;
 with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Text_Utils;
 
@@ -25,9 +26,9 @@ package body Adalang_Analyzer.Checks.Data_Flow is
    use type Libadalang.Analysis.Basic_Decl;
    use type Libadalang.Common.Ada_Node_Kind_Type;
 
-   function Referenced_Declaration
-     (Node : Libadalang.Analysis.Ada_Node'Class)
-      return Libadalang.Analysis.Basic_Decl
+   --  The object an identifier denotes, through object renamings.
+   function Identifier_Declaration
+     (Node : Libadalang.Analysis.Ada_Node) return Libadalang.Analysis.Basic_Decl
    is
       function Ultimate_Object
         (Decl : Libadalang.Analysis.Basic_Decl;
@@ -62,11 +63,28 @@ package body Adalang_Analyzer.Checks.Data_Flow is
             return Decl;
       end Ultimate_Object;
    begin
+      return Ultimate_Object
+        (Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True));
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Basic_Decl;
+   end Identifier_Declaration;
+
+   --  The data-flow checks ask this of every identifier of the statements
+   --  after each assignment, and Libadalang raises an exception for each
+   --  that does not resolve, so each is asked once.
+   package Declaration_Memo is new Node_Memo
+     (Result_Type => Libadalang.Analysis.Basic_Decl,
+      Compute     => Identifier_Declaration);
+
+   function Referenced_Declaration
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Basic_Decl is
+   begin
       if not Libadalang.Analysis.Is_Null (Node)
         and then Node.Kind = Libadalang.Common.Ada_Identifier
       then
-         return Ultimate_Object
-           (Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True));
+         return Declaration_Memo.Get (Node.As_Ada_Node);
       end if;
 
       return Libadalang.Analysis.No_Basic_Decl;

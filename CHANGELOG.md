@@ -5,6 +5,18 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- What a name refers to is asked of Libadalang once per name, for the
+  checks that ask it most (`Adalang_Analyzer.Node_Memo`). For a name that
+  does not resolve Libadalang raises and handles an exception each time
+  it is asked, and unwinding dominates a run when a unit's dependencies
+  are missing. The analyzer on its own source, every check, without its
+  project: CPU time 101 s -> 87 s on macOS. Findings are identical there
+  and on the eleven corpora, every check.
+
 ## [1.15.2] - 2026-11-14
 
 `--verify` reads more of what contracts and types say. The precondition of

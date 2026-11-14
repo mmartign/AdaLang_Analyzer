@@ -11,6 +11,7 @@ with Ada.Characters.Handling;
 with Ada.Strings.Fixed;
 
 with Adalang_Analyzer.Config;
+with Adalang_Analyzer.Node_Memo;
 with Adalang_Analyzer.Report;
 
 package body Adalang_Analyzer.Checks.Policy_Support is
@@ -159,30 +160,39 @@ package body Adalang_Analyzer.Checks.Policy_Support is
          return False;
    end In_Generic_Template;
 
+   --  The failsafe query reports a resolution failure as a result instead
+   --  of raising to the caller, but Libadalang raises and handles one
+   --  inside it for each name that does not resolve, so each name is
+   --  asked once (Node_Memo).
+   function Precise_Referenced
+     (Name : Libadalang.Analysis.Ada_Node) return Libadalang.Analysis.Ada_Node
+   is
+      Result : constant Libadalang.Analysis.Refd_Decl :=
+        Name.As_Name.P_Failsafe_Referenced_Decl;
+   begin
+      if Libadalang.Analysis.Kind (Result) = Libadalang.Common.Precise then
+         return Libadalang.Analysis.Decl (Result).As_Ada_Node;
+      end if;
+      return Libadalang.Analysis.No_Ada_Node;
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Precise_Referenced;
+
+   package Referenced_Memo is new Node_Memo
+     (Result_Type => Libadalang.Analysis.Ada_Node,
+      Compute     => Precise_Referenced);
+
    function Referenced
      (Name : Libadalang.Analysis.Ada_Node'Class)
-      return Libadalang.Analysis.Ada_Node
-   is
+      return Libadalang.Analysis.Ada_Node is
    begin
       if Libadalang.Analysis.Is_Null (Name)
         or else Name.Kind not in Libadalang.Common.Ada_Name
       then
          return Libadalang.Analysis.No_Ada_Node;
       end if;
-      --  The failsafe query reports a resolution failure as a result
-      --  instead of raising: unwinding an exception for every unresolved
-      --  name dominates the run when a unit's dependencies are missing.
-      declare
-         Result : constant Libadalang.Analysis.Refd_Decl :=
-           Name.As_Name.P_Failsafe_Referenced_Decl;
-      begin
-         if Libadalang.Analysis.Kind (Result) =
-              Libadalang.Common.Precise
-         then
-            return Libadalang.Analysis.Decl (Result).As_Ada_Node;
-         end if;
-         return Libadalang.Analysis.No_Ada_Node;
-      end;
+      return Referenced_Memo.Get (Name.As_Ada_Node);
    exception
       when others =>
          return Libadalang.Analysis.No_Ada_Node;
