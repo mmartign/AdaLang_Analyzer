@@ -810,10 +810,46 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                                (Subprogram)
                              and then Libadalang.Analysis.Ada_Node (Owner) /=
                                Libadalang.Analysis.Ada_Node (Subprogram);
-                           Up_Level_Read : constant Boolean :=
-                             Up_Level
-                             and then Read_By_Nested_Body (Decl, Owner, Stmt);
+                           --  The first later statement that writes Decl
+                           --  again with no read or exit before it, 0 when
+                           --  there is none.
+                           Overwrite : Natural := 0;
+
+                           --  Whether a statement from the one after Stmt
+                           --  to the overwriting one can run a body of
+                           --  Owner.
+                           function Runs_Body_Of_Owner return Boolean is
+                           begin
+                              for J in I + 1 .. Overwrite loop
+                                 if May_Run_Body_Of (List.Child (J), Owner)
+                                 then
+                                    return True;
+                                 end if;
+                              end loop;
+                              return False;
+                           end Runs_Body_Of_Owner;
                         begin
+                           for J in I + 1 .. List.Children_Count loop
+                              declare
+                                 Later : constant
+                                   Libadalang.Analysis.Ada_Node :=
+                                     List.Child (J);
+                              begin
+                                 if Data_Flow.Reads_Assigned_Target
+                                   (Later, Assignment)
+                                   or else May_Leave_Statement_List
+                                     (Later, Target_Is_Local)
+                                 then
+                                    exit;  --  adalang-analyzer: ignore No_Exit
+                                 elsif Data_Flow.Same_Assigned_Target
+                                   (Stmt, Later)
+                                 then
+                                    Overwrite := J;
+                                    exit;  --  adalang-analyzer: ignore No_Exit
+                                 end if;
+                              end;
+                           end loop;
+
                            --  A nested body reading a local Decl may run
                            --  from any later call, so no later write
                            --  provably overwrites an unread value. For an
@@ -822,38 +858,28 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                            --  statement that can run such a body reads it
                            --  ("Flag := True; Walk (Depth - 1); Flag :=
                            --  Saved;" in a recursive Walk that calls a
-                           --  procedure reading Flag, FP-144).
-                           if not Target_Is_Local
-                             or else not Read_By_Nested_Body
-                               (Decl, Subprogram, Stmt)
+                           --  procedure reading Flag, FP-144). Both
+                           --  questions resolve every name of the nested
+                           --  bodies, where each name that does not resolve
+                           --  raises an exception, dear on macOS, so they are
+                           --  asked only once a later write is found to
+                           --  overwrite: asked of every assignment, they took
+                           --  30% of the performance smoke test's time there.
+                           if Overwrite > 0
+                             and then not
+                               (Target_Is_Local
+                                and then Read_By_Nested_Body
+                                  (Decl, Subprogram, Stmt))
+                             and then not
+                               (Up_Level
+                                and then Read_By_Nested_Body
+                                  (Decl, Owner, Stmt)
+                                and then Runs_Body_Of_Owner)
                            then
-                              for J in I + 1 .. List.Children_Count loop
-                                 declare
-                                    Later : constant
-                                      Libadalang.Analysis.Ada_Node :=
-                                        List.Child (J);
-                                 begin
-                                    if Data_Flow.Reads_Assigned_Target
-                                      (Later, Assignment)
-                                      or else May_Leave_Statement_List
-                                        (Later, Target_Is_Local)
-                                      or else
-                                        (Up_Level_Read
-                                         and then May_Run_Body_Of
-                                           (Later, Owner))
-                                    then
-                                       exit;  --  adalang-analyzer: ignore No_Exit
-                                    elsif Data_Flow.Same_Assigned_Target
-                                      (Stmt, Later)
-                                    then
-                                       Report_Rule_Violation
-                                         (Unit, Stmt, Overwritten_Assignment,
-                                          "assigned value is overwritten " &
-                                            "before it is read");
-                                       exit;  --  adalang-analyzer: ignore No_Exit
-                                    end if;
-                                 end;
-                              end loop;
+                              Report_Rule_Violation
+                                (Unit, Stmt, Overwritten_Assignment,
+                                 "assigned value is overwritten " &
+                                   "before it is read");
                            end if;
                         end;
                      end if;
