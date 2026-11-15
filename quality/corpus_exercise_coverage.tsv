@@ -80,7 +80,7 @@ Missing_Overriding_Indicator	yes	automotive	2	0	0
 Inefficient_String_Concatenation	no	-	0	0	0
 Circular_Package_Dependency	yes	automotive	2	0	0
 Duplicate_Subprogram	yes	recommended	4	233	59
-Known_Precondition_Failure	yes	automotive,recommended,spark,verify	10	0	0
+Known_Precondition_Failure	yes	automotive,recommended,spark,verify	10	1	1
 Known_Postcondition_Failure	yes	automotive,recommended,spark,verify	10	0	0
 Known_Assertion_Failure	yes	automotive,recommended,spark,verify	10	3	1
 Assertion_Side_Effect	no	-	0	0	0

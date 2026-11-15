@@ -185,13 +185,13 @@ is not endorsed by AdaCore.
 
 The benchmark suite quantifies this on five independently authored,
 fully-proved SPARK corpora (SPARKNaCl, Saatana, libkeccak, coap_spark and
-Tokeneer): across 5,674 proof obligations both tools could evaluate at the
+Tokeneer): across 5,685 proof obligations both tools could evaluate at the
 same location, AdaLang never called something a definite error that
 GNATprove proved safe, and called safe only nine checks that GNATprove could
 not prove -- two SPARKNaCl loop invariants and seven CoAP-SPARK
 preconditions, all of which hold, on which GNATprove's provers reach their
 time or step limit. Over every check GNATprove proves on those
-corpora, AdaLang proves more than three quarters (11,789 of 15,043) and is
+corpora, AdaLang proves four fifths (12,039 of 15,043) and is
 `Unproved`/`Unsupported`, or has no obligation, for the rest --
 consistent with "a much narrower scalar subset" above. This is
 evidence of precision on the subset AdaLang attempts, not of matching
