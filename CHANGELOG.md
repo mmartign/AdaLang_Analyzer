@@ -5,9 +5,132 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.16.0] - 2026-11-15
+
+`--verify` crosses 80% of what GNATprove proves on the gap ledger. It
+raises GNATprove's non-aliasing check at calls; it keeps the predicates of
+what a loop writes at the loop head and where the ways of a statement
+meet, and reads `X in S` of a record or an array as its predicate; it
+follows calls that Libadalang resolves to an abstract operator, the refined
+contracts of a state abstraction's expression functions and the bounds of
+string literals, catenations and components. The documentation describes
+the qualification and validation kits Spazio IT supplies.
+
+What to expect: on the five corpora of the gap ledger, `--verify` proves
+12,039 of the 15,043 checks GNATprove proves, 80.0% (was 11,789, 78.4%).
+251 more are proved and one fewer: 66 termination checks, 61 predicate
+checks, 44 non-aliasing checks, 28 preconditions, 16 data dependencies, 15
+overflow checks, 10 assertions and 11 others (libkeccak 89, CoAP-SPARK 77,
+tokeneer 61, SPARKNaCl 19, Saatana 5). The one lost is the postcondition of
+libkeccak's generic `Update_Auth_Data` (`State_Of (Ctx) = Auth_Data`), a
+precision cost of the predicates taken at loop heads. On the nine corpora
+with a `--verify` lane, 2,699 obligations that were `Unproved` are proved
+(AWS 1,242, tokeneer 461, CoAP-SPARK 360, GNATCOLL 291, CubedOS 144,
+SPARKNaCl 101, libkeccak 81, Saatana 15, Project Bias 4; most of AWS's and
+GNATCOLL's are initialization checks of constants of a record or an array
+type), one proved is `Unproved`, 47 are added (46 non-aliasing) and one is
+removed. One definite error is new, and true: CubedOS's
+`Handle_Add_Request`, whose precondition is `Is_Add_Request (Message)`,
+calls `Add_Request_Decode`, whose precondition is `Is_Set_Request
+(Message)` (GNATprove: "precondition might fail", with `Message_ID => 3`).
+On all ten corpora, every preset, findings are otherwise identical. On the
+SPARK testsuite both tools prove 327 of 705 pairs, with no possible
+unsoundness and no false positive. CPU time is up on SPARKNaCl (49 s ->
+125 s), where the membership tests of its carry chains now reach the
+solvers, on libkeccak (200 s -> 250 s) and on CoAP-SPARK (433 s -> 464 s).
+
+A false-safe of the data-dependency check, older than this release, was
+found and is recorded as FP-145 (open): a body that reads, before writing
+it, a global its `Global` lists as `Output` has its data dependencies
+proved; GNATprove reports the read.
+
+### Added
+
+- `--verify` raises the non-aliasing check GNATprove makes at a call in
+  SPARK code (SPARK RM 6.4.2): two actuals that name parts of one object,
+  the formal of at least one of them written, must not overlap. One
+  obligation, of the new kind `non-aliasing`, at the actual of the first
+  such formal, for every pair it is the first of. It is proved from the
+  names where the parts are apart -- components of different names,
+  elements at static indexes that differ, slices with static bounds that do
+  not meet -- and is `Unproved` otherwise, never a definite error.
+- The documentation has a page on the qualification and validation kits
+  Spazio IT supplies for programs that use the analyzer under DO-178C /
+  DO-330, ISO 26262 or EN 50128, linked from the introduction, the
+  positioning page, the tool-function evidence page and the README.
 
 ### Changed
+
+- The predicates of what a loop writes are taken to hold at the head of the
+  loop: of a parameter of the verified subprogram, or an object its
+  declarative part declares, that the loop writes and that has a value
+  there, with the predicates of the subtypes of its components, as on
+  entry. SPARK checks a predicate at every assignment to an object or to a
+  part of one, and GNATprove assumes it there in the same way; until now
+  everything known of such an object was given up at the head. A
+  predicate with a quantified expression (in itself or in an expression
+  function it calls) is not taken there: taking the context predicate of a
+  RecordFlux message at every visit of a head cost CoAP-SPARK more than half
+  its time again for seven checks.
+- So are the predicates of the parameters and of the objects the
+  subprogram declares where the ways of a statement meet (after an `if` or
+  a `case`): the join keeps no relation between values its ways disagree
+  on, and a call in one branch that changed a part of the object left what
+  the predicate fixes unknown after the statement.
+- `X in S`, where `X` is a record or an array object and `S` its own type
+  or a subtype of it that adds a predicate and no constraint, is the
+  predicate of `X` (`R in Normal_GF32`, `D in Mul_Product`); it was
+  unsupported.
+- An operation of a type declared `range L .. H` whose result the solvers
+  prove within the part of the base range the language guarantees is
+  proved when each operand that is itself an operation is within it too
+  as the solvers prove it, not only as the state knows it (tokeneer's
+  `MilliSecsT (Hour) * MilliSecsInHr + MilliSecsT (Min) * MilliSecsInMin`,
+  `Hour` in 0 .. 23).
+- A call that Libadalang resolves to an abstract subprogram that is not a
+  dispatching operation -- which no call can denote (RM 6.4(8/2)) -- is
+  taken, for termination, for a call of one of the other subprograms of its
+  name visible at the call, and returns when every such one does.
+  RecordFlux declares `"+" (Index, Index)` abstract so that index
+  arithmetic goes through an operator taking a `Length`; every subprogram
+  that reached it through `Insert`, `Extract`, `Set_Scalar` and the like
+  was not shown to return.
+- The data dependencies of a subprogram with a `Refined_Global` that lists
+  the constituents of a state abstraction are satisfied by those
+  constituents where a callee's `Global` names the abstract state: each
+  constituent is listed, with a mode that allows what the call does.
+- A call made inside a package to an expression function completed in the
+  private part of that package's declaration goes by the function's
+  `Refined_Global`, as one completed in the body does (tokeneer's
+  `Latch.IsLocked`, `AdminToken.IsGood`).
+- A body is entered with what both its `Refined_Global` and its `Global`
+  give as inputs: the constituents the first lists, and the abstract states
+  the second names, which its precondition, written on the declaration,
+  reads by name.
+- Outside the package that declares a state abstraction (and its child
+  units), a constituent of the state has a value where the state has one:
+  code there reads it only through the package's expression functions, and
+  writes it only by calling the package's subprograms, whose `Global` names
+  the state whole. Inside the package the refined contracts still decide.
+- A call of a function with no parameters completed by an expression
+  function whose expression is the name of an object stands for that
+  object where a record or an array formal needs one (tokeneer's
+  `Clock.TheCurrentTime`, `(CurrentTimeVar)`).
+- The bounds of a value that is no object are known where the language
+  fixes them: a string literal given to a formal of an unconstrained
+  `String` subtype, or a catenation whose first operand is a string literal
+  that is not null, has the first value of the index subtype for lower
+  bound (RM 4.2(11), 4.5.3(6)), and its upper bound where every operand is
+  a literal; a component of a record has the bounds of its own constrained
+  subtype. The predicate of an unconstrained `String` subtype that speaks
+  only of `'First`, `'Last` and `'Length` is decided for a string literal.
+- A constant of a record or an array type declared with its value has one
+  wherever it is read, as a scalar constant does (CoAP-SPARK's
+  `Option_Properties_Table`); not where its object or its type has relaxed
+  initialization.
+- Where `=` compares two Boolean operands one of which cannot be
+  translated, the reason given is that operand's, no longer an integer
+  comparison's ("operator outside the scalar subset").
 
 - What a name refers to is asked of Libadalang once per name, for the
   checks that ask it most (`Adalang_Analyzer.Node_Memo`). For a name that
