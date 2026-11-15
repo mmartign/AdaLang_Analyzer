@@ -270,13 +270,13 @@ sh tests/run_all.sh
 
 The gate builds the current sources and runs all regression, reporting,
 quality, model, performance, and verification suites. Its differential stage
-runs 34 clean and 51 deliberately broken units through GNATprove when that tool
+runs 34 clean and 67 deliberately broken units through GNATprove when that tool
 is installed, compares more than a dozen further fixtures with it check by
 check, and reports an explicit skip otherwise. A separate seeded
-mutation campaign guards all 19 enumerated obligation families against
-false-safe regressions. A proof-path evidence gate maps 115
+mutation campaign guards all 20 enumerated obligation families against
+false-safe regressions. A proof-path evidence gate maps 116
 abstract-interpretation, flow, static-evaluation, contract-transfer, and
-external-prover routes to every one of the 50 current `Proved_Safe`
+external-prover routes to every one of the 51 current `Proved_Safe`
 producer sites, including adversarial and solver-boundary cases.
 
 ## Commercial support from Spazio IT
@@ -292,6 +292,7 @@ Analyzer into a dependable part of their engineering lifecycle.
 | Custom rule development | Encode company, program, or review-board policies directly in the analyzer and its evidence gates. |
 | SPARK adoption | Assess proof readiness, prioritize components, improve contracts, and design the handoff into GNATprove. |
 | Qualification assistance | Build project-specific plans and evidence for DO-330, DO-178C, ISO 26262 TCL3, and related assurance contexts. |
+| Qualification and validation kits | Receive the tool qualification data and a re-runnable validation suite for one frozen release in your configuration, maintained for the program's lifetime ([details](https://mmartign.github.io/AdaLang_Analyzer/commercial-offering.html)). |
 | Training | Equip developers and reviewers to use static analysis, Ada/SPARK contracts, and formal methods effectively. |
 
 For organizations that prefer a ready-to-run quality platform, AdaLang

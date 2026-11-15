@@ -1,0 +1,6 @@
+project Good is
+   for Source_Dirs use ("good");
+   for Object_Dir use "../../obj/verification_abstract_operator/good";
+   for Create_Missing_Dirs use "True";
+   for Main use ();
+end Good;

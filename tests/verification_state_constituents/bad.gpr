@@ -1,0 +1,10 @@
+--  verification_state_constituents/good with a body that reads a
+--  constituent its refined Global lists as Output before writing it, and a
+--  refined Global that misses a constituent a call reads.
+--  GNATprove 16.1.0 reports both.
+project Bad is
+   for Source_Dirs use ("bad");
+   for Object_Dir use "../../obj/verification_state_constituents/bad";
+   for Create_Missing_Dirs use "True";
+   for Main use ();
+end Bad;

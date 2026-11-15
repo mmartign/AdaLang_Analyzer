@@ -162,6 +162,16 @@ package Adalang_Analyzer.Flow_Domain is
    --  havoc of one, loses what the oracle answers. Without an oracle
    --  nothing is known but what a state holds.
 
+   type Encapsulation_Oracle is access
+     function (Key : Libadalang.Analysis.Ada_Node)
+       return Libadalang.Analysis.Ada_Node;
+
+   procedure Set_Encapsulation_Oracle (Oracle : Encapsulation_Oracle);
+   --  Flow_Initialization asks Oracle, of an object State says nothing of,
+   --  for the state abstraction the object is a constituent of where the
+   --  code analysed cannot name the object but through that state: the
+   --  object has a value when the state has one. Null when there is none.
+
    function Stored_Initialization
      (State : Flow_State;
       Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool;

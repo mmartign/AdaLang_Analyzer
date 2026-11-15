@@ -758,8 +758,10 @@ package body Adalang_Analyzer.Flow_Contracts is
        else Decl.P_Body_Part_For_Decl.As_Ada_Node);
 
    --  The Refined_Global aspect of the body Next. The refinement is the
-   --  caller's business only inside the package body that holds it; null
-   --  outside, or when there is none.
+   --  caller's business only inside the package body that holds it, or,
+   --  for an expression function completed in the private part of a
+   --  package declaration, inside that private part or the package's
+   --  body; null outside, or when there is none.
    function Visible_Refinement
      (Next   : Libadalang.Analysis.Ada_Node'Class;
       Caller : Libadalang.Analysis.Ada_Node'Class)
@@ -783,12 +785,30 @@ package body Adalang_Analyzer.Flow_Contracts is
                if Scope.Kind = Libadalang.Common.Ada_Package_Body then
                   return (if Within (Caller, Scope) then Refined
                           else Libadalang.Analysis.No_Expr);
+               elsif Scope.Kind = Libadalang.Common.Ada_Private_Part
+                 and then not Libadalang.Analysis.Is_Null (Scope.Parent)
+                 and then Scope.Parent.Kind =
+                            Libadalang.Common.Ada_Package_Decl
+               then
+                  declare
+                     Package_Body : constant Libadalang.Analysis.Ada_Node :=
+                       Scope.Parent.As_Base_Package_Decl.P_Body_Part
+                         .As_Ada_Node;
+                  begin
+                     return (if Within (Caller, Scope)
+                               or else Within (Caller, Package_Body)
+                             then Refined
+                             else Libadalang.Analysis.No_Expr);
+                  end;
                end if;
                Scope := Scope.Parent;
             end loop;
          end if;
       end;
       return Libadalang.Analysis.No_Expr;
+   exception
+      when Libadalang.Common.Property_Error =>
+         return Libadalang.Analysis.No_Expr;
    end Visible_Refinement;
 
    --  What a call to Decl may touch: what its Global aspect says, or what
@@ -1505,6 +1525,36 @@ package body Adalang_Analyzer.Flow_Contracts is
       end if;
    end For_Each_Input;
 
+   procedure For_Each_Entry_Input
+     (Subprogram : Libadalang.Analysis.Basic_Decl'Class;
+      Visit      : not null access procedure
+        (Object : Libadalang.Analysis.Defining_Name))
+   is
+      Seen   : constant Libadalang.Analysis.Expr :=
+        Seen_Contract (Subprogram, Subprogram);
+      Global : constant Libadalang.Analysis.Expr :=
+        Contract (Subprogram, "Global");
+   begin
+      For_Each_Input (Subprogram, Subprogram, Visit);
+      if not Libadalang.Analysis.Is_Null (Seen)
+        and then not Libadalang.Analysis.Is_Null (Global)
+        and then Libadalang.Analysis.Ada_Node (Seen) /=
+                 Libadalang.Analysis.Ada_Node (Global)
+      then
+         declare
+            Listed : constant Global_Contract := Parse_Global (Global);
+         begin
+            if Listed.Resolved then
+               for Item of Listed.Items loop
+                  if Item.Mode /= Output then
+                     Visit (Item.Site);
+                  end if;
+               end loop;
+            end if;
+         end;
+      end if;
+   end For_Each_Entry_Input;
+
    procedure For_Each_Output
      (Callee : Libadalang.Analysis.Basic_Decl'Class;
       Caller : Libadalang.Analysis.Ada_Node'Class;
@@ -1540,6 +1590,102 @@ package body Adalang_Analyzer.Flow_Contracts is
       end if;
       return Expr.As_Ada_Node;
    end Aspect_Anchor;
+
+   --  True when State is a state abstraction that the Refined_State of a
+   --  package body around From refines, and Listed, the refined Global of
+   --  a subprogram of that body, lists each of its constituents with a
+   --  mode that allows what is done to State: written (Output or In_Out),
+   --  or read (Input or In_Out). A callee's Global names the abstract
+   --  state; the refined Global of its caller names the constituents.
+   function Constituents_Listed
+     (State   : Libadalang.Analysis.Defining_Name'Class;
+      From    : Libadalang.Analysis.Ada_Node'Class;
+      Listed  : Global_Contract;
+      Written : Boolean) return Boolean
+   is
+      Ancestor : Libadalang.Analysis.Ada_Node := From.Parent;
+      Any      : Boolean := False;
+      Covered  : Boolean := True;
+
+      procedure Take (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Node.Kind in Libadalang.Common.Ada_Identifier
+                 | Libadalang.Common.Ada_Dotted_Name
+         then
+            declare
+               Site : constant Libadalang.Analysis.Defining_Name :=
+                 Node.As_Name.P_Referenced_Defining_Name;
+            begin
+               Any := True;
+               if Libadalang.Analysis.Is_Null (Site)
+                 or else not Listed.Items.Contains (Key_Of (Site))
+               then
+                  Covered := False;
+               else
+                  declare
+                     Mode : constant Global_Mode :=
+                       Listed.Items.Element (Key_Of (Site)).Mode;
+                  begin
+                     if (Written and then Mode not in Output | In_Out)
+                       or else (not Written and then Mode not in Input | In_Out)
+                     then
+                        Covered := False;
+                     end if;
+                  end;
+               end if;
+            end;
+         elsif Node.Kind in Libadalang.Common.Ada_Base_Aggregate
+                          | Libadalang.Common.Ada_Paren_Expr
+                          | Libadalang.Common.Ada_Assoc_List
+                          | Libadalang.Common.Ada_Aggregate_Assoc
+                          | Libadalang.Common.Ada_Expr_List
+         then
+            for Index in 1 .. Node.Children_Count loop
+               Take (Node.Child (Index));
+            end loop;
+         elsif Node.Kind not in Libadalang.Common.Ada_Alternatives_List then
+            Covered := False;
+         else
+            for Index in 1 .. Node.Children_Count loop
+               Take (Node.Child (Index));
+            end loop;
+         end if;
+      end Take;
+   begin
+      while not Libadalang.Analysis.Is_Null (Ancestor) loop
+         if Ancestor.Kind = Libadalang.Common.Ada_Package_Body then
+            declare
+               Refined : constant Libadalang.Analysis.Expr :=
+                 Aspect_Expression (Ancestor.As_Basic_Decl, "Refined_State");
+            begin
+               if not Libadalang.Analysis.Is_Null (Refined)
+                 and then Refined.Kind in Libadalang.Common.Ada_Base_Aggregate
+               then
+                  for Item of Refined.As_Base_Aggregate.F_Assocs loop
+                     if Item.Kind = Libadalang.Common.Ada_Aggregate_Assoc
+                       and then Item.As_Aggregate_Assoc.F_Designators
+                                  .Children_Count = 1
+                       and then Key_Of
+                         (Item.As_Aggregate_Assoc.F_Designators.Child (1)
+                            .As_Name.P_Referenced_Defining_Name) =
+                         Key_Of (State)
+                     then
+                        Take (Item.As_Aggregate_Assoc.F_R_Expr);
+                        return Any and then Covered;
+                     end if;
+                  end loop;
+               end if;
+            end;
+         end if;
+         Ancestor := Ancestor.Parent;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Constituents_Listed;
 
    procedure Verify_Global
      (Unit       : Libadalang.Analysis.Analysis_Unit;
@@ -1588,7 +1734,15 @@ package body Adalang_Analyzer.Flow_Contracts is
                   else "");
             begin
                if Found = "" then
-                  Fail (Name & " is used and is not listed");
+                  --  An abstract state is covered by its constituents,
+                  --  each listed in the refined Global.
+                  if Libadalang.Analysis.Is_Null (Refined)
+                    or else not Constituents_Listed
+                                  (Item.Site, Subprogram, Listed,
+                                   Written => Item.Kind = Write)
+                  then
+                     Fail (Name & " is used and is not listed");
+                  end if;
                else
                   declare
                      Mode : constant Global_Mode :=

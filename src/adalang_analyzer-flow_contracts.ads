@@ -78,6 +78,14 @@ package Adalang_Analyzer.Flow_Contracts is
    --  from its Depends aspect, the names given as written. Nothing but
    --  Not_Analyzed is reported when the dependencies are not worked out.
 
+   function Encapsulating_State
+     (Object : Libadalang.Analysis.Defining_Name'Class;
+      From   : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Defining_Name;
+   --  The state abstraction Object is a constituent of, by its own Part_Of
+   --  or by the Refined_State of a package body that From is in. Null when
+   --  it is a constituent of none.
+
    function Touches_Nothing_Outside
      (Callee : Libadalang.Analysis.Basic_Decl'Class;
       Caller : Libadalang.Analysis.Ada_Node'Class) return Boolean;
@@ -103,6 +111,17 @@ package Adalang_Analyzer.Flow_Contracts is
    --  Caller inside it is what its body assumes on entry; what is visited
    --  for a call is what that call is then to establish, so the two go by
    --  the same list.
+
+   procedure For_Each_Entry_Input
+     (Subprogram : Libadalang.Analysis.Basic_Decl'Class;
+      Visit      : not null access procedure
+        (Object : Libadalang.Analysis.Defining_Name));
+   --  What Subprogram's body may take as initialized on entry: what
+   --  For_Each_Input visits for Subprogram from inside it and, when that
+   --  is its Refined_Global, also what its Global lists with a mode other
+   --  than Output. The callers establish the abstract states the Global
+   --  names, so each of their constituents has a value on entry too, and
+   --  the contracts on the declaration (Pre) read those states by name.
 
    procedure For_Each_Output
      (Callee : Libadalang.Analysis.Basic_Decl'Class;

@@ -32,6 +32,9 @@ This is the reference and assurance documentation:
 - **Comparisons & evidence** — the
   [GNATcheck rule comparison](gnatcheck-rule-comparison.md) and pointers to
   the [benchmark and quality evidence](evidence.md).
+- **Commercial support** — the [qualification and validation
+  kits](commercial-offering.md) Spazio IT supplies for programs that use the
+  analyzer under DO-178C / DO-330, ISO 26262 or EN 50128.
 
 ## Where to start
 

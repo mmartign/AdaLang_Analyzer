@@ -46,7 +46,9 @@ AdaLang Analyzer is intended for teams that:
 
 It can be used during local development and CI, but its output is supporting
 evidence. Any certification credit or tool qualification argument remains a
-project responsibility.
+project responsibility. Spazio IT supplies
+[qualification and validation kits](commercial-offering.md) for such an
+argument as a commercial offering; they support it and do not replace it.
 
 ## Current capability
 
@@ -87,7 +89,9 @@ The analyzer does not currently provide:
 - Dynamic test generation or test execution.
 - Structural coverage measurement.
 - A general external rule-definition language.
-- Tool-qualification or certification artifacts.
+- Tool-qualification or certification artifacts in the open-source
+  distribution (Spazio IT supplies them per release, see
+  [qualification and validation kits](commercial-offering.md)).
 
 ## Relationship to other tools
 

@@ -142,6 +142,20 @@ package body Adalang_Analyzer.Termination is
    function Body_Verdict
      (Subprogram : Libadalang.Analysis.Base_Subp_Body'Class) return Verdict;
 
+   --  True for an abstract subprogram that is not a primitive of a tagged
+   --  type: no call can denote it.
+   function Is_Nondispatching_Abstract
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean is
+   begin
+      return Decl.Kind = Libadalang.Common.Ada_Abstract_Subp_Decl
+        and then Libadalang.Analysis.Is_Null
+                   (Decl.As_Basic_Subp_Decl.P_Subp_Decl_Spec
+                      .P_Primitive_Subp_Tagged_Type);
+   exception
+      when others =>
+         return False;
+   end Is_Nondispatching_Abstract;
+
    --  A call to the generic formal subprogram Formal returns when the
    --  subprogram each instantiation in this run gives it returns (a null
    --  default does).
@@ -370,6 +384,46 @@ package body Adalang_Analyzer.Termination is
          return Shown;
       end Children_From;
 
+      --  A call never denotes an abstract subprogram that is not a
+      --  dispatching operation (RM 6.4(8/2)): such a declaration is left out
+      --  of overload resolution. Libadalang may still resolve a call to one
+      --  (RecordFlux declares "+" (Index, Index) abstract so that index
+      --  arithmetic goes through an operator taking a Length). The call
+      --  then denotes another subprogram of that name visible at the call:
+      --  it returns when every such one does, and at least one is found.
+      function Other_Interpretations_Verdict
+        (Name     : Libadalang.Analysis.Name'Class;
+         Resolved : Libadalang.Analysis.Basic_Decl'Class) return Verdict
+      is
+         Found : Boolean := False;
+      begin
+         for Element of Name.P_All_Env_Elements (Seq_From => Name) loop
+            if not Libadalang.Analysis.Is_Null (Element)
+              and then Element.Kind in
+                Libadalang.Common.Ada_Basic_Subp_Decl
+                  | Libadalang.Common.Ada_Base_Subp_Body
+                  | Libadalang.Common.Ada_Subp_Body_Stub
+                  | Libadalang.Common.Ada_Generic_Subp_Instantiation
+              and then not Is_Nondispatching_Abstract (Element.As_Basic_Decl)
+            then
+               declare
+                  Result : constant Verdict :=
+                    Callee_Verdict (Element.As_Basic_Decl);
+               begin
+                  if Result.Kind /= Terminates then
+                     return Result;
+                  end if;
+                  Found := True;
+               end;
+            end if;
+         end loop;
+         if not Found then
+            return No
+              (Display_Name (Resolved) & " is abstract: the call dispatches");
+         end if;
+         return Shown;
+      end Other_Interpretations_Verdict;
+
       --  The verdict on the subprogram Name denotes, when it denotes one.
       function Reference_Verdict
         (Name : Libadalang.Analysis.Name'Class) return Verdict
@@ -388,6 +442,8 @@ package body Adalang_Analyzer.Termination is
          elsif Name.P_Is_Dispatching_Call then
             return No
               ("the call to " & Display_Name (Decl) & " dispatches");
+         elsif Is_Nondispatching_Abstract (Decl) then
+            return Other_Interpretations_Verdict (Name, Decl);
          end if;
          return Callee_Verdict (Decl);
       end Reference_Verdict;

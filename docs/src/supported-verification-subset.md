@@ -60,6 +60,7 @@ the section it links to has the whole of its proof basis and boundary.
 | [Dereference](#dereferences) | The access value is not null, as a scalar VC over its token | An explicit `.all`, and an access value as the prefix of a component, an indexed component, a slice or an array attribute, in SPARK code; none where the subtype of the access value excludes null |
 | [Discriminant](#discriminants) | The prefix object's own static discriminant constraint selects the variant declaring the component; otherwise a scalar VC that the discriminant selects it, or that the target of an assignment is not constrained or keeps its discriminants | A component of a variant part read, written or given as an actual, and the assignment of a record with known discriminants, in SPARK code; elsewhere a component selected directly from an object declared with an explicit discriminant constraint |
 | [Resource leak](#resource-leaks) | The owning parts of the object are null or moved, as a scalar VC over their tokens; a value that moves the target's own owning parts | The target of an assignment, an `out` actual, and a local wherever its scope ends, of a type with owning parts, in SPARK code |
+| [Non-aliasing](#non-aliasing-of-actual-parameters) | The two actuals denote parts of one object that cannot overlap: different components, elements at static indexes that differ, slices with static bounds that do not meet | A call in SPARK code that gives two actuals naming parts of one object, the formal of at least one of them written |
 | [Initialization](#initialization) | Flow-sensitive definite-initialization state | Each read of a tracked scalar object; each `out` parameter and `Output` global at the subprogram's normal exit |
 | Assertion | Abstract Boolean evaluation; otherwise scalar Boolean VC | `Assert`, `Assert_And_Cut`, and `Check` conditions |
 | [Precondition](#preconditions-and-postconditions) | Formal-to-actual substitution and scalar Boolean VC | Resolved calls with supported scalar contracts, an operator that a declaration defines and a renaming among them |
@@ -77,7 +78,9 @@ the section it links to has the whole of its proof basis and boundary.
 a type declared `range L .. H`, whose base range the compiler chooses, the
 part of it that the language guarantees (RM 3.5.4 (9)): a result within it
 does not overflow, provided each operand that is itself an operation is
-within it too; a result outside it is `Unproved`, never a `Definite_Error`.
+within it too, as the state knows it or, where the result was proved, as
+the solvers prove it; a result outside it is `Unproved`, never a
+`Definite_Error`.
 
 **Boundary.** Integer `+`, `-`, `*`, `/`, and selected power checks.
 
@@ -298,8 +301,14 @@ predicate has to be expressed in the scalar VC language -- a check cannot
 leave out what it does not express, as an assumption can -- and the check
 is `Unproved` otherwise: a predicate that reads the object an access value
 designates, one quantified over the elements of an array that is not taken
-value by value (see "Quantified expressions and loop parameters"), the
-bounds of a string literal. The bounds of the array an access component
+value by value (see "Quantified expressions and loop parameters"). For a
+string literal of an unconstrained `String` subtype, whose bounds are the
+first value of the index subtype and that plus its length minus one (RM
+4.2(11)), a predicate written with `and`, `or`, `not`, comparisons, `+`,
+`-`, integer literals and the `'First`, `'Last` and `'Length` of the
+current instance is evaluated (tokeneer's `StringF1'First = 1 and
+StringF1'Last >= 0` at `File.SetName (..., "./System/cert.dat")`); any
+other predicate of a string literal is `Unproved`. The bounds of the array an access component
 designates are expressed (see "Scalar VC language"): the predicate of the
 contexts RecordFlux generates, `Valid_Context (..., Context.Buffer,
 Context.Cursors)`, is checked at `Ctx.Buffer := null`, at
@@ -431,6 +440,32 @@ checks: an object moved out of is not read before it is assigned again,
 so the state takes it as null; and an `out` parameter is not read before
 it is written, so its owning parts are null on entry, its actual being
 checked at the call.
+
+### Non-aliasing of actual parameters
+
+SPARK forbids a call to pass two actuals that may denote overlapping parts
+of one object where the formal of at least one of them is written (mode
+`out` or `in out`), unless the other is an `in` formal of a type passed by
+copy (SPARK RM 6.4.2). GNATprove checks it at each call where the two
+actuals name parts of the same object ("non-aliasing of formal
+parameters"), and in SPARK code (see "SPARK code") `--verify` raises the
+same check: one obligation at the actual of the first such formal, in the
+order of the formals, for every pair that actual is the first of.
+
+**Proof basis.** Each pair denotes parts that cannot overlap: at the first
+step where the two names differ, components of different names
+(`Ctx.Inner_Ctx` and `Ctx.In_Data`), elements at static indexes of which
+one differs (`S (0, 0)` and `S (1, 0)`), an element at a static index
+outside a slice with static bounds, two slices with static bounds that do
+not meet, or a null slice. Decided from the names alone, without the
+solvers.
+
+**Boundary.** `Unproved` where one name is the other or a part of it, and
+where an index or a bound that decides it is not static
+(`Swap (G (I, 0), G (J, 0))`). An actual that is not the name of a part of
+an object -- an expression, a function call, a dereference, an attribute,
+a renaming -- gives no pair, and two names of different objects none
+either: SPARK code passes distinct objects. Never a `Definite_Error`.
 
 ### Initialization
 
@@ -864,6 +899,16 @@ A predefined operation, an intrinsic, an instance of `Unchecked_Conversion`
 or `Unchecked_Deallocation` and a function of a language-defined or GNAT
 library unit are taken to return.
 
+A call never denotes an abstract subprogram that is not a dispatching
+operation: overload resolution leaves such a declaration out (RM 6.4(8/2)).
+Libadalang can still resolve a call to one -- RecordFlux declares `"+"
+(Index, Index)` abstract so that index arithmetic goes through an operator
+of its `Operators` package that takes a `Length`, and Libadalang takes
+`First + 1` for the abstract one. Such a call is taken for a call of one
+of the other subprograms of its name visible at the call: it returns when
+at least one such subprogram that is not abstract is found and every one
+found is seen to return.
+
 **Boundary.** Raised for each function, and for each procedure that has the
 aspect `Always_Terminates` or is declared in a package that has it -- or in
 a generic package without it that an instantiation of the run puts in such
@@ -902,6 +947,14 @@ visible) or, when it has none, worked out from its body in the same way.
 - A constituent is accepted under the state abstraction that the
   `Refined_State` of an enclosing package body, or its own `Part_Of`, puts
   it in.
+- A state abstraction that a callee's `Global` names is accepted where the
+  body has a `Refined_Global` that lists every constituent the
+  `Refined_State` gives the state, each with a mode that allows what the
+  call does to it.
+- A call goes by the callee's `Refined_Global` where the caller is inside
+  the package body that holds the callee's body, or, for an expression
+  function completed in the private part of a package declaration, inside
+  that private part or the package's body.
 - A constant whose value depends on no variable is not a global: a deferred
   constant by the value its completion gives it, a generic formal object of
   mode `in` seen from an instance by the actual of the instantiation.
@@ -1213,9 +1266,17 @@ proved of a string literal, of a constant of `String (1 .. 80)`, and of a
 call of a function that returns such a subtype. A slice written with two
 bounds has those, and the length they give: `Log (S (2 .. 5))` proves
 `Text'First = 2` and `Text'Length = 4`, and a precondition that says
-otherwise is a definite error. Nothing is known of the bounds of a slice
-given by a subtype name or a `'Range`, a concatenation, an aggregate or a
-component as an actual. A formal of a constrained subtype has the bounds of
+otherwise is a definite error. A catenation whose first operand is a
+string literal that is not null has the lower bound of that literal (RM
+4.5.3(6)), the first value of the index subtype, and an upper bound where
+every operand is a literal: `Log ("Write error - " & Name)` proves
+`Text'First = 1`. A component of a record has the bounds of its own
+subtype where that is constrained by a subtype name or by two integer
+literals, the same in every object of the type (`Msg.Data`, declared
+`String (MessageIndexT)`). Nothing is known of the bounds of a slice
+given by a subtype name or a `'Range`, an aggregate, a catenation that
+starts with an object, or a component whose subtype a discriminant may
+constrain. A formal of a constrained subtype has the bounds of
 that subtype, whatever the actual. Where a formal stands for an object, in a postcondition taken
 after a call, it has the bounds a declaration fixes for that object. Facts that mention
 only such symbols are kept at the entry of a loop body, where every fact
@@ -1248,6 +1309,15 @@ when neither `S` nor any subtype or type it is declared from carries a
 `Predicate`, `Static_Predicate` or `Dynamic_Predicate`. For a predicated
 subtype the scalar VC translation is unsupported, and interval narrowing
 uses only the one-way fact that a member lies within the subtype's range.
+
+Where `X` is a record or an array object and `S` its own type, or a
+subtype declared from it through subtypes that add no constraint (no
+derivation), `X in S` is the conjunction of the predicates of `S` and of
+the subtypes it is declared from, each read of `X` as a predicate check
+reads it (see "Predicates"): `R in Normal_GF32`, `D in Mul_Product`. With
+one subtype mark only, and only where the name settles which object `X`
+is; otherwise the translation is unsupported, as for any membership whose
+subject is not a scalar.
 
 A membership test on an identifier narrows that identifier's interval the
 way a comparison does. When the test holds, the interval is intersected with
@@ -1511,6 +1581,23 @@ and the value given was a valid one.
 A call whose effects are not known drops every fact about a variable. It
 drops none of these: no callee can change them.
 
+A constant of a record or an array type declared with its value also has
+one wherever it is read, whole: SPARK leaves no part of a constant without
+a value unless the object or its type has relaxed initialization, and such
+a constant is left out. Nothing is known of its value from here.
+
+A constituent of a state abstraction has a value where the state has one,
+when the subprogram under analysis is outside the package that declares
+the state and outside that package's child units: there the constituent is
+hidden, read only through the package's expression functions and written
+only by calls of its subprograms, whose `Global` names the state whole.
+Inside the package the refined contracts name the constituents one by one,
+and one that a subprogram writes before reading it may have no value when
+the state, as a whole, has one; nothing is taken there. A body is entered
+with the inputs both its `Refined_Global` and its `Global` give: the
+constituents the first lists, and the states the second names, which its
+precondition reads by name.
+
 ## What a store leaves known
 
 After an assignment to an object of an integer subtype, and after the
@@ -1633,7 +1720,7 @@ discount what is proved from them.
 A predicate -- `Dynamic_Predicate`, `Static_Predicate`, GNAT's `Predicate`
 -- is part of the subtype it is given for, and of every subtype of that
 one and every type derived from it. It is taken as holding of a record or
-an array object at two places:
+an array object at four places:
 
 - of a parameter of mode `in` or `in out` where a subprogram that is SPARK
   code is entered, and there of each component of such a parameter whose
@@ -1645,7 +1732,28 @@ an array object at two places:
 - of an object, or of a part of one that its name settles, that was the
   actual of an `in out` or `out` parameter, where a call of a callee that
   is SPARK code returns. The predicate is that of the subtype of the
-  parameter. A dispatching call says nothing.
+  parameter. A dispatching call says nothing;
+- at the head of a loop, of a parameter of the subprogram being verified
+  and of an object its declarative part declares, that the loop writes and
+  that has a value there, with the predicates of the subtypes of its
+  components as on entry: what else was known of such an object is given
+  up at the head (see "Loop invariants and loop variants"), and the join
+  of the ways into the head keeps no relation between values they
+  disagree on. GNATprove assumes the predicate of what a loop writes at
+  the head of the loop in the same way. Not an aliased object, nor a
+  renaming, nor a predicate that has a quantified expression, in itself or
+  in the body of an expression function it calls (three bodies deep):
+  the head is visited again at each pass of the fixed point, and taking
+  such a predicate each time costs far more than it gives (the context
+  predicate of a RecordFlux message).
+- where the ways of a statement meet that is not the head of a loop (after
+  an `if` or a `case` statement, for one), of a parameter of the
+  subprogram being verified and of an object its declarative part
+  declares, that has a value there: the join keeps no relation between
+  values its ways disagree on, and a call in one branch that changes a
+  part of the object would otherwise leave what the predicate fixes
+  unknown after the statement. The predicate of its own subtype only, with
+  the same exclusions as at the head of a loop.
 
 SPARK keeps the predicate of an object at every assignment to it or to a
 part of it, and at every call that passes it: GNATprove raises a predicate
@@ -1675,7 +1783,8 @@ index that is not known, leaves the predicate saying what it said of the
 values that were replaced, which is nothing of the new ones; `--verify`
 does not take the predicate to hold again after such an assignment, nor of
 an object assigned as a whole, nor of an `out` parameter on entry, nor of
-an object declared in the subprogram, nor of an object of a scalar type.
+an object declared in the subprogram, nor of an object of a scalar type,
+except at the head of a loop and where ways meet, as above.
 
 A predicate is not taken to hold of a parameter of a subprogram that
 evaluating the predicate can run: one its expression calls, or one that a

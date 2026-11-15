@@ -60,7 +60,7 @@ CHECKS = [
     ("might not be initialized", "initialization", "initialization-check"),
     ("is not initialized", "initialization", "initialization-check"),
     ("resource or memory leak", "ownership", "resource-leak"),
-    ("non-aliasing", "ownership", None),
+    ("non-aliasing", "ownership", "non-aliasing"),
     ("aliasing", "ownership", None),
     ("Always_Terminates", "termination", "termination"),
     ("data dependencies", "flow contract", "data-dependencies"),

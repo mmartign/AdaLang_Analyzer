@@ -446,16 +446,49 @@ package body Adalang_Analyzer.Flow_Domain is
       Key   : Libadalang.Analysis.Ada_Node) return Abstract_Range
    is (Within_Standing (Stored_Range (State, Key), Key));
 
+   Encapsulation : Encapsulation_Oracle := null;
+
+   procedure Set_Encapsulation_Oracle (Oracle : Encapsulation_Oracle) is
+   begin
+      Encapsulation := Oracle;
+   end Set_Encapsulation_Oracle;
+
    function Flow_Initialization
      (State : Flow_State;
       Key   : Libadalang.Analysis.Ada_Node) return Abstract_Bool
    is
-      Held : constant Abstract_Bool := Stored_Initialization (State, Key);
+      Max_Nesting : constant := 8;
+
+      function Of_Key
+        (Object : Libadalang.Analysis.Ada_Node;
+         Depth  : Natural) return Abstract_Bool
+      is
+         Held : constant Abstract_Bool :=
+           Stored_Initialization (State, Object);
+      begin
+         if Held /= Bool_True and then Standing_Of (Object).Holds_A_Value
+         then
+            return Bool_True;
+         elsif Held = Bool_Unknown
+           and then Encapsulation /= null
+           and then Depth < Max_Nesting
+         then
+            declare
+               Outer : constant Libadalang.Analysis.Ada_Node :=
+                 Encapsulation (Object);
+            begin
+               if not Libadalang.Analysis.Is_Null (Outer)
+                 and then Outer /= Object
+                 and then Of_Key (Outer, Depth + 1) = Bool_True
+               then
+                  return Bool_True;
+               end if;
+            end;
+         end if;
+         return Held;
+      end Of_Key;
    begin
-      if Held /= Bool_True and then Standing_Of (Key).Holds_A_Value then
-         return Bool_True;
-      end if;
-      return Held;
+      return Of_Key (Key, 0);
    end Flow_Initialization;
 
    procedure Flow_Set_Initialized

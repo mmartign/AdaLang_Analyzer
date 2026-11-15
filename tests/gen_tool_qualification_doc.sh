@@ -44,7 +44,9 @@ It is **not** a qualification argument and does not discharge one. As the
 [assurance model](assurance-model.md) states, absence of a finding is not
 evidence that a defect is absent, and no profile or clean run qualifies this
 tool. What follows is the raw material a project's own qualification effort
-would build on, not a substitute for it.
+would build on, not a substitute for it. Spazio IT packages this material,
+frozen for one release and configuration, in its
+[qualification and validation kits](commercial-offering.md).
 
 ## How to read this
 

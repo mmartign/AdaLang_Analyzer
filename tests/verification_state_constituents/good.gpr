@@ -1,0 +1,9 @@
+--  A package whose state abstraction has constituents completed by
+--  expression functions in its private part, and a user of it outside.
+--  GNATprove 16.1.0 proves every check (see run_verification.sh).
+project Good is
+   for Source_Dirs use ("good");
+   for Object_Dir use "../../obj/verification_state_constituents/good";
+   for Create_Missing_Dirs use "True";
+   for Main use ();
+end Good;

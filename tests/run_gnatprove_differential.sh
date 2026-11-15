@@ -147,7 +147,7 @@ if grep -F 'Success: all checks proved' "$broken_gnatprove_log" >/dev/null; then
 fi
 
 broken_summary=obj/verification_differential_broken/gnatprove/gnatprove.out
-grep -F 'Analyzed 55 units' "$broken_summary" >/dev/null
+grep -F 'Analyzed 67 units' "$broken_summary" >/dev/null
 for unit in verification_vc_error verification_loop_vc_broken \
   verification_initialization_error verification_symbolic_call \
   verification_symbolic_join verification_mutation_contracts \
@@ -193,7 +193,19 @@ for unit in verification_vc_error verification_loop_vc_broken \
   verification_loop_frame \
   verification_mutation_loop_frame \
   verification_contract_reach \
-  verification_mutation_contract_reach; do
+  verification_mutation_contract_reach \
+  verification_parameter_aliasing \
+  verification_mutation_parameter_aliasing \
+  verification_loop_predicates \
+  verification_mutation_loop_predicates \
+  verification_composite_membership \
+  verification_mutation_composite_membership \
+  verification_join_predicates \
+  verification_mutation_join_predicates \
+  verification_guaranteed_operands \
+  verification_mutation_guaranteed_operands \
+  verification_literal_bounds \
+  verification_mutation_literal_bounds; do
    if ! grep -F "in unit $unit," "$broken_summary" >/dev/null; then
       echo "GNATprove did not analyze $unit in the broken corpus" >&2
       exit 1
@@ -1657,5 +1669,188 @@ done
 echo "imported generics: $imported_agreed termination and data-dependency" \
   "checks proved here, each proved by GNATprove; GNATprove refuses the 3" \
   "seeded ones"
+
+#  Batch 29, check by check: each assertion, non-aliasing, overflow,
+#  predicate and precondition check proved in
+#  verification_parameter_aliasing, verification_loop_predicates,
+#  verification_composite_membership, verification_join_predicates,
+#  verification_guaranteed_operands and verification_literal_bounds is not
+#  refused by GNATprove at its line, and GNATprove refuses each claim the
+#  six mutation fixtures seed.
+batch29_results=$(mktemp "${TMPDIR:-/tmp}/adalang-gnatprove-diff-b29.XXXXXX")
+batch29_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-b29.XXXXXX")
+abstract_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-abstract.XXXXXX")
+trap 'rm -f "$results" "$gnatprove_log" "$broken_results" "$broken_gnatprove_log" "$flow_log" "$flow_broken_log" "$pair_results" "$pair_log" "$pieces_results" "$pieces_log" "$kept_results" "$kept_log" "$checks_results" "$checks_log" "$frame_results" "$frame_log" "$reach_results" "$reach_log" "$batch29_results" "$batch29_log" "$abstract_log"' \
+  EXIT HUP INT TERM
+
+status=0
+"$analyzer" --verify -q --format=json --output="$batch29_results" \
+  tests/verification_parameter_aliasing.ads \
+  tests/verification_parameter_aliasing.adb \
+  tests/verification_mutation_parameter_aliasing.ads \
+  tests/verification_mutation_parameter_aliasing.adb \
+  tests/verification_loop_predicates.ads \
+  tests/verification_loop_predicates.adb \
+  tests/verification_mutation_loop_predicates.ads \
+  tests/verification_mutation_loop_predicates.adb \
+  tests/verification_composite_membership.ads \
+  tests/verification_composite_membership.adb \
+  tests/verification_mutation_composite_membership.ads \
+  tests/verification_mutation_composite_membership.adb \
+  tests/verification_join_predicates.ads \
+  tests/verification_join_predicates.adb \
+  tests/verification_mutation_join_predicates.ads \
+  tests/verification_mutation_join_predicates.adb \
+  tests/verification_guaranteed_operands.ads \
+  tests/verification_guaranteed_operands.adb \
+  tests/verification_mutation_guaranteed_operands.ads \
+  tests/verification_mutation_guaranteed_operands.adb \
+  tests/verification_literal_bounds.ads \
+  tests/verification_literal_bounds.adb \
+  tests/verification_mutation_literal_bounds.ads \
+  tests/verification_mutation_literal_bounds.adb || status=$?
+if [ "$status" -gt 1 ]; then
+   echo "AdaLang Analyzer batch 29 run failed with status $status" >&2
+   exit "$status"
+fi
+"$gnatprove" -P tests/verification_differential_broken.gpr --mode=prove \
+  --level=2 --report=all --output=oneline \
+  -u verification_parameter_aliasing.adb \
+  verification_mutation_parameter_aliasing.adb \
+  verification_loop_predicates.adb \
+  verification_mutation_loop_predicates.adb \
+  verification_composite_membership.adb \
+  verification_mutation_composite_membership.adb \
+  verification_join_predicates.adb \
+  verification_mutation_join_predicates.adb \
+  verification_guaranteed_operands.adb \
+  verification_mutation_guaranteed_operands.adb \
+  verification_literal_bounds.adb \
+  verification_mutation_literal_bounds.adb >"$batch29_log" 2>&1 || true
+
+python3 - "$batch29_results" "$batch29_log" quality/verification_mutations.tsv <<'PYTHON'
+import json
+import os
+import re
+import sys
+
+report = json.load(open(sys.argv[1]))
+log = open(sys.argv[2]).read().split("\n")
+kinds = {"assertion": ("assertion",),
+         "non-aliasing": ("non-aliasing", "might be aliased"),
+         "integer-overflow": ("overflow check",),
+         "predicate-check": ("predicate check",),
+         "precondition": ("precondition",)}
+pairs = {"verification_parameter_aliasing":
+             "verification_mutation_parameter_aliasing",
+         "verification_loop_predicates":
+             "verification_mutation_loop_predicates",
+         "verification_composite_membership":
+             "verification_mutation_composite_membership",
+         "verification_join_predicates":
+             "verification_mutation_join_predicates",
+         "verification_guaranteed_operands":
+             "verification_mutation_guaranteed_operands",
+         "verification_literal_bounds":
+             "verification_mutation_literal_bounds"}
+broken = set(pairs.values())
+
+
+def fail(message):
+    print("gnatprove differential: batch 29: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+proved, refused = set(), set()
+for line in log:
+    found = re.match(r"(verification_[a-z_]+)\.(ad[bs]):(\d+):\d+: (.*)",
+                     line)
+    if not found:
+        continue
+    text = found.group(4)
+    for kind, words in kinds.items():
+        if any(word in text for word in words):
+            place = (found.group(1), found.group(2), int(found.group(3)),
+                     kind)
+            (proved if text.startswith("info: ") else refused).add(place)
+if not proved:
+    fail("GNATprove proved nothing: " + " ".join(log[-5:]))
+
+where = {}
+agreed = 0
+for item in report["proofObligations"]:
+    unit, extension = os.path.basename(item["file"]).split(".")
+    if item["kind"] not in kinds or (unit not in pairs and unit not in broken):
+        continue
+    key = (unit, extension, item["line"], item["kind"])
+    if unit in broken:
+        where.setdefault((unit, item["kind"], item["operation"]), key)
+    elif item["status"] == "proved-safe":
+        if key in refused:
+            fail(f"proved here, refused by GNATprove: {key}")
+        if key in proved:
+            agreed += 1
+
+seeded = 0
+for row in open(sys.argv[3]):
+    field = row.rstrip("\n").split("\t")
+    if row.startswith("#") or len(field) < 5:
+        continue
+    unit = os.path.basename(field[1]).split(".")[0]
+    if unit not in broken:
+        continue
+    #  The register writes the quotes of an operation as the report does.
+    key = where.get((unit, field[2], field[3].replace('\\"', '"')))
+    if key is None:
+        fail(f"no obligation for {field[0]}")
+    if key not in refused:
+        fail(f"GNATprove does not refuse {field[0]}: {key}")
+    seeded += 1
+print(f"batch 29: {agreed} checks proved here, each proved by GNATprove; "
+      f"GNATprove refuses the {seeded} claims the mutations seed")
+PYTHON
+
+#  The abstract operator: in the good project every subprogram is shown to
+#  return here (run_verification.sh), and GNATprove proves each
+#  Always_Terminates there.
+"$gnatprove" -P tests/verification_abstract_operator/good.gpr --mode=all \
+  --level=2 --report=all --output=oneline >"$abstract_log" 2>&1 || true
+for subprogram in Walk Use_It; do
+   if ! grep -F "Always_Terminates on \"$subprogram\" has been proved" \
+     "$abstract_log" >/dev/null
+   then
+      echo "gnatprove differential: abstract operator: GNATprove does not" \
+        "prove the termination of $subprogram" >&2
+      exit 1
+   fi
+done
+
+#  The state constituents: GNATprove proves every check of the good
+#  project, which run_verification.sh proves here, and reports the two
+#  faults of the bad one, which are not proved here.
+state_log=$(mktemp "${TMPDIR:-/tmp}/gnatprove-diff-state.XXXXXX")
+"$gnatprove" -P tests/verification_state_constituents/good.gpr --mode=all \
+  --level=2 >"$state_log" 2>&1 || true
+if ! grep -F 'Success: all checks proved' "$state_log" >/dev/null; then
+   cat "$state_log" >&2
+   echo "gnatprove differential: state constituents: GNATprove does not" \
+     "prove the good project" >&2
+   rm -f "$state_log"
+   exit 1
+fi
+"$gnatprove" -P tests/verification_state_constituents/bad.gpr --mode=all \
+  --level=2 >"$state_log" 2>&1 || true
+for fault in '"Current" constituent of "State" is not an input' \
+  '"Clock" constituent of "State" must be listed in the Refined_Global'
+do
+   if ! grep -F "$fault" "$state_log" >/dev/null; then
+      cat "$state_log" >&2
+      echo "gnatprove differential: state constituents: GNATprove does not" \
+        "report: $fault" >&2
+      rm -f "$state_log"
+      exit 1
+   fi
+done
+rm -f "$state_log"
 
 echo "GNATprove differential tests passed"

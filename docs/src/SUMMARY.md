@@ -27,3 +27,7 @@
 
 - [GNATcheck rule comparison](gnatcheck-rule-comparison.md)
 - [Benchmarks & quality evidence](evidence.md)
+
+# Commercial support
+
+- [Qualification and validation kits](commercial-offering.md)

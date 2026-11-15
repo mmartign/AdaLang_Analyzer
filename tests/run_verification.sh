@@ -177,6 +177,20 @@ loop_frame=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-frame.XXXXXX")
 loop_frame_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-frame-broken.XXXXXX")
 contract_reach=$(mktemp "${TMPDIR:-/tmp}/adalang-contract-reach.XXXXXX")
 contract_reach_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-contract-reach-broken.XXXXXX")
+parameter_aliasing=$(mktemp "${TMPDIR:-/tmp}/adalang-parameter-aliasing.XXXXXX")
+parameter_aliasing_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-parameter-aliasing-broken.XXXXXX")
+loop_predicates=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-predicates.XXXXXX")
+loop_predicates_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-loop-predicates-broken.XXXXXX")
+composite_membership=$(mktemp "${TMPDIR:-/tmp}/adalang-composite-membership.XXXXXX")
+composite_membership_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-composite-membership-broken.XXXXXX")
+abstract_operator=$(mktemp "${TMPDIR:-/tmp}/adalang-abstract-operator.XXXXXX")
+join_predicates=$(mktemp "${TMPDIR:-/tmp}/adalang-join-predicates.XXXXXX")
+guaranteed_operands=$(mktemp "${TMPDIR:-/tmp}/adalang-guaranteed-operands.XXXXXX")
+guaranteed_operands_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-guaranteed-operands-broken.XXXXXX")
+join_predicates_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-join-predicates-broken.XXXXXX")
+literal_bounds=$(mktemp "${TMPDIR:-/tmp}/adalang-literal-bounds.XXXXXX")
+literal_bounds_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-literal-bounds-broken.XXXXXX")
+state_constituents=$(mktemp "${TMPDIR:-/tmp}/adalang-state-constituents.XXXXXX")
 formal_contracts=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts.XXXXXX")
 formal_contracts_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts-broken.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
@@ -210,7 +224,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken" "$parameter_aliasing" "$parameter_aliasing_broken" "$loop_predicates" "$loop_predicates_broken" "$composite_membership" "$composite_membership_broken" "$abstract_operator" "$join_predicates" "$join_predicates_broken" "$guaranteed_operands" "$guaranteed_operands_broken" "$literal_bounds" "$literal_bounds_broken" "$state_constituents"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -3952,5 +3966,195 @@ must_not_prove "$imported_generics" data-dependencies 'Global of Lt' \
 run_imported_generics homograph
 must_not_prove "$imported_generics" data-dependencies 'Global of Lt' \
   'imported generics: <> takes a homograph that reads a global'
+
+#  Non-aliasing of actual parameters (SPARK RM 6.4.2): two actuals naming
+#  parts of one object, one of them written, are apart -- different
+#  components, elements at static indexes that differ, slices with static
+#  bounds that do not meet -- and that is proved from the names.
+#  verification_mutation_parameter_aliasing has indexes that are not
+#  static and slices that may meet. GNATprove 16.1.0 proves the first three
+#  and reports the other two as possibly aliased.
+run_json_pair "$parameter_aliasing" tests/verification_parameter_aliasing
+for operation in 'C.A' 'G (0, 0)' 'C.A (0 .. 7)'; do
+   must_prove "$parameter_aliasing" non-aliasing "$operation" \
+     static-evaluation 'non-aliasing: parts apart'
+done
+run_json_pair "$parameter_aliasing_broken" \
+  tests/verification_mutation_parameter_aliasing
+for operation in 'G (I, 0)' 'C.A (0 .. 7)'; do
+   must_not_prove "$parameter_aliasing_broken" non-aliasing "$operation" \
+     'non-aliasing: mutation'
+done
+
+#  The predicate of what a loop writes holds at the head of the loop, in a
+#  loop summarized by its invariant and in one whose head joins the ways
+#  into it, and after the loop. verification_mutation_loop_predicates
+#  asks more than the predicate gives, and of a type without one.
+#  GNATprove 16.1.0 proves the first and refuses the second.
+run_json_pair "$loop_predicates" tests/verification_loop_predicates
+for operation in 'C.Len <= 200' 'C.Len * 8 <= C.Rate'; do
+   must_prove "$loop_predicates" assertion "$operation" external-prover \
+     'loop predicates: the predicate at the head of a loop'
+done
+run_json_pair "$loop_predicates_broken" \
+  tests/verification_mutation_loop_predicates
+for operation in 'C.Len <= 100' 'C.Len <= 200'; do
+   must_not_prove "$loop_predicates_broken" assertion "$operation" \
+     'loop predicates: mutation'
+done
+
+#  An operation of a type declared range L .. H does not overflow when its
+#  result and each operand that is an operation are within the guaranteed
+#  part of the base range, the solvers proving the operands as well.
+#  verification_mutation_guaranteed_operands lets the sum leave it.
+#  GNATprove 16.1.0 proves the first and refuses the second.
+run_json_pair "$guaranteed_operands" tests/verification_guaranteed_operands
+must_prove "$guaranteed_operands" integer-overflow \
+  'Millis (Hour) * In_Hour + Millis (Minute) * In_Minute' external-prover \
+  'guaranteed operands: operands the solvers prove within'
+run_json_pair "$guaranteed_operands_broken" \
+  tests/verification_mutation_guaranteed_operands
+must_not_prove "$guaranteed_operands_broken" integer-overflow \
+  'Millis (Hour) * In_Hour + Millis (Minute) * In_Minute' \
+  'guaranteed operands: mutation'
+
+#  The predicate of an object holds where the ways of an if statement meet,
+#  a call in one branch having changed a part of it.
+#  verification_mutation_join_predicates asks more than the predicate
+#  gives, and of a type without one. GNATprove 16.1.0 proves the first and
+#  refuses the second.
+run_json_pair "$join_predicates" tests/verification_join_predicates
+must_prove "$join_predicates" assertion 'Rate_Of (C.In_Ctx) = 132' \
+  external-prover 'join predicates: the predicate where ways meet'
+run_json_pair "$join_predicates_broken" \
+  tests/verification_mutation_join_predicates
+for operation in 'C.Len = 0' 'Rate_Of (C.In_Ctx) = 132'; do
+   must_not_prove "$join_predicates_broken" assertion "$operation" \
+     'join predicates: mutation'
+done
+
+#  The bounds of a value that is no object: a string literal, a catenation
+#  that starts with one and a component of a constrained subtype, given to
+#  a formal of an unconstrained String subtype (RM 4.2(11), 4.5.3(6)).
+#  verification_mutation_literal_bounds has a literal too long for its
+#  subtype, catenations that start with an object or a null literal, one of
+#  the wrong length and a component with other bounds. GNATprove 16.1.0
+#  proves the first and none of the second.
+run_json_pair "$literal_bounds" tests/verification_literal_bounds
+#  The report escapes the quotes of an operation: \" in the patterns.
+for operation in '\"./System/cert.dat\"' '\"\"' '\"abc\"'; do
+   must_prove "$literal_bounds" predicate-check "$operation" external-prover \
+     'literal bounds: the predicate of a string literal'
+done
+for operation in 'Log (\"abc\" & \"def\")' 'Log (\"abc\" & S)' \
+  "Log (\\\"ab\\\" & 'c' & S)" 'Log_Three (\"a\" & \"bc\")' \
+  'Need_Line (M.Data)' 'Need_Line (M.Line)'
+do
+   must_prove "$literal_bounds" precondition "$operation" external-prover \
+     'literal bounds: the bounds of the actual'
+done
+run_json_pair "$literal_bounds_broken" \
+  tests/verification_mutation_literal_bounds
+must_not_prove "$literal_bounds_broken" predicate-check '\"abcdefg\"' \
+  'literal bounds: mutation'
+for operation in 'Log (S & \"abc\")' 'Log (\"\" & S)' \
+  'Log_Three (\"ab\" & \"cd\")' 'Need_Line (M.Data)'
+do
+   must_not_prove "$literal_bounds_broken" precondition "$operation" \
+     'literal bounds: mutation'
+done
+
+#  A state abstraction whose constituents are read through expression
+#  functions completed in the private part of its package: inside the
+#  package their Refined_Global is the contract (data dependencies of
+#  Relock); outside, a constituent has a value where the state has one,
+#  and a function that returns a constituent stands for it (the
+#  preconditions in State_User). In the bad project Lock reads a
+#  constituent its refined Global gives as Output, and Relock's refined
+#  Global misses one that Now reads. GNATprove 16.1.0 proves the first
+#  and reports both of the second.
+for project in good bad; do
+   status=0
+   "$analyzer" -P "tests/verification_state_constituents/$project.gpr" \
+     --verify -q --format=json --output="$state_constituents" \
+     >/dev/null 2>&1 || status=$?
+   if [ "$status" -gt 1 ]; then
+      echo "verification run failed for the state-constituents $project" \
+        "project with status $status" >&2
+      exit "$status"
+   fi
+   for operation in 'Need (State_Latch.Is_Locked)' \
+     'Need (State_Latch.After (State_Latch.Now, State_Latch.Now))'
+   do
+      must_prove "$state_constituents" precondition "$operation" \
+        external-prover 'state constituents: outside the package'
+   done
+   if [ "$project" = good ]; then
+      must_prove "$state_constituents" data-dependencies 'Global of Relock' \
+        flow-analysis 'state constituents: refined contract of the callee'
+      must_prove "$state_constituents" initialization-check \
+        'Is_Locked reads State' flow-analysis \
+        'state constituents: the declared Global on entry'
+   else
+      must_not_prove "$state_constituents" data-dependencies \
+        'Global of Relock' 'state constituents: mutation'
+      #  Lock's read of Current, on line 6 of the body.
+      found=$(grep -F '"kind": "initialization-check"' "$state_constituents" |
+        grep -F '"operation": "Current"' | grep -F 'bad/state_latch.adb' |
+        grep -F '"line": 6,' || true)
+      if [ -z "$found" ] ||
+         printf '%s\n' "$found" | grep -F '"status": "proved-safe"' >/dev/null
+      then
+         echo "state constituents: mutation: the read of an Output" \
+           "constituent before it is written is not left unproved" >&2
+         exit 1
+      fi
+   fi
+done
+
+#  The membership of a record or an array object in its own type, or in a
+#  subtype that adds a predicate, is the predicate of the object.
+#  verification_mutation_composite_membership has an element outside the
+#  subtype of the elements and a component that may exceed its bound.
+#  GNATprove 16.1.0 proves the first and refuses the second.
+run_json_pair "$composite_membership" tests/verification_composite_membership
+for operation in 'X in Normal_GF' 'D in Product' 'R in Pair'; do
+   must_prove "$composite_membership" assertion "$operation" \
+     external-prover 'composite membership: the predicate of the object'
+done
+run_json_pair "$composite_membership_broken" \
+  tests/verification_mutation_composite_membership
+for operation in 'X in Normal_GF' 'D in Product'; do
+   must_not_prove "$composite_membership_broken" assertion "$operation" \
+     'composite membership: mutation'
+done
+
+#  A call Libadalang resolves to an abstract subprogram that is not a
+#  dispatching operation denotes another subprogram of its name (RM
+#  6.4(8/2)): RecordFlux's "+" (Index, Index), declared abstract so that
+#  index arithmetic goes through an operator taking a Length. In the good
+#  project that operator is an expression function, and every subprogram
+#  returns; in the bad one it loops, and none of its callers is shown to
+#  return. GNATprove 16.1.0 proves the first and reports the loop.
+for project in good bad; do
+   status=0
+   "$analyzer" -P "tests/verification_abstract_operator/$project.gpr" \
+     --verify -q --format=json --output="$abstract_operator" \
+     >/dev/null 2>&1 || status=$?
+   if [ "$status" -gt 1 ]; then
+      echo "verification run failed for the abstract-operator $project" \
+        "project with status $status" >&2
+      exit "$status"
+   fi
+   for operation in 'Walk' 'Use_It'; do
+      if [ "$project" = good ]; then
+         must_prove "$abstract_operator" termination "$operation" \
+           flow-analysis 'abstract operator: the operator called instead'
+      else
+         must_not_prove "$abstract_operator" termination "$operation" \
+           'abstract operator: mutation'
+      fi
+   done
+done
 
 echo "bounded verification tests passed"

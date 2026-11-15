@@ -621,3 +621,17 @@ contract-reach-no-predicate	tests/verification_mutation_contract_reach.adb	range
 contract-reach-five-bits	tests/verification_mutation_contract_reach.adb	precondition	Store (Base_Integer (N))	unproved	Five_Bits'Last = 16 does not fit into 4 bits (16 < 2 ** 4 is false).
 contract-reach-swapped-renaming	tests/verification_mutation_contract_reach.adb	precondition	Need_Positive (Swapped (3, 10))	unproved	a renaming's formals stand for the renamed function's by position: Swapped (3, 10) = Minus (3, 10) = -7.
 contract-reach-modular-power	tests/verification_mutation_contract_reach.adb	precondition	Need_Nonzero (Power (8))	unproved	2 ** 8 in a type of modulus 256 is 0.
+non-aliasing-dynamic-index	tests/verification_mutation_parameter_aliasing.adb	non-aliasing	G (I, 0)	unproved	The indexes are not static: I and J may be one element of G, whichever the precondition says.
+non-aliasing-meeting-slices	tests/verification_mutation_parameter_aliasing.adb	non-aliasing	C.A (0 .. 7)	unproved	The second slice starts at K, which may be 7 or less: the slices may meet.
+loop-predicates-too-strong	tests/verification_mutation_loop_predicates.adb	assertion	C.Len <= 100	unproved	The predicate gives Len <= Rate / 8 <= 200 at the head, not 100.
+loop-predicates-no-predicate	tests/verification_mutation_loop_predicates.adb	assertion	C.Len <= 200	unproved	Plain has no predicate: the precondition holds on entry only, and the loop raises Len without bound.
+composite-membership-element	tests/verification_mutation_composite_membership.adb	assertion	X in Normal_GF	definite-error	X (3) is -1, outside Limb: X is not a Normal_GF.
+composite-membership-bound	tests/verification_mutation_composite_membership.adb	assertion	D in Product	unproved	V may be up to 500: Product (0) <= 100 may not hold.
+join-predicates-too-strong	tests/verification_mutation_join_predicates.adb	assertion	C.Len = 0	unproved	The predicate bounds Len by 16 after the if; it does not make it 0.
+join-predicates-no-predicate	tests/verification_mutation_join_predicates.adb	assertion	Rate_Of (C.In_Ctx) = 132	unproved	Plain has no predicate: nothing fixes the rate.
+guaranteed-operands-sum	tests/verification_mutation_guaranteed_operands.adb	integer-overflow	Millis (Hour) * In_Hour + Millis (Minute) * In_Minute	unproved	Minute may be 100_000: the sum leaves the guaranteed part of the base range.
+literal-bounds-too-long	tests/verification_mutation_literal_bounds.adb	predicate-check	\"abcdefg\"	unproved	Seven characters from 1: the last is 7, and Short_Text allows 5 at most.
+literal-bounds-object-first	tests/verification_mutation_literal_bounds.adb	precondition	Log (S & \"abc\")	unproved	The catenation starts with S: its lower bound is S'First, which nothing fixes.
+literal-bounds-null-first	tests/verification_mutation_literal_bounds.adb	precondition	Log (\"\" & S)	unproved	A null left operand: the result is S, with S's bounds (RM 4.5.3(5)).
+literal-bounds-wrong-length	tests/verification_mutation_literal_bounds.adb	precondition	Log_Three (\"ab\" & \"cd\")	definite-error	Two literals of two characters: the length is 4, not 3.
+literal-bounds-other-component	tests/verification_mutation_literal_bounds.adb	precondition	Need_Line (M.Data)	definite-error	Data is declared String (2 .. 9): its first bound is 2.

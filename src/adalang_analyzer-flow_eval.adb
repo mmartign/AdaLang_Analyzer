@@ -4717,6 +4717,24 @@ package body Adalang_Analyzer.Flow_Eval is
 
    Nothing_Standing : constant Standing_Fact := (others => <>);
 
+   --  True when the text of Decl names Relaxed_Initialization anywhere:
+   --  where it may, the object is not taken to have a value whole.
+   function Mentions_Relaxed
+     (Decl : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Text : constant String :=
+        Adalang_Analyzer.Text_Utils.Normalize_Rule_Name
+          (Adalang_Analyzer.Ada_Text.Node_Text (Decl));
+      Word : constant String := "relaxed";
+   begin
+      for Index in Text'First .. Text'Last - Word'Length + 1 loop
+         if Text (Index .. Index + Word'Length - 1) = Word then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Mentions_Relaxed;
+
    function Decided_Standing_Fact
      (Key : Libadalang.Analysis.Ada_Node) return Standing_Fact
    is
@@ -4791,9 +4809,23 @@ package body Adalang_Analyzer.Flow_Eval is
          end if;
 
          Typ := Object.F_Type_Expr.P_Designated_Type_Decl;
-         if Libadalang.Analysis.Is_Null (Typ)
-           or else not Typ.P_Is_Scalar_Type
-         then
+         if Libadalang.Analysis.Is_Null (Typ) then
+            return Nothing_Standing;
+         elsif not Typ.P_Is_Scalar_Type then
+            --  A constant of a record or an array type, declared with its
+            --  value: it has one wherever it can be read, whole (SPARK
+            --  has no constant with a part left without a value but where
+            --  its object or its type has relaxed initialization). No
+            --  range is said of it.
+            if Object.F_Has_Constant
+              and then not Libadalang.Analysis.Is_Null (Object.F_Default_Expr)
+              and then (Typ.P_Is_Record_Type or else Typ.P_Is_Array_Type)
+              and then not Typ.P_Is_Access_Type
+              and then not Mentions_Relaxed (Decl)
+              and then not Mentions_Relaxed (Typ)
+            then
+               return (Holds_A_Value => True, Bounds => Unknown_Range);
+            end if;
             return Nothing_Standing;
          end if;
 
