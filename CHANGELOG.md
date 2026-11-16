@@ -61,6 +61,9 @@ proved; GNATprove reports the read.
 
 ### Changed
 
+- The Alire manifest declares the crate available on Linux and macOS only,
+  the platforms the README names and CI tests; Alire no longer offers to
+  build it on Windows, which it is not designed to run on.
 - The predicates of what a loop writes are taken to hold at the head of the
   loop: of a parameter of the verified subprogram, or an object its
   declarative part declares, that the loop writes and that has a value

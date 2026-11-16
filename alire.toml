@@ -31,6 +31,13 @@ project-files = ["adalang_analyzer.gpr"]
 
 executables = ["adalang_analyzer"]
 
+# AdaLang Analyzer is built and tested on Linux and macOS only; it is not
+# designed to run on Windows or any other system.
+[available.'case(os)']
+linux = true
+macos = true
+'...' = false
+
 [environment.'case(os)'.macos.MACOSX_DEPLOYMENT_TARGET]
 set = "26.0"
 
