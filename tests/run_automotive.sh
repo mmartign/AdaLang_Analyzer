@@ -112,8 +112,9 @@ fi
 
 #  Alire-generated configuration pragmas are build metadata, not authored
 #  compiler extensions, and cannot be removed from the generated source.
+#  (A tracked copy: the build's own config/ file is not in git.)
 "$analyzer" -q -checks='No_Compiler_Extensions' \
-  config/adalang_analyzer_config.ads
+  tests/precision_alire_generated_config.ads
 
 #  The preset must include both structural and semantic policy rules.
 if "$analyzer" --automotive \

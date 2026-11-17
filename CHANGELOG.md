@@ -42,6 +42,10 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 - The seeded mutation campaign named two mutations `record-swapped`; the
   one in `verification_mutation_array_records.adb` is now
   `record-updated-swapped`, and the gate rejects a repeated id.
+- A precision-corpus case and the automotive tests read
+  `config/adalang_analyzer_config.ads`, which the build generates and git
+  does not track. They now read a tracked copy,
+  `tests/precision_alire_generated_config.ads`.
 
 ## [1.16.0] - 2026-11-15
 
