@@ -152,10 +152,31 @@ if [ "$(grep -c '"kind": "range-check"' "$proof_json")" -ne 9 ] ||
    [ "$(grep -c '"kind": "index-check"' "$proof_json")" -ne 2 ] ||
    [ "$(grep -c '"status": "definite-error"' "$proof_json")" -ne 5 ] ||
    [ "$(grep -c '"status": "unproved"' "$proof_json")" -ne 6 ] ||
-   [ "$(grep -Ec '"id": "proof/v1/[0-9a-f]{16}"' "$proof_json")" -ne 11 ]
+   [ "$(grep -Ec '"id": "proof/v2/[0-9a-f]{16}"' "$proof_json")" -ne 11 ]
 then
    echo "unexpected structured proof obligations" >&2
    cat "$proof_json" >&2
+   exit 1
+fi
+
+#  An obligation's id does not depend on where the sources are: the same
+#  fixture analyzed from two directories gives the same ids (proof/v1, up to
+#  1.16.0, hashed the absolute path).
+analyzer_path=$(cd "$(dirname "$analyzer")" && pwd)/$(basename "$analyzer")
+for place in one two/deeper; do
+   mkdir -p "$work/ids/$place/tests"
+   cp tests/verification_vc_contracts.adb "$work/ids/$place/tests/"
+   (cd "$work/ids/$place" &&
+      "$analyzer_path" --no-config --verify --format=json \
+        tests/verification_vc_contracts.adb >ids.json 2>/dev/null) || true
+   grep -o '"id": "proof/v2/[0-9a-f]*"' "$work/ids/$place/ids.json" |
+     sort >"$work/ids/$place/ids.txt"
+done
+if [ ! -s "$work/ids/one/ids.txt" ] ||
+   ! cmp -s "$work/ids/one/ids.txt" "$work/ids/two/deeper/ids.txt"
+then
+   echo "proof obligation ids depend on the location of the sources" >&2
+   diff -u "$work/ids/one/ids.txt" "$work/ids/two/deeper/ids.txt" >&2 || true
    exit 1
 fi
 

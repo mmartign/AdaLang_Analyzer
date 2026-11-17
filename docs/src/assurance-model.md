@@ -207,7 +207,8 @@ expression-function inline paths where available.
 
 Each obligation should contain at least:
 
-- A stable identifier.
+- A stable identifier, the same wherever the sources are (it hashes the
+  path relative to the current directory, the kind, span and operation).
 - Obligation kind.
 - Source location and associated operation.
 - Supported-language classification.

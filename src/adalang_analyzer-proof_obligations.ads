@@ -135,10 +135,12 @@ package Adalang_Analyzer.Proof_Obligations is
       Node      : Libadalang.Analysis.Ada_Node'Class;
       Kind      : Obligation_Kind;
       Operation : String := "") return String;
-   --  Derives a deterministic proof/v1 identifier from the normalized source
-   --  path, source span, obligation kind, and operation text. It is stable
-   --  for unchanged source but does not yet promise stability across line
-   --  movement or expression rewriting.
+   --  Derives a deterministic proof/v2 identifier from the source path as
+   --  the reports show it (relative to the current directory), source span,
+   --  obligation kind, and operation text. It is stable for unchanged source
+   --  wherever the sources are, but does not yet promise stability across
+   --  line movement or expression rewriting. (proof/v1, up to 1.16.0, hashed
+   --  the absolute path, and so changed with the checkout's location.)
 
    procedure Register_At
      (Unit               : Libadalang.Analysis.Analysis_Unit;

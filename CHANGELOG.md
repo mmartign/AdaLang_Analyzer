@@ -30,6 +30,13 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   the solver runs and those a time limit stopped (`solverStatistics`): with
   steps and no run stopped by time, the steps decided every answer.
 
+### Changed
+
+- Proof obligation ids are now `proof/v2/...`, hashed from the source path
+  as the reports show it, relative to the current directory. `proof/v1`
+  hashed the absolute path, so every id changed with the location of the
+  checkout. Each id changes once with this release.
+
 ## [1.16.0] - 2026-11-15
 
 `--verify` crosses 80% of what GNATprove proves on the gap ledger. It

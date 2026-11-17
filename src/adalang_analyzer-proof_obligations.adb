@@ -7,6 +7,7 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Directories;
 with Ada.Containers.Vectors;
 with Ada.Strings.Hash;
 with Interfaces;
@@ -165,15 +166,32 @@ package body Adalang_Analyzer.Proof_Obligations is
       end if;
    end Scope_Description;
 
+   --  Filename as the reports show it: relative to the current directory
+   --  when it is in it, with '/' separators. Libadalang gives an absolute
+   --  name, which would make an identifier depend on where the sources are.
    function Normalized_Path (Filename : String) return String is
-      First : Integer := Filename'First;
-      Value : String := Filename;
+      First   : Integer := Filename'First;
+      Value   : String := Filename;
+      Current : String := Ada.Directories.Current_Directory;
    begin
       for C of Value loop
          if C = '\' then
             C := '/';
          end if;
       end loop;
+      for C of Current loop
+         if C = '\' then
+            C := '/';
+         end if;
+      end loop;
+
+      if Value'Length > Current'Length
+        and then Value
+          (Value'First .. Value'First + Current'Length - 1) = Current
+        and then Value (Value'First + Current'Length) = '/'
+      then
+         First := Value'First + Current'Length + 1;
+      end if;
 
       while First + 1 <= Value'Last
         and then Value (First .. First + 1) = "./"
@@ -239,7 +257,7 @@ package body Adalang_Analyzer.Proof_Obligations is
          then Adalang_Analyzer.Ada_Text.Node_Text (Node)
          else Operation);
    begin
-      return "proof/v1/" & Hash_64 (Key);
+      return "proof/v2/" & Hash_64 (Key);
    end Stable_Id_For;
 
    procedure Register_At
