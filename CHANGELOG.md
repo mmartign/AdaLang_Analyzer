@@ -29,6 +29,13 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   (`analysisConfiguration.solverLimit`). A `--verify` JSON report counts
   the solver runs and those a time limit stopped (`solverStatistics`): with
   steps and no run stopped by time, the steps decided every answer.
+- A preset given on the command line after another preset, or after
+  `-checks=`, now warns that it replaced the earlier selection of checks,
+  and after `--verify` that it turned verification off. For example,
+  `--verify --recommended` runs without verification. `--help` and the
+  configuration reference now state the rule: options apply in order, a
+  preset replaces the checks before it, `-checks=` after it refines it. A
+  preset overriding the configuration file's selection is not warned about.
 
 ### Changed
 

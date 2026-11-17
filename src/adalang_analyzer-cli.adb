@@ -249,6 +249,15 @@ package body Adalang_Analyzer.CLI is
         ("  --no-config           Disable auto-discovery of " &
          Default_Config_File_Name);
       Ada.Text_IO.Put_Line ("  --                    Treat items as files");
+      Ada.Text_IO.New_Line;
+      Ada.Text_IO.Put_Line
+        ("Options apply in order. A preset (--recommended, --spark, " &
+         "--verify, --automotive,");
+      Ada.Text_IO.Put_Line
+        ("--do178c) replaces the checks selected before it, and a preset " &
+         "after --verify");
+      Ada.Text_IO.Put_Line
+        ("turns verification off; -checks= after a preset refines it.");
    end Show_Help;
 
    --  Prints the tool's version for -version.
@@ -1123,6 +1132,44 @@ package body Adalang_Analyzer.CLI is
       Current_Arg        : Natural := 1;
       Options_Ended      : Boolean := False;
       Ctx                : Libadalang.Analysis.Analysis_Context;
+
+      --  A preset replaces the selection of checks made before it, and does
+      --  not merge with it; a preset after --verify also turns its
+      --  verification off. That is how a real flag overrides the config
+      --  file, which stays silent; on the real command line alone two
+      --  selections are almost always meant to combine, so it is said.
+      Earlier_Selection : Unbounded_String;
+      --  The last preset, or -checks= before any, on the real command line.
+
+      procedure Note_Preset (Name : String) is
+      begin
+         if Current_Arg <= Config_Token_Count then
+            return;
+         end if;
+         if Earlier_Selection /= Null_Unbounded_String then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "adalang-analyzer: warning: " & Name &
+               " replaces the checks selected before it by " &
+               To_String (Earlier_Selection) &
+               (if To_String (Earlier_Selection) = "--verify"
+                  and then Name /= "--verify"
+                then ", and turns verification off"
+                else "") &
+               "; presets do not combine (add checks after the last one " &
+               "with -checks=+<check>)");
+         end if;
+         Earlier_Selection := To_Unbounded_String (Name);
+      end Note_Preset;
+
+      procedure Note_Checks is
+      begin
+         if Current_Arg > Config_Token_Count
+           and then Earlier_Selection = Null_Unbounded_String
+         then
+            Earlier_Selection := To_Unbounded_String ("-checks=");
+         end if;
+      end Note_Checks;
    begin
       --  Proof obligations have a run lifecycle independent from ordinary
       --  rule findings. No producer or reporter is connected yet, but reset
@@ -1246,12 +1293,16 @@ package body Adalang_Analyzer.CLI is
                elsif Arg = "-list-checks" or else Arg = "-list-rules" then
                   List_Checks_Only := True;
                elsif Arg = "--recommended" or else Arg = "-recommended" then
+                  Note_Preset ("--recommended");
                   Enable_Recommended_Preset;
                elsif Arg = "--spark" or else Arg = "-spark" then
+                  Note_Preset ("--spark");
                   Enable_SPARK_Preset;
                elsif Arg = "--verify" or else Arg = "-verify" then
+                  Note_Preset ("--verify");
                   Enable_Verification_Preset;
                elsif Arg = "--automotive" or else Arg = "-automotive" then
+                  Note_Preset ("--automotive");
                   Enable_Automotive_Preset;
                elsif Arg = "--do178c" then
                   if Current_Arg = Argument_Count then
@@ -1259,6 +1310,7 @@ package body Adalang_Analyzer.CLI is
                        ("adalang-analyzer: expected level for --do178c");
                      Invalid_Options := True;
                   else
+                     Note_Preset ("--do178c");
                      Enable_DO_178C_Preset
                        (File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
                      Current_Arg := Current_Arg + 1;
@@ -1267,6 +1319,7 @@ package body Adalang_Analyzer.CLI is
                  and then Ada.Strings.Fixed.Index
                    (Arg, "--do178c=") = Arg'First
                then
+                  Note_Preset ("--do178c");
                   Enable_DO_178C_Preset
                     (Arg (Arg'First + 9 .. Arg'Last));
                elsif Arg = "--format" then
@@ -1426,6 +1479,7 @@ package body Adalang_Analyzer.CLI is
                      Ada.Text_IO.Put_Line ("adalang-analyzer: expected argument for -checks");
                      Invalid_Options := True;
                   else
+                     Note_Checks;
                      Parse_Checks_Option
                        ("-checks="
                         & File_Name_Vectors.Element (Merged_Args, Current_Arg + 1));
@@ -1434,6 +1488,7 @@ package body Adalang_Analyzer.CLI is
                elsif Arg'Length > 8
                  and then Arg (Arg'First .. Arg'First + 7) = "-checks="
                then
+                  Note_Checks;
                   Parse_Checks_Option (Arg);
                elsif Arg = "-complexity-threshold" then
                   if Current_Arg = Argument_Count then

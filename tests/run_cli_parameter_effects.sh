@@ -251,4 +251,57 @@ for item in json.load(open(sys.argv[1]))["proofObligations"]:
 assert found
 PY
 
+#  --- presets replace the checks selected before them -------------------
+#
+#  A preset does not merge with what was selected before it, and a preset
+#  after --verify turns verification off (docs/src/configuration.md). On the
+#  real command line that is said; a preset overriding the config file's
+#  selection is the documented override and stays silent.
+
+presets_fixture=tests/verification_vc_contracts.adb
+
+expect_warning() {
+   wanted=$1
+   shift
+   "$analyzer" --no-config --format=json "$@" "$presets_fixture" \
+     >"$work/presets.json" 2>"$work/presets.err" || true
+   grep -F -- "$wanted" "$work/presets.err" >/dev/null || {
+      echo "$*: expected the warning '$wanted'" >&2
+      cat "$work/presets.err" >&2
+      exit 1
+   }
+}
+
+expect_no_warning() {
+   "$analyzer" "$@" --format=json "$presets_fixture" \
+     >"$work/presets.json" 2>"$work/presets.err" || true
+   if grep -F 'replaces the checks' "$work/presets.err" >/dev/null; then
+      echo "$*: unexpected preset warning" >&2
+      cat "$work/presets.err" >&2
+      exit 1
+   fi
+}
+
+expect_warning "--recommended replaces the checks selected before it by --verify, and turns verification off" \
+  --verify --recommended
+#  ... and it does: no verification ran.
+python3 - "$work/presets.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert report["analysisConfiguration"]["selectedPreset"] == "recommended", report["analysisConfiguration"]
+assert "solverStatistics" not in report, "verification ran after --verify --recommended"
+PY
+expect_warning "--verify replaces the checks selected before it by --recommended;" \
+  --recommended --verify
+expect_warning "--spark replaces the checks selected before it by -checks=;" \
+  -checks=+No_Goto --spark
+expect_warning "--automotive replaces the checks selected before it by --do178c;" \
+  --do178c=B --automotive
+
+expect_no_warning --no-config --verify
+expect_no_warning --no-config --verify -checks=*
+expect_no_warning --no-config --spark -checks=+No_Goto
+printf -- '--verify\n' >"$work/presets.cfg"
+expect_no_warning --config="$work/presets.cfg" --recommended
+
 echo "cli parameter effects tests passed"

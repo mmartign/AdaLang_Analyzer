@@ -168,6 +168,25 @@ Useful options include:
 --               Treat all remaining arguments as file names
 ```
 
+Options apply from left to right, starting with the configuration file's
+options (see below). A preset (`--recommended`, `--spark`, `--verify`,
+`--automotive` or `--do178c`) replaces the checks selected before it rather
+than adding to them. A preset given after `--verify` also turns
+verification off:
+
+- `--verify --recommended` runs the recommended checks, without
+  verification.
+- `--recommended --verify` runs verification with the `--verify` checks
+  (the `--spark` set), not the recommended ones.
+- `-checks=` given after a preset refines it: `--verify -checks=*`
+  verifies with every check enabled, and `--spark -checks=+Magic_Number`
+  adds one check to the SPARK set.
+
+When the real command line gives a preset after another preset, or after
+`-checks=`, the analyzer warns that the earlier selection was replaced. A
+preset on the command line that replaces the configuration file's selection
+is the documented override and is not warned about.
+
 The command exits unsuccessfully when it finds a violation or cannot process
 the requested input, which makes it suitable for scripts and CI checks. A
 finding that matches `--baseline` remains visible in JSON or SARIF output as an
