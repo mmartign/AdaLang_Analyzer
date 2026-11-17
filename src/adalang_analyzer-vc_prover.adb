@@ -6,6 +6,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Calendar;
 with Ada.Containers.Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Directories;
@@ -12391,83 +12392,138 @@ package body Adalang_Analyzer.VC_Prover is
    end First_Line;
 
    Solver_Time_Limit : Positive := Default_Solver_Time_Limit;
-
-   function Limit_Image return String
-   is (Ada.Strings.Fixed.Trim (Solver_Time_Limit'Image, Ada.Strings.Left));
+   Time_Limit_Set    : Boolean := False;
+   Solver_Steps      : Natural := 0;
+   --  0: no resource limit; queries are limited by time alone.
+   Instance_Limit    : Boolean := False;
+   Instance_Divisor  : constant := 4;
 
    procedure Set_Solver_Time_Limit (Milliseconds : Positive) is
    begin
       Solver_Time_Limit := Milliseconds;
+      Time_Limit_Set := True;
    end Set_Solver_Time_Limit;
+
+   procedure Set_Solver_Steps (Steps : Positive) is
+   begin
+      Solver_Steps := Steps;
+   end Set_Solver_Steps;
+
+   procedure Use_Instance_Solver_Limit is
+   begin
+      Instance_Limit := True;
+   end Use_Instance_Solver_Limit;
+
+   procedure Use_Full_Solver_Limit is
+   begin
+      Instance_Limit := False;
+   end Use_Full_Solver_Limit;
+
+   function Image (Value : Long_Long_Integer) return String
+   is (Ada.Strings.Fixed.Trim (Value'Image, Ada.Strings.Left));
+
+   --  Value, or its share for an instance pass.
+   function In_Force (Value : Positive) return Long_Long_Integer
+   is (if Instance_Limit
+       then Long_Long_Integer (Positive'Max (1, Value / Instance_Divisor))
+       else Long_Long_Integer (Value));
+
+   --  The time limit of a query, whole: the one set, else with steps their
+   --  safety stop, else the default.
+   function Time_Limit return Positive
+   is (if Solver_Steps = 0 or else Time_Limit_Set then Solver_Time_Limit
+       else Positive
+              (Long_Long_Integer'Min
+                 (Long_Long_Integer (Positive'Last),
+                  Long_Long_Integer (Solver_Steps) * Step_Time_Cap)));
+
+   function Solver_Limit_Image return String is
+      Time : constant String :=
+        "time " & Image (Long_Long_Integer (Time_Limit)) & " ms";
+   begin
+      if Solver_Steps = 0 then
+         return Time;
+      else
+         return "steps " & Image (Long_Long_Integer (Solver_Steps)) &
+           ", " & Time;
+      end if;
+   end Solver_Limit_Image;
+
+   Runs       : Natural := 0;
+   Time_Stops : Natural := 0;
+
+   function Solver_Runs return Natural is (Runs);
+   function Solver_Time_Stops return Natural is (Time_Stops);
 
    --  With Constant_Arrays, the query has a constant array (the
    --  contents an aggregate with "others" gives), which CVC5 decides only
    --  with its arrays-exp option; no other query is given that option.
-   function Run_Solver
+   procedure Run_Solver
      (Path            : String;
       Is_CVC5         : Boolean;
       Input_File      : String;
-      Constant_Arrays : Boolean := False) return Solver_Answer
+      Answer          : out Solver_Answer;
+      Constant_Arrays : Boolean := False)
    is
       Output_FD   : GNAT.OS_Lib.File_Descriptor;
       Output_Name : GNAT.OS_Lib.String_Access;
       Success     : Boolean := False;
       Return_Code : Integer := 0;
+      Args        : GNAT.OS_Lib.Argument_List (1 .. 5);
+      Count       : Natural := 0;
+      Limit       : constant Long_Long_Integer := In_Force (Time_Limit);
+      Started     : Ada.Calendar.Time;
+      Elapsed     : Duration;
+
+      procedure Add (Argument : String) is
+      begin
+         Count := Count + 1;
+         Args (Count) := new String'(Argument);
+      end Add;
    begin
       if Path = "" then
-         return Solver_Unavailable;
+         Answer := Solver_Unavailable;
+         return;
       end if;
 
       GNAT.OS_Lib.Create_Temp_Output_File (Output_FD, Output_Name);
       if Output_FD = GNAT.OS_Lib.Invalid_FD or else Output_Name = null then
-         return Solver_Unknown;
+         Answer := Solver_Unknown;
+         return;
       end if;
       GNAT.OS_Lib.Close (Output_FD);
 
-      if Is_CVC5 and then Constant_Arrays then
-         declare
-            Args : GNAT.OS_Lib.Argument_List :=
-              (1 => new String'("--lang=smt2"),
-               2 => new String'("--tlimit=" & Limit_Image),
-               3 => new String'("--arrays-exp"),
-               4 => new String'(Input_File));
-         begin
-            GNAT.OS_Lib.Spawn
-              (Path, Args, Output_Name.all, Success, Return_Code,
-               Err_To_Out => True);
-            for Arg of Args loop
-               GNAT.OS_Lib.Free (Arg);
-            end loop;
-         end;
-      elsif Is_CVC5 then
-         declare
-            Args : GNAT.OS_Lib.Argument_List :=
-              (1 => new String'("--lang=smt2"),
-               2 => new String'("--tlimit=" & Limit_Image),
-               3 => new String'(Input_File));
-         begin
-            GNAT.OS_Lib.Spawn
-              (Path, Args, Output_Name.all, Success, Return_Code,
-               Err_To_Out => True);
-            for Arg of Args loop
-               GNAT.OS_Lib.Free (Arg);
-            end loop;
-         end;
+      --  With a time limit alone, the command lines are those of releases
+      --  before the step limit, argument for argument.
+      if Is_CVC5 then
+         Add ("--lang=smt2");
+         Add ("--tlimit=" & Image (Limit));
+         if Solver_Steps > 0 then
+            Add ("--rlimit-per=" &
+                 Image (In_Force (Solver_Steps) * CVC5_Rlimit_Per_Step));
+         end if;
+         if Constant_Arrays then
+            Add ("--arrays-exp");
+         end if;
       else
-         declare
-            Args : GNAT.OS_Lib.Argument_List :=
-              (1 => new String'("-smt2"),
-               2 => new String'("-t:" & Limit_Image),
-               3 => new String'(Input_File));
-         begin
-            GNAT.OS_Lib.Spawn
-              (Path, Args, Output_Name.all, Success, Return_Code,
-               Err_To_Out => True);
-            for Arg of Args loop
-               GNAT.OS_Lib.Free (Arg);
-            end loop;
-         end;
+         Add ("-smt2");
+         Add ("-t:" & Image (Limit));
+         if Solver_Steps > 0 then
+            Add ("rlimit=" &
+                 Image (In_Force (Solver_Steps) * Z3_Rlimit_Per_Step));
+         end if;
       end if;
+      Add (Input_File);
+
+      Started := Ada.Calendar.Clock;
+      GNAT.OS_Lib.Spawn
+        (Path, Args (1 .. Count), Output_Name.all, Success, Return_Code,
+         Err_To_Out => True);
+      Elapsed := Ada.Calendar."-" (Ada.Calendar.Clock, Started);
+      for Index in 1 .. Count loop
+         GNAT.OS_Lib.Free (Args (Index));
+      end loop;
+      Runs := Runs + 1;
 
       declare
          Line : constant String := First_Line (Output_Name.all);
@@ -12478,15 +12534,21 @@ package body Adalang_Analyzer.VC_Prover is
             Log_Verbose ("could not remove solver output file");
          end if;
          GNAT.OS_Lib.Free (Output_Name);
-         if not Success or else Return_Code /= 0 then
-            return Solver_Unknown;
-         elsif Line = "unsat" then
-            return Solver_Unsat;
-         elsif Line = "sat" then
-            return Solver_Sat;
-         else
-            return Solver_Unknown;
+         if Success and then Return_Code = 0 and then Line = "unsat" then
+            Answer := Solver_Unsat;
+            return;
+         elsif Success and then Return_Code = 0 and then Line = "sat" then
+            Answer := Solver_Sat;
+            return;
          end if;
+         --  No answer. Z3 says "unknown" whether its time or its resource
+         --  limit stopped it, so the time is told by the clock: a run that
+         --  took nine tenths of its time limit counts as stopped by it.
+         if Long_Long_Integer (Elapsed * 1_000) * 10 >= Limit * 9 then
+            Time_Stops := Time_Stops + 1;
+         end if;
+         Answer := Solver_Unknown;
+         return;
       end;
    exception
       when others =>
@@ -12501,7 +12563,8 @@ package body Adalang_Analyzer.VC_Prover is
                GNAT.OS_Lib.Free (Output_Name);
             end;
          end if;
-         return Solver_Unknown;
+         Answer := Solver_Unknown;
+         return;
    end Run_Solver;
 
    --  Asks both solvers. Only an UNSAT answer from both is ever acted on,
@@ -12537,14 +12600,15 @@ package body Adalang_Analyzer.VC_Prover is
       Ada.Text_IO.Put_Line (File, "(check-sat)");
       Ada.Text_IO.Close (File);
 
-      CVC5 :=
-        Run_Solver
-          (CVC5_Path, True, Input_Name.all,
-           Constant_Arrays =>
-             Ada.Strings.Fixed.Index (Formula, "(as const ") /= 0);
-      Z3 :=
-        (if CVC5 = Solver_Unsat
-         then Run_Solver (Z3_Path, False, Input_Name.all) else CVC5);
+      Run_Solver
+        (CVC5_Path, True, Input_Name.all, CVC5,
+         Constant_Arrays =>
+           Ada.Strings.Fixed.Index (Formula, "(as const ") /= 0);
+      if CVC5 = Solver_Unsat then
+         Run_Solver (Z3_Path, False, Input_Name.all, Z3);
+      else
+         Z3 := CVC5;
+      end if;
       GNAT.OS_Lib.Delete_File (Input_Name.all, Deleted);
       if not Deleted then
          Log_Verbose ("could not remove solver input file");

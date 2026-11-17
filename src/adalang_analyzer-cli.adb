@@ -50,6 +50,7 @@ with Adalang_Analyzer.Subprogram_Summaries;
 with Adalang_Analyzer.Termination;
 with Adalang_Analyzer.Text_Utils;    use Adalang_Analyzer.Text_Utils;
 with Adalang_Analyzer.Unit_Provider;
+with Adalang_Analyzer.VC_Prover;
 
 package body Adalang_Analyzer.CLI is
 
@@ -62,6 +63,8 @@ package body Adalang_Analyzer.CLI is
    Baseline_File    : Unbounded_String;
    Baseline_Output  : Unbounded_String;
    Gnatprove_Log_Option : constant String := "--gnatprove-log=";
+   Solver_Steps_Option   : constant String := "--solver-steps=";
+   Solver_Timeout_Option : constant String := "--solver-timeout=";
    Gnatprove_Logs   : File_Name_Vectors.Vector;
    --  The GNATprove logs whose verdicts are set beside the obligations.
    Report_Filename  : Unbounded_String;
@@ -184,6 +187,20 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line
         ("                        of 'gnatprove --output=oneline " &
          "--report=all' (repeatable)");
+      Ada.Text_IO.Put_Line
+        ("  --solver-steps=<n>    With --verify: give each external solver " &
+         "<n> steps per");
+      Ada.Text_IO.Put_Line
+        ("                        query instead of a time limit, so that " &
+         "the results do");
+      Ada.Text_IO.Put_Line
+        ("                        not depend on the speed of the host");
+      Ada.Text_IO.Put_Line
+        ("  --solver-timeout=<ms> With --verify: the time each external " &
+         "solver is given");
+      Ada.Text_IO.Put_Line
+        ("                        per query (default: 2000; with " &
+         "--solver-steps, 2 per step)");
       Ada.Text_IO.Put_Line
         ("  --automotive          Enable automotive Ada restrictions");
       Ada.Text_IO.Put_Line
@@ -671,6 +688,40 @@ package body Adalang_Analyzer.CLI is
            ("adalang-analyzer: invalid generic threshold '" & Text & "'");
          Invalid_Options := True;
    end Set_Generic_Threshold;
+
+   --  Parses the --solver-steps value; records an invalid-option error
+   --  instead of raising when Text isn't a positive integer, or is more
+   --  steps than Z3's resource limit can hold.
+   procedure Set_Solver_Steps (Text : String) is
+      Steps : Long_Long_Integer;
+   begin
+      Steps := Long_Long_Integer'Value
+        (Ada.Strings.Fixed.Trim (Text, Ada.Strings.Both));
+      if Steps < 1 or else Steps > VC_Prover.Max_Solver_Steps then
+         raise Constraint_Error;
+      end if;
+      VC_Prover.Set_Solver_Steps (Positive (Steps));
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid solver steps '" & Text &
+            "' (expected 1 to" &
+            Long_Long_Integer'Image (VC_Prover.Max_Solver_Steps) & ")");
+         Invalid_Options := True;
+   end Set_Solver_Steps;
+
+   --  Parses the --solver-timeout value; records an invalid-option error
+   --  instead of raising when Text isn't a positive integer.
+   procedure Set_Solver_Timeout (Text : String) is
+   begin
+      VC_Prover.Set_Solver_Time_Limit
+        (Positive'Value (Ada.Strings.Fixed.Trim (Text, Ada.Strings.Both)));
+   exception
+      when others =>
+         Ada.Text_IO.Put_Line
+           ("adalang-analyzer: invalid solver timeout '" & Text & "'");
+         Invalid_Options := True;
+   end Set_Solver_Timeout;
 
    procedure Set_Dependency_Threshold (Text : String) is
    begin
@@ -1284,6 +1335,20 @@ package body Adalang_Analyzer.CLI is
                then
                   Gnatprove_Logs.Append
                     (Arg (Arg'First + Gnatprove_Log_Option'Length ..
+                            Arg'Last));
+               elsif Arg'Length > Solver_Steps_Option'Length
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, Solver_Steps_Option) = Arg'First
+               then
+                  Set_Solver_Steps
+                    (Arg (Arg'First + Solver_Steps_Option'Length ..
+                            Arg'Last));
+               elsif Arg'Length > Solver_Timeout_Option'Length
+                 and then Ada.Strings.Fixed.Index
+                   (Arg, Solver_Timeout_Option) = Arg'First
+               then
+                  Set_Solver_Timeout
+                    (Arg (Arg'First + Solver_Timeout_Option'Length ..
                             Arg'Last));
                elsif Arg = "--write-baseline" then
                   if Current_Arg = Argument_Count then

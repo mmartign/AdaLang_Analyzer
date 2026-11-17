@@ -34,6 +34,7 @@ for test_script in \
   tests/run_recommended_gate.sh \
   tests/run_quality_metrics.sh \
   tests/run_verification.sh \
+  tests/run_solver_limits.sh \
   tests/run_verification_mutations.sh \
   tests/run_seeded_defects.sh \
   tests/run_proof_path_evidence.sh \

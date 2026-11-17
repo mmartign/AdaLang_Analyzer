@@ -304,10 +304,63 @@ package Adalang_Analyzer.VC_Prover is
    --  where the loop is entered, so such a bound has its value on entry
    --  all through the loop (Loop_Bound_Terms).
 
+   --  What each solver is given for one query. By default it is time:
+   --  Default_Solver_Time_Limit milliseconds of wall clock, so that a query
+   --  near the limit can be answered on one host and not on a slower or
+   --  busier one. With steps it is a resource limit, which the solver counts
+   --  the same way on every host: the same solver binaries then give the
+   --  same answers wherever the analyzer runs.
+
    Default_Solver_Time_Limit : constant := 2_000;
+
+   Z3_Rlimit_Per_Step   : constant := 7_000;
+   CVC5_Rlimit_Per_Step : constant := 400;
+   --  One step, in each solver's own resource units (Z3's rlimit, CVC5's
+   --  resource units): about one millisecond of either solver's CPU time on
+   --  the reference host (Apple M4 Max, Z3 4.15.4, CVC5 1.3.2), the median
+   --  rate over the 36,132 distinct queries of the five gap-ledger corpora
+   --  (1.16.0). Single queries count faster or slower: a step is a unit of
+   --  work, not of time.
+
+   Step_Time_Cap : constant := 2;
+   --  With steps and no time limit given, each query is still stopped after
+   --  this many milliseconds per step, against a query whose solver counts
+   --  almost no resources while it works: CVC5 on some array queries counts
+   --  10 to 70 units a millisecond, and would run for minutes. On the
+   --  reference host no query that is answered takes more than one
+   --  millisecond a step; twice that leaves room for a slower host.
+
+   Max_Solver_Steps : constant := 4_294_967_295 / Z3_Rlimit_Per_Step;
+   --  Z3 takes its rlimit modulo 2**32, so a larger value would become an
+   --  arbitrary smaller limit, or none.
+
    procedure Set_Solver_Time_Limit (Milliseconds : Positive);
-   --  The time each solver is given for one query, in milliseconds;
-   --  Default_Solver_Time_Limit unless set.
+   --  --solver-timeout: the time each solver is given for one query.
+
+   procedure Set_Solver_Steps (Steps : Positive)
+   with Pre => Steps <= Max_Solver_Steps;
+   --  --solver-steps: each solver is given Steps steps for one query, and a
+   --  time limit only as a safety stop: Step_Time_Cap milliseconds a step,
+   --  or the one set with Set_Solver_Time_Limit. An answer is then decided by
+   --  the steps alone unless that stop is reached first, which
+   --  Solver_Time_Stops counts.
+
+   procedure Use_Instance_Solver_Limit;
+   procedure Use_Full_Solver_Limit;
+   --  An instance pass of a generic unit runs once per instance, so each of
+   --  its queries gets a quarter of the limit (time or steps) in force;
+   --  Use_Full_Solver_Limit gives queries the whole limit again.
+
+   function Solver_Limit_Image return String;
+   --  The limit for one query, as a report states it: "time 2000 ms", or
+   --  "steps 3000, time 6000 ms".
+
+   function Solver_Runs return Natural;
+   function Solver_Time_Stops return Natural;
+   --  The solver runs of the analysis so far, and those of them the time
+   --  limit stopped without an answer. With steps and no time stop, every
+   --  answer was decided by the steps: the same solver binaries give the
+   --  same answers on any host.
 
    procedure Forget_Declared_Facts;
    --  Empties the memos of the ranges of component subtypes and the sorts

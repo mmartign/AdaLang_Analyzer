@@ -126,6 +126,13 @@ Useful options include:
 --gnatprove-log=<file>
                  With --verify: set beside each obligation what GNATprove
                  said of the same check, read from a log of it (repeatable)
+--solver-steps=<n>
+                 With --verify: give each external solver <n> steps per
+                 query instead of a time limit, so that the results do not
+                 depend on the speed of the host (see "Solver limits")
+--solver-timeout=<ms>
+                 With --verify: the time each external solver is given per
+                 query (default: 2000; with --solver-steps, 2 per step)
 --automotive     Enable the strict automotive Ada preset
 --do178c=<level> Enable DO-178C verification support for level A, B, C, or D
 -checks=<list>   Enable or disable a comma-separated set of checks
@@ -167,6 +174,62 @@ finding that matches `--baseline` remains visible in JSON or SARIF output as an
 existing result, but it does not contribute to the exit status. Fingerprints
 exclude line and column numbers, so inserting unrelated lines does not turn an
 existing finding into a new one.
+
+## Solver limits and reproducible results
+
+With `--verify`, a proof or a definite error that needs the external
+solvers is accepted only when CVC5 and Z3 both answer. Each solver gets a
+limit for each query, and that limit decides which obligations a run can
+settle.
+
+By default the limit is time: 2,000 ms of wall-clock time per query, and
+500 ms in the passes over the instances of a generic unit. A query close to
+the limit can be answered on one host and not on a slower or busier one. So
+two hosts can differ on a few obligations: one proves what the other leaves
+`Unproved`, or reports a definite error the other leaves `Unproved`. Neither
+host claims more than it established. What differs is how much each one
+settles.
+
+`--solver-steps=<n>` gives each solver a resource limit instead. The solver
+counts resources itself, and counts them the same way on every host. With
+the same solver binaries, sources and options, a run settles the same
+obligations wherever it runs. Use it when results have to be reproduced
+elsewhere, for example when a validation kit is re-run on the project's
+host.
+
+- A step is about one millisecond of a solver's CPU time on an Apple M4 Max:
+  7,000 units of Z3's `rlimit`, or 400 of CVC5's resource units. It is a
+  unit of work, not of time, and a single query can count faster or slower.
+- `--solver-steps=3000` settles exactly what the default time limit settles
+  on the five corpora of the gap ledger. Every one of their 57,647
+  obligations has the same status and method (release 1.16.0, Z3 4.15.4,
+  CVC5 1.3.2).
+- The passes over the instances of a generic unit get a quarter of the
+  steps.
+- The most a run accepts is 613,566 steps. Z3 takes its `rlimit` modulo
+  2^32, so a larger value would silently become a smaller limit.
+
+A time limit still applies as a safety stop: 2 ms per step, unless
+`--solver-timeout` sets another. Some queries keep a solver busy while it
+counts almost no resources. On some array queries CVC5 counts 10 to 70
+units a millisecond; without the stop these would run for minutes and still
+end without an answer. The JSON report counts the runs the stop ended:
+
+```json
+"solverStatistics": {"runs": 5576, "stoppedByTime": 32}
+```
+
+With `stoppedByTime` at 0, the steps decided every answer. Above 0, those
+runs are the only ones where the host can still matter. On the gap-ledger
+corpora only SPARKNaCl has such runs, 32 of its 5,576. With a stop five
+times longer, the run settles exactly the same obligations. The cost is
+the time those queries now take: SPARKNaCl uses 253 s of CPU time instead
+of 125 s, and the other four corpora take what they take under the time
+limit.
+
+`analysisConfiguration.solverLimit` in every JSON and SARIF report states
+the limit in force, for example `"time 2000 ms"` or
+`"steps 3000, time 6000 ms"`.
 
 ## GNATprove's verdicts beside AdaLang's
 

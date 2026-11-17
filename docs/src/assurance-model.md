@@ -24,6 +24,10 @@ An AdaLang result is meaningful only with its analysis context:
 - Target and compiler assumptions, where relevant.
 - Suppressions and accepted baselines.
 - Diagnostics about files, units, nodes, or constructs that were skipped.
+- With `--verify`, the CVC5 and Z3 binaries and the limit each is given per
+  query (`solverLimit` in the report). Under the default time limit, the
+  speed and load of the host count too; under `--solver-steps`, they count
+  only for the queries the safety time stop ends (`solverStatistics`).
 
 Changing any of these inputs can change the result. A baseline suppresses the
 effect of an accepted finding on the exit status; it does not establish that

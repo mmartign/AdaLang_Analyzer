@@ -21138,11 +21138,6 @@ package body Adalang_Analyzer.Flow_Interp is
       Equivalent_Keys => "=",
       "="             => Index_Vectors."=");
 
-   --  What an instance pass gives each solver for a query, in
-   --  milliseconds: the facts it adds are values, which make a goal easy or
-   --  leave it as hard as it was.
-   Instance_Solver_Time_Limit : constant := 500;
-
    procedure Verify_Instances
      (Ctx   : Libadalang.Analysis.Analysis_Context;
       Files : Adalang_Analyzer.Project_Files.File_Name_Vectors.Vector)
@@ -21394,7 +21389,10 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
             Functions_Of_Arguments.Clear;
             Report.Set_Muted (True);
-            VC.Set_Solver_Time_Limit (Instance_Solver_Time_Limit);
+            --  A quarter of the limit for each query: the facts an instance
+            --  pass adds are values, which make a goal easy or leave it as
+            --  hard as it was.
+            VC.Use_Instance_Solver_Limit;
             Proof.Begin_Capture;
             begin
                for Subprogram of Bodies loop
@@ -21415,7 +21413,7 @@ package body Adalang_Analyzer.Flow_Interp is
             end;
             Proof.End_Capture;
             Report.Set_Muted (False);
-            VC.Set_Solver_Time_Limit (VC.Default_Solver_Time_Limit);
+            VC.Use_Full_Solver_Limit;
             Clear_Formal_Bindings;
             Forget_Standing_Facts;
             VC.Forget_Declared_Facts;
@@ -21477,7 +21475,7 @@ package body Adalang_Analyzer.Flow_Interp is
                Failed := True;
                Proof.End_Capture;
                Report.Set_Muted (False);
-               VC.Set_Solver_Time_Limit (VC.Default_Solver_Time_Limit);
+               VC.Use_Full_Solver_Limit;
                Clear_Formal_Bindings;
                Forget_Standing_Facts;
                VC.Forget_Declared_Facts;
@@ -21590,7 +21588,7 @@ package body Adalang_Analyzer.Flow_Interp is
          when others =>
             Proof.End_Capture;
             Report.Set_Muted (False);
-            VC.Set_Solver_Time_Limit (VC.Default_Solver_Time_Limit);
+            VC.Use_Full_Solver_Limit;
             Clear_Formal_Bindings;
       end Verify_Generic;
    begin

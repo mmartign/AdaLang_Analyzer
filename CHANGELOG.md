@@ -5,6 +5,31 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--solver-steps=<n>` gives CVC5 and Z3 a resource limit per query
+  instead of the 2,000 ms time limit (Z3 `rlimit`, CVC5 `--rlimit-per`).
+  The solvers count resources the same way on every host, so a `--verify`
+  run settles the same obligations wherever it runs, given the same solver
+  binaries. Under the time limit, a query near the limit could be answered
+  on one host and not on a slower one. A step is about one millisecond of
+  either solver's CPU time on an Apple M4 Max (7,000 Z3 units, 400 CVC5
+  units). `--solver-steps=3000` settles exactly what the time limit settles
+  on the five gap-ledger corpora: all 57,647 obligations have the same
+  status and method. A safety time stop of 2 ms per step still applies:
+  some CVC5 array queries count almost no resources and would otherwise run
+  for minutes. On the gap-ledger corpora only SPARKNaCl reaches that stop
+  (32 of its 5,576 solver runs), which costs it 253 s of CPU time instead
+  of 125 s.
+- `--solver-timeout=<ms>` sets the time limit, or the safety stop with
+  `--solver-steps`.
+- Every JSON and SARIF report states the limit in force
+  (`analysisConfiguration.solverLimit`). A `--verify` JSON report counts
+  the solver runs and those a time limit stopped (`solverStatistics`): with
+  steps and no run stopped by time, the steps decided every answer.
+
 ## [1.16.0] - 2026-11-15
 
 `--verify` crosses 80% of what GNATprove proves on the gap ledger. It

@@ -30,6 +30,7 @@ with Adalang_Analyzer.Config;
 with Adalang_Analyzer.Gnatprove_Import;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Text_Utils;
+with Adalang_Analyzer.VC_Prover;
 
 package body Adalang_Analyzer.Report is
 
@@ -844,6 +845,11 @@ package body Adalang_Analyzer.Report is
          Text_Utils.To_Decimal (Config.Generic_Threshold) &
          ", ""dependencies"": " &
          Text_Utils.To_Decimal (Config.Dependency_Threshold) & "},");
+      --  What each external solver was given per query decides which
+      --  proofs a run can find (VC_Prover).
+      Ada.Text_IO.Put_Line
+        (File, Inner & """solverLimit"": """ &
+         JSON_Escape (VC_Prover.Solver_Limit_Image) & """,");
       Ada.Text_IO.Put_Line
         (File, Inner & """configFile"": """ &
          JSON_Escape
@@ -1007,6 +1013,15 @@ package body Adalang_Analyzer.Report is
          Text_Utils.To_Decimal
            (Adalang_Analyzer.Proof_Obligations.Count
               (Adalang_Analyzer.Proof_Obligations.Unsupported)) & "},");
+      if Config.Verification_Mode then
+         --  How many solver runs a time limit stopped: none means that,
+         --  with --solver-steps, the steps alone decided every answer.
+         Ada.Text_IO.Put_Line
+           (File, "  ""solverStatistics"": {""runs"": " &
+            Text_Utils.To_Decimal (VC_Prover.Solver_Runs) &
+            ", ""stoppedByTime"": " &
+            Text_Utils.To_Decimal (VC_Prover.Solver_Time_Stops) & "},");
+      end if;
       Ada.Text_IO.Put_Line (File, "  ""findings"": [");
       for Item of Findings loop
          if not First then
