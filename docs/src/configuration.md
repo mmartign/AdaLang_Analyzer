@@ -221,7 +221,7 @@ host.
   unit of work, not of time, and a single query can count faster or slower.
 - `--solver-steps=3000` settles exactly what the default time limit settles
   on the five corpora of the gap ledger. Every one of their 57,647
-  obligations has the same status and method (release 1.16.0, Z3 4.15.4,
+  obligations has the same status and method (release 1.16.1, Z3 4.15.4,
   CVC5 1.3.2).
 - The passes over the instances of a generic unit get a quarter of the
   steps.

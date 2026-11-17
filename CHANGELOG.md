@@ -5,7 +5,21 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.16.1] - 2026-11-17
+
+`--verify` can bound the external solvers by a resource count instead of
+the clock (`--solver-steps`). A run then settles the same obligations on
+any host with the same solver binaries, which is what a validation kit
+re-run on a project's own host needs. Proof obligation ids no longer depend
+on where the sources are. A preset that replaces the checks selected before
+it on the command line now says so.
+
+What to expect: on the ten corpora, with every preset, the findings and the
+status of every obligation are those of 1.16.0 (run of 2026-11-17), so the
+figures of the gap ledger and of the benchmark results stand: `--verify`
+proves 12,039 of the 15,043 checks GNATprove proves, 80.0%. Every
+obligation id is new (`proof/v2`). Without `--solver-steps` the solvers run
+exactly as before.
 
 ### Added
 
