@@ -37,6 +37,12 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   hashed the absolute path, so every id changed with the location of the
   checkout. Each id changes once with this release.
 
+### Fixed
+
+- The seeded mutation campaign named two mutations `record-swapped`; the
+  one in `verification_mutation_array_records.adb` is now
+  `record-updated-swapped`, and the gate rejects a repeated id.
+
 ## [1.16.0] - 2026-11-15
 
 `--verify` crosses 80% of what GNATprove proves on the gap ledger. It

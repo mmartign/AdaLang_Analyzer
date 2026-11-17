@@ -18,6 +18,15 @@ if ! cmp -s "$work/expected-kinds" "$work/mutation-kinds"; then
    exit 1
 fi
 
+#  Each mutation is named once: the id is how a failure, a report or a
+#  validation kit refers to it.
+awk -F '\t' '!/^#/ && NF {print $1}' "$manifest" | sort | uniq -d >"$work/repeated-ids"
+if [ -s "$work/repeated-ids" ]; then
+   echo "verification mutation manifest repeats an id:" >&2
+   cat "$work/repeated-ids" >&2
+   exit 1
+fi
+
 tab=$(printf '\t')
 count=0
 while IFS="$tab" read -r id fixture kind operation expected_status note
