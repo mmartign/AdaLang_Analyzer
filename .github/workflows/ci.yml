@@ -18,7 +18,10 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # Alire's dependencies are rebuilt in every run (22 to 37 minutes on
+    # macOS) and the test suite takes about 50: 90 minutes cancelled a
+    # macOS run on 2026-11-19 a few minutes before its end.
+    timeout-minutes: 150
 
     steps:
       - uses: actions/checkout@v4

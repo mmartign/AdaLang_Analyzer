@@ -126,8 +126,10 @@ for broken in text short cut; do
    status=0
    "$analyzer" -checks="$checks" -P "$work/$broken.prj" \
       >"$work/$broken.log" 2>&1 || status=$?
+   #  The path as the analyzer names it: on Windows, Git Bash's /tmp is
+   #  given to it as C:/Users/.../Temp.
    if [ "$status" -eq 0 ] \
-     || ! grep -F "could not read ObjectAda project $work/$broken.prj" \
+     || ! grep -E "could not read ObjectAda project .*/$broken\.prj: " \
             "$work/$broken.log" >/dev/null
    then
       echo "$broken.prj: expected an error reading it" >&2
