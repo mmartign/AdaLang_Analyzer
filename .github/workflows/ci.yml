@@ -161,27 +161,15 @@ jobs:
           path: C:\temp\ac
           key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-${{ github.run_id }}
 
-      # Temporary: why every analysis crashed on Windows. The executable as
-      # built, the same linked against the MSYS2 DLLs, the same with a
-      # 256 MB stack, and a backtrace.
+      # Temporary: the DLLs the executable needs, and a run with a bare
+      # environment, as SonarAdaPlugin or a user's shell would start it.
       - name: Diagnose (temporary)
         continue-on-error: true
         run: |
           set +e -x
-          msys="$LOCALAPPDATA\\alire\\cache\\msys64"
-          alr exec -- objdump -p bin/adalang_analyzer.exe | grep -i -E "SizeOfStack|DLL Name" || true
-          ./bin/adalang_analyzer --version; echo "exit $?"
-          ./bin/adalang_analyzer -v -checks=No_Goto tests/invalid_syntax.adb; echo "static: exit $?"
-          alr exec -- gprbuild -q -P adalang_analyzer.gpr -XADALANG_LINK=dynamic adalang_analyzer-driver.adb -o adalang_analyzer_dynamic.exe || true
-          ls bin *.exe 2>/dev/null || true
-          dyn=$(ls bin/adalang_analyzer_dynamic.exe adalang_analyzer_dynamic.exe 2>/dev/null | head -1)
-          [ -n "$dyn" ] && { alr exec -- "./$dyn" -v -checks=No_Goto tests/invalid_syntax.adb; echo "dynamic: exit $?"; }
-          alr exec -- gprbuild -q -P adalang_analyzer.gpr adalang_analyzer-driver.adb -o adalang_analyzer_bigstack.exe -largs -Wl,--stack=268435456 || true
-          big=$(ls bin/adalang_analyzer_bigstack.exe adalang_analyzer_bigstack.exe 2>/dev/null | head -1)
-          [ -n "$big" ] && { "./$big" -v -checks=No_Goto tests/invalid_syntax.adb; echo "big stack: exit $?"; }
-          "$msys\\usr\\bin\\pacman" --noconfirm -S mingw-w64-x86_64-gdb > /dev/null 2>&1 || echo "no gdb"
-          "$msys\\mingw64\\bin\\gdb.exe" -batch -ex run -ex bt -ex "info registers rip rsp" -ex continue -ex bt \
-            --args bin/adalang_analyzer.exe -checks=No_Goto tests/invalid_syntax.adb 2>&1 | tail -80
+          alr exec -- objdump -p bin/adalang_analyzer.exe | grep -i "DLL Name"
+          env -i SYSTEMROOT="$SYSTEMROOT" PATH=/usr/bin ./bin/adalang_analyzer -v -checks=No_Goto tests/invalid_syntax.adb; echo "bare environment: exit $?"
+          ./bin/adalang_analyzer -v --recommended tests/bug_findings.adb | tail -20; echo "exit $?"
 
       # Every script runs, so that one run lists every failure.
       - name: Run test suite

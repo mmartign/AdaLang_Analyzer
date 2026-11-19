@@ -38,9 +38,6 @@ project AdaLang_Analyzer is
       for Switches ("Ada") use ("-Es"); --  Symbolic traceback
    end Binder;
 
-   type Link_Modes is ("static", "dynamic");
-   Link_Mode : Link_Modes := external ("ADALANG_LINK", "static");
-
    package Linker is
       --  The host is the one Alire found when it wrote the configuration
       --  project.
@@ -57,13 +54,14 @@ project AdaLang_Analyzer is
          when "windows" =>
             --  The GMP and iconv libraries come from MSYS2, whose DLLs are
             --  on the path only under "alr exec": linked in, they leave an
-            --  executable that runs from anywhere.
-            case Link_Mode is
-               when "static" =>
-                  for Switches ("Ada") use ("-static", "-lgnarl");
-               when others =>
-                  for Switches ("Ada") use ("-lgnarl");
-            end case;
+            --  executable that runs from anywhere. These switches come after
+            --  the GNATCOLL archives that need the libraries and before the
+            --  -lgmp and -liconv those ask for, which find nothing left to
+            --  resolve. Not "-static": that also changes how the GCC
+            --  run-time is linked, and Ada exceptions then never stop
+            --  unwinding (every analysis overflowed the stack).
+            for Switches ("Ada") use
+              ("-lgnarl", "-Wl,-Bstatic", "-lgmp", "-liconv", "-Wl,-Bdynamic");
          when others =>
             for Switches ("Ada") use ("-lgnarl");
       end case;
