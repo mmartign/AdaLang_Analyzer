@@ -91,6 +91,17 @@ if [ -z "$z3" ] || [ -z "$cvc5" ]; then
    exit 0
 fi
 
+#  The wrappers that log the command lines are shell scripts, which a
+#  Windows program cannot start: there the solvers run as they are, and
+#  the command lines, built the same way on every host, are checked on
+#  the others. (The block is not indented: it holds here-documents and
+#  multi-line expected values.)
+case $(uname -s) in
+   MINGW* | MSYS* | CYGWIN*) wrap_solvers=no ;;
+   *) wrap_solvers=yes ;;
+esac
+
+if [ "$wrap_solvers" = yes ]; then
 for name in z3 cvc5; do
    eval "real=\$$name"
    cat >"$work/$name" <<EOF
@@ -137,6 +148,11 @@ expect_calls "cvc5 --lang=smt2 --tlimit=6000 --rlimit-per=1200000 FILE
 cvc5 --lang=smt2 --tlimit=1500 --rlimit-per=300000 FILE
 z3 -smt2 -t:6000 rlimit=21000000 FILE" --solver-steps=3000 \
   "$generic_spec" "$generic_body"
+else
+echo "solver limits: command lines not checked (Windows does not start a shell script as a solver)"
+"$analyzer" --no-config --verify --format=json --solver-steps=3000 \
+  "$generic_spec" "$generic_body" >"$work/calls.json" 2>/dev/null || true
+fi
 
 runs=$(json_field "$work/calls.json" solverStatistics.runs)
 [ "$runs" -gt 0 ] || fail "solverStatistics.runs is $runs"

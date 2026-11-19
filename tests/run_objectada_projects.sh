@@ -67,7 +67,8 @@ fi
 #  One needs Sensors, from sensors.spc; the other Units, from the library.
 #  The fingerprints are those of every host: the path is relative and has
 #  '/' separators, and the line is read without its CR.
-findings=$(python3 - "$work/legacy.json" <<'PY' 2>/dev/null || true
+#  Python on Windows ends a line with CR LF: the CRs are dropped.
+findings=$(python3 - "$work/legacy.json" <<'PY' 2>/dev/null | tr -d '\r' || true
 import json, sys
 for f in json.load(open(sys.argv[1]))["findings"]:
     print(f["file"], f["line"], f["column"], f["ruleId"], f["fingerprint"])

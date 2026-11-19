@@ -36,7 +36,8 @@ then
    exit 1
 fi
 
-if ! grep -F "variant_b/shared_body.adb:1:1: warning:" "$output" >/dev/null \
+#  The location is the file's full path, whose separator is '\' on Windows.
+if ! grep -E 'variant_b[/\\]shared_body\.adb:1:1: warning:' "$output" >/dev/null \
   || ! grep -F "identical to 'Shared_Body' (" "$output" >/dev/null \
   || ! grep -F \
        "evidence: earlier occurrence: " "$output" >/dev/null \
