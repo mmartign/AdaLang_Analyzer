@@ -50,6 +50,17 @@ append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
 [environment.'case(os)'.macos.LIBRARY_PATH]
 append = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
 
+# On Windows, langkit_support and libadalang are built as plain static
+# libraries rather than standalone ones. The partial link that makes a
+# standalone library left the executable's function table with 31,451
+# overlapping entries, and Windows then could not unwind an Ada exception
+# through the functions they covered: every analysis crashed.
+[environment.'case(os)'.windows.LANGKIT_SUPPORT_STANDALONE]
+set = "no"
+
+[environment.'case(os)'.windows.LIBADALANG_STANDALONE]
+set = "no"
+
 [[depends-on]]
 libadalang = "^26.0.0"
 

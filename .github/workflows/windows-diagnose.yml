@@ -46,43 +46,44 @@ jobs:
             alire-builds-${{ runner.os }}-
 
       - name: Build
-        run: alr build
-
-      - name: Put the GMP and iconv DLLs beside the executable
         run: |
-          dlls="$LOCALAPPDATA\\alire\\cache\\msys64\\mingw64\\bin"
-          cp "$dlls\\libgmp-10.dll" "$dlls\\libiconv-2.dll" bin/
-          alr exec -- objdump -p bin/adalang_analyzer.exe | grep "DLL Name"
+          alr build 2>&1 | tee build.txt | grep -E 'Partial|Archive|Link\]|Success|rror' | tail -20
+          alr exec -- sh -c 'echo "LIBADALANG_STANDALONE=$LIBADALANG_STANDALONE LANGKIT_SUPPORT_STANDALONE=$LANGKIT_SUPPORT_STANDALONE"'
 
-      - name: Function table and starts, as built
-        continue-on-error: true
+      - name: Write the checks
         run: |
-          set +e
           cat > "$RUNNER_TEMP/check.sh" <<'CHECK'
           check() {
-            exe=bin/adalang_analyzer.exe
-            base=$(alr exec -- objdump -p $exe | awk '/^ImageBase/ { print $2; exit }')
-            alr exec -- objdump -s -j .pdata $exe > pdata.txt
-            alr exec -- nm $exe > nm.txt
-            echo "image base $base, $(wc -l < pdata.txt) lines of .pdata"
-            python -I tests/tools/pdata_check.py pdata.txt "$base" nm.txt
-            timeout 300 alr exec -- ./bin/adalang_analyzer -q -checks=No_Goto tests/invalid_syntax.adb > out.txt 2>&1
-            echo "=== alr exec, invalid_syntax: exit $?"; tail -3 out.txt
-            timeout 300 ./bin/adalang_analyzer --recommended tests/bug_findings.adb > out.txt 2>&1
-            echo "=== direct, --recommended bug_findings: exit $?, $(wc -l < out.txt) lines"; tail -3 out.txt
+            exe=$1
+            base=$(alr exec -- objdump -p "$exe" | awk '/^ImageBase/ { print $2; exit }')
+            alr exec -- objdump -p "$exe" | grep "DLL Name" | tr -d '\t' | paste -sd' ' -
+            alr exec -- objdump -s -j .pdata "$exe" > pdata.txt
+            alr exec -- nm "$exe" > nm.txt
+            python -I tests/tools/pdata_check.py pdata.txt "$base" nm.txt | head -3
+            timeout 300 "$exe" -q -checks=No_Goto tests/invalid_syntax.adb > out.txt 2>&1
+            echo "=== invalid_syntax: exit $? (1 expected)"; tail -2 out.txt
+            timeout 300 "$exe" --recommended tests/bug_findings.adb > out.txt 2>&1
+            echo "=== --recommended bug_findings: exit $?, $(wc -l < out.txt) lines"; tail -2 out.txt
+            timeout 300 env -i SYSTEMROOT="$SYSTEMROOT" LOCALAPPDATA="$LOCALAPPDATA" PATH=/usr/bin "$exe" -v --recommended tests/bug_findings.adb > out.txt 2>&1
+            echo "=== bare environment, --recommended bug_findings: exit $?, $(wc -l < out.txt) lines"; grep -i 'gnatls\|INFO' out.txt | head -3
           }
           CHECK
-          . "$RUNNER_TEMP/check.sh"
-          check
 
-      - name: Without the partial links of langkit_support and libadalang
+      - name: As built, with the DLLs beside it
         continue-on-error: true
-        timeout-minutes: 45
-        env:
-          LANGKIT_SUPPORT_STANDALONE: "no"
-          LIBADALANG_STANDALONE: "no"
         run: |
           set +e
-          alr build 2>&1 | grep -E 'created|Partial|Archive|Link\]|Success|error' | head -30
+          dlls="$LOCALAPPDATA\\alire\\cache\\msys64\\mingw64\\bin"
+          cp "$dlls\\libgmp-10.dll" "$dlls\\libiconv-2.dll" bin/
           . "$RUNNER_TEMP/check.sh"
-          check
+          check bin/adalang_analyzer.exe
+
+      - name: Linked with -static, alone in a folder
+        continue-on-error: true
+        run: |
+          set +e
+          alr exec -- gprbuild -q -P adalang_analyzer.gpr adalang_analyzer-driver.adb -o adalang_analyzer_static.exe -largs -static
+          mkdir -p "$RUNNER_TEMP/alone"
+          cp bin/adalang_analyzer_static.exe "$RUNNER_TEMP/alone/"
+          . "$RUNNER_TEMP/check.sh"
+          check "$RUNNER_TEMP/alone/adalang_analyzer_static.exe"
