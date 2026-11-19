@@ -1,0 +1,89 @@
+name: Windows diagnose (temporary)
+
+on:
+  push:
+    branches: [windows-objectada]
+
+concurrency:
+  group: windows-diagnose-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Keep line ends as committed
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: alire-project/setup-alire@v4
+        with:
+          version: "2.1.0"
+
+      - name: Move Alire's cache to a short path
+        run: |
+          mkdir -p 'C:\temp\ac'
+          alr settings --global --set cache.dir 'C:\temp\ac'
+          alr settings --global --set toolchain.dir "$LOCALAPPDATA\\alire\\cache\\toolchains"
+          alr settings --global --set msys2.install_dir "$LOCALAPPDATA\\alire\\cache\\msys64"
+
+      - name: Install tar from MSYS2
+        run: |
+          "$LOCALAPPDATA\\alire\\cache\\msys64\\usr\\bin\\pacman" --noconfirm -S tar
+
+      - name: Restore Alire's builds
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\temp\ac
+          key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-${{ github.run_id }}
+          restore-keys: |
+            alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-
+            alire-builds-${{ runner.os }}-
+
+      - name: Build
+        run: alr build
+
+      - name: Start the analyzer four ways
+        continue-on-error: true
+        run: |
+          set +e
+          T="$LOCALAPPDATA\\alire\\cache\\toolchains"
+          ls "$T"
+          cat "$LOCALAPPDATA\\alire\\settings\\settings.toml"
+          where libgmp-10.dll libiconv-2.dll gnatls gcc
+          tu=$(cygpath -u "$T")
+          g16="$tu/$(ls "$T" | grep '^gnat_native_16' | head -1)/bin"
+          g15="$tu/$(ls "$T" | grep '^gnat_native_15' | head -1)/bin"
+          echo "g16=$g16 g15=$g15"
+          run() {
+            label=$1; shift
+            timeout 300 "$@" -v -checks=No_Goto tests/invalid_syntax.adb > out.txt 2>&1
+            echo "=== $label: exit $?"
+            tail -6 out.txt
+          }
+          run "alr exec" alr exec -- ./bin/adalang_analyzer
+          run "direct" ./bin/adalang_analyzer
+          PATH="$g16:$PATH" run "gnat 16 first on PATH" ./bin/adalang_analyzer
+          PATH="$g15:$PATH" run "gnat 15 first on PATH" ./bin/adalang_analyzer
+          alr exec -- sh -c 'echo "alr exec PATH: $PATH"' | tr ':' '\n' | head -12
+
+      - name: Backtrace of the direct start
+        continue-on-error: true
+        run: |
+          set +e
+          msys="$LOCALAPPDATA\\alire\\cache\\msys64"
+          "$msys\\usr\\bin\\pacman" --noconfirm -S mingw-w64-x86_64-gdb > /dev/null 2>&1 || echo "no gdb"
+          "$msys\\mingw64\\bin\\gdb.exe" -batch -ex run -ex "bt 12" \
+            -ex "x/24000ga \$rsp" \
+            -ex "frame 5" -ex "p/x ms_exc->ExceptionCode" \
+            -ex "p/x ms_orig_context->Rip" -ex "info symbol ms_orig_context->Rip" \
+            --args bin/adalang_analyzer.exe -checks=No_Goto tests/invalid_syntax.adb > gdb.txt 2>&1
+          echo "gdb: exit $?, $(wc -l < gdb.txt) lines"
+          grep -v '^0x' gdb.txt | head -60
+          echo "=== symbols on the stack, most frequent first"
+          grep -o '<[^>+]*' gdb.txt | sort | uniq -c | sort -rn | head -60
