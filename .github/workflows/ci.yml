@@ -166,15 +166,15 @@ jobs:
           path: C:\temp\ac
           key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-${{ github.run_id }}
 
-      # The executable is linked against the GMP and iconv DLLs of Alire's
-      # MSYS2. Windows looks for a DLL beside the executable first, and so
-      # does not take the ones of other builds that Git or Strawberry Perl
-      # put on the path.
-      - name: Put the GMP and iconv DLLs beside the executable
+      # The executable is linked statically: it has to run without the DLLs
+      # of Alire's MSYS2, which only "alr exec" puts on the path.
+      - name: Check that the executable needs no DLL of MSYS2
         run: |
-          dlls="$LOCALAPPDATA\\alire\\cache\\msys64\\mingw64\\bin"
-          cp "$dlls\\libgmp-10.dll" "$dlls\\libiconv-2.dll" bin/
           alr exec -- objdump -p bin/adalang_analyzer.exe | grep "DLL Name"
+          if alr exec -- objdump -p bin/adalang_analyzer.exe | grep -i -E "DLL Name: lib(gmp|iconv|gcc|winpthread|gnat)"; then
+            echo "the executable needs a DLL of MSYS2" >&2
+            exit 1
+          fi
 
       # Every script runs, so that one run lists every failure.
       - name: Run test suite

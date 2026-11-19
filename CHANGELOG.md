@@ -5,6 +5,74 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+AdaLang Analyzer reads the project files of the ObjectAda IDE, Aonix's and
+its successors', and builds and runs on Windows. A source with CR LF line
+ends, as a Windows checkout gives it, is analyzed as the same source with
+LF ends, wherever the analysis runs.
+
+What to expect: on sources with LF line ends and one compilation unit per
+file, the findings, their fingerprints and the proof obligations are those
+of 1.16.1. On sources with CR LF line ends analyzed on Linux or macOS, the
+fingerprints of findings change, since they no longer depend on the line
+ends: a baseline written for such sources has to be written again. On
+them, `Long_Line` no longer counts the CR (a line of 120 characters was
+reported at the limit of 120), and `Trailing_Whitespace` and
+`Malformed_Requirement_Trace` find what they missed before it. On
+tokeneer, SPARKNaCl, CubedOS and CoAP-SPARK, every check but the
+compiler's: the reports are those of 1.16.1 byte for byte, except on the
+two SPARKNaCl files with CR LF line ends, whose findings have new
+fingerprints and where `Trailing_Whitespace` finds a trailing space it
+missed before a CR;
+`--verify` on tokeneer and SPARKNaCl: the same 19,863 obligations, with
+the same verdicts.
+
+### Added
+
+- `-P` accepts an ObjectAda project file (`.prj`), the binary archive the
+  ObjectAda IDE for Windows saves a project in. The sources it lists are
+  analyzed: found by their path relative to the project's library
+  directory, so that a project copied to another machine or checked out
+  on Linux still finds them, then by their absolute path; where file names
+  depend on case, by a name that differs only in case, as Windows would.
+  They are reported as the disk names them. The sources of the libraries
+  on the project's search path, the libraries of other ObjectAda projects,
+  resolve names without being analyzed; entries saved as absolute Windows
+  paths are looked for where the project now is. The ObjectAda run-time is
+  not read. A listed source or a library that is not found is a warning;
+  a file that is not an ObjectAda project file or is cut short is an
+  error. Checked against 19 project files from public repositories, saved
+  by Aonix ObjectAda 7.2, ObjectAda 9.1 and PTC ObjectAda64 10 (869
+  sources listed), and on four of them, with their sources, against the
+  findings of the same files named on the command line: identical.
+- A source can hold several compilation units, as ObjectAda allows. Each
+  is a node of the graph of `Circular_Package_Dependency`, named by the
+  file and the unit (a file of several units was left out of the graph
+  before), and `Improperly_Located_Instantiation` looks at the unit of the
+  instantiation, not at the file's first.
+- Windows. Alire builds the analyzer there as on Linux and macOS, into one
+  executable that needs no DLL and runs from any shell, and CI builds and
+  tests it on every change. Alire's cache has to be on a short path (see
+  the README). `langkit_support` and `libadalang` are built there as
+  plain static libraries: the partial link that makes them standalone
+  libraries left the executable's function table with overlapping
+  entries, and no Ada exception could be unwound through the functions
+  they covered. Paths are reported with `/`, as on the other hosts, and
+  SARIF gives an absolute one as a `file:///C:/...` URI. The SMT solvers
+  are looked for under `%USERPROFILE%\.alire`, and Alire's toolchain
+  through its settings in `%LOCALAPPDATA%\alire`.
+
+### Fixed
+
+- A line read from a file written on Windows kept its CR on Linux and
+  macOS: in the source line hashed into every fingerprint, in the lines
+  `Long_Line`, `Trailing_Whitespace`, `Malformed_Requirement_Trace` and
+  `Suppression_Without_Rationale` read, and in a baseline or a
+  configuration file, of which no line then matched. Over the 1,036 test
+  fixtures with every check, a CR LF copy now reports exactly what the LF
+  one does, fingerprints and proof obligations included.
+
 ## [1.16.1] - 2026-11-17
 
 `--verify` can bound the external solvers by a resource count instead of

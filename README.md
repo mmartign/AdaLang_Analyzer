@@ -63,6 +63,14 @@ alr build
 alr exec -- ./bin/adalang_analyzer --recommended -P my_project.gpr
 ```
 
+An ObjectAda project, as the Aonix ObjectAda IDE and its successors save
+it, is analyzed the same way, even on another machine than the Windows one
+it was saved on:
+
+```sh
+alr exec -- ./bin/adalang_analyzer --recommended -P legacy/legacy.prj
+```
+
 Create a SARIF quality gate for CI:
 
 ```sh
@@ -248,7 +256,7 @@ own.
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
 - optionally, the Alire `gnatprove` package for scalar VC discharge and
   GNATprove differential tests;
-- macOS or Linux; CI builds and tests both platforms on every change;
+- Linux, macOS or Windows; CI builds and tests all three on every change;
 - the dependencies declared in `alire.toml`, which Alire resolves during the
   build.
 
@@ -261,6 +269,20 @@ alr build
 ```
 
 The executable is produced under `bin/`.
+
+On Windows, move Alire's cache to a short path once, before the first
+build. Under the default cache, `%LOCALAPPDATA%\alire\cache`, one of the
+dependencies does not link: a path the linker is given is longer than the
+260 characters Windows allows.
+
+```powershell
+alr settings --global --set cache.dir C:\alire-cache
+alr build
+```
+
+The Windows executable, `bin\adalang_analyzer.exe`, needs no DLL beside it
+and runs from any shell. The test suite is a set of POSIX shell scripts;
+on Windows, run it from Git Bash.
 
 Run the complete repository gate:
 

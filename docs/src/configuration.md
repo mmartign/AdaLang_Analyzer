@@ -56,6 +56,57 @@ analyzes the same project under more than one scenario:
 alr exec -- ./bin/adalang_analyzer -checks='*' -X BUILD_MODE=release -P adalang_analyzer.gpr
 ```
 
+### ObjectAda project files
+
+`-P` also accepts the project file (`.prj`) that the ObjectAda IDE for
+Windows writes, Aonix's and the Atego and PTC releases that followed it.
+Project files of Aonix ObjectAda 7.2, ObjectAda 9.1 and PTC ObjectAda64 10
+have been checked; what the analyzer reads is laid out the same in all of them.
+
+```sh
+./bin/adalang_analyzer --recommended -P legacy/app/legacy.prj
+```
+
+The sources the project lists are analyzed. ObjectAda names sources freely
+(`Sensors.SPC`, `control.ada`) and lets one file hold several compilation
+units; the analyzer finds every unit wherever it is, and reports each in
+the file that holds it.
+
+The project file records each source by its absolute path on the machine
+where the project was last saved, and by its path relative to the
+project's library directory (`<project>-Win32(Intel)-Debug`, below the
+project file). The relative path comes first, so a project copied to
+another machine or checked out on Linux still finds its sources; the
+absolute path is used when the relative one leads nowhere. Windows does not
+tell names apart by case, and a project often names a file in another case
+than the disk does: on a host that does, a name that differs only in case
+is taken for the file, and the file is reported as the disk names it.
+
+The libraries on the project's search path are read for name resolution,
+as the projects a GNAT project imports are: their sources are not
+analyzed, but the names that denote their entities resolve. A library is
+the library directory of another ObjectAda project; its project file is
+looked for in the directory above it, and its sources taken from there. A
+search-path entry on the Windows machine where the project was saved is
+looked for where the project now is: `C:\Work\common\common-Win32(Intel)-Debug`
+of a project saved in `C:\Work\app` is looked for in `../common` of the
+project's directory. The ObjectAda run-time (`...\lib\rts`) is not read:
+the analyzer resolves `Standard`, `Ada` and `System` with the GNAT
+run-time. A listed source that is not found, and a library none of whose
+sources is, are reported as warnings, and the rest is analyzed; a file
+that is not an ObjectAda project file, or that is cut short, is an error.
+
+The command-line library files of ObjectAda (`ADA.LIB`, `UNIT.MAP`,
+written by `adareg` and `adaopts`) are not read. To analyze sources
+registered only there, name them on the command line.
+
+The compiler checks (`Compiler_Warning`, `Compiler_Style_Check`,
+`Compiler_Restriction`) compile each source of an ObjectAda project with
+GNAT on its own, as files named on the command line are. GNAT finds the
+units a source depends on by its own file-naming convention, and accepts
+one compilation unit per file: those checks report on an ObjectAda project
+only where its sources follow that convention.
+
 Some checks take named parameters: a limit, a naming scheme, or a list of
 forbidden names. Set one with `-rule-param=<check>.<name>=<value>`,
 repeated for each parameter. Lists are comma-separated, and a later value
