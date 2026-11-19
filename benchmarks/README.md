@@ -44,8 +44,10 @@ matcher, `compare.awk`.
 | [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 705 | 327 | 0 | 0 |
 
 These are the figures of release 1.16.0 (run of 2026-11-15 against the
-GNATprove output of 2026-10-02). Release 1.16.1 gives the same findings and
-obligation statuses on all ten corpora (run of 2026-11-17). A matched pair is a
+GNATprove output of 2026-10-02). Releases 1.16.1 and 1.17.0 give the same
+findings and obligation statuses on all ten corpora (runs of 2026-11-17 and
+2026-11-19); with 1.17.0, 193 findings on SPARKNaCl's two files with CR LF
+line ends have new fingerprints. A matched pair is a
 `(file, line, check kind)` at which each tool has exactly one obligation;
 "both safe" is the number of pairs AdaLang proves too.
 

@@ -5,28 +5,30 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.17.0] - 2026-11-19
 
 AdaLang Analyzer reads the project files of the ObjectAda IDE, Aonix's and
 its successors', and builds and runs on Windows. A source with CR LF line
 ends, as a Windows checkout gives it, is analyzed as the same source with
 LF ends, wherever the analysis runs.
 
-What to expect: on sources with LF line ends and one compilation unit per
-file, the findings, their fingerprints and the proof obligations are those
-of 1.16.1. On sources with CR LF line ends analyzed on Linux or macOS, the
-fingerprints of findings change, since they no longer depend on the line
-ends: a baseline written for such sources has to be written again. On
-them, `Long_Line` no longer counts the CR (a line of 120 characters was
-reported at the limit of 120), and `Trailing_Whitespace` and
-`Malformed_Requirement_Trace` find what they missed before it. On
-tokeneer, SPARKNaCl, CubedOS and CoAP-SPARK, every check but the
-compiler's: the reports are those of 1.16.1 byte for byte, except on the
-two SPARKNaCl files with CR LF line ends, whose findings have new
-fingerprints and where `Trailing_Whitespace` finds a trailing space it
-missed before a CR;
-`--verify` on tokeneer and SPARKNaCl: the same 19,863 obligations, with
-the same verdicts.
+What to expect: on the ten corpora, with every preset, the findings and
+the status of every obligation are those of 1.16.1 (run of 2026-11-19), so
+the figures of the gap ledger and of the benchmark results stand:
+`--verify` proves 12,039 of the 15,043 checks GNATprove proves, 80.0%. The
+fingerprints of findings change on sources with CR LF line ends analyzed on
+Linux or macOS, since they no longer depend on the line ends: a baseline
+written for such sources has to be written again. Of the corpora only
+SPARKNaCl has such sources, two files, where 193 findings have new
+fingerprints. On such sources `Long_Line` no longer counts the CR (a line
+of 120 characters was reported at the limit of 120), and
+`Trailing_Whitespace` and `Malformed_Requirement_Trace` find what they
+missed before it: with every check but the compiler's, on tokeneer,
+SPARKNaCl, CubedOS and CoAP-SPARK, the reports are those of 1.16.1 byte
+for byte except on SPARKNaCl's two files, where `Trailing_Whitespace` also
+finds a trailing space before a CR. A file of several compilation units,
+which GNAT does not accept, is now one node per unit of the graph of
+`Circular_Package_Dependency`.
 
 ### Added
 
@@ -72,6 +74,15 @@ the same verdicts.
   configuration file, of which no line then matched. Over the 1,036 test
   fixtures with every check, a CR LF copy now reports exactly what the LF
   one does, fingerprints and proof obligations included.
+
+### Known limitations
+
+- `FP-146` (`quality/known_analysis_issues.tsv`): `Uninitialized_Read`
+  does not count a call of a nested procedure as a write of the local it
+  assigns, so a read after the call is reported
+  (`Count : Integer; procedure Set is begin Count := 3; end Set; begin
+  Set; Result := Count;`). Found by the self-analysis gate on the
+  ObjectAda project reader, which was rewritten not to need it.
 
 ## [1.16.1] - 2026-11-17
 
