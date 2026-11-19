@@ -19,6 +19,7 @@ with Ada.Strings.Hash;
 with Ada.Strings.UTF_Encoding.Conversions;
 with Ada.Strings.UTF_Encoding.Wide_Strings;
 
+with GNAT.Directory_Operations;
 with GNAT.OS_Lib;
 
 with Adalang_Analyzer.Config;
@@ -591,24 +592,70 @@ package body Adalang_Analyzer.ObjectAda_Projects is
    --  The names in the directories read so far.
    Listings : Listing_Maps.Map;
 
-   --  The names in Directory.
+   --  The names in Directory, but "." and "..". Only the names are read:
+   --  Ada.Directories reads the attributes of every entry as well, and
+   --  raises Use_Error at an entry whose attributes cannot be read. A
+   --  drive root on Windows has such entries (pagefile.sys, System Volume
+   --  Information), and a symbolic link that loops is one on any host.
+   --  Raises GNAT.Directory_Operations.Directory_Error when Directory
+   --  cannot be read.
    function Listing (Directory : String) return Names.Vector is
-      Search : Ada.Directories.Search_Type;
-      Item   : Ada.Directories.Directory_Entry_Type;
+      Handle : GNAT.Directory_Operations.Dir_Type;
+      Buffer : String (1 .. 4_096);
+      Last   : Natural;
       Result : Names.Vector;
    begin
       if Listings.Contains (Directory) then
          return Listings.Element (Directory);
       end if;
-      Ada.Directories.Start_Search (Search, Directory, "");
-      while Ada.Directories.More_Entries (Search) loop
-         Ada.Directories.Get_Next_Entry (Search, Item);
-         Result.Append (Ada.Directories.Simple_Name (Item));
+      GNAT.Directory_Operations.Open (Handle, Directory);
+      loop
+         GNAT.Directory_Operations.Read (Handle, Buffer, Last);
+         exit when Last = 0;
+         if Buffer (1 .. Last) not in "." | ".." then
+            Result.Append (Buffer (1 .. Last));
+         end if;
       end loop;
-      Ada.Directories.End_Search (Search);
+      GNAT.Directory_Operations.Close (Handle);
       Listings.Insert (Directory, Result);
       return Result;
    end Listing;
+
+   function Join (Directory, Name : String) return String is
+     (if Directory /= "" and then Directory (Directory'Last) in '/' | '\'
+      then Directory & Name
+      else Directory & GNAT.OS_Lib.Directory_Separator & Name);
+
+   --  The name in Directory that Part is, as it is on disk, or "". When
+   --  Directory can be entered but not listed, Part is taken as it is
+   --  written if something of that name is there.
+   function Name_On_Disk
+     (Directory : String;
+      Part      : String)  --  adalang-analyzer: ignore Swappable_Parameters
+      return String
+   is
+      Names_In : Names.Vector;
+   begin
+      begin
+         Names_In := Listing (Directory);
+      exception
+         when GNAT.Directory_Operations.Directory_Error =>
+            return
+              (if GNAT.OS_Lib.Is_Regular_File (Join (Directory, Part))
+                 or else GNAT.OS_Lib.Is_Directory (Join (Directory, Part))
+               then Part
+               else "");
+      end;
+      if Names_In.Contains (Part) then
+         return Part;
+      end if;
+      for Name of Names_In loop
+         if Same_Name (Name, Part) then
+            return Name;
+         end if;
+      end loop;
+      return "";
+   end Name_On_Disk;
 
    --  Path on this host, named as it is on disk, or "" when nothing is
    --  there. A component that matches a name on disk only when case is
@@ -618,7 +665,6 @@ package body Adalang_Analyzer.ObjectAda_Projects is
    --  fingerprints, whatever the host.
    function Find_On_Host (Path : String) return String is
       Full      : constant String := Normal (Path);
-      Separator : constant Character := GNAT.OS_Lib.Directory_Separator;
       Root_Last : Natural;
       Current   : Unbounded_String;
    begin
@@ -642,26 +688,12 @@ package body Adalang_Analyzer.ObjectAda_Projects is
       for Part of Components (Full (Root_Last + 1 .. Full'Last)) loop
          declare
             Directory : constant String := To_String (Current);
-            Names_In  : constant Names.Vector := Listing (Directory);
-            Match     : Unbounded_String;
+            Match     : constant String := Name_On_Disk (Directory, Part);
          begin
-            if Names_In.Contains (Part) then
-               Match := To_Unbounded_String (Part);
-            else
-               for Name of Names_In loop
-                  if Same_Name (Name, Part) then
-                     Match := To_Unbounded_String (Name);
-                     exit;
-                  end if;
-               end loop;
-               if Match = Null_Unbounded_String then
-                  return "";
-               end if;
+            if Match = "" then
+               return "";
             end if;
-            if Directory (Directory'Last) not in '/' | '\' then
-               Append (Current, Separator);
-            end if;
-            Append (Current, Match);
+            Current := To_Unbounded_String (Join (Directory, Match));
          end;
       end loop;
       return To_String (Current);
@@ -835,8 +867,6 @@ package body Adalang_Analyzer.ObjectAda_Projects is
       Visited : in out Name_Sets.Set;
       Result  : in out Project)
    is
-      use type Ada.Directories.File_Kind;
-
       Read_From : constant Contents := Read (Path);
       Base      : constant String := Library_Base (Path, Read_From);
       Found     : Found_Vectors.Vector;
@@ -889,25 +919,16 @@ package body Adalang_Analyzer.ObjectAda_Projects is
                     (Ada.Directories.Containing_Directory (Library)));
                Before    : constant Natural :=
                  Natural (Result.Library_Sources.Length);
-               Search    : Ada.Directories.Search_Type;
-               Item      : Ada.Directories.Directory_Entry_Type;
             begin
                --  Sources in the library directory itself.
-               if Directory /= ""
-                 and then Ada.Directories.Kind (Directory) =
-                   Ada.Directories.Directory
+               if Directory /= "" and then GNAT.OS_Lib.Is_Directory (Directory)
                then
-                  Ada.Directories.Start_Search
-                    (Search, Directory, "",
-                     (Ada.Directories.Ordinary_File => True,
-                      others                        => False));
-                  while Ada.Directories.More_Entries (Search) loop
-                     Ada.Directories.Get_Next_Entry (Search, Item);
+                  for Name of Listing (Directory) loop
                      declare
-                        Source : constant String :=
-                          Ada.Directories.Full_Name (Item);
+                        Source : constant String := Join (Directory, Name);
                      begin
                         if Is_Ada_Source_Name (Source)
+                          and then GNAT.OS_Lib.Is_Regular_File (Source)
                           and then not Result.Sources.Contains (Source)
                           and then not Result.Library_Sources.Contains
                             (Source)
@@ -916,23 +937,17 @@ package body Adalang_Analyzer.ObjectAda_Projects is
                         end if;
                      end;
                   end loop;
-                  Ada.Directories.End_Search (Search);
                end if;
 
                --  The project whose library directory it is: a project
                --  file in the directory above it.
                if Parent /= "" then
-                  Ada.Directories.Start_Search
-                    (Search, Parent, "",
-                     (Ada.Directories.Ordinary_File => True,
-                      others                        => False));
-                  while Ada.Directories.More_Entries (Search) loop
-                     Ada.Directories.Get_Next_Entry (Search, Item);
+                  for Name of Listing (Parent) loop
                      declare
-                        Other : constant String :=
-                          Ada.Directories.Full_Name (Item);
+                        Other : constant String := Join (Parent, Name);
                      begin
                         if Is_ObjectAda_Project_Name (Other)
+                          and then GNAT.OS_Lib.Is_Regular_File (Other)
                           and then not Visited.Contains (Normal (Other))
                         then
                            declare
@@ -958,7 +973,6 @@ package body Adalang_Analyzer.ObjectAda_Projects is
                         end if;
                      end;
                   end loop;
-                  Ada.Directories.End_Search (Search);
                end if;
 
                if Natural (Result.Library_Sources.Length) = Before
@@ -967,7 +981,9 @@ package body Adalang_Analyzer.ObjectAda_Projects is
                   Result.Unresolved_Links.Append (Link);
                end if;
             exception
-               when Ada.Directories.Name_Error | Ada.Directories.Use_Error =>
+               when Ada.Directories.Name_Error | Ada.Directories.Use_Error
+                  | GNAT.Directory_Operations.Directory_Error
+               =>
                   if not Result.Unresolved_Links.Contains (Link) then
                      Result.Unresolved_Links.Append (Link);
                   end if;

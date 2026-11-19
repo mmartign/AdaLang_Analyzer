@@ -150,4 +150,37 @@ then
    exit 1
 fi
 
+#  Directories with an entry whose attributes cannot be read: on Windows a
+#  drive root (pagefile.sys, System Volume Information), here a symbolic
+#  link that loops. Such an entry above the project, among its sources,
+#  beside the library's project or in the library made every source go
+#  missing, as on a Windows runner whose D:\ had one (2026-11-19).
+looped="$work/looped"
+mkdir "$looped"
+cp -R "$project" "$looped/"
+loops=yes
+for directory in "$looped" "$looped/objectada_project/src" \
+   "$looped/objectada_project/common" \
+   "$looped/objectada_project/common/units"
+do
+   if ! ln -s loop "$directory/loop" 2>/dev/null || [ ! -L "$directory/loop" ]
+   then
+      loops=no
+   fi
+done
+if [ "$loops" = yes ]; then
+   "$analyzer" -v -checks="$checks" \
+      -P "$looped/objectada_project/app/legacy.prj" >"$work/looped.log" 2>&1 \
+      || true
+   if ! grep -F ', target Win32 (Intel) Debug: 5 sources listed, 4 found, 1 library sources' \
+          "$work/looped.log" >/dev/null \
+     || grep -F 'no source found for library C:\Old Place' "$work/looped.log" \
+          >/dev/null
+   then
+      echo "legacy.prj: an unreadable directory entry hid its sources" >&2
+      cat "$work/looped.log" >&2
+      exit 1
+   fi
+fi
+
 echo "ObjectAda project tests passed"
