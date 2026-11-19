@@ -4,7 +4,12 @@ set -eu
 #  Complete repository gate. Build first so every suite exercises the current
 #  sources rather than a stale executable. GNATprove remains an explicit skip
 #  inside its differential script when the optional tool is unavailable.
+#  With ADALANG_TESTS_KEEP_GOING=1 every script runs even after one fails,
+#  and the failed ones are listed at the end.
 alr build
+
+keep_going=${ADALANG_TESTS_KEEP_GOING:-0}
+failed=''
 
 for test_script in \
   tests/run_control_flow_graph_model.sh \
@@ -41,7 +46,20 @@ for test_script in \
   tests/run_gnatprove_differential.sh \
   tests/run_performance_smoke.sh
 do
-   sh "$test_script"
+   if [ "$keep_going" = 1 ]; then
+      echo "=== $test_script"
+      if ! sh "$test_script"; then
+         echo "=== FAILED: $test_script" >&2
+         failed="$failed $test_script"
+      fi
+   else
+      sh "$test_script"
+   fi
 done
+
+if [ -n "$failed" ]; then
+   echo "failed test scripts:$failed" >&2
+   exit 1
+fi
 
 echo "all available tests passed"

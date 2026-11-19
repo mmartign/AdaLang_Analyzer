@@ -95,3 +95,63 @@ jobs:
         env:
           ADALANG_MAX_SMOKE_SECONDS: 180
         run: sh tests/run_all.sh
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # The fixtures and the expected outputs are compared byte for byte, so
+      # they are checked out as committed. Sources with CRLF line ends, as a
+      # Windows checkout gives them, have a test of their own.
+      - name: Keep line ends as committed
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: alire-project/setup-alire@v4
+        with:
+          version: "2.1.0"
+
+      # Building langkit_support under Alire's default cache goes past
+      # MAX_PATH: gprbuild hands ld a linker script whose path, relative to
+      # an object directory about 185 characters deep, is longer than 260
+      # characters, and ld cannot open it. The Alire index's own Windows CI
+      # moves the cache to C:\temp\ac for that reason; the toolchain and
+      # MSYS2 stay where setup-alire put them.
+      - name: Move Alire's cache to a short path
+        run: |
+          mkdir -p 'C:\temp\ac'
+          alr settings --global --set cache.dir 'C:\temp\ac'
+          alr settings --global --set toolchain.dir "$LOCALAPPDATA\\alire\\cache\\toolchains"
+          alr settings --global --set msys2.install_dir "$LOCALAPPDATA\\alire\\cache\\msys64"
+          alr version
+
+      # Git for Windows' tar takes "C:" in an archive name for a remote host;
+      # Alire unpacks with the one MSYS2 provides.
+      - name: Install tar from MSYS2
+        run: |
+          "$LOCALAPPDATA\\alire\\cache\\msys64\\usr\\bin\\pacman" --noconfirm -S tar
+
+      - uses: actions/cache@v4
+        with:
+          path: C:\temp\ac
+          key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}
+          restore-keys: |
+            alire-builds-${{ runner.os }}-
+
+      - name: Install SPARK solvers
+        run: alr -n install gnatprove
+
+      - name: Build
+        run: alr build
+
+      # Every script runs, so that one run lists every failure.
+      - name: Run test suite
+        env:
+          ADALANG_MAX_SMOKE_SECONDS: 300
+          ADALANG_TESTS_KEEP_GOING: 1
+        run: sh tests/run_all.sh
