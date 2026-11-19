@@ -175,19 +175,23 @@ package body Adalang_Analyzer.Circular_Dependencies is
                    Edges    => Index_Vectors.Empty_Vector));
             end Add;
          begin
-            if Libadalang.Analysis.Is_Null (Root) then
-               null;
-            elsif Root.Kind = Libadalang.Common.Ada_Compilation_Unit then
-               Add (Root.As_Compilation_Unit, Several => False);
-            elsif Root.Kind = Libadalang.Common.Ada_Compilation_Unit_List
-            then
-               for Item of Root.As_Compilation_Unit_List loop
-                  Add (Item.As_Compilation_Unit, Several => True);
-               end loop;
+            if not Libadalang.Analysis.Is_Null (Root) then
+               if Root.Kind = Libadalang.Common.Ada_Compilation_Unit then
+                  Add (Root.As_Compilation_Unit, Several => False);
+               elsif Root.Kind = Libadalang.Common.Ada_Compilation_Unit_List
+               then
+                  for Item of Root.As_Compilation_Unit_List loop
+                     Add (Item.As_Compilation_Unit, Several => True);
+                  end loop;
+               end if;
             end if;
          exception
-            when others =>
-               null;
+            when E : others =>
+               Adalang_Analyzer.Config.Report_Recoverable_Failure_Once
+                 (Rule       => "Circular_Package_Dependency",
+                  Operation  => "list compilation units",
+                  Source     => Adalang_Analyzer.Ada_Text.Safe_Filename (Unit),
+                  Occurrence => E);
          end;
       end loop;
 

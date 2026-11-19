@@ -1016,10 +1016,15 @@ package body Adalang_Analyzer.CLI is
          end if;
       end Settings_Path;
 
-      --  The value of Key in the TOML table [Section] of Alire's settings,
-      --  without its quotes, or "". A string between double quotes may
-      --  hold escaped backslashes, as a Windows path does.
-      function Setting (Section, Key : String) return String is
+      --  The value of the Alire setting Name, as "alr settings" names it
+      --  ("cache.dir": key "dir" of the TOML table [cache]), without its
+      --  quotes, or "". A string between double quotes may hold escaped
+      --  backslashes, as a Windows path does.
+      function Setting (Name : String) return String is
+         Dot     : constant Natural :=
+           Ada.Strings.Fixed.Index (Name, ".", Ada.Strings.Backward);
+         Section : constant String := Name (Name'First .. Dot - 1);
+         Key     : constant String := Name (Dot + 1 .. Name'Last);
          Path    : constant String := Settings_Path;
          File    : Ada.Text_IO.File_Type;
          Current : Ada.Strings.Unbounded.Unbounded_String;
@@ -1065,8 +1070,8 @@ package body Adalang_Analyzer.CLI is
       --  on Linux and macOS and %LOCALAPPDATA%\alire\cache on Windows
       --  unless the settings name another.
       function Toolchains_Dir return String is
-         Set_Dir   : constant String := Setting ("toolchain", "dir");
-         Set_Cache : constant String := Setting ("cache", "dir");
+         Set_Dir   : constant String := Setting ("toolchain.dir");
+         Set_Cache : constant String := Setting ("cache.dir");
          Xdg       : constant String := Env ("XDG_DATA_HOME");
          Home      : constant String := Env ("HOME");
          Local     : constant String := Env ("LOCALAPPDATA");
@@ -1101,7 +1106,7 @@ package body Adalang_Analyzer.CLI is
       --  [toolchain.use] gives "gnat_native_16.1.0_" (a hash that varies
       --  from machine to machine follows it).
       function Selected_Toolchain_Prefix return String is
-         Value    : constant String := Setting ("toolchain.use", "gnat");
+         Value    : constant String := Setting ("toolchain.use.gnat");
          Inner_Eq : constant Natural := Ada.Strings.Fixed.Index (Value, "=");
       begin
          if Inner_Eq = 0 then

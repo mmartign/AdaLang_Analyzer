@@ -140,62 +140,93 @@ package body Adalang_Analyzer.ObjectAda_Projects is
       return Ada.Strings.UTF_Encoding.Conversions.Convert (Units);
    end From_UTF_16;
 
-   --  Reads the string MFC writes for a CString at Position, and moves
-   --  Position past it. Its length comes first: a byte, or when that byte
-   --  is FF a word, or when that word is FFFF a double word. A word FFFE
-   --  instead says that UTF-16 characters follow, their count written the
-   --  same way again.
+   --  Reads the length MFC writes before a CString at Position, and moves
+   --  Position past it: a byte, or when that byte is FF a word, or when
+   --  that word is FFFF a double word. A word FFFE instead says that UTF-16
+   --  characters follow, their count written the same way again; it is
+   --  returned as such, no string being that long in this form.
+   procedure Read_Length
+     (Data     : String;
+      Position : in out Integer;
+      Length   : out Natural)
+   is
+      Value : Natural := Byte (Data, Position);
+   begin
+      Position := Position + 1;
+      if Value = 16#FF# then
+         Value := Word (Data, Position);
+         Position := Position + 2;
+         if Value = 16#FFFF# then
+            Value := Double_Word (Data, Position);
+            Position := Position + 4;
+         end if;
+      end if;
+      Length := Value;
+   end Read_Length;
+
+   --  How many bytes a CString takes, and whether they are UTF-16
+   --  characters.
+   type String_Size is record
+      Bytes   : Natural := 0;
+      Unicode : Boolean := False;
+   end record;
+
+   --  Reads the length or lengths before the CString at Position, and
+   --  moves Position to its first byte.
+   procedure Read_Size
+     (Data     : String;
+      Position : in out Integer;
+      Size     : out String_Size)
+   is
+      Length : Natural;
+   begin
+      Read_Length (Data, Position, Length);
+      Size := (Bytes => Length, Unicode => Length = 16#FFFE#);
+      if Size.Unicode then
+         Read_Length (Data, Position, Length);
+         Size.Bytes := 2 * Length;
+      end if;
+      if Size.Bytes > Data'Last - Position + 1 then
+         raise Format_Error with "a string runs past the end of the file";
+      end if;
+   end Read_Size;
+
+   --  Reads the CString at Position, and moves Position past it.
    procedure Read_String
      (Data     : String;
       Position : in out Integer;
       Value    : out Unbounded_String)
    is
-      Unicode : Boolean := False;
-      Length  : Natural;
-
-      procedure Read_Length is
-      begin
-         Length := Byte (Data, Position);
-         Position := Position + 1;
-         if Length = 16#FF# then
-            Length := Word (Data, Position);
-            Position := Position + 2;
-            if Length = 16#FFFE# and then not Unicode then
-               Unicode := True;
-               Read_Length;
-            elsif Length = 16#FFFF# then
-               Length := Double_Word (Data, Position);
-               Position := Position + 4;
-            end if;
-         end if;
-      end Read_Length;
+      Size : String_Size;
    begin
-      Read_Length;
+      Read_Size (Data, Position, Size);
       declare
-         Size : constant Natural := (if Unicode then 2 * Length else Length);
+         Bytes : constant String :=
+           Data (Position .. Position + Size.Bytes - 1);
       begin
-         if Size > Data'Last - Position + 1 then
-            raise Format_Error with "a string runs past the end of the file";
-         end if;
-         declare
-            Bytes : constant String :=
-              Data (Position .. Position + Size - 1);
-         begin
-            Value := To_Unbounded_String
-              (if Unicode then From_UTF_16 (Bytes) else From_ANSI (Bytes));
-         end;
-         Position := Position + Size;
+         Value := To_Unbounded_String
+           (if Size.Unicode then From_UTF_16 (Bytes) else From_ANSI (Bytes));
       end;
+      Position := Position + Size.Bytes;
    exception
       when Ada.Strings.UTF_Encoding.Encoding_Error =>
          raise Format_Error with "a string is not valid UTF-16";
    end Read_String;
 
-   --  Where MFC declares the class named Name, at or after From: the bytes
-   --  FF FF, the class's schema, the length of its name and the name. 0
-   --  when it does not.
+   --  Moves Position past the CString there.
+   procedure Skip_String (Data : String; Position : in out Integer) is
+      Size : String_Size;
+   begin
+      Read_Size (Data, Position, Size);
+      Position := Position + Size.Bytes;
+   end Skip_String;
+
+   --  Data and Name are both strings, but a call that swapped them would
+   --  look for the whole file in a class name.
    function Find_Class
-     (Data : String; Name : String; From : Positive) return Natural
+     (Data : String;
+      Name : String;  --  adalang-analyzer: ignore Swappable_Parameters
+      From : Positive) return Natural
    is
       Key   : constant String :=
         Character'Val (Name'Length) & Character'Val (0) & Name;
@@ -251,9 +282,15 @@ package body Adalang_Analyzer.ObjectAda_Projects is
         (Text'Length in 1 .. 4_096
          and then (for all C of Text => Character'Pos (C) >= 32));
    begin
-      Read_String (Data, Next, Item.Absolute);
-      Read_String (Data, Next, Item.Name);
-      Read_String (Data, Next, Item.Relative);
+      Item := (others => Null_Unbounded_String);
+      begin
+         Read_String (Data, Next, Item.Absolute);
+         Read_String (Data, Next, Item.Name);
+         Read_String (Data, Next, Item.Relative);
+      exception
+         when Format_Error =>
+            return False;
+      end;
       declare
          Absolute : constant String := To_String (Item.Absolute);
          Name     : constant String := To_String (Item.Name);
@@ -271,9 +308,6 @@ package body Adalang_Analyzer.ObjectAda_Projects is
          end if;
       end;
       return False;
-   exception
-      when Format_Error =>
-         return False;
    end Read_Listed_File;
 
    --  The whole of the file at Path.
@@ -285,15 +319,13 @@ package body Adalang_Analyzer.ObjectAda_Projects is
       Open (File, In_File, Path);
       if Size (File) > Largest_Project then
          Close (File);
-         raise Format_Error with "the file is too large";
+         raise Format_Error with "it is too large";
       end if;
       Data := new String (1 .. Natural (Size (File)));
       String'Read (Stream (File), Data.all);
       Close (File);
       return Data;
    exception
-      when Format_Error =>
-         raise;
       when Error : others =>
          if Is_Open (File) then
             Close (File);
@@ -346,13 +378,12 @@ package body Adalang_Analyzer.ObjectAda_Projects is
      (Data : String; From : Positive; Result : in out Contents)
    is
       Position : Integer := From;
-      Skipped  : Unbounded_String;
       Path     : Unbounded_String;
    begin
-      Read_String (Data, Position, Skipped);
+      Skip_String (Data, Position);
       Read_String (Data, Position, Result.Library_Dir);
       for Subdirectory in 1 .. 3 loop
-         Read_String (Data, Position, Skipped);
+         Skip_String (Data, Position);
       end loop;
       Position := Position + 8;
       Read_String (Data, Position, Path);
@@ -723,7 +754,7 @@ package body Adalang_Analyzer.ObjectAda_Projects is
    --  where that source now is. "" when nothing says where it is.
    function Locate_Link
      (Base       : String;
-      Entry_Path : String;
+      Entry_Path : String;  --  adalang-analyzer: ignore Swappable_Parameters
       Found      : Found_Vectors.Vector) return String
    is
       Separator : constant Character := GNAT.OS_Lib.Directory_Separator;
@@ -918,8 +949,11 @@ package body Adalang_Analyzer.ObjectAda_Projects is
                                  Load_Into (Other, False, Visited, Result);
                               end if;
                            exception
-                              when Format_Error =>
-                                 null;
+                              when Error : Format_Error =>
+                                 Config.Log_Verbose
+                                   ("  " & Other & " not read: "
+                                    & Ada.Exceptions.Exception_Message
+                                        (Error));
                            end;
                         end if;
                      end;
