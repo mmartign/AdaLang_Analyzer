@@ -13,8 +13,11 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Characters.Handling;
+with Ada.Directories;
 with Ada.Strings;
 with Ada.Strings.Fixed;
+
+with GNAT.OS_Lib;
 
 package body Adalang_Analyzer.Text_Utils is
 
@@ -81,5 +84,52 @@ package body Adalang_Analyzer.Text_Utils is
       return Text'Length >= Suffix'Length
         and then Text (Text'Last - Suffix'Length + 1 .. Text'Last) = Suffix;
    end Has_Suffix;
+
+   function Without_CR (Line : String) return String is
+     (if Line'Length > 0 and then Line (Line'Last) = ASCII.CR
+      then Line (Line'First .. Line'Last - 1)
+      else Line);
+
+   function Report_Path (Filename : String) return String is
+      Ignore_Case : constant Boolean := GNAT.OS_Lib.Directory_Separator = '\';
+
+      function Forward (Path : String) return String is
+         Result : String := Path;
+      begin
+         for C of Result loop
+            if C = '\' then
+               C := '/';
+            end if;
+         end loop;
+         return Result;
+      end Forward;
+
+      function Folded (Path : String) return String is
+        (if Ignore_Case then Ada.Characters.Handling.To_Lower (Path)
+         else Path);
+
+      Value   : constant String := Forward (Filename);
+      Current : constant String :=
+        Forward (Ada.Directories.Current_Directory);
+      First   : Integer := Value'First;
+   begin
+      if Value'Length > Current'Length
+        and then Folded (Value (Value'First .. Value'First + Current'Length - 1))
+                 = Folded (Current)
+        and then Value (Value'First + Current'Length) = '/'
+      then
+         First := Value'First + Current'Length + 1;
+      end if;
+
+      while First + 1 <= Value'Last
+        and then Value (First .. First + 1) = "./"
+      loop
+         First := First + 2;
+      end loop;
+
+      return
+        (if First > Value'Last then ""
+         else Value (First .. Value'Last));
+   end Report_Path;
 
 end Adalang_Analyzer.Text_Utils;

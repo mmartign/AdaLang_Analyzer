@@ -60,4 +60,33 @@ then
    exit 1
 fi
 
+#  A file can hold several compilation units, as the files of an ObjectAda
+#  project can. Each unit is a node of the graph of its own: two
+#  specifications of one file that with each other form a cycle, ...
+if "$analyzer" -checks='Circular_Package_Dependency' \
+     tests/circular_dependency_multi_unit.ada >"$output" 2>&1
+then
+   echo "expected the cycle inside one file to produce a violation" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[Circular_Package_Dependency\]' "$output")" -ne 1 ] \
+  || ! grep -F \
+       "circular dependency: circular_dependency_multi_unit.ada (Circular_Multi_Alpha) -> circular_dependency_multi_unit.ada (Circular_Multi_Beta) -> circular_dependency_multi_unit.ada (Circular_Multi_Alpha)" \
+       "$output" >/dev/null
+then
+   echo "unexpected findings for the cycle inside one file" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+#  ... while a body that withs a unit whose specification withs the body's
+#  own specification is no cycle, even with that specification and body
+#  in the same file.
+if ! "$analyzer" -q -checks='Circular_Package_Dependency' \
+     tests/circular_dependency_multi_unit_clean.ada
+then
+   echo "a body and its specification in one file made a cycle" >&2
+   exit 1
+fi
+
 echo "circular-dependency tests passed"

@@ -7,6 +7,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Characters.Handling;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Directories;
 with Ada.Strings.Fixed;
@@ -358,6 +359,14 @@ package body Adalang_Analyzer.Compiler_Checks is
                Arguments.Append
                  (Ada.Directories.Compose
                     (Work_Dir, Ada.Directories.Base_Name (File) & ".o"));
+               --  gcc tells Ada from other languages by the extension: an
+               --  ObjectAda project may name a source "x.ada" or "x.spc".
+               if Ada.Characters.Handling.To_Lower
+                    (Ada.Directories.Extension (File)) not in "ads" | "adb"
+               then
+                  Arguments.Append ("-x");
+                  Arguments.Append ("ada");
+               end if;
                Arguments.Append (Ada.Directories.Full_Name (File));
                if not Run (Gcc, Arguments, Output) then
                   Failures := Failures + 1;

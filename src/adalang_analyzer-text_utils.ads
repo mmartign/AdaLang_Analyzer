@@ -43,4 +43,17 @@ package Adalang_Analyzer.Text_Utils is
    function Has_Suffix (Text : String; Suffix : String) return Boolean;
    --  True when Text ends with Suffix.
 
+   function Without_CR (Line : String) return String;
+   --  Line without the carriage return that ends it, if any. Ada.Text_IO
+   --  removes it from a line of a file written on Windows when it reads
+   --  the file on Windows, not elsewhere: a source, a baseline or a
+   --  configuration file then reads the same on every host.
+
+   function Report_Path (Filename : String) return String;
+   --  Filename as the reports show it: relative to the current directory
+   --  when it is in it, with '/' separators. Libadalang gives an absolute
+   --  name, which would make what is reported depend on where the sources
+   --  are. On Windows, where file names do not depend on case, neither
+   --  does the match with the current directory: "c:\x" is in "C:\".
+
 end Adalang_Analyzer.Text_Utils;

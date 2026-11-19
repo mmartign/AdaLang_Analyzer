@@ -19,6 +19,7 @@ with Langkit_Support.File_Readers;
 --  GNAT project (.gpr) file support backed by GPR2. Project expressions,
 --  scenario variables, naming rules, exclusions, recursive source
 --  directories, and project extension are evaluated by the GPR2 library.
+--  ObjectAda project files (.prj) are read as well, by ObjectAda_Projects.
 package Adalang_Analyzer.Project_Files is
 
    package File_Name_Vectors is new Ada.Containers.Indefinite_Vectors
@@ -32,12 +33,19 @@ package Adalang_Analyzer.Project_Files is
       Scenario_Vars : File_Name_Vectors.Vector := File_Name_Vectors.Empty_Vector);
    --  Loads Project_File (appending ".gpr" if omitted) with GPR2 and appends
    --  the visible Ada sources of its root project to Files; the sources
-   --  of the projects it imports are recorded for Imported_Sources. Seen avoids
+   --  of the projects it imports are recorded for Imported_Sources. An
+   --  ObjectAda project file (named "*.prj") contributes the sources it
+   --  lists, and those of the libraries on its search path are recorded
+   --  in the same way as an imported project's. Seen avoids
    --  loading a project more than once when it is repeated on the command
    --  line. Scenario_Vars holds "name=value" pairs collected from -X
    --  command-line switches and is applied the same way gprbuild's own -X
    --  switch overrides a scenario variable's project-file default or
    --  ambient environment-variable value.
+
+   function Is_ObjectAda_Project (Project_File : String) return Boolean;
+   --  True when Project_File names an ObjectAda project file rather than a
+   --  GNAT project: its name ends in ".prj", in any case.
 
    function Lookup_Sources
      (Files : File_Name_Vectors.Vector) return File_Name_Vectors.Vector;

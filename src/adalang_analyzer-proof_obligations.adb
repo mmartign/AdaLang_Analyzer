@@ -7,13 +7,13 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Containers.Indefinite_Hashed_Maps;
-with Ada.Directories;
 with Ada.Containers.Vectors;
 with Ada.Strings.Hash;
 with Interfaces;
 
 with Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Config;
+with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Proof_Obligations is
 
@@ -169,40 +169,8 @@ package body Adalang_Analyzer.Proof_Obligations is
    --  Filename as the reports show it: relative to the current directory
    --  when it is in it, with '/' separators. Libadalang gives an absolute
    --  name, which would make an identifier depend on where the sources are.
-   function Normalized_Path (Filename : String) return String is
-      First   : Integer := Filename'First;
-      Value   : String := Filename;
-      Current : String := Ada.Directories.Current_Directory;
-   begin
-      for C of Value loop
-         if C = '\' then
-            C := '/';
-         end if;
-      end loop;
-      for C of Current loop
-         if C = '\' then
-            C := '/';
-         end if;
-      end loop;
-
-      if Value'Length > Current'Length
-        and then Value
-          (Value'First .. Value'First + Current'Length - 1) = Current
-        and then Value (Value'First + Current'Length) = '/'
-      then
-         First := Value'First + Current'Length + 1;
-      end if;
-
-      while First + 1 <= Value'Last
-        and then Value (First .. First + 1) = "./"
-      loop
-         First := First + 2;
-      end loop;
-
-      return
-        (if First > Value'Last then ""
-         else Value (First .. Value'Last));
-   end Normalized_Path;
+   function Normalized_Path (Filename : String) return String
+     renames Text_Utils.Report_Path;
 
    function Hex_Digit (Value : Interfaces.Unsigned_64) return Character is
       Hex_Chars : constant String := "0123456789abcdef";

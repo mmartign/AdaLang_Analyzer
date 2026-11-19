@@ -11,6 +11,8 @@ with Ada.Containers.Vectors;
 with Ada.Directories;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
+with Langkit_Support.Text;
+
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;
@@ -25,9 +27,18 @@ package body Adalang_Analyzer.Circular_Dependencies is
    package Index_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Positive);
 
+   --  One compilation unit. A file usually holds one, but a file of an
+   --  ObjectAda project, for one, can hold several, and each is a node of
+   --  its own: the body of a package that withs a unit whose specification
+   --  withs the package is no cycle, even with the package's specification
+   --  and body in one file.
    type Node_Info is record
       Filename : Unbounded_String;
+      Label    : Unbounded_String;
+      --  How the unit is named in a message: the file's simple name, and
+      --  the unit's own name after it when the file holds several.
       Unit     : Libadalang.Analysis.Analysis_Unit;
+      CU       : Libadalang.Analysis.Compilation_Unit;
       Anchor   : Libadalang.Analysis.Ada_Node;
       Edges    : Index_Vectors.Vector;
    end record;
@@ -41,35 +52,28 @@ package body Adalang_Analyzer.Circular_Dependencies is
      (Index_Type => Positive, Element_Type => Color_Kind);
 
    function Index_Of
-     (Nodes : Node_Vectors.Vector; Filename : String) return Natural is
+     (Nodes : Node_Vectors.Vector;
+      CU    : Libadalang.Analysis.Compilation_Unit) return Natural
+   is
+      use type Libadalang.Analysis.Compilation_Unit;
    begin
       for I in Nodes.First_Index .. Nodes.Last_Index loop
-         if To_String (Nodes (I).Filename) = Filename then
+         if Nodes (I).CU = CU then
             return I;
          end if;
       end loop;
       return 0;
    end Index_Of;
 
-   --  The Compilation_Unit for Unit's root, or No_Compilation_Unit for an
-   --  empty or unparseable file.
-   function Root_Compilation_Unit
-     (Unit : Libadalang.Analysis.Analysis_Unit)
-      return Libadalang.Analysis.Compilation_Unit
-   is
-      Root : constant Libadalang.Analysis.Ada_Node := Unit.Root;
+   --  The name of the library unit or subunit CU declares, or "".
+   function Unit_Name
+     (CU : Libadalang.Analysis.Compilation_Unit) return String is
    begin
-      if Libadalang.Analysis.Is_Null (Root)
-        or else Root.Kind /= Libadalang.Common.Ada_Compilation_Unit
-      then
-         return Libadalang.Analysis.No_Compilation_Unit;
-      end if;
-
-      return Root.As_Compilation_Unit;
+      return Langkit_Support.Text.To_UTF8 (CU.P_Decl.P_Fully_Qualified_Name);
    exception
       when others =>
-         return Libadalang.Analysis.No_Compilation_Unit;
-   end Root_Compilation_Unit;
+         return "";
+   end Unit_Name;
 
    --  The first With_Clause in CU's prelude, for a more useful caret
    --  position than the whole compilation unit, or CU itself if it has
@@ -118,16 +122,10 @@ package body Adalang_Analyzer.Circular_Dependencies is
             if P > Start_Position then
                Append (Message, " -> ");
             end if;
-            Append
-              (Message,
-               Ada.Directories.Simple_Name
-                 (To_String (Nodes (Path (P)).Filename)));
+            Append (Message, Nodes (Path (P)).Label);
          end loop;
          Append (Message, " -> ");
-         Append
-           (Message,
-            Ada.Directories.Simple_Name
-              (To_String (Nodes (Back_To).Filename)));
+         Append (Message, Nodes (Back_To).Label);
 
          if not Libadalang.Analysis.Is_Null (Nodes (Back_To).Anchor) then
             Report_Rule_Violation
@@ -157,20 +155,46 @@ package body Adalang_Analyzer.Circular_Dependencies is
          declare
             Unit : constant Libadalang.Analysis.Analysis_Unit :=
               Ctx.Get_From_File (F);
+            Root : constant Libadalang.Analysis.Ada_Node := Unit.Root;
+            Name : constant String :=
+              Ada.Directories.Simple_Name (Unit.Get_Filename);
+
+            procedure Add (CU : Libadalang.Analysis.Compilation_Unit;
+                           Several : Boolean) is
+            begin
+               Node_Vectors.Append
+                 (Nodes,
+                  (Filename => To_Unbounded_String (Unit.Get_Filename),
+                   Label    => To_Unbounded_String
+                     (if Several and then Unit_Name (CU) /= ""
+                      then Name & " (" & Unit_Name (CU) & ")"
+                      else Name),
+                   Unit     => Unit,
+                   CU       => CU,
+                   Anchor   => Libadalang.Analysis.No_Ada_Node,
+                   Edges    => Index_Vectors.Empty_Vector));
+            end Add;
          begin
-            Node_Vectors.Append
-              (Nodes,
-               (Filename => To_Unbounded_String (Unit.Get_Filename),
-                Unit     => Unit,
-                Anchor   => Libadalang.Analysis.No_Ada_Node,
-                Edges    => Index_Vectors.Empty_Vector));
+            if Libadalang.Analysis.Is_Null (Root) then
+               null;
+            elsif Root.Kind = Libadalang.Common.Ada_Compilation_Unit then
+               Add (Root.As_Compilation_Unit, Several => False);
+            elsif Root.Kind = Libadalang.Common.Ada_Compilation_Unit_List
+            then
+               for Item of Root.As_Compilation_Unit_List loop
+                  Add (Item.As_Compilation_Unit, Several => True);
+               end loop;
+            end if;
+         exception
+            when others =>
+               null;
          end;
       end loop;
 
       for I in Nodes.First_Index .. Nodes.Last_Index loop
          declare
             CU : constant Libadalang.Analysis.Compilation_Unit :=
-              Root_Compilation_Unit (Nodes (I).Unit);
+              Nodes (I).CU;
          begin
             if not Libadalang.Analysis.Is_Null (CU) then
                Nodes (I).Anchor := Report_Anchor (CU);
@@ -202,7 +226,8 @@ package body Adalang_Analyzer.Circular_Dependencies is
                                     declare
                                        Target : constant Natural :=
                                          Index_Of
-                                           (Nodes, Decl.Unit.Get_Filename);
+                                           (Nodes,
+                                            Decl.P_Enclosing_Compilation_Unit);
                                     begin
                                        if Target /= 0 and then Target /= I
                                        then

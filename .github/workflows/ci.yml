@@ -136,11 +136,16 @@ jobs:
         run: |
           "$LOCALAPPDATA\\alire\\cache\\msys64\\usr\\bin\\pacman" --noconfirm -S tar
 
-      - uses: actions/cache@v4
+      # Restored here and saved after the build whether it succeeds or not:
+      # the dependencies take about 25 minutes to build on Windows.
+      - name: Restore Alire's builds
+        id: alire-builds
+        uses: actions/cache/restore@v4
         with:
           path: C:\temp\ac
-          key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}
+          key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-${{ github.run_id }}
           restore-keys: |
+            alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-
             alire-builds-${{ runner.os }}-
 
       - name: Install SPARK solvers
@@ -148,6 +153,13 @@ jobs:
 
       - name: Build
         run: alr build
+
+      - name: Save Alire's builds
+        if: always() && steps.alire-builds.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\temp\ac
+          key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-${{ github.run_id }}
 
       # Every script runs, so that one run lists every failure.
       - name: Run test suite

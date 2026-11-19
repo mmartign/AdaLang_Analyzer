@@ -169,6 +169,7 @@ package body Adalang_Analyzer.CLI is
       Ada.Text_IO.Put_Line
         ("  -version, --version   Show version and exit");
       Ada.Text_IO.Put_Line ("  -P<project>.gpr       Analyze the sources of a GNAT project file");
+      Ada.Text_IO.Put_Line ("  -P<project>.prj       Analyze the sources of an ObjectAda project file");
       Ada.Text_IO.Put_Line ("  -X<name>=<value>      Set a project scenario variable (repeatable)");
       Ada.Text_IO.Put_Line ("  -checks=<list>        Enable/disable checks");
       Ada.Text_IO.Put_Line ("  -list-checks          List available checks");
@@ -765,7 +766,10 @@ package body Adalang_Analyzer.CLI is
 
       while not Ada.Text_IO.End_Of_File (File) loop
          declare
-            Line       : constant String := Ada.Text_IO.Get_Line (File);
+            --  A line of a file written on Windows is the same line.
+            Line       : constant String :=
+              Adalang_Analyzer.Text_Utils.Without_CR
+                (Ada.Text_IO.Get_Line (File));
             Lower_Line : constant String :=
               Ada.Characters.Handling.To_Lower (Line);
             Comment_Position : constant Natural :=
@@ -942,6 +946,35 @@ package body Adalang_Analyzer.CLI is
          Report.Set_Muted (False);
    end Verify_Imported_File;
 
+   --  A TOML string value without its quotes: as it is between single
+   --  quotes, with its escapes undone between double quotes (a Windows path
+   --  written by Alire is "C:\\temp\\ac"), and as it is otherwise.
+   function Unquoted (Raw : String) return String is
+      Value : Ada.Strings.Unbounded.Unbounded_String;
+      Index : Natural;
+   begin
+      if Raw'Length >= 2
+        and then Raw (Raw'First) = '''
+        and then Raw (Raw'Last) = '''
+      then
+         return Raw (Raw'First + 1 .. Raw'Last - 1);
+      elsif Raw'Length >= 2
+        and then Raw (Raw'First) = '"'
+        and then Raw (Raw'Last) = '"'
+      then
+         Index := Raw'First + 1;
+         while Index < Raw'Last loop
+            if Raw (Index) = '\' and then Index + 1 < Raw'Last then
+               Index := Index + 1;
+            end if;
+            Ada.Strings.Unbounded.Append (Value, Raw (Index));
+            Index := Index + 1;
+         end loop;
+         return Ada.Strings.Unbounded.To_String (Value);
+      end if;
+      return Raw;
+   end Unquoted;
+
    --  Best-effort fallback for the "gnatls" lookup below: when it is not on
    --  PATH, an Alire-managed toolchain may still be present locally (e.g.
    --  the binary was built with "alr build" but is now being run directly
@@ -949,19 +982,20 @@ package body Adalang_Analyzer.CLI is
    --  find the selected gnat toolchain and locates its bin/ directory under
    --  Alire's toolchain cache, without requiring "alr exec" to be used for
    --  every invocation. Returns "" if nothing can be found; the caller then
-   --  falls back to the pre-existing warning, so a wrong guess here (e.g.
-   --  the Windows paths, which are unverified) never regresses behavior.
+   --  falls back to the pre-existing warning, so a wrong guess here never
+   --  regresses behavior.
    function Locate_Alire_Gnatls_Dir return String is
       function Env (Name : String) return String is
         (Ada.Environment_Variables.Value (Name, ""));
 
-      --  Alire keeps its global settings under the XDG config directory
-      --  (also the macOS default: confirmed against a live "alr" install),
-      --  with an unverified best-effort guess at the Windows equivalent.
+      --  Alire keeps its global settings under the XDG configuration
+      --  directory (also on macOS: confirmed against a live "alr"
+      --  install), and on Windows in %LOCALAPPDATA%\alire\settings (Alire
+      --  2's Alire.Platforms.Folders for Windows).
       function Settings_Path return String is
-         Xdg  : constant String := Env ("XDG_CONFIG_HOME");
-         Home : constant String := Env ("HOME");
-         Ad   : constant String := Env ("APPDATA");
+         Xdg   : constant String := Env ("XDG_CONFIG_HOME");
+         Home  : constant String := Env ("HOME");
+         Local : constant String := Env ("LOCALAPPDATA");
       begin
          if Xdg /= ""
            and then Ada.Directories.Exists (Xdg & "/alire/settings.toml")
@@ -972,47 +1006,23 @@ package body Adalang_Analyzer.CLI is
                       (Home & "/.config/alire/settings.toml")
          then
             return Home & "/.config/alire/settings.toml";
-         elsif Ad /= ""
-           and then Ada.Directories.Exists (Ad & "\alire\settings.toml")
+         elsif Local /= ""
+           and then Ada.Directories.Exists
+                      (Local & "\alire\settings\settings.toml")
          then
-            return Ad & "\alire\settings.toml";
+            return Local & "\alire\settings\settings.toml";
          else
             return "";
          end if;
       end Settings_Path;
 
-      function Toolchains_Dir return String is
-         Xdg   : constant String := Env ("XDG_DATA_HOME");
-         Home  : constant String := Env ("HOME");
-         Local : constant String := Env ("LOCALAPPDATA");
-      begin
-         if Xdg /= ""
-           and then Ada.Directories.Exists (Xdg & "/alire/toolchains")
-         then
-            return Xdg & "/alire/toolchains";
-         elsif Home /= ""
-           and then Ada.Directories.Exists
-                      (Home & "/.local/share/alire/toolchains")
-         then
-            return Home & "/.local/share/alire/toolchains";
-         elsif Local /= ""
-           and then Ada.Directories.Exists (Local & "\alire\toolchains")
-         then
-            return Local & "\alire\toolchains";
-         else
-            return "";
-         end if;
-      end Toolchains_Dir;
-
-      --  Parses the TOML "[toolchain.use]" section's "gnat = " entry (e.g.
-      --  gnat = "gnat_native=16.1.0") into the directory-name prefix Alire
-      --  uses for that toolchain's cache entry, e.g. "gnat_native_16.1.0_"
-      --  (the trailing content-hash segment varies per machine, so only
-      --  the prefix is matched).
-      function Selected_Toolchain_Prefix return String is
+      --  The value of Key in the TOML table [Section] of Alire's settings,
+      --  without its quotes, or "". A string between double quotes may
+      --  hold escaped backslashes, as a Windows path does.
+      function Setting (Section, Key : String) return String is
          Path    : constant String := Settings_Path;
          File    : Ada.Text_IO.File_Type;
-         Section : Ada.Strings.Unbounded.Unbounded_String;
+         Current : Ada.Strings.Unbounded.Unbounded_String;
       begin
          if Path = "" then
             return "";
@@ -1024,55 +1034,82 @@ package body Adalang_Analyzer.CLI is
                Line : constant String :=
                  Ada.Strings.Fixed.Trim
                    (Ada.Text_IO.Get_Line (File), Ada.Strings.Both);
+               Eq   : constant Natural := Ada.Strings.Fixed.Index (Line, "=");
             begin
                if Line'Length >= 2
                  and then Line (Line'First) = '['
                  and then Line (Line'Last) = ']'
                then
-                  Section :=
+                  Current :=
                     Ada.Strings.Unbounded.To_Unbounded_String
                       (Line (Line'First + 1 .. Line'Last - 1));
-               elsif Ada.Strings.Unbounded.To_String (Section) =
-                       "toolchain.use"
+               elsif Eq > 0
+                 and then Ada.Strings.Unbounded.To_String (Current) = Section
+                 and then Ada.Strings.Fixed.Trim
+                            (Line (Line'First .. Eq - 1), Ada.Strings.Both) =
+                          Key
                then
-                  declare
-                     Eq : constant Natural :=
-                       Ada.Strings.Fixed.Index (Line, "=");
-                  begin
-                     if Eq > 0
-                       and then Ada.Strings.Fixed.Trim
-                                  (Line (Line'First .. Eq - 1),
-                                   Ada.Strings.Both) =
-                                "gnat"
-                     then
-                        declare
-                           Raw : constant String :=
-                             Ada.Strings.Fixed.Trim
-                               (Line (Eq + 1 .. Line'Last),
-                                Ada.Strings.Both);
-                           Value : constant String :=
-                             (if Raw'Length >= 2
-                                and then Raw (Raw'First) = '"'
-                                and then Raw (Raw'Last) = '"'
-                              then Raw (Raw'First + 1 .. Raw'Last - 1)
-                              else Raw);
-                           Inner_Eq : constant Natural :=
-                             Ada.Strings.Fixed.Index (Value, "=");
-                        begin
-                           if Inner_Eq > 0 then
-                              Ada.Text_IO.Close (File);
-                              return
-                                Value (Value'First .. Inner_Eq - 1) & "_" &
-                                Value (Inner_Eq + 1 .. Value'Last) & "_";
-                           end if;
-                        end;
-                     end if;
-                  end;
+                  Ada.Text_IO.Close (File);
+                  return Unquoted
+                    (Ada.Strings.Fixed.Trim
+                       (Line (Eq + 1 .. Line'Last), Ada.Strings.Both));
                end if;
             end;
          end loop;
          Ada.Text_IO.Close (File);
          return "";
+      end Setting;
+
+      --  Alire's toolchain directory: the one its settings name, or the
+      --  "toolchains" directory of its cache, which is ~/.local/share/alire
+      --  on Linux and macOS and %LOCALAPPDATA%\alire\cache on Windows
+      --  unless the settings name another.
+      function Toolchains_Dir return String is
+         Set_Dir   : constant String := Setting ("toolchain", "dir");
+         Set_Cache : constant String := Setting ("cache", "dir");
+         Xdg       : constant String := Env ("XDG_DATA_HOME");
+         Home      : constant String := Env ("HOME");
+         Local     : constant String := Env ("LOCALAPPDATA");
+      begin
+         if Set_Dir /= "" and then Ada.Directories.Exists (Set_Dir) then
+            return Set_Dir;
+         elsif Set_Cache /= ""
+           and then Ada.Directories.Exists (Set_Cache & "/toolchains")
+         then
+            return Set_Cache & "/toolchains";
+         elsif Xdg /= ""
+           and then Ada.Directories.Exists (Xdg & "/alire/toolchains")
+         then
+            return Xdg & "/alire/toolchains";
+         elsif Home /= ""
+           and then Ada.Directories.Exists
+                      (Home & "/.local/share/alire/toolchains")
+         then
+            return Home & "/.local/share/alire/toolchains";
+         elsif Local /= ""
+           and then Ada.Directories.Exists
+                      (Local & "\alire\cache\toolchains")
+         then
+            return Local & "\alire\cache\toolchains";
+         else
+            return "";
+         end if;
+      end Toolchains_Dir;
+
+      --  The directory-name prefix of the selected gnat toolchain in
+      --  Alire's toolchain directory: gnat = "gnat_native=16.1.0" in
+      --  [toolchain.use] gives "gnat_native_16.1.0_" (a hash that varies
+      --  from machine to machine follows it).
+      function Selected_Toolchain_Prefix return String is
+         Value    : constant String := Setting ("toolchain.use", "gnat");
+         Inner_Eq : constant Natural := Ada.Strings.Fixed.Index (Value, "=");
+      begin
+         if Inner_Eq = 0 then
+            return "";
+         end if;
+         return
+           Value (Value'First .. Inner_Eq - 1) & "_" &
+           Value (Inner_Eq + 1 .. Value'Last) & "_";
       end Selected_Toolchain_Prefix;
 
       Prefix : constant String := Selected_Toolchain_Prefix;
@@ -1116,6 +1153,23 @@ package body Adalang_Analyzer.CLI is
       when others =>
          return "";
    end Locate_Alire_Gnatls_Dir;
+
+   --  The GNAT projects among Projects: those the compiler checks build
+   --  with gprbuild. The sources of an ObjectAda project are compiled one
+   --  by one, as files named on the command line are.
+   function GNAT_Projects
+     (Projects : File_Name_Vectors.Vector) return File_Name_Vectors.Vector
+   is
+      Result : File_Name_Vectors.Vector;
+   begin
+      for Project of Projects loop
+         if not Adalang_Analyzer.Project_Files.Is_ObjectAda_Project (Project)
+         then
+            Result.Append (Project);
+         end if;
+      end loop;
+      return Result;
+   end GNAT_Projects;
 
    procedure Run is
       Files_To_Process   : File_Name_Vectors.Vector;
@@ -1976,7 +2030,7 @@ package body Adalang_Analyzer.CLI is
         ((Files         => Files_To_Process,
           Lookup_Files  =>
             Adalang_Analyzer.Project_Files.Lookup_Sources (Files_To_Process),
-          Projects      => Project_Gpr_Files,
+          Projects      => GNAT_Projects (Project_Gpr_Files),
           Scenario_Vars => Scenario_Vars));
 
       if Rule_States (Duplicate_Subprogram) = Enabled then

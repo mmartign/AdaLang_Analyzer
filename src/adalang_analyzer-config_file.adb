@@ -17,6 +17,8 @@ with Ada.Directories;
 with Ada.Strings.Fixed;
 with Ada.Text_IO;
 
+with Adalang_Analyzer.Text_Utils;
+
 package body Adalang_Analyzer.Config_File is
 
    function Resolve
@@ -74,7 +76,8 @@ package body Adalang_Analyzer.Config_File is
          declare
             Line : constant String :=
               Ada.Strings.Fixed.Trim
-                (Ada.Text_IO.Get_Line (File), Ada.Strings.Both);
+                (Text_Utils.Without_CR (Ada.Text_IO.Get_Line (File)),
+                 Ada.Strings.Both);
          begin
             if Line /= "" and then Line (Line'First) /= '#' then
                Split_Into_Tokens (Line);

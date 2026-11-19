@@ -17,7 +17,6 @@ with Ada.Containers;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Containers.Vectors;
-with Ada.Directories;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 with Ada.Strings.Hash;
@@ -131,42 +130,8 @@ package body Adalang_Analyzer.Report is
       Analyzed_Files.Append (Filename);
    end Record_Analyzed_File;
 
-   function Normalized_Path (Filename : String) return String is
-      First   : Integer := Filename'First;
-      Value   : String := Filename;
-      Current : String := Ada.Directories.Current_Directory;
-   begin
-      for C of Value loop
-         if C = '\' then
-            C := '/';
-         end if;
-      end loop;
-      for C of Current loop
-         if C = '\' then
-            C := '/';
-         end if;
-      end loop;
-
-      if Value'Length > Current'Length
-        and then Value
-          (Value'First .. Value'First + Current'Length - 1) = Current
-        and then Value (Value'First + Current'Length) = '/'
-      then
-         First := Value'First + Current'Length + 1;
-      end if;
-
-      while First + 1 <= Value'Last
-        and then Value (First .. First + 1) = "./"
-      loop
-         First := First + 2;
-      end loop;
-
-      if First > Value'Last then
-         return "";
-      else
-         return Value (First .. Value'Last);
-      end if;
-   end Normalized_Path;
+   function Normalized_Path (Filename : String) return String
+     renames Text_Utils.Report_Path;
 
    function Hex_Digit (Value : Interfaces.Unsigned_64) return Character is
       Hex_Chars : constant String := "0123456789abcdef";
@@ -261,6 +226,19 @@ package body Adalang_Analyzer.Report is
       return To_String (Result);
    end URI_Escape;
 
+   --  The SARIF URI of a file named Path, as Normalized_Path gives it. A
+   --  path on a Windows drive, which Normalized_Path leaves absolute when
+   --  it is not under the current directory, is a "file:" URI: its drive
+   --  letter would otherwise read as a URI scheme.
+   function Artifact_URI (Path : String) return String is
+     (if Path'Length >= 3
+        and then Path (Path'First) in 'A' .. 'Z' | 'a' .. 'z'
+        and then Path (Path'First + 1) = ':'
+        and then Path (Path'First + 2) = '/'
+      then "file:///" & Path (Path'First .. Path'First + 1)
+           & URI_Escape (Path (Path'First + 2 .. Path'Last))
+      else URI_Escape (Path));
+
    --  Records one more baselined occurrence of Fingerprint.
    procedure Add_Baseline_Occurrence (Fingerprint : String) is
       Cursor : constant Fingerprint_Count_Maps.Cursor :=
@@ -310,7 +288,8 @@ package body Adalang_Analyzer.Report is
          declare
             Line : constant String :=
               Ada.Strings.Fixed.Trim
-                (Ada.Text_IO.Get_Line (File), Ada.Strings.Both);
+                (Text_Utils.Without_CR (Ada.Text_IO.Get_Line (File)),
+                 Ada.Strings.Both);
          begin
             if Line /= "" and then Line (Line'First) /= '#' then
                Add_Baseline_Occurrence (Line);
@@ -1230,7 +1209,8 @@ package body Adalang_Analyzer.Report is
                """}, ""locations"": [{""physicalLocation"": {" &
                """artifactLocation"": {""uri"": """ &
                JSON_Escape
-                 (URI_Escape (Normalized_Path (To_String (Item.Filename)))) &
+                 (Artifact_URI (Normalized_Path (To_String (Item.Filename))))
+               &
                """}, ""region"": {""startLine"": " &
                Text_Utils.To_Decimal (Item.Line_Number) &
                ", ""startColumn"": " &
@@ -1284,7 +1264,8 @@ package body Adalang_Analyzer.Report is
 
       while not Ada.Text_IO.End_Of_File (File) loop
          declare
-            Line : constant String := Ada.Text_IO.Get_Line (File);
+            Line : constant String :=
+              Text_Utils.Without_CR (Ada.Text_IO.Get_Line (File));
          begin
             Current_Line := Current_Line + 1;
 

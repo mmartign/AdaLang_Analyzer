@@ -10,11 +10,22 @@ project AdaLang_Analyzer is
    for Exec_Dir use "bin";
    for Main use ("adalang_analyzer-driver.adb");
 
+   Common_Switches :=
+     Adalang_Analyzer_Config.Ada_Compiler_Switches
+     & ("-gnatyM120",  --  Match the project's documented line limit
+        "-gnatwe");    --  Reject new compiler warnings
+
    package Compiler is
-      for Default_Switches ("Ada") use
-        Adalang_Analyzer_Config.Ada_Compiler_Switches
-        & ("-gnatyM120",  --  Match the project's documented line limit
-           "-gnatwe");    --  Reject new compiler warnings
+      case Adalang_Analyzer_Config.Alire_Host_OS is
+         when "windows" =>
+            --  Compiled with a section for each subprogram and object, a
+            --  unit as large as Flow_Interp has more sections than the
+            --  32,767 a COFF object file holds; the big-object format
+            --  holds 2**31.
+            for Default_Switches ("Ada") use Common_Switches & ("-Wa,-mbig-obj");
+         when others =>
+            for Default_Switches ("Ada") use Common_Switches;
+      end case;
    end Compiler;
 
    package Builder is

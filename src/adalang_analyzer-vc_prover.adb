@@ -13,6 +13,7 @@ with Ada.Directories;
 with Ada.Environment_Variables;
 with Ada.Strings.Fixed;
 with Ada.Strings.Hash;
+with Ada.Strings.Maps;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Strings.Unbounded.Hash;
 with Ada.Text_IO;
@@ -12340,6 +12341,12 @@ package body Adalang_Analyzer.VC_Prover is
    type Solver_Answer is
      (Solver_Unsat, Solver_Sat, Solver_Unknown, Solver_Unavailable);
 
+   type Variable_Name is access constant String;
+   Home_Variable : aliased constant String := "HOME";
+   User_Profile  : aliased constant String := "USERPROFILE";
+   Home_Variables : constant array (1 .. 2) of Variable_Name :=
+     (Home_Variable'Access, User_Profile'Access);
+
    function Solver_Path (Name, Override : String) return String is
       Located : GNAT.OS_Lib.String_Access;
    begin
@@ -12357,17 +12364,24 @@ package body Adalang_Analyzer.VC_Prover is
          end;
       end if;
 
-      if Ada.Environment_Variables.Exists ("HOME") then
-         declare
-            Candidate : constant String :=
-              Ada.Environment_Variables.Value ("HOME") &
-              "/.alire/libexec/spark/bin/" & Name;
-         begin
-            if Ada.Directories.Exists (Candidate) then
-               return Candidate;
-            end if;
-         end;
-      end if;
+      --  Where "alr install gnatprove" puts them: under the user's home
+      --  directory, which Windows names USERPROFILE when HOME is not set.
+      for Home_Variable of Home_Variables loop
+         if Ada.Environment_Variables.Exists (Home_Variable.all) then
+            declare
+               Executable : GNAT.OS_Lib.String_Access :=
+                 GNAT.OS_Lib.Get_Executable_Suffix;
+               Candidate  : constant String :=
+                 Ada.Environment_Variables.Value (Home_Variable.all) &
+                 "/.alire/libexec/spark/bin/" & Name & Executable.all;
+            begin
+               GNAT.OS_Lib.Free (Executable);
+               if Ada.Directories.Exists (Candidate) then
+                  return Candidate;
+               end if;
+            end;
+         end if;
+      end loop;
       return "";
    end Solver_Path;
 
@@ -12381,7 +12395,11 @@ package body Adalang_Analyzer.VC_Prover is
             then "" else Ada.Text_IO.Get_Line (File));
       begin
          Ada.Text_IO.Close (File);
-         return Ada.Strings.Fixed.Trim (Line, Ada.Strings.Both);
+         --  A solver built for Windows may end its lines with CR LF.
+         return Ada.Strings.Fixed.Trim
+           (Line,
+            Ada.Strings.Maps.To_Set (" " & ASCII.HT & ASCII.CR),
+            Ada.Strings.Maps.To_Set (" " & ASCII.HT & ASCII.CR));
       end;
    exception
       when others =>

@@ -18,7 +18,10 @@ with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Strings.Hash;
+with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+
+with GNAT.OS_Lib;
 
 with GPR2;
 with GPR2.Build.Source;
@@ -32,6 +35,7 @@ with GPR2.Project.View;
 with Libadalang.Preprocessing;
 
 with Adalang_Analyzer.Config;
+with Adalang_Analyzer.ObjectAda_Projects;
 with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Project_Files is
@@ -135,7 +139,7 @@ package body Adalang_Analyzer.Project_Files is
       begin
          return Name /= ""
            and then File_Sets_SPARK_Mode
-             (if Name (Name'First) = '/' then Name
+             (if GNAT.OS_Lib.Is_Absolute_Path (Name) then Name
               else View.Dir_Name.Compose
                 (GPR2.Filename_Type (Name)).String_Value);
       end;
@@ -143,6 +147,9 @@ package body Adalang_Analyzer.Project_Files is
       when others =>
          return False;
    end View_Sets_SPARK_Mode;
+
+   function Is_ObjectAda_Project (Project_File : String) return Boolean is
+     (ObjectAda_Projects.Is_ObjectAda_Project_Name (Project_File));
 
    function Lookup_Sources
      (Files : File_Name_Vectors.Vector) return File_Name_Vectors.Vector
@@ -204,6 +211,64 @@ package body Adalang_Analyzer.Project_Files is
       File_Name_Vectors.Append (Files, Name);
    end Append_Or_Replace_By_Simple_Name;
 
+   --  Appends the sources an ObjectAda project file lists to Files, and
+   --  records those of the libraries it links to for Lookup_Sources. A
+   --  listed source or a library that cannot be found is reported, and the
+   --  others are analyzed all the same, as the ObjectAda IDE builds a
+   --  project with a missing file that nothing needs.
+   procedure Load_ObjectAda_Project
+     (Project_File : String;
+      Files        : in out File_Name_Vectors.Vector)
+   is
+      use type Ada.Strings.Unbounded.Unbounded_String;
+
+      Loaded : ObjectAda_Projects.Project;
+   begin
+      Loaded := ObjectAda_Projects.Load (Project_File);
+      Config.Log_Verbose
+        ("Read ObjectAda project " & Project_File
+         & (if Loaded.Target = Ada.Strings.Unbounded.Null_Unbounded_String
+            then ""
+            else ", target " & Ada.Strings.Unbounded.To_String (Loaded.Target))
+         & ":" & Loaded.Listed'Image & " sources listed,"
+         & Loaded.Sources.Length'Image & " found,"
+         & Loaded.Library_Sources.Length'Image & " library sources");
+
+      for Name of Loaded.Missing loop
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: warning: " & Project_File
+            & ": listed source not found: " & Name);
+      end loop;
+      for Link of Loaded.Unresolved_Links loop
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: warning: " & Project_File
+            & ": no source found for library " & Link
+            & "; the names it declares will not resolve");
+      end loop;
+
+      if Loaded.Sources.Is_Empty then
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: ObjectAda project " & Project_File
+            & (if Loaded.Listed = 0 then " lists no source"
+               else ": none of its sources was found"));
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+
+      Files.Append_Vector (Loaded.Sources);
+      Import_Sources.Append_Vector (Loaded.Library_Sources);
+   exception
+      when Error : ObjectAda_Projects.Format_Error =>
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: could not read ObjectAda project "
+            & Project_File & ": " & Ada.Exceptions.Exception_Message (Error));
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   end Load_ObjectAda_Project;
+
    procedure Load_Project_File
      (Project_File  : String;
       Files         : in out File_Name_Vectors.Vector;
@@ -211,7 +276,9 @@ package body Adalang_Analyzer.Project_Files is
       Scenario_Vars : File_Name_Vectors.Vector := File_Name_Vectors.Empty_Vector)
    is
       Actual : constant String :=
-        (if Text_Utils.Has_Suffix (Project_File, ".gpr") then Project_File
+        (if Text_Utils.Has_Suffix (Project_File, ".gpr")
+           or else Is_ObjectAda_Project (Project_File)
+         then Project_File
          else Project_File & ".gpr");
       Options : GPR2.Options.Object;
       Tree    : GPR2.Project.Tree.Object;
@@ -226,6 +293,11 @@ package body Adalang_Analyzer.Project_Files is
            (Ada.Text_IO.Standard_Error,
             "adalang-analyzer: project file not found: " & Actual);
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         return;
+      end if;
+
+      if Is_ObjectAda_Project (Actual) then
+         Load_ObjectAda_Project (Actual, Files);
          return;
       end if;
 

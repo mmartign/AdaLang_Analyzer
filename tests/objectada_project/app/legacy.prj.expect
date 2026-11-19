@@ -1,0 +1,5 @@
+..\..\src\Sensors.SPC
+..\..\src\sensors.bdy
+..\..\src\Control.ada
+..\..\src\legacy_main.adb
+..\..\src\retired.adb

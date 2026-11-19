@@ -583,16 +583,16 @@ package body Adalang_Analyzer.Checks.Flow_Policy is
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Item : Libadalang.Analysis.Ada_Node'Class)
    is
-      Root : constant Node := Unit.Root;
+      --  The compilation unit Item is in: a file can hold several.
+      CU        : constant Libadalang.Analysis.Compilation_Unit :=
+        Item.P_Enclosing_Compilation_Unit;
       Body_Node : Node;
    begin
-      if Is_Null (Root)
-        or else Root.Kind /= Libadalang.Common.Ada_Compilation_Unit
-      then
+      if Libadalang.Analysis.Is_Null (CU) then
          return;
       end if;
 
-      Body_Node := Root.As_Compilation_Unit.F_Body;
+      Body_Node := CU.F_Body;
       if (Body_Node.Kind = Libadalang.Common.Ada_Library_Item
           and then Body_Node.As_Library_Item.F_Item.Kind in
                      Libadalang.Common.Ada_Generic_Package_Decl

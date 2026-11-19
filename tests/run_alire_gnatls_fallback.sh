@@ -18,11 +18,34 @@ output=$(mktemp "${TMPDIR:-/tmp}/adalang-alire-fallback.XXXXXX")
 empty_home=$(mktemp -d "${TMPDIR:-/tmp}/adalang-alire-fallback-home.XXXXXX")
 trap 'rm -f "$output"; rm -rf "$empty_home"' EXIT HUP INT TERM
 
-if [ -z "${HOME:-}" ] || [ ! -f "$HOME/.config/alire/settings.toml" ]; then
-   echo "run_alire_gnatls_fallback.sh: no \$HOME/.config/alire/settings.toml" \
-        "in this environment; skipping" >&2
+#  Alire's settings are in ~/.config/alire on Linux and macOS, and in
+#  %LOCALAPPDATA%\alire\settings on Windows, where the analyzer finds them
+#  through LOCALAPPDATA; Windows programs also want SYSTEMROOT.
+windows_env=''
+if [ -n "${HOME:-}" ] && [ -f "$HOME/.config/alire/settings.toml" ]; then
+   :
+elif [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1 \
+  && [ -f "$(cygpath -u "$LOCALAPPDATA")/alire/settings/settings.toml" ]
+then
+   windows_env=yes
+   empty_local=$(cygpath -w "$empty_home")
+else
+   echo "run_alire_gnatls_fallback.sh: no Alire settings in this" \
+        "environment; skipping" >&2
    exit 0
 fi
+
+run_with() {
+   home=$1 local_app_data=$2
+   if [ -n "$windows_env" ]; then
+      env -i PATH="$stripped_path" HOME="$home" \
+         LOCALAPPDATA="$local_app_data" SYSTEMROOT="${SYSTEMROOT:-}" \
+         "$analyzer" -v --recommended "$fixture" >"$output" 2>&1 || true
+   else
+      env -i PATH="$stripped_path" HOME="$home" \
+         "$analyzer" -v --recommended "$fixture" >"$output" 2>&1 || true
+   fi
+}
 
 #  A PATH with every directory that provides "gnatls" removed, so the bare
 #  Locate_Exec_On_Path lookup in the CLI is guaranteed to fail regardless of
@@ -44,8 +67,7 @@ IFS=$old_ifs
 #  Locate_Alire_Gnatls_Dir should find the selected toolchain's gnatls,
 #  self-augment PATH with it, and let resolution succeed -- no warning, and
 #  no "skipping subprogram summary registration" fallback log line either.
-env -i PATH="$stripped_path" HOME="$HOME" \
-   "$analyzer" -v --recommended "$fixture" >"$output" 2>&1 || true
+run_with "$HOME" "${LOCALAPPDATA:-}"
 if grep -F "no 'gnatls' found on PATH" "$output" >/dev/null; then
    echo "Alire-toolchain PATH fallback did not resolve gnatls from a real \$HOME" >&2
    cat "$output" >&2
@@ -60,8 +82,7 @@ fi
 #  Negative case: PATH stripped and $HOME pointing at a directory with no
 #  Alire settings at all, so the fallback has nothing to find and the
 #  pre-existing "no gnatls" warning must still fire.
-env -i PATH="$stripped_path" HOME="$empty_home" \
-   "$analyzer" -v --recommended "$fixture" >"$output" 2>&1 || true
+run_with "$empty_home" "${empty_local:-}"
 if ! grep -F "no 'gnatls' found on PATH" "$output" >/dev/null; then
    echo "missing-toolchain warning did not fire with no Alire settings present" >&2
    cat "$output" >&2
