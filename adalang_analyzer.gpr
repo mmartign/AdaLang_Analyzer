@@ -52,16 +52,14 @@ project AdaLang_Analyzer is
                "-lgnarl"
             );
          when "windows" =>
-            --  The GMP and iconv libraries come from MSYS2, whose DLLs are
-            --  on the path only under "alr exec": linked in, they leave an
-            --  executable that runs from anywhere. These switches come after
-            --  the GNATCOLL archives that need the libraries and before the
-            --  -lgmp and -liconv those ask for, which find nothing left to
-            --  resolve. Not "-static": that also changes how the GCC
-            --  run-time is linked, and Ada exceptions then never stop
-            --  unwinding (every analysis overflowed the stack).
-            for Switches ("Ada") use
-              ("-lgnarl", "-Wl,-Bstatic", "-lgmp", "-liconv", "-Wl,-Bdynamic");
+            --  GMP and iconv are linked as the DLLs of Alire's MSYS2,
+            --  libgmp-10.dll and libiconv-2.dll, which go beside the
+            --  executable. Linked statically, with "-static" or with
+            --  "-Wl,-Bstatic -lgmp -liconv", they left an executable in
+            --  which no Ada exception could be unwound: Windows failed on
+            --  the first one GNATCOLL raises, and on every exception that
+            --  failure raised in turn, until the stack overflowed.
+            for Switches ("Ada") use ("-lgnarl");
          when others =>
             for Switches ("Ada") use ("-lgnarl");
       end case;

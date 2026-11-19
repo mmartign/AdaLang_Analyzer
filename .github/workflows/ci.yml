@@ -151,8 +151,13 @@ jobs:
       - name: Install SPARK solvers
         run: alr -n install gnatprove
 
+      # Built a second time as tests/run_all.sh builds, from sh: Alire
+      # gave four of the dependencies other build hashes there, and the
+      # test suite rebuilt them for 17 minutes in every run.
       - name: Build
-        run: alr build
+        run: |
+          alr build
+          sh -c 'alr build'
 
       - name: Save Alire's builds
         if: always() && steps.alire-builds.outputs.cache-hit != 'true'
@@ -161,15 +166,15 @@ jobs:
           path: C:\temp\ac
           key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-${{ github.run_id }}
 
-      # Temporary: the DLLs the executable needs, and a run with a bare
-      # environment, as SonarAdaPlugin or a user's shell would start it.
-      - name: Diagnose (temporary)
-        continue-on-error: true
+      # The executable is linked against the GMP and iconv DLLs of Alire's
+      # MSYS2. Windows looks for a DLL beside the executable first, and so
+      # does not take the ones of other builds that Git or Strawberry Perl
+      # put on the path.
+      - name: Put the GMP and iconv DLLs beside the executable
         run: |
-          set +e -x
-          alr exec -- objdump -p bin/adalang_analyzer.exe | grep -i "DLL Name"
-          env -i SYSTEMROOT="$SYSTEMROOT" PATH=/usr/bin ./bin/adalang_analyzer -v -checks=No_Goto tests/invalid_syntax.adb; echo "bare environment: exit $?"
-          ./bin/adalang_analyzer -v --recommended tests/bug_findings.adb | tail -20; echo "exit $?"
+          dlls="$LOCALAPPDATA\\alire\\cache\\msys64\\mingw64\\bin"
+          cp "$dlls\\libgmp-10.dll" "$dlls\\libiconv-2.dll" bin/
+          alr exec -- objdump -p bin/adalang_analyzer.exe | grep "DLL Name"
 
       # Every script runs, so that one run lists every failure.
       - name: Run test suite

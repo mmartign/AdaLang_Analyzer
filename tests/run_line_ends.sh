@@ -29,7 +29,8 @@ for fixture in $fixtures; do
    tr -d '\r' <"tests/$fixture" >"$work/lf/$fixture"
    awk '{ printf "%s\r\n", $0 }' "$work/lf/$fixture" >"$work/crlf/$fixture"
 done
-if ! grep "$(printf '\r')" "$work/crlf/bug_findings.adb" >/dev/null; then
+#  Counted with tr: grep on Windows drops a CR before a line end.
+if [ "$(tr -cd '\r' <"$work/crlf/bug_findings.adb" | wc -c)" -eq 0 ]; then
    echo "could not write a fixture with CR LF line ends" >&2
    exit 1
 fi

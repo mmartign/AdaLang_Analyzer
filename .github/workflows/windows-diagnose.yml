@@ -48,42 +48,41 @@ jobs:
       - name: Build
         run: alr build
 
+      - name: Put the GMP and iconv DLLs beside the executable
+        run: |
+          dlls="$LOCALAPPDATA\\alire\\cache\\msys64\\mingw64\\bin"
+          cp "$dlls\\libgmp-10.dll" "$dlls\\libiconv-2.dll" bin/
+          alr exec -- objdump -p bin/adalang_analyzer.exe | grep "DLL Name"
+
       - name: Start the analyzer four ways
         continue-on-error: true
         run: |
           set +e
           T="$LOCALAPPDATA\\alire\\cache\\toolchains"
-          ls "$T"
-          cat "$LOCALAPPDATA\\alire\\settings\\settings.toml"
-          where libgmp-10.dll libiconv-2.dll gnatls gcc
           tu=$(cygpath -u "$T")
           g16="$tu/$(ls "$T" | grep '^gnat_native_16' | head -1)/bin"
           g15="$tu/$(ls "$T" | grep '^gnat_native_15' | head -1)/bin"
-          echo "g16=$g16 g15=$g15"
           run() {
             label=$1; shift
             timeout 300 "$@" -v -checks=No_Goto tests/invalid_syntax.adb > out.txt 2>&1
             echo "=== $label: exit $?"
-            tail -6 out.txt
+            tail -4 out.txt
           }
           run "alr exec" alr exec -- ./bin/adalang_analyzer
           run "direct" ./bin/adalang_analyzer
           PATH="$g16:$PATH" run "gnat 16 first on PATH" ./bin/adalang_analyzer
           PATH="$g15:$PATH" run "gnat 15 first on PATH" ./bin/adalang_analyzer
-          alr exec -- sh -c 'echo "alr exec PATH: $PATH"' | tr ':' '\n' | head -12
+          env -i SYSTEMROOT="$SYSTEMROOT" PATH=/usr/bin ./bin/adalang_analyzer -q -checks=No_Goto tests/invalid_syntax.adb > out.txt 2>&1
+          echo "=== bare environment: exit $?"; tail -3 out.txt
+          ./bin/adalang_analyzer --recommended tests/bug_findings.adb > out.txt 2>&1
+          echo "=== --recommended bug_findings.adb: exit $?, $(wc -l < out.txt) lines"
+          tail -5 out.txt
 
-      - name: Backtrace of the direct start
+      - name: Build hash inputs, bash and sh
         continue-on-error: true
         run: |
           set +e
-          msys="$LOCALAPPDATA\\alire\\cache\\msys64"
-          "$msys\\usr\\bin\\pacman" --noconfirm -S mingw-w64-x86_64-gdb > /dev/null 2>&1 || echo "no gdb"
-          "$msys\\mingw64\\bin\\gdb.exe" -batch -ex run -ex "bt 12" \
-            -ex "x/24000ga \$rsp" \
-            -ex "frame 5" -ex "p/x ms_exc->ExceptionCode" \
-            -ex "p/x ms_orig_context->Rip" -ex "info symbol ms_orig_context->Rip" \
-            --args bin/adalang_analyzer.exe -checks=No_Goto tests/invalid_syntax.adb > gdb.txt 2>&1
-          echo "gdb: exit $?, $(wc -l < gdb.txt) lines"
-          grep -v '^0x' gdb.txt | head -60
-          echo "=== symbols on the stack, most frequent first"
-          grep -o '<[^>+]*' gdb.txt | sort | uniq -c | sort -rn | head -60
+          for f in C:/temp/ac/builds/vss_text_*/*/alire/build_hash_inputs; do echo "== $f"; cat "$f"; done
+          timeout 90 sh -c 'alr build' > sh-build.txt 2>&1
+          echo "sh build: exit $?"; grep -E 'created|Building' sh-build.txt | head
+          for f in C:/temp/ac/builds/vss_text_*/*/alire/build_hash_inputs; do echo "== $f"; cat "$f"; done
