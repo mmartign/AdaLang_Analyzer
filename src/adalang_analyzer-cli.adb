@@ -1119,11 +1119,12 @@ package body Adalang_Analyzer.CLI is
 
       Prefix : constant String := Selected_Toolchain_Prefix;
       Base   : constant String := Toolchains_Dir;
-      Exe    : constant String :=
-        (if Env ("OS") = "Windows_NT" then "gnatls.exe" else "gnatls");
+      Suffix : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Get_Executable_Suffix;
+      Exe    : constant String := "gnatls" & Suffix.all;
       Search : Ada.Directories.Search_Type;
       Item   : Ada.Directories.Directory_Entry_Type;
    begin
+      GNAT.OS_Lib.Free (Suffix);
       if Prefix = "" or else Base = "" then
          return "";
       end if;

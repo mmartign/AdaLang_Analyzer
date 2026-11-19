@@ -4,7 +4,7 @@ set -eu
 output=$(mktemp "${TMPDIR:-/tmp}/adalang-recoverable.XXXXXX")
 trap 'rm -f "$output"' EXIT HUP INT TERM
 
-alr exec -- gprbuild -q -P tests/recoverable_diagnostic.gpr
+alr exec -- gprbuild -p -q -P tests/recoverable_diagnostic.gpr
 ./bin/recoverable_diagnostic_test >"$output" 2>&1
 
 grep -F 'recoverable diagnostic test passed' "$output" >/dev/null
