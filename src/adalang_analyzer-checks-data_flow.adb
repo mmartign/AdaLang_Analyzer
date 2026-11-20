@@ -1275,10 +1275,16 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       return False;
    end Has_Read_After_Node;
 
-   function First_Access
+   --  How deep First_Access_At may go into the bodies of nested
+   --  subprograms, following calls of them (Nested_Call_Access): it
+   --  bounds the walk through those that call one another.
+   Max_Nested_Call_Depth : constant := 4;
+
+   function First_Access_At
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Decl  : Libadalang.Analysis.Basic_Decl;
-      After : Libadalang.Analysis.Ada_Node'Class) return Access_Result
+      After : Libadalang.Analysis.Ada_Node'Class;
+      Depth : Natural) return Access_Result
    is
       function Starts_At_Or_After
         (Candidate : Libadalang.Analysis.Ada_Node'Class) return Boolean is
@@ -1291,6 +1297,81 @@ package body Adalang_Analyzer.Checks.Data_Flow is
               and then Natural (Candidate.Sloc_Range.Start_Column) >=
                 Natural (After.Sloc_Range.End_Column));
       end Starts_At_Or_After;
+
+      --  FP-146: a call of a subprogram declared inside the one that
+      --  declares Decl runs, here, a body that may read or write Decl as
+      --  an up-level object. What that body does to Decl first, found as
+      --  here, is what the call does: a write is the call's write. A read
+      --  there, or an access not known, is not taken as evidence either
+      --  way, as this walk does not follow the order of the calls the body
+      --  makes. A body that does not mention Decl leaves the walk going.
+      function Nested_Call_Access
+        (Call_Name : Libadalang.Analysis.Name'Class) return Access_Result
+      is
+         None    : constant Access_Result :=
+           (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+         Unknown : constant Access_Result :=
+           (Kind => Unknown_Access,
+            Node => Libadalang.Analysis.Ada_Node (Call_Name));
+         Callee    : Libadalang.Analysis.Basic_Decl;
+         Body_Part : Libadalang.Analysis.Basic_Decl;
+         Scope     : Libadalang.Analysis.Subp_Body;
+         Ancestor  : Libadalang.Analysis.Ada_Node;
+      begin
+         if not Call_Name.P_Is_Call then
+            return None;
+         end if;
+         Callee := Call_Name.P_Referenced_Decl;
+         if Libadalang.Analysis.Is_Null (Callee) then
+            return None;
+         end if;
+         Body_Part :=
+           (if Callee.Kind in Libadalang.Common.Ada_Base_Subp_Body
+            then Callee
+            else Libadalang.Analysis.Basic_Decl
+                   (Callee.P_Body_Part_For_Decl));
+         if Libadalang.Analysis.Is_Null (Body_Part)
+           or else Body_Part.Kind not in Libadalang.Common.Ada_Base_Subp_Body
+         then
+            return None;
+         end if;
+
+         Scope := Enclosing_Subprogram (Decl);
+         if Libadalang.Analysis.Is_Null (Scope) then
+            return None;
+         end if;
+         Ancestor := Body_Part.Parent;
+         while not Libadalang.Analysis.Is_Null (Ancestor)
+           and then Ancestor /= Libadalang.Analysis.Ada_Node (Scope)
+         loop
+            Ancestor := Ancestor.Parent;
+         end loop;
+         if Libadalang.Analysis.Is_Null (Ancestor) then
+            return None;
+         elsif Depth >= Max_Nested_Call_Depth then
+            return Unknown;
+         end if;
+
+         declare
+            Result : constant Access_Result :=
+              First_Access_At
+                (Body_Part, Decl,
+                 Body_Part.As_Base_Subp_Body.F_Subp_Spec, Depth + 1);
+         begin
+            case Result.Kind is
+               when No_Access =>
+                  return None;
+               when Write_Access =>
+                  return (Kind => Write_Access,
+                          Node => Libadalang.Analysis.Ada_Node (Call_Name));
+               when Read_Access | Unknown_Access =>
+                  return Unknown;
+            end case;
+         end;
+      exception
+         when others =>
+            return Unknown;
+      end Nested_Call_Access;
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
@@ -1356,13 +1437,23 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                --  recursion below -- where the Ada_Call_Expr case that
                --  would otherwise recognize that write lives -- so
                --  delegate to it explicitly over just the RHS.
-               return First_Access (Stmt.F_Expr, Decl, After);
+               return First_Access_At (Stmt.F_Expr, Decl, After, Depth);
             end;
          elsif Node.Kind = Libadalang.Common.Ada_Identifier
            and then Matches_Declaration (Node, Decl)
          then
             return (Kind => Read_Access,
                      Node => Libadalang.Analysis.Ada_Node (Node));
+         elsif Node.Kind = Libadalang.Common.Ada_Identifier then
+            --  A call with no actual ("Set;", "X := Next;").
+            declare
+               Result : constant Access_Result :=
+                 Nested_Call_Access (Node.As_Identifier);
+            begin
+               if Result.Kind /= No_Access then
+                  return Result;
+               end if;
+            end;
          elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
             if Has_Simple_Actual (Node.As_Call_Expr, Decl) then
                --  Reads_Declaration deliberately treats an unresolved formal
@@ -1388,7 +1479,7 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                return (Kind => Read_Access,
                         Node => Libadalang.Analysis.Ada_Node (Node));
             end if;
-            return (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+            return Nested_Call_Access (Node.As_Call_Expr.F_Name);
          end if;
       end if;
 
@@ -1415,14 +1506,20 @@ package body Adalang_Analyzer.Checks.Data_Flow is
             --  invoked before Decl's initialization -- unrecognized here,
             --  not soundly ruled out -- for not flagging the common,
             --  correct case; consistent with this project's general bias
-            --  toward fewer false positives.
+            --  toward fewer false positives. An expression function is
+            --  such a body too (FP-146: Alire's Is_Valid_Choice, which
+            --  reads an up-level object the procedure that calls it has
+            --  set by then), and so is a task body, which runs once the
+            --  task is activated. A call of a nested subprogram, here,
+            --  is followed into its body (Nested_Call_Access).
             if Libadalang.Analysis.Is_Null (Child)
-              or else Child.Kind not in Libadalang.Common.Ada_Subp_Body
+              or else Child.Kind not in Libadalang.Common.Ada_Base_Subp_Body
                 | Libadalang.Common.Ada_Entry_Body
+                | Libadalang.Common.Ada_Task_Body
             then
                declare
                   Result : constant Access_Result :=
-                    First_Access (Child, Decl, After);
+                    First_Access_At (Child, Decl, After, Depth);
                begin
                   if Result.Kind /= No_Access then
                      return Result;
@@ -1433,7 +1530,13 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       end loop;
 
       return (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
-   end First_Access;
+   end First_Access_At;
+
+   function First_Access
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Decl  : Libadalang.Analysis.Basic_Decl;
+      After : Libadalang.Analysis.Ada_Node'Class) return Access_Result
+   is (First_Access_At (Node, Decl, After, Depth => 0));
 
    function Enclosing_Subprogram
      (Node : Libadalang.Analysis.Ada_Node'Class)

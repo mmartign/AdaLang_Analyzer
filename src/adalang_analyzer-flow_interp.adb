@@ -4686,6 +4686,128 @@ package body Adalang_Analyzer.Flow_Interp is
                          (Contract_Expression
                             (Renamed_Subprogram (Decl), "Pre"))));
 
+   --  A check found to fail -- an assertion whose condition is false
+   --  (FP-065), a call whose actuals make the precondition false (FP-147)
+   --  -- is a *definite* error only where the check is reached. Walking
+   --  outward from Point to the enclosing body, this is False as soon as
+   --  Point is found on a path the analysis does not establish is taken: a
+   --  branch of an if statement other than THEN, THEN where State does not
+   --  prove the guard True, an alternative of a case statement, the body of
+   --  a loop, an exception handler, a select statement; in an expression,
+   --  the right operand of a short-circuit form whose left one State does
+   --  not settle the right way, a dependent expression of a conditional
+   --  expression other than THEN under a guard State proves True, the body
+   --  of a quantified expression. What a statement or an expression
+   --  evaluates before it chooses a path -- a condition, a selector, an
+   --  iteration -- is reached with it.
+   --
+   --  There "the check fails if reached, and whether it is reached is not
+   --  known" (unproved) is the honest verdict. An earlier statement on the
+   --  only path in may itself always raise, which the flow domain does not
+   --  model (FP-065: AdaCore SPARK testsuite unit
+   --  W316-007__string_multidim). And the fact that kept the path from
+   --  being taken may have been dropped on the way, as the symbolic state
+   --  is dropped at every node of a subprogram that declares an object of
+   --  a type that may run code unseen (FP-147: in Alire, a call under "if
+   --  On_Windows" of a procedure whose precondition is On_Windows, a
+   --  function that is the constant False on the host analyzed).
+   --  Straight-line checks, and those under guards State proves True,
+   --  still report a definite error; where the graph shows the point
+   --  unreachable, it is said earlier (Record_Unreachable).
+   function Check_Point_Reached
+     (Point : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State) return Boolean
+   is
+      use Libadalang.Common;
+
+      function Node
+        (Item : Libadalang.Analysis.Ada_Node'Class)
+         return Libadalang.Analysis.Ada_Node
+      is (Libadalang.Analysis.Ada_Node (Item));
+
+      Child  : Libadalang.Analysis.Ada_Node := Node (Point);
+      Parent : Libadalang.Analysis.Ada_Node;
+   begin
+      loop
+         Parent := Child.Parent;
+         exit when Libadalang.Analysis.Is_Null (Parent);
+         exit when Parent.Kind in
+           Ada_Subp_Body | Ada_Package_Body | Ada_Task_Body
+             | Ada_Entry_Body | Ada_Expr_Function;
+
+         case Parent.Kind is
+            when Ada_If_Stmt =>
+               if Child /= Node (Parent.As_If_Stmt.F_Cond_Expr)
+                 and then
+                   (Child /= Node (Parent.As_If_Stmt.F_Then_Stmts)
+                    or else Boolean_Value
+                              (Parent.As_If_Stmt.F_Cond_Expr, State) /=
+                                Bool_True)
+               then
+                  return False;
+               end if;
+
+            when Ada_If_Expr =>
+               if Child /= Node (Parent.As_If_Expr.F_Cond_Expr)
+                 and then
+                   (Child /= Node (Parent.As_If_Expr.F_Then_Expr)
+                    or else Boolean_Value
+                              (Parent.As_If_Expr.F_Cond_Expr, State) /=
+                                Bool_True)
+               then
+                  return False;
+               end if;
+
+            when Ada_Case_Stmt =>
+               if Child /= Node (Parent.As_Case_Stmt.F_Expr) then
+                  return False;
+               end if;
+
+            when Ada_Case_Expr =>
+               if Child /= Node (Parent.As_Case_Expr.F_Expr) then
+                  return False;
+               end if;
+
+            when Ada_Base_Loop_Stmt =>
+               if Child /= Node (Parent.As_Base_Loop_Stmt.F_Spec) then
+                  return False;
+               end if;
+
+            when Ada_Quantified_Expr =>
+               if Child /= Node (Parent.As_Quantified_Expr.F_Loop_Spec) then
+                  return False;
+               end if;
+
+            when Ada_Bin_Op =>
+               declare
+                  Operator : constant Ada_Node_Kind_Type :=
+                    Parent.As_Bin_Op.F_Op.Kind;
+               begin
+                  if Operator in Ada_Op_And_Then | Ada_Op_Or_Else
+                    and then Child = Node (Parent.As_Bin_Op.F_Right)
+                    and then Boolean_Value (Parent.As_Bin_Op.F_Left, State) /=
+                      (if Operator = Ada_Op_And_Then
+                       then Bool_True else Bool_False)
+                  then
+                     return False;
+                  end if;
+               end;
+
+            when Ada_Exception_Handler | Ada_Select_Stmt =>
+               return False;
+
+            when others =>
+               null;
+         end case;
+
+         Child := Parent;
+      end loop;
+      return True;
+   exception
+      when others =>
+         return False;
+   end Check_Point_Reached;
+
    procedure Check_Call_Precondition
      (Unit    : Libadalang.Analysis.Analysis_Unit;
       Call    : Libadalang.Analysis.Name'Class;
@@ -4901,6 +5023,25 @@ package body Adalang_Analyzer.Flow_Interp is
                   Imprecision =>
                     "in an instance the predefined operator of the actual " &
                       "may be the one called",
+                  Final => Final);
+            elsif (Value = Bool_False
+                   or else
+                     (VC_Result = VC.VC_Refuted
+                      and then not Contains_VC_Arithmetic (Pre)))
+              and then not Check_Point_Reached (Call, State)
+            then
+               --  FP-147: the precondition fails where the call is
+               --  reached, and the call is on a path that is not known to
+               --  be taken.
+               Record_Unproved
+                 (Unit, Call, Proof.Precondition_Check,
+                  Proof.Contract_Transfer,
+                  "actual arguments make the precondition false, but the " &
+                    "enclosing branch guard is not established, so this " &
+                    "call's reachability is not proved",
+                  Imprecision =>
+                    "reachability of a conditionally-guarded call whose " &
+                      "guard could not be evaluated is not modelled",
                   Final => Final);
             elsif Value = Bool_False
               or else
@@ -10661,6 +10802,32 @@ package body Adalang_Analyzer.Flow_Interp is
    --  assignments are taken into account (a plain literal zero is already
    --  caught by the node-local checks, so this only adds cases those
    --  would miss).
+   --  What of the name of Call is not among its actuals: the name, or, in
+   --  prefix notation ("L.Append (X)"), where the prefix is the first
+   --  actual, the selector alone. A walk that takes the name and then the
+   --  actuals takes the prefix once: taking it twice took a chain of such
+   --  calls ("Empty_List.Append (A).Append (B)..." in Alire, 23 long)
+   --  twice per link, in a time that doubled with each.
+   function Name_Beside_Actuals
+     (Call : Libadalang.Analysis.Call_Expr'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+      Name : constant Libadalang.Analysis.Name := Call.F_Name;
+   begin
+      if Name.Kind = Libadalang.Common.Ada_Dotted_Name then
+         for Pair of Name.P_Call_Params loop
+            if Libadalang.Analysis.Ada_Node
+                 (Libadalang.Analysis.Actual (Pair)) =
+               Libadalang.Analysis.Ada_Node (Name.As_Dotted_Name.F_Prefix)
+            then
+               return Libadalang.Analysis.Ada_Node
+                        (Name.As_Dotted_Name.F_Suffix);
+            end if;
+         end loop;
+      end if;
+      return Libadalang.Analysis.Ada_Node (Name);
+   end Name_Beside_Actuals;
+
    procedure Scan_Expression_For_Flow_Bugs
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Node  : Libadalang.Analysis.Ada_Node'Class;
@@ -10785,7 +10952,7 @@ package body Adalang_Analyzer.Flow_Interp is
             if Call.P_Kind = Libadalang.Common.Call then
                begin
                   Scan_Expression_For_Flow_Bugs
-                    (Unit, Call.F_Name, State, Symbols);
+                    (Unit, Name_Beside_Actuals (Call), State, Symbols);
                   for Pair of Call.F_Name.P_Call_Params loop
                      if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
                        Libadalang.Common.Ada_Mode_Out
@@ -10947,70 +11114,6 @@ package body Adalang_Analyzer.Flow_Interp is
       return False;
    end Contains_VC_Arithmetic;
 
-   --  FP-065: a statically-false assertion (pragma Assert (False) and the
-   --  like) is a Known_Assertion_Failure *definite* error only where the
-   --  pragma is actually reached. Walking outward from the condition to the
-   --  enclosing body, this returns False as soon as the pragma is found to
-   --  sit on a control path the analyzer cannot establish is taken -- an
-   --  if-branch whose guard State does not prove True, an elsif/else/case
-   --  alternative, or a loop body. In that case "the assertion would fail
-   --  if reached, but its reachability is not established" (unproved) is the
-   --  honest verdict rather than a definite error: an earlier statement on
-   --  the only path in may itself always raise, which the flow domain does
-   --  not model (found on AdaCore SPARK testsuite unit
-   --  W316-007__string_multidim, where GNAT raises Constraint_Error at the
-   --  enclosing "if" line). Straight-line asserts, and asserts under an
-   --  if-condition State proves True, still report a definite error --
-   --  CFG-proved-unreachable ones are already handled earlier by
-   --  Finalize_Assertion_Check's Record_Unreachable guard.
-   function Assertion_Point_Reachable
-     (Cond  : Libadalang.Analysis.Expr;
-      State : Flow_State) return Boolean
-   is
-      Child  : Libadalang.Analysis.Ada_Node :=
-        Libadalang.Analysis.Ada_Node (Cond);
-      Parent : Libadalang.Analysis.Ada_Node;
-   begin
-      loop
-         Parent := Child.Parent;
-         exit when Libadalang.Analysis.Is_Null (Parent);
-         exit when Parent.Kind in
-           Libadalang.Common.Ada_Subp_Body
-             | Libadalang.Common.Ada_Package_Body
-             | Libadalang.Common.Ada_Task_Body
-             | Libadalang.Common.Ada_Entry_Body
-             | Libadalang.Common.Ada_Expr_Function;
-
-         case Parent.Kind is
-            when Libadalang.Common.Ada_If_Stmt =>
-               --  Only the THEN path, and only when its guard is provably
-               --  taken in this State, keeps a definite verdict alive.
-               if Libadalang.Analysis.Ada_Node
-                    (Parent.As_If_Stmt.F_Then_Stmts) /= Child
-                 or else Boolean_Value
-                           (Parent.As_If_Stmt.F_Cond_Expr, State) /= Bool_True
-               then
-                  return False;
-               end if;
-
-            when Libadalang.Common.Ada_Elsif_Stmt_Part
-               | Libadalang.Common.Ada_Case_Stmt
-               | Libadalang.Common.Ada_Case_Stmt_Alternative
-               | Libadalang.Common.Ada_Base_Loop_Stmt =>
-               return False;
-
-            when others =>
-               null;
-         end case;
-
-         Child := Parent;
-      end loop;
-      return True;
-   exception
-      when others =>
-         return False;
-   end Assertion_Point_Reachable;
-
    --  Checked separately from Interpret_Proof_Pragma so Verify_Subprogram's
    --  Finalize_Node can replay the same determination against a CFG node's
    --  own fully-converged State, marked Final (see FP-032, following
@@ -11040,7 +11143,7 @@ package body Adalang_Analyzer.Flow_Interp is
              or else
                (VC_Result = VC.VC_Refuted
                 and then not Contains_VC_Arithmetic (Cond)))
-           and then not Assertion_Point_Reachable (Cond, State)
+           and then not Check_Point_Reached (Cond, State)
          then
             --  FP-065: the condition is false, but the pragma sits on a
             --  branch whose reachability this analysis cannot establish, so
@@ -20283,7 +20386,8 @@ package body Adalang_Analyzer.Flow_Interp is
 
                if Is_Plain_Call then
                   begin
-                     Finalize_Node (Node.As_Call_Expr.F_Name, Here);
+                     Finalize_Node
+                       (Name_Beside_Actuals (Node.As_Call_Expr), Here);
                      for Pair of Node.As_Call_Expr.F_Name.P_Call_Params loop
                         if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
                           Libadalang.Common.Ada_Mode_Out

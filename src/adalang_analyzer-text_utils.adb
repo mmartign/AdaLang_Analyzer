@@ -90,27 +90,31 @@ package body Adalang_Analyzer.Text_Utils is
       then Line (Line'First .. Line'Last - 1)
       else Line);
 
+   --  Path with every backslash a slash.
+   function Forward (Path : String) return String is
+      Result : String := Path;
+   begin
+      for C of Result loop
+         if C = '\' then
+            C := '/';
+         end if;
+      end loop;
+      return Result;
+   end Forward;
+
+   --  The directory the analyzer runs in, which it never leaves: asked of
+   --  the system once, not for every path reported, which on a large
+   --  verification run was a seventh of the time.
+   Current : constant String := Forward (Ada.Directories.Current_Directory);
+
    function Report_Path (Filename : String) return String is
       Ignore_Case : constant Boolean := GNAT.OS_Lib.Directory_Separator = '\';
-
-      function Forward (Path : String) return String is
-         Result : String := Path;
-      begin
-         for C of Result loop
-            if C = '\' then
-               C := '/';
-            end if;
-         end loop;
-         return Result;
-      end Forward;
 
       function Folded (Path : String) return String is
         (if Ignore_Case then Ada.Characters.Handling.To_Lower (Path)
          else Path);
 
       Value   : constant String := Forward (Filename);
-      Current : constant String :=
-        Forward (Ada.Directories.Current_Directory);
       First   : Integer := Value'First;
    begin
       if Value'Length > Current'Length

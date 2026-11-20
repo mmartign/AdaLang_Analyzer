@@ -686,6 +686,62 @@ then
    exit 1
 fi
 
+#  FP-146, FP-148: a write made by a nested procedure the subprogram calls,
+#  a read in an expression function, a read under a guard in a loop that
+#  writes the object later in its body: none is a read before any value.
+if ! "$analyzer" -q -checks='Uninitialized_Read' \
+     tests/uninitialized_read_nested_clean.adb
+then
+   echo "FP-146/FP-148: a read after a write through a nested call, or" \
+     "from an earlier iteration, was reported" >&2
+   "$analyzer" -checks='Uninitialized_Read' \
+     tests/uninitialized_read_nested_clean.adb >&2 || true
+   exit 1
+fi
+if "$analyzer" -checks='Uninitialized_Read' \
+     tests/uninitialized_read_nested_findings.adb >"$output" 2>&1
+then
+   echo "expected uninitialized_read_nested_findings.adb to produce" \
+     "violations" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[Uninitialized_Read\]' "$output")" -ne 2 ] \
+  || ! grep -F "uninitialized_read_nested_findings.adb:16:7: warning:" \
+       "$output" >/dev/null \
+  || ! grep -F "uninitialized_read_nested_findings.adb:19:4: warning:" \
+       "$output" >/dev/null
+then
+   echo "FP-146/FP-148: a read before any value is no longer reported" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
+#  FP-149: outside SPARK, an out parameter Ada gives a value is not an
+#  output left without one; a scalar, a record with no default, and any
+#  output of code declared SPARK still are.
+if ! "$analyzer" -q -checks='Uninitialized_Output' \
+     tests/uninitialized_output_defaults_clean.adb
+then
+   echo "FP-149: an out parameter of a type that keeps a value was" \
+     "reported" >&2
+   "$analyzer" -checks='Uninitialized_Output' \
+     tests/uninitialized_output_defaults_clean.adb >&2 || true
+   exit 1
+fi
+if "$analyzer" -checks='Uninitialized_Output' \
+     tests/uninitialized_output_defaults_findings.adb >"$output" 2>&1
+then
+   echo "expected uninitialized_output_defaults_findings.adb to produce" \
+     "violations" >&2
+   exit 1
+fi
+if [ "$(grep -c '\[Uninitialized_Output\]' "$output")" -ne 3 ]
+then
+   echo "FP-149: an output left without a value is no longer reported" >&2
+   cat "$output" >&2
+   exit 1
+fi
+
 if "$analyzer" -checks='Missing_Overriding_Indicator' \
      tests/overriding_indicator_findings.ads >"$output" 2>&1
 then

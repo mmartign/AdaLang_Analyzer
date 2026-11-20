@@ -1,7 +1,9 @@
 procedure Uninitialized_Output_Prefixed_Clear_Guard is
 
-   type Queue_Type is limited record
-      Count : Natural := 0;
+   --  Neither limited nor with a default: an out parameter of such a type
+   --  keeps a value, and is not reported outside SPARK (FP-149).
+   type Queue_Type is record
+      Count : Natural;
    end record;
 
    procedure Clear (Self : in out Queue_Type) is

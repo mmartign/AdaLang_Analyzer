@@ -5,6 +5,79 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Found by running AdaLang Analyzer on Alire (alire-project/alire, main of
+2026-11-15), which it had not met before: a false definite error, three
+kinds of false findings, and a verification run that did not end. The
+`--verify` lane of the five fully proved corpora has been run with these
+changes, the findings and obligations unchanged but for the data
+dependencies `FP-145` leaves unproved; the ten corpora with every preset
+have not.
+
+### Fixed
+
+- `FP-147` (`quality/known_analysis_issues.tsv`): under `--verify`, a call
+  whose actuals make the precondition false was a definite error (and a
+  `Known_Precondition_Failure` finding) where the call is reached only
+  through a guard the analysis does not establish. In Alire,
+  `if Plat.Current.On_Windows and then ... then
+  Windows_Copy_And_Relaunch (...)`, whose precondition is
+  `Plat.Current.On_Windows`, the constant `False` on the host analyzed: the
+  subprogram declares a tagged object, which may run code unseen, so the
+  symbolic state is dropped at every node, and the fact the guard gave with
+  it. As an assertion has been since `FP-065`, the precondition is now a
+  definite error only where the call is known to be reached, and unproved
+  elsewhere. A condition, a selector, the left operand of a short-circuit
+  form are reached with what evaluates them; a branch, a dependent
+  expression, a loop body, an exception handler are not, unless the state
+  proves the guard. One verification mutation goes from definite-error to
+  unproved, `loop-entry-prefix-on-entry`, whose call is in a loop that may
+  run no iteration.
+- `FP-145`: under `--verify`, the data dependencies of a subprogram were
+  proved where its body reads the value on entry of a global its `Global`
+  (or `Refined_Global`) lists as `Output` only, which GNATprove reports as
+  not an input. Where the body reads such a global, they are proved now
+  only where every path through it gives the whole global a value before
+  anything else touches it: an assignment of a value that does not touch
+  it, a call that gives it as the actual of an `out` formal or whose
+  callee's `Global` lists it as `Output`, or an `if` or `case` statement or
+  a block each path through which does. The effects of a body tell a read
+  from a write that replaces the whole object, an `In_Out` global of a
+  callee counting as read. On the five fully proved corpora this costs 5
+  of the checks GNATprove proves, data dependencies of subprograms that
+  give a global its value a component or an element at a time, or in a
+  loop (Tokeneer's `KeyStore.Init`, `AuditLog.Init`, its `SetFileDetails`
+  and `TISMain`, SPARKNaCl's `Finalize`): 12,034 of 15,043, 79.997%,
+  down from 12,039, 80.03%. Nothing else changes there.
+- `FP-146`: `Uninitialized_Read` did not count a call of a nested
+  procedure as a write of the local it assigns, and read the body of an
+  expression function as if it ran where it is declared. A call of a
+  subprogram declared in the one that declares the object is now followed
+  into its body, and expression functions and task bodies are skipped as
+  subprogram bodies are.
+- `FP-148`: `Uninitialized_Read` reported a read under a guard in a loop
+  that writes the object later in its body, which may be made on an
+  iteration after one that wrote it (Alire's toolchain assistant). A read
+  every iteration makes before the write is still reported.
+- `FP-149`: outside code declared SPARK, `Uninitialized_Output` no longer
+  reports an out parameter that Ada gives a value however the subprogram
+  returns: one of a tagged, controlled or limited type, passed by
+  reference, one of an access type, of a scalar type with a
+  `Default_Value`, or of a composite type with discriminants or a part that
+  has a default (RM 6.4.1). 13 of the 14 such findings on Alire. In code
+  under `SPARK_Mode`, which GNATprove takes as without a value on entry,
+  they are still reported.
+- `--verify` walked the prefix of a call in prefix notation twice, once as
+  the name of the call and once as its first actual, so a chain of such
+  calls (`Empty_List.Append (A).Append (B)...`) took a time that doubled
+  with each link: Alire's lists of switches, 23 links long, took half an
+  hour each, and the library did not finish in an hour. It now takes 25 s
+  (`alire.gpr`, 315 files) and 8 s (`alr.gpr`, 80 files) of CPU time. The
+  path of each obligation reported no longer asks the system for the
+  current directory each time, which took a seventh of the time of a large
+  run. `tests/run_performance_smoke.sh` gives a chain of 30 calls 30 s.
+
 ## [1.17.0] - 2026-11-19
 
 AdaLang Analyzer reads the project files of the ObjectAda IDE, Aonix's and

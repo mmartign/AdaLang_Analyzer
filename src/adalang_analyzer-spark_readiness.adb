@@ -2368,6 +2368,123 @@ package body Adalang_Analyzer.SPARK_Readiness is
             Ada.Exceptions.Exception_Message (Exc));
    end Check_Discriminant_Access;
 
+   --  True when SPARK_Mode is given, and not Off, on Decl or on the nearest
+   --  enclosing unit that gives it: code that is in SPARK by its own say,
+   --  not merely not out of it (Effective_SPARK_Enabled).
+   function In_Declared_SPARK
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is
+      Mode     : SPARK_Mode_State := Own_SPARK_Mode (Decl);
+      Ancestor : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Decl).Parent;
+   begin
+      while not Mode.Has_Mode
+        and then not Libadalang.Analysis.Is_Null (Ancestor)
+      loop
+         if Ancestor.Kind in Libadalang.Common.Ada_Package_Body
+                           | Libadalang.Common.Ada_Package_Decl
+                           | Libadalang.Common.Ada_Generic_Package_Decl
+                           | Libadalang.Common.Ada_Subp_Body
+                           | Libadalang.Common.Ada_Task_Body
+                           | Libadalang.Common.Ada_Protected_Body
+         then
+            Mode := Own_SPARK_Mode (Ancestor.As_Basic_Decl);
+         end if;
+         Ancestor := Ancestor.Parent;
+      end loop;
+      return Mode.Has_Mode and then not Mode.Is_Off;
+   exception
+      when others =>
+         return True;
+   end In_Declared_SPARK;
+
+   --  FP-149: True when a formal of mode out of type Typ has a value
+   --  however the subprogram returns, as Ada gives it one (RM 6.4.1(12-15),
+   --  6.2): a type passed by reference -- tagged, limited, or with such a
+   --  part -- whose formal is the actual; an access type, a scalar type with
+   --  a Default_Value, a composite type with discriminants or with a part
+   --  that has an implicit initial value, whose formal is given the value
+   --  of the actual. Alire's "Value : out TOML_Value" (controlled), set only
+   --  when the function returns True, is not an output left without a
+   --  value. False where the type is not resolved.
+   function Formal_Keeps_A_Value
+     (Typ   : Libadalang.Analysis.Base_Type_Decl;
+      Depth : Natural := 0) return Boolean
+   is
+      Full : Libadalang.Analysis.Base_Type_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Typ) or else Depth > 8 then
+         return False;
+      end if;
+      Full := Typ.P_Base_Subtype.P_Full_View;
+      if Libadalang.Analysis.Is_Null (Full) then
+         return False;
+      elsif Full.P_Is_Tagged_Type
+        or else Full.P_Is_Access_Type
+        or else Full.P_Is_Limited_Type
+      then
+         return True;
+      elsif Full.P_Is_Scalar_Type then
+         return Full.P_Has_Aspect
+                  (Langkit_Support.Text.To_Unbounded_Text
+                     (Langkit_Support.Text.To_Text ("Default_Value")))
+           or else Typ.P_Has_Aspect
+                     (Langkit_Support.Text.To_Unbounded_Text
+                        (Langkit_Support.Text.To_Text ("Default_Value")));
+      elsif Full.P_Is_Array_Type then
+         return Formal_Keeps_A_Value (Full.P_Comp_Type, Depth + 1);
+      elsif Full.Kind /= Libadalang.Common.Ada_Concrete_Type_Decl then
+         return False;
+      end if;
+
+      declare
+         Decl : constant Libadalang.Analysis.Concrete_Type_Decl :=
+           Full.As_Concrete_Type_Decl;
+         Definition : constant Libadalang.Analysis.Type_Def :=
+           Decl.F_Type_Def;
+
+         --  A component of Node with a default, or of a type that keeps a
+         --  value.
+         function Has_Valued_Component
+           (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+         begin
+            if Libadalang.Analysis.Is_Null (Node) then
+               return False;
+            elsif Node.Kind = Libadalang.Common.Ada_Component_Decl then
+               return not Libadalang.Analysis.Is_Null
+                            (Node.As_Component_Decl.F_Default_Expr)
+                 or else Formal_Keeps_A_Value
+                           (Node.As_Component_Decl.F_Component_Def
+                              .F_Type_Expr.P_Designated_Type_Decl,
+                            Depth + 1);
+            end if;
+            for Index in 1 .. Node.Children_Count loop
+               if Has_Valued_Component (Node.Child (Index)) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Valued_Component;
+      begin
+         if not Libadalang.Analysis.Is_Null (Decl.F_Discriminants) then
+            return True;
+         elsif Definition.Kind = Libadalang.Common.Ada_Derived_Type_Def then
+            return Formal_Keeps_A_Value
+                     (Definition.As_Derived_Type_Def.F_Subtype_Indication
+                        .P_Designated_Type_Decl,
+                      Depth + 1)
+              or else Has_Valued_Component
+                        (Definition.As_Derived_Type_Def.F_Record_Extension);
+         elsif Definition.Kind = Libadalang.Common.Ada_Record_Type_Def then
+            return Has_Valued_Component (Definition);
+         end if;
+      end;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Formal_Keeps_A_Value;
+
    procedure Analyze_Subprogram
      (Unit       : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body)
@@ -2456,8 +2573,15 @@ package body Adalang_Analyzer.SPARK_Readiness is
                  (Outputs, Libadalang.Analysis.Ada_Node (Id),
                   Node_Text (Id), Id, Is_Read => False, Is_Written => True);
 
+               --  Outside code declared SPARK, an output Ada itself gives a
+               --  value is not one left without one (FP-149); GNATprove
+               --  takes every output as without a value on entry.
                if Rule_States (Uninitialized_Output) = Enabled
                  and then Param.F_Mode.Kind = Libadalang.Common.Ada_Mode_Out
+                 and then
+                   (In_Declared_SPARK (Subprogram)
+                    or else not Formal_Keeps_A_Value
+                                  (Param.F_Type_Expr.P_Designated_Type_Decl))
                then
                   declare
                      Bad_Return : Boolean := False;

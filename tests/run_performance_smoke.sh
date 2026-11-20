@@ -34,3 +34,25 @@ if [ "$elapsed" -gt "$max_seconds" ]; then
 fi
 
 echo "performance smoke test passed in ${elapsed}s (limit ${max_seconds}s)"
+
+#  A chain of 30 calls in prefix notation under --verify: about a second.
+#  Each link was walked twice, once as the name of its call and once as
+#  its first actual, so the time doubled with each link; Alire's lists of
+#  switches (23 long) took half an hour each.
+chain_limit=${ADALANG_MAX_CHAIN_SECONDS:-30}
+start=$(date +%s)
+status=0
+"$analyzer" --verify -q tests/performance_call_chain.ads \
+  tests/performance_call_chain.adb >/dev/null || status=$?
+finish=$(date +%s)
+elapsed=$((finish - start))
+if [ "$status" -gt 1 ]; then
+   echo "call-chain verification failed with status $status" >&2
+   exit "$status"
+fi
+if [ "$elapsed" -gt "$chain_limit" ]; then
+   echo "performance regression: a chain of 30 prefixed calls took" \
+     "${elapsed}s under --verify (limit ${chain_limit}s)" >&2
+   exit 1
+fi
+echo "call-chain verification passed in ${elapsed}s (limit ${chain_limit}s)"

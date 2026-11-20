@@ -191,6 +191,8 @@ join_predicates_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-join-predicates-broken.
 literal_bounds=$(mktemp "${TMPDIR:-/tmp}/adalang-literal-bounds.XXXXXX")
 literal_bounds_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-literal-bounds-broken.XXXXXX")
 state_constituents=$(mktemp "${TMPDIR:-/tmp}/adalang-state-constituents.XXXXXX")
+fp147=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp147.XXXXXX")
+fp145=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp145.XXXXXX")
 formal_contracts=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts.XXXXXX")
 formal_contracts_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts-broken.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
@@ -224,7 +226,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken" "$parameter_aliasing" "$parameter_aliasing_broken" "$loop_predicates" "$loop_predicates_broken" "$composite_membership" "$composite_membership_broken" "$abstract_operator" "$join_predicates" "$join_predicates_broken" "$guaranteed_operands" "$guaranteed_operands_broken" "$literal_bounds" "$literal_bounds_broken" "$state_constituents"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken" "$parameter_aliasing" "$parameter_aliasing_broken" "$loop_predicates" "$loop_predicates_broken" "$composite_membership" "$composite_membership_broken" "$abstract_operator" "$join_predicates" "$join_predicates_broken" "$guaranteed_operands" "$guaranteed_operands_broken" "$literal_bounds" "$literal_bounds_broken" "$state_constituents" "$fp147" "$fp145"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -4098,6 +4100,10 @@ for project in good bad; do
    else
       must_not_prove "$state_constituents" data-dependencies \
         'Global of Relock' 'state constituents: mutation'
+      #  FP-145: Lock reads Current, which its refined Global gives as
+      #  Output only, before it writes it.
+      must_not_prove "$state_constituents" data-dependencies \
+        'Global of Lock' FP-145
       #  Lock's read of Current, on line 6 of the body.
       found=$(grep -F '"kind": "initialization-check"' "$state_constituents" |
         grep -F '"operation": "Current"' | grep -F 'bad/state_latch.adb' |
@@ -4155,6 +4161,46 @@ for project in good bad; do
            'abstract operator: mutation'
       fi
    done
+done
+
+#  FP-147: a call whose actuals make the precondition false is a definite
+#  error only where it is reached, as a false assertion is (FP-065). Found
+#  on Alire: a call under "if On_Windows" of a procedure whose precondition
+#  is On_Windows, the constant False on the host analyzed, in a subprogram
+#  that declares a tagged object, which drops the symbolic state and the
+#  guard with it. The call under the guard is unproved; the same call where
+#  it is always reached is still a definite error.
+run_json_pair "$fp147" tests/verification_fp147_guarded_call
+if grep -F '"kind": "precondition", "status": "definite-error"' "$fp147" |
+  grep -F '"operation": "Windows_Only (Count)"' >/dev/null
+then
+   echo "FP-147: a precondition refuted under a guard that is not" \
+     "established was reported as a definite error" >&2
+   exit 1
+fi
+must_not_prove "$fp147" precondition 'Windows_Only (Count)' FP-147
+if ! grep -F '"kind": "precondition", "status": "definite-error"' "$fp147" |
+  grep -F '"operation": "Windows_Only (Total)"' >/dev/null
+then
+   echo "FP-147: a precondition that fails where the call is always" \
+     "reached is no longer a definite error" >&2
+   exit 1
+fi
+
+#  FP-145: the data dependencies of a subprogram whose body may read the
+#  value on entry of a global listed as Output only are not proved;
+#  GNATprove reports the global as not an input. Where the body writes the
+#  whole global first, by an assignment or a call of a subprogram that
+#  lists it as Output, they still are.
+run_json_pair "$fp145" tests/verification_fp145_output_globals
+for operation in Init Write_Then_Read Call_Then_Read \
+  Both_Branches_Then_Read Out_Actual_Then_Read
+do
+   must_prove "$fp145" data-dependencies "Global of $operation" \
+     flow-analysis 'FP-145: written before it is read'
+done
+for operation in Read_Then_Write Write_Under_Guard Read_Only; do
+   must_not_prove "$fp145" data-dependencies "Global of $operation" FP-145
 done
 
 echo "bounded verification tests passed"

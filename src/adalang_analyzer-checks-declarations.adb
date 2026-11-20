@@ -1436,6 +1436,102 @@ package body Adalang_Analyzer.Checks.Declarations is
          return False;
    end Is_Scalar_Declaration;
 
+   --  FP-148: True when Read, the first access to Decl in Subprogram, may
+   --  be made on an iteration of a loop after one that wrote Decl: it is
+   --  in the body of a loop, on a path within it that not every iteration
+   --  takes (a branch of an if or a case statement or expression, the
+   --  right operand of a short-circuit form, the body of an inner loop, an
+   --  exception handler), and the loop writes Decl after it. Alire's
+   --  toolchain assistant reads Chosen_Origin under "not Selected.Is_Empty"
+   --  in a loop over the tools, then sets the tool up, which sets
+   --  Chosen_Origin and adds to Selected. A read every iteration makes
+   --  before the write is still one before any value, on the first.
+   function Read_Of_Earlier_Iteration
+     (Read       : Libadalang.Analysis.Ada_Node;
+      Decl       : Libadalang.Analysis.Basic_Decl;
+      Subprogram : Libadalang.Analysis.Subp_Body) return Boolean
+   is
+      use Libadalang.Common;
+
+      Child       : Libadalang.Analysis.Ada_Node := Read;
+      Parent      : Libadalang.Analysis.Ada_Node;
+      Conditional : Boolean := False;
+   begin
+      loop
+         Parent := Child.Parent;
+         exit when Libadalang.Analysis.Is_Null (Parent)
+           or else Parent = Libadalang.Analysis.Ada_Node (Subprogram);
+
+         case Parent.Kind is
+            when Ada_If_Stmt =>
+               if Child /= Libadalang.Analysis.Ada_Node
+                            (Parent.As_If_Stmt.F_Cond_Expr)
+               then
+                  Conditional := True;
+               end if;
+
+            when Ada_If_Expr =>
+               if Child /= Libadalang.Analysis.Ada_Node
+                            (Parent.As_If_Expr.F_Cond_Expr)
+               then
+                  Conditional := True;
+               end if;
+
+            when Ada_Case_Stmt_Alternative | Ada_Case_Expr_Alternative
+               | Ada_Exception_Handler =>
+               Conditional := True;
+
+            when Ada_Bin_Op =>
+               if Parent.As_Bin_Op.F_Op.Kind in Ada_Op_And_Then | Ada_Op_Or_Else
+                 and then Child = Libadalang.Analysis.Ada_Node
+                                    (Parent.As_Bin_Op.F_Right)
+               then
+                  Conditional := True;
+               end if;
+
+            when Ada_Base_Loop_Stmt =>
+               if Child /= Libadalang.Analysis.Ada_Node
+                            (Parent.As_Base_Loop_Stmt.F_Spec)
+               then
+                  if Conditional then
+                     --  Is Decl written in this loop after Read?
+                     declare
+                        After  : Libadalang.Analysis.Ada_Node := Read;
+                        Access_After : Data_Flow.Access_Result;
+                     begin
+                        loop
+                           Access_After :=
+                             Data_Flow.First_Access (Parent, Decl, After);
+                           case Access_After.Kind is
+                              when Data_Flow.Write_Access =>
+                                 return True;
+                              when Data_Flow.Read_Access =>
+                                 exit when Access_After.Node = After;
+                                 After := Access_After.Node;
+                              when Data_Flow.No_Access
+                                 | Data_Flow.Unknown_Access =>
+                                 exit;
+                           end case;
+                        end loop;
+                     end;
+                  end if;
+                  --  An outer loop runs this one on some of its iterations
+                  --  only when this one may run its body no time at all.
+                  Conditional := True;
+               end if;
+
+            when others =>
+               null;
+         end case;
+
+         Child := Parent;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return True;
+   end Read_Of_Earlier_Iteration;
+
    procedure Analyze_Object_Declaration
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Decl : Libadalang.Analysis.Object_Decl) is
@@ -1474,7 +1570,11 @@ package body Adalang_Analyzer.Checks.Declarations is
                     Data_Flow.First_Access
                       (Subprogram.As_Ada_Node, Decl.As_Basic_Decl, Decl);
                begin
-                  if Result.Kind = Data_Flow.Read_Access then
+                  if Result.Kind = Data_Flow.Read_Access
+                    and then not Read_Of_Earlier_Iteration
+                                   (Result.Node, Decl.As_Basic_Decl,
+                                    Subprogram)
+                  then
                      Report_Rule_Violation
                        (Unit, Result.Node, Uninitialized_Read,
                         "variable is read before it is ever assigned a " &
