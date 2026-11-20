@@ -43,11 +43,8 @@ matcher, `compare.awk`.
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 10 | 0 | 0 | 0 |
 | [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 705 | 327 | 0 | 0 |
 
-These are the figures of release 1.16.0 (run of 2026-11-15 against the
-GNATprove output of 2026-10-02). Releases 1.16.1 and 1.17.0 give the same
-findings and obligation statuses on all ten corpora (runs of 2026-11-17 and
-2026-11-19); with 1.17.0, 193 findings on SPARKNaCl's two files with CR LF
-line ends have new fingerprints. A matched pair is a
+These are the figures of release 1.17.1 (run of 2026-11-20 against the
+GNATprove output of 2026-10-02). A matched pair is a
 `(file, line, check kind)` at which each tool has exactly one obligation;
 "both safe" is the number of pairs AdaLang proves too.
 
@@ -80,7 +77,7 @@ span far more distinct code shapes than the six real projects reach; its
 value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-11-15.md`.
+`proved-safe`. See `spark_testsuite/RESULTS_2026-11-20.md`.
 
 What the two zero columns don't show:
 
@@ -110,8 +107,8 @@ what AdaLang does with each:
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| Proves it | 12,039 | 80.0% |
-| Has the obligation, leaves it unproved | 2,261 | 15.0% |
+| Proves it | 12,034 | 80.0% |
+| Has the obligation, leaves it unproved | 2,266 | 15.1% |
 | Has the obligation, calls it unsupported | 39 | 0.3% |
 | Has the obligation, finds the code never reached | 1 | 0.0% |
 | Has no obligation of that kind at that place | 597 | 4.0% |
@@ -121,14 +118,14 @@ what AdaLang does with each:
 Since 1.8.3 the analyzer does this accounting itself when it is given the
 log of a GNATprove run (`--gnatprove-log`): it reports GNATprove's verdict
 on each check beside its own result, and on these corpora that leaves none
-of the 15,043 unaccounted for -- 12,039 proved by AdaLang too, 2,301 with
+of the 15,043 unaccounted for -- 12,034 proved by AdaLang too, 2,306 with
 GNATprove's verdict alone on an obligation AdaLang has, 703 with
 GNATprove's verdict alone and no AdaLang obligation. The first figure is
 the only one that is AdaLang's.
 
 What is left, and why:
 
-- **Unproved (2,261).** AdaLang has the obligation and does not decide it.
+- **Unproved (2,266).** AdaLang has the obligation and does not decide it.
   The ledger gives the reason it reports for each, per corpus.
 - **Unsupported (39).** The obligation is in a subprogram `--verify`
   leaves outside the verified subset, almost all for a dispatching call;
@@ -146,10 +143,10 @@ In the other direction AdaLang proves nine of the 22 checks GNATprove
 leaves unproved there, each of which holds, GNATprove's provers stopping
 short: the `sparknacl-sign.adb` preservations above, and seven
 preconditions in CoAP-SPARK, `Fits_Into (Val, 16)` of a 16-bit value given
-to a 16-bit field (`coap_spark/RESULTS_2026-11-15.md`). It reports no
+to a 16-bit field (`coap_spark/RESULTS_2026-11-20.md`). It reports no
 definite error on a check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
-the ledger from the lanes' results. How the figure got to 12,039, release
-by release, is in `CHANGELOG.md` (1.8.1 to 1.16.0), with the analyzer faults
+the ledger from the lanes' results. How the figure got to 12,034, release
+by release, is in `CHANGELOG.md` (1.8.1 to 1.17.1), with the analyzer faults
 that the work turned up on the way (`FP-104`, `FP-106` to `FP-122`,
 `FP-124` to `FP-131`, `FP-133` to `FP-144`).
 
@@ -160,7 +157,7 @@ that the work turned up on the way (`FP-104`, `FP-106` to `FP-122`,
 | [aws](aws/) | AdaCore | Ada Web Server, ordinary (non-SPARK) Ada | Breadth on a large real project; GNATprove never gets past a pre-existing legality error; also the corpus with genuine unrestricted `select`/`requeue`/`abort` for the `--automotive` concurrency-prohibition checks |
 | [ada_drivers_library](ada_drivers_library/) | AdaCore | STM32 bare-metal hardware drivers | Real Ravenscar `protected`-object code for the `--automotive` concurrency-prohibition checks (no `select`/`requeue`/`abort` — see aws) |
 | [gnatcoll](gnatcoll/) | AdaCore | GNAT Components Collection core (JSON, VFS, strings, email, OS/process), ordinary (non-SPARK) Ada | A third breadth corpus in a new domain (general-purpose utility library); GNATprove hard-stops on a SPARK-illegal aspect 41 units in |
-| [project_bias](project_bias/) | EliAvila10 | Bias-free cryptographic random streams | Small SPARK corpus emphasizing floating-point contracts, quantified array predicates, OS/C bindings, and entropy-buffer clearing; GNATprove reports one flow error, so it is not a fully-proved oracle (43 matched pairs, 0 unsoundness, 0 false positives — corroborates without counting toward the table above) |
+| [project_bias](project_bias/) | EliAvila10 | Bias-free cryptographic random streams | Small SPARK corpus emphasizing floating-point contracts, quantified array predicates, OS/C bindings, and entropy-buffer clearing; GNATprove reports one flow error, so it is not a fully-proved oracle (57 matched pairs, 0 unsoundness, 0 false positives — corroborates without counting toward the table above) |
 
 ## GNATcheck oracle comparison
 
@@ -350,8 +347,8 @@ server or crypto primitive): GNATprove hard-stops on a SPARK-illegal
 aspect 41 units into the project, while AdaLang completes a full pass.
 
 **Where the tradeoff bites.** AdaLang proves 80% of what GNATprove proves
-on those corpora (12,039 of 15,043 checks), from 71% on Saatana (261 of
-367) to 81% on CoAP-SPARK (5,489 of 6,795) and 83% on Tokeneer (1,747 of
+on those corpora (12,034 of 15,043 checks), from 71% on Saatana (261 of
+367) to 81% on CoAP-SPARK (5,489 of 6,795) and 82% on Tokeneer (1,743 of
 2,114),
 so its `Proved_Safe`
 verdicts are a bonus on top of GNATprove where both are available, not a

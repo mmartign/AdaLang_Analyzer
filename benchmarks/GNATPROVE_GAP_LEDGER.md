@@ -1,13 +1,12 @@
 # What separates `--verify` from GNATprove: a ledger
 
-Recorded 2026-11-15 with AdaLang Analyzer 1.16.0 (1.16.1 and 1.17.0 give
-the same ledger, runs of 2026-11-17 and 2026-11-19), against the GNATprove
+Recorded 2026-11-20 with AdaLang Analyzer 1.17.1, against the GNATprove
 output saved by the 2026-10-02 runs of the five fully proved corpora
 (`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`). The ledger
 was started on 2026-10-05. What each release has added since is in
 `CHANGELOG.md`, and earlier states of the ledger are in the Git history.
 
-The per-corpus comparisons (`<corpus>/RESULTS_2026-11-15.md`) answer one
+The per-corpus comparisons (`<corpus>/RESULTS_2026-11-20.md`) answer one
 question: where both tools have exactly one obligation of a kind on a line,
 do they ever disagree? This ledger asks the other one: of everything
 GNATprove proves, how much does AdaLang prove, and what happens to the rest?
@@ -17,7 +16,7 @@ pair.
 ## Where it stands
 
 Of the 15,043 checks GNATprove proves on the five corpora, AdaLang proves
-12,039. It has an obligation that it does not decide for 2,300 more (2,261
+12,034. It has an obligation that it does not decide for 2,305 more (2,266
 unproved, 39 unsupported), finds 1 in code that is never reached, and
 has no obligation for 703. In the other
 direction it proves 9 of the 22 checks GNATprove leaves unproved, each
@@ -81,11 +80,15 @@ By kind, summed over the per-corpus tables below, AdaLang proves:
   resolves to an abstract operator that is not a dispatching operation for
   a call of the other subprograms of its name (RecordFlux's `"+" (Index,
   Index)`);
-- 684 of its 696 data-dependency (`Global`) checks, those in
+- 679 of its 696 data-dependency (`Global`) checks, those in
   SPARKlib's generic units among them since 1.15.0 and, since 1.16.0, those
   whose callees name a state abstraction that the refined `Global` covers
   by its constituents, or read it through expression functions completed
-  in a package's private part (tokeneer); and 332 of its
+  in a package's private part (tokeneer). Since 1.17.1, where a body
+  reads a global listed as `Output` only, its data dependencies are
+  proved only if every path through it gives the whole global a value
+  first (`FP-145`): 5 that give it one a component or an element at a
+  time, or in a loop, are no longer proved. And 332 of its
   357 flow-dependency checks, every `Depends` aspect; those left
   are GNATprove's checks of `Initializes` aspects, for which AdaLang has
   no obligation;
@@ -133,7 +136,7 @@ By kind, summed over the per-corpus tables below, AdaLang proves:
 
 What is left:
 
-- **Unproved (2,261).** AdaLang has the obligation and does not decide it.
+- **Unproved (2,266).** AdaLang has the obligation and does not decide it.
   The per-corpus tables below give the reason it reports for each.
 - **Unsupported (39).** The obligation is in a subprogram that
   `--verify` leaves outside the verified subset, almost all for a
@@ -191,8 +194,8 @@ GNATprove proves 15043 checks on these 5 corpora. What AdaLang does with each of
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 12039 | 80.0% |
-| unproved | 2261 | 15.0% |
+| proved-safe | 12034 | 80.0% |
+| unproved | 2266 | 15.1% |
 | unsupported | 39 | 0.3% |
 | unreachable | 1 | 0.0% |
 | no obligation here | 597 | 4.0% |
@@ -201,11 +204,11 @@ GNATprove proves 15043 checks on these 5 corpora. What AdaLang does with each of
 
 | Corpus | Proved by GNATprove | AdaLang proved | Unproved | Unsupported | Unreachable | No obligation here | No such kind | File without obligations |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| sparknacl | 2446 | 1963 | 408 | 0 | 0 | 61 | 14 | 0 |
+| sparknacl | 2446 | 1962 | 409 | 0 | 0 | 61 | 14 | 0 |
 | saatana | 367 | 261 | 97 | 0 | 0 | 9 | 0 | 0 |
 | libkeccak | 3321 | 2579 | 628 | 2 | 0 | 82 | 30 | 0 |
 | coap_spark | 6795 | 5489 | 934 | 37 | 1 | 301 | 29 | 4 |
-| tokeneer | 2114 | 1747 | 194 | 0 | 0 | 144 | 28 | 1 |
+| tokeneer | 2114 | 1743 | 198 | 0 | 0 | 144 | 28 | 1 |
 
 Disagreements: 9 checks AdaLang proved that GNATprove did not, 0 definite errors on checks GNATprove proved.
 
@@ -220,17 +223,17 @@ proved, and gives the figures of the table above:
 
 | Corpus | Proved by GNATprove | Proved by AdaLang too | GNATprove's verdict alone, on an AdaLang obligation | GNATprove's verdict alone, no AdaLang obligation | A definite error for AdaLang |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| sparknacl | 2,446 | 1,963 | 408 | 75 | 0 |
+| sparknacl | 2,446 | 1,962 | 409 | 75 | 0 |
 | saatana | 367 | 261 | 97 | 9 | 0 |
 | libkeccak | 3,321 | 2,579 | 630 | 112 | 0 |
 | coap_spark | 6,795 | 5,489 | 972 | 334 | 0 |
-| tokeneer | 2,114 | 1,747 | 194 | 173 | 0 |
-| All five | 15,043 | 12,039 | 2,301 | 703 | 0 |
+| tokeneer | 2,114 | 1,743 | 198 | 173 | 0 |
+| All five | 15,043 | 12,034 | 2,306 | 703 | 0 |
 
-The second column is what AdaLang proves; it is 12,039 with the logs and
+The second column is what AdaLang proves; it is 12,034 with the logs and
 without them. The third and fourth are GNATprove's work, reported as
-GNATprove's: 2,301 checks on an obligation AdaLang has and did not prove
-(the 2,261 unproved, the 39 unsupported and the 1 unreachable above) and
+GNATprove's: 2,306 checks on an obligation AdaLang has and did not prove
+(the 2,266 unproved, the 39 unsupported and the 1 unreachable above) and
 703 for which it
 has no obligation. Nothing is left over, which is all that "the gap is
 zero" means here: with GNATprove's log beside it, an AdaLang report says
@@ -321,8 +324,8 @@ GNATprove reports 2454 checks (2463 messages, a check of a generic unit being re
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 1963 | 80.3% |
-| unproved | 408 | 16.7% |
+| proved-safe | 1962 | 80.2% |
+| unproved | 409 | 16.7% |
 | no obligation here | 61 | 2.5% |
 | no such obligation kind | 14 | 0.6% |
 
@@ -330,7 +333,7 @@ GNATprove reports 2454 checks (2463 messages, a check of a generic unit being re
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | range check | 585 | 466 | 79 | 0 | 40 | 0 |
 | initialization of | 356 | 346 | 10 | 0 | 0 | 0 |
-| data dependencies | 198 | 198 | 0 | 0 | 0 | 0 |
+| data dependencies | 198 | 197 | 1 | 0 | 0 | 0 |
 | assertion | 187 | 110 | 77 | 0 | 0 | 0 |
 | overflow check | 155 | 95 | 44 | 0 | 16 | 0 |
 | division check | 153 | 153 | 0 | 0 | 0 | 0 |
@@ -672,8 +675,8 @@ GNATprove reports 2127 checks (2205 messages, a check of a generic unit being re
 
 | AdaLang | Checks | Share |
 | --- | ---: | ---: |
-| proved-safe | 1747 | 82.6% |
-| unproved | 194 | 9.2% |
+| proved-safe | 1743 | 82.5% |
+| unproved | 198 | 9.4% |
 | no obligation here | 144 | 6.8% |
 | no such obligation kind | 28 | 1.3% |
 | file without any obligation | 1 | 0.0% |
@@ -681,7 +684,7 @@ GNATprove reports 2127 checks (2205 messages, a check of a generic unit being re
 | GNATprove check | Proved | AdaLang proved | Unproved | Unsupported | No obligation | Definite error |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | initialization of | 708 | 701 | 4 | 0 | 3 | 0 |
-| data dependencies | 281 | 281 | 0 | 0 | 0 | 0 |
+| data dependencies | 281 | 277 | 4 | 0 | 0 | 0 |
 | flow dependencies | 233 | 210 | 0 | 0 | 23 | 0 |
 | precondition | 226 | 185 | 32 | 0 | 9 | 0 |
 | range check | 208 | 59 | 41 | 0 | 108 | 0 |
