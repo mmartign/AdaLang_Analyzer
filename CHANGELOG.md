@@ -5,15 +5,27 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.17.1] - 2026-11-20
 
-Found by running AdaLang Analyzer on Alire (alire-project/alire, main of
-2026-11-15), which it had not met before: a false definite error, three
-kinds of false findings, and a verification run that did not end. The
-`--verify` lane of the five fully proved corpora has been run with these
-changes, the findings and obligations unchanged but for the data
-dependencies `FP-145` leaves unproved; the ten corpora with every preset
-have not.
+Fixes of what running AdaLang Analyzer on Alire (alire-project/alire, main
+of 2026-11-15), which it had not met before, showed: a false definite
+error, three kinds of false findings, and a verification run that did not
+end. On Alire it now reports no definite error, and `--verify` takes 25 s
+of CPU time on the library.
+
+What to expect: on the ten corpora, with every preset (run of
+2026-11-20), no definite error is new or gone, and no finding is new. The
+obligations of 1.17.0 keep their status but for five data dependencies
+`FP-145` leaves unproved, on Tokeneer (4) and SPARKNaCl (1): `--verify`
+proves 12,034 of the 15,043 checks GNATprove proves, 80.0% (79.997%), down
+from 12,039. On gnatcoll-core 3 unproved initialization checks are gone, of
+an object given as the prefix of a call to an `out` formal (the last fix
+below), and 16 `Uninitialized_Output` (`FP-149`) and 2
+`Uninitialized_Read` (`FP-146`) findings; on AWS 35 `Uninitialized_Output`
+findings (`FP-149`). On the SPARK testsuite, against the run of 1.16.0, the
+data dependencies of one unit, which GNATprove proves, are unproved
+(`S530-019__init_by_proof`, `FP-145`), on no matched pair; nothing else
+changes there.
 
 ### Fixed
 
