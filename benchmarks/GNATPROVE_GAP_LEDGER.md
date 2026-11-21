@@ -1,12 +1,12 @@
 # What separates `--verify` from GNATprove: a ledger
 
-Recorded 2026-11-20 with AdaLang Analyzer 1.17.1, against the GNATprove
+Recorded 2026-11-21 with AdaLang Analyzer 1.17.2, against the GNATprove
 output saved by the 2026-10-02 runs of the five fully proved corpora
 (`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`). The ledger
 was started on 2026-10-05. What each release has added since is in
 `CHANGELOG.md`, and earlier states of the ledger are in the Git history.
 
-The per-corpus comparisons (`<corpus>/RESULTS_2026-11-20.md`) answer one
+The per-corpus comparisons (`<corpus>/RESULTS_2026-11-21.md`) answer one
 question: where both tools have exactly one obligation of a kind on a line,
 do they ever disagree? This ledger asks the other one: of everything
 GNATprove proves, how much does AdaLang prove, and what happens to the rest?
@@ -318,7 +318,7 @@ units, which the lanes do not analyze.
 
 ## sparknacl
 
-GNATprove reports 2454 checks (2463 messages, a check of a generic unit being repeated for each instance): 2446 proved, 0 justified by the corpus, 8 not proved. AdaLang raises 10195 obligations.
+GNATprove reports 2454 checks (2463 messages, a check of a generic unit being repeated for each instance): 2446 proved, 0 justified by the corpus, 8 not proved. AdaLang raises 10192 obligations.
 
 ### Checks GNATprove proved
 
@@ -392,14 +392,14 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | assertion | 81 | 16 | 65 | 0 |
 | division-by-zero | 39 | 39 | 0 | 0 |
 | index-check | 953 | 949 | 4 | 0 |
-| initialization-check | 2596 | 2582 | 14 | 0 |
+| initialization-check | 2595 | 2581 | 14 | 0 |
 | integer-overflow | 1423 | 864 | 559 | 0 |
 | postcondition | 1 | 0 | 1 | 0 |
 | range-check | 1665 | 1553 | 112 | 0 |
 
 ## saatana
 
-GNATprove reports 367 checks (376 messages, a check of a generic unit being repeated for each instance): 367 proved, 0 justified by the corpus, 0 not proved. AdaLang raises 1512 obligations.
+GNATprove reports 367 checks (376 messages, a check of a generic unit being repeated for each instance): 367 proved, 0 justified by the corpus, 0 not proved. AdaLang raises 1511 obligations.
 
 ### Checks GNATprove proved
 
@@ -466,7 +466,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | assertion | 9 | 0 | 9 | 0 |
 | division-by-zero | 15 | 15 | 0 | 0 |
 | index-check | 166 | 152 | 14 | 0 |
-| initialization-check | 530 | 481 | 49 | 0 |
+| initialization-check | 529 | 481 | 48 | 0 |
 | integer-overflow | 214 | 153 | 61 | 0 |
 | length-check | 2 | 0 | 2 | 0 |
 | precondition | 26 | 0 | 26 | 0 |
@@ -474,7 +474,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 ## libkeccak
 
-GNATprove reports 3321 checks (20673 messages, a check of a generic unit being repeated for each instance): 3321 proved, 0 justified by the corpus, 0 not proved. AdaLang raises 12696 obligations.
+GNATprove reports 3321 checks (20673 messages, a check of a generic unit being repeated for each instance): 3321 proved, 0 justified by the corpus, 0 not proved. AdaLang raises 12694 obligations.
 
 ### Checks GNATprove proved
 
@@ -562,7 +562,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 
 ## coap_spark
 
-GNATprove reports 6809 checks (7423 messages, a check of a generic unit being repeated for each instance): 6795 proved, 0 justified by the corpus, 14 not proved. AdaLang raises 23200 obligations.
+GNATprove reports 6809 checks (7423 messages, a check of a generic unit being repeated for each instance): 6795 proved, 0 justified by the corpus, 14 not proved. AdaLang raises 23197 obligations.
 
 ### Checks GNATprove proved
 
@@ -653,7 +653,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | division-by-zero | 15 | 15 | 0 | 0 |
 | flow-dependencies | 3 | 3 | 0 | 0 |
 | index-check | 882 | 837 | 25 | 20 |
-| initialization-check | 12288 | 11662 | 253 | 373 |
+| initialization-check | 12284 | 11661 | 253 | 370 |
 | integer-overflow | 1119 | 811 | 223 | 85 |
 | length-check | 19 | 11 | 2 | 6 |
 | non-aliasing | 2 | 2 | 0 | 0 |
@@ -669,7 +669,7 @@ GNATprove messages not counted as checks: function contract feasibility proved (
 
 ## tokeneer
 
-GNATprove reports 2127 checks (2205 messages, a check of a generic unit being repeated for each instance): 2114 proved, 13 justified by the corpus, 0 not proved. AdaLang raises 10044 obligations.
+GNATprove reports 2127 checks (2205 messages, a check of a generic unit being repeated for each instance): 2114 proved, 13 justified by the corpus, 0 not proved. AdaLang raises 10043 obligations.
 
 ### Checks GNATprove proved
 
@@ -738,7 +738,7 @@ Reasons AdaLang gives where it has an obligation but no verdict:
 | assertion | 19 | 5 | 14 | 0 |
 | division-by-zero | 10 | 10 | 0 | 0 |
 | index-check | 270 | 194 | 66 | 10 |
-| initialization-check | 5203 | 4807 | 356 | 40 |
+| initialization-check | 5202 | 4809 | 353 | 40 |
 | integer-overflow | 230 | 129 | 99 | 2 |
 | length-check | 56 | 16 | 40 | 0 |
 | postcondition | 4 | 2 | 2 | 0 |

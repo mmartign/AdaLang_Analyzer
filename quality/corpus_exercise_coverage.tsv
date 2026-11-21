@@ -13,8 +13,8 @@ Floating_Equality	yes	automotive,spark,verify	10	116	10
 Magic_Number	yes	automotive	2	1562	166
 Unused_Parameter	yes	recommended	4	82	8
 Wrong_Parameter_Mode	yes	recommended	4	67	33
-Dead_Store	yes	automotive,recommended,spark,verify	10	532	73
-Overwritten_Assignment	yes	automotive,recommended,spark,verify	10	31	6
+Dead_Store	yes	automotive,recommended,spark,verify	10	480	64
+Overwritten_Assignment	yes	automotive,recommended,spark,verify	10	19	4
 Shadowed_Declaration	yes	automotive	2	486	60
 Unreachable_Case_Alternative	yes	automotive,recommended	4	0	0
 Overlapping_Case_Ranges	yes	automotive,recommended	4	0	0
@@ -45,7 +45,7 @@ Unreachable_Branch	yes	automotive,recommended	4	0	0
 Contradictory_Condition	yes	automotive,recommended,spark,verify	10	0	0
 Contradictory_Range_Condition	no	-	0	0	0
 Identical_Branches	yes	recommended	4	17	11
-Repeated_Statement	yes	recommended	4	1	1
+Repeated_Statement	yes	recommended	4	0	0
 Ineffective_Operation	yes	recommended	4	3	3
 Constant_Result_Operation	yes	recommended	4	1	1
 Empty_Loop	yes	recommended	4	46	8
@@ -75,7 +75,7 @@ Missing_Depends_Contract	yes	automotive,spark,verify	10	4376	264
 Incomplete_Depends_Contract	yes	automotive,spark,verify	10	0	0
 Depends_Contract_Mismatch	yes	automotive,spark,verify	10	4	2
 Uninitialized_Output	yes	automotive,recommended,spark,verify	10	230	48
-Uninitialized_Read	yes	automotive,recommended	4	20	6
+Uninitialized_Read	yes	automotive,recommended	4	6	4
 Missing_Overriding_Indicator	yes	automotive	2	0	0
 Inefficient_String_Concatenation	no	-	0	0	0
 Circular_Package_Dependency	yes	automotive	2	0	0
@@ -92,7 +92,7 @@ Identical_Case_Alternative	yes	recommended	4	9	4
 Redundant_Type_Conversion	yes	automotive,recommended	4	5	3
 Handler_Order	yes	recommended	4	0	0
 Reraise_Discards_Occurrence	no	-	0	0	0
-Aliasing_Between_Parameters	yes	automotive,recommended,spark,verify	10	1	1
+Aliasing_Between_Parameters	yes	automotive,recommended,spark,verify	10	0	0
 Missing_Loop_Variant	yes	automotive,spark,verify	10	119	48
 Known_Discriminant_Check_Failure	yes	automotive,recommended,spark,verify	10	0	0
 Known_Enum_Val_Failure	no	-	0	0	0
@@ -123,8 +123,8 @@ No_Runtime_Check_Suppression	yes	automotive	2	15	4
 Missing_Requirement_Trace	no	-	0	0	0
 Malformed_Requirement_Trace	no	-	0	0	0
 Suppression_Without_Rationale	yes	automotive	2	0	0
-Use_After_Free	yes	recommended	4	14	8
-Double_Free	yes	recommended	4	8	6
+Use_After_Free	yes	recommended	4	0	0
+Double_Free	yes	recommended	4	0	0
 Unclosed_File_Handle	yes	recommended	4	1	1
 Unused_With_Clause	yes	recommended	4	22	18
 No_Use_Package_Clause	no	-	0	0	0
