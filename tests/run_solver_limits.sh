@@ -12,7 +12,9 @@ set -eu
 #      default those of releases before the step limit, with steps a resource
 #      limit (Z3 rlimit, CVC5 --rlimit-per) and the safety time stop, and a
 #      quarter of either in the passes over the instances of a generic unit;
-#   4. on the fixtures, a step budget gives the statuses the time limit gives.
+#   4. on the fixtures, a step budget gives the statuses the time limit gives;
+#   5. solvers beside the executable, as a release archive holds them, come
+#      before those on PATH.
 
 analyzer=${ANALYZER:-./bin/adalang_analyzer}
 work=$(mktemp -d "${TMPDIR:-/tmp}/adalang-solver-limits.XXXXXX")
@@ -186,5 +188,58 @@ do
       exit 1
    fi
 done
+
+#  --- 5. solvers beside the analyzer ----------------------------------------
+#
+#  A release archive puts cvc5 and z3 beside the executable. They are used
+#  before those on PATH, however the analyzer was started (by its path,
+#  through a symbolic link, or by name from PATH); ADALANG_CVC5 and
+#  ADALANG_Z3 still come first. (A dependency appends the directory the
+#  analyzer was started from to its PATH: before, solvers there were found
+#  only when PATH held none, and not through a link.) The wrappers that
+#  record which solver ran are shell scripts, which Windows does not start.
+
+if [ "$wrap_solvers" = yes ]; then
+mkdir "$work/bundle" "$work/link" "$work/onpath"
+ln "$analyzer" "$work/bundle/adalang_analyzer" 2>/dev/null ||
+  cp "$analyzer" "$work/bundle/adalang_analyzer"
+ln -s "$work/bundle/adalang_analyzer" "$work/link/adalang_analyzer"
+for name in z3 cvc5; do
+   eval "real=\$$name"
+   for place in bundle onpath; do
+      cat >"$work/$place/$name" <<EOF
+#!/bin/sh
+echo "$place $name" >>"$work/which.log"
+exec "$real" "\$@"
+EOF
+      chmod +x "$work/$place/$name"
+   done
+done
+
+#  The solvers that run when the analyzer is started as $1 with PATH $2.
+used() {
+   rm -f "$work/which.log"
+   env -u ADALANG_CVC5 -u ADALANG_Z3 PATH="$2" \
+     "$1" --no-config --verify --format=json "$fixture" \
+     >/dev/null 2>&1 || true
+   [ -f "$work/which.log" ] && sort -u "$work/which.log"
+   return 0
+}
+bundled="bundle cvc5
+bundle z3"
+[ "$(used "$work/bundle/adalang_analyzer" "$work/onpath:$PATH")" = "$bundled" ] ||
+  fail "the solvers beside the analyzer did not come before those on PATH"
+[ "$(used "$work/link/adalang_analyzer" "$work/onpath:$PATH")" = "$bundled" ] ||
+  fail "the solvers beside the analyzer were not used through a link"
+[ "$(used adalang_analyzer "$work/link:$work/onpath:$PATH")" = "$bundled" ] ||
+  fail "the solvers beside the analyzer were not used when it was found on PATH"
+
+rm -f "$work/which.log"
+ADALANG_CVC5="$cvc5" ADALANG_Z3="$z3" PATH="$work/onpath:$PATH" \
+  "$work/bundle/adalang_analyzer" --no-config --verify --format=json \
+  "$fixture" >/dev/null 2>&1 || true
+[ ! -f "$work/which.log" ] ||
+  fail "the solvers beside the analyzer came before ADALANG_CVC5/ADALANG_Z3"
+fi
 
 echo "solver limit tests passed"

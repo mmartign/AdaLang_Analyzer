@@ -502,9 +502,10 @@ both CVC5 and Z3 independently return the same UNSAT conclusion. Missing
 solvers, timeouts, disagreement, uninitialized operands, division/remainder,
 calls, or unsupported syntax remain `Unproved`.
 
-The backend locates `cvc5` and `z3` on `PATH` or in Alire's standard
-GNATprove installation. `ADALANG_CVC5` and `ADALANG_Z3` can select explicit
-executables. Solver calls have a two-second limit each and never pass source
+The backend locates `cvc5` and `z3` beside the analyzer's executable, where a
+release archive puts them, then on `PATH`, then in Alire's standard GNATprove
+installation. `ADALANG_CVC5` and `ADALANG_Z3` select explicit executables,
+before any of these. Solver calls have a two-second limit each and never pass source
 text through a shell.
 
 The CFG verifier also carries a symbolic state beside the interval state.

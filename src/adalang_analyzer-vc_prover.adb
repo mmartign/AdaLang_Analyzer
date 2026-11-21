@@ -7,6 +7,7 @@
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
 with Ada.Calendar;
+with Ada.Command_Line;
 with Ada.Containers.Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Directories;
@@ -12347,12 +12348,59 @@ package body Adalang_Analyzer.VC_Prover is
    Home_Variables : constant array (1 .. 2) of Variable_Name :=
      (Home_Variable'Access, User_Profile'Access);
 
+   --  The directory of the running executable, symbolic links resolved,
+   --  or "" when the command it was started with does not tell.
+   function Executable_Directory return String is
+      Command : constant String := Ada.Command_Line.Command_Name;
+      Located : GNAT.OS_Lib.String_Access;
+   begin
+      if Ada.Strings.Fixed.Index (Command, "/") > 0
+        or else Ada.Strings.Fixed.Index (Command, "\") > 0
+      then
+         return Ada.Directories.Containing_Directory
+           (GNAT.OS_Lib.Normalize_Pathname (Command));
+      end if;
+
+      --  Started by name, found on the path.
+      Located := GNAT.OS_Lib.Locate_Exec_On_Path (Command);
+      if Located = null then
+         return "";
+      end if;
+      declare
+         Result : constant String :=
+           Ada.Directories.Containing_Directory
+             (GNAT.OS_Lib.Normalize_Pathname (Located.all));
+      begin
+         GNAT.OS_Lib.Free (Located);
+         return Result;
+      end;
+   end Executable_Directory;
+
    function Solver_Path (Name, Override : String) return String is
       Located : GNAT.OS_Lib.String_Access;
    begin
       if Ada.Environment_Variables.Exists (Override) then
          return Ada.Environment_Variables.Value (Override);
       end if;
+
+      --  Beside the analyzer, where a release archive puts the solvers it
+      --  was built and tested with: they come before others on the path.
+      declare
+         Directory : constant String := Executable_Directory;
+         Suffix    : GNAT.OS_Lib.String_Access :=
+           GNAT.OS_Lib.Get_Executable_Suffix;
+         Candidate : constant String :=
+           (if Directory = "" then ""
+            else Ada.Directories.Compose (Directory, Name & Suffix.all));
+      begin
+         GNAT.OS_Lib.Free (Suffix);
+         if Candidate /= ""
+           and then GNAT.OS_Lib.Is_Regular_File (Candidate)
+           and then GNAT.OS_Lib.Is_Executable_File (Candidate)
+         then
+            return Candidate;
+         end if;
+      end;
 
       Located := GNAT.OS_Lib.Locate_Exec_On_Path (Name);
       if Located /= null then

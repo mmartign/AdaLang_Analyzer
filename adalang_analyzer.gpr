@@ -41,6 +41,15 @@ project AdaLang_Analyzer is
    package Linker is
       --  The host is the one Alire found when it wrote the configuration
       --  project.
+      --
+      --  GPR2 and GPR use the GNAT tasking run time (libgnarl). The binder
+      --  links it in, as the archive libgnarl.a, only for a main whose own
+      --  closure uses tasking, as the analyzer's does; the test programs
+      --  that use the libraries need it named. Named among the switches, it
+      --  was found as the shared library first on macOS and Linux, and the
+      --  analyzer then ran only beside the toolchain that built it. Named
+      --  last, it supplies only what is still missing, and the shared
+      --  library is kept only where it is used: by those test programs.
       case Adalang_Analyzer_Config.Alire_Host_OS is
          when "macos" =>
             --  Homebrew GNAT on recent macOS needs the Command Line Tools
@@ -48,16 +57,18 @@ project AdaLang_Analyzer is
             --  system libraries.
             for Switches ("Ada") use (
                "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
-               "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
-               "-lgnarl"
+               "-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
             );
+            for Trailing_Switches ("Ada") use
+              ("-lgnarl", "-Wl,-dead_strip_dylibs");
          when "windows" =>
             --  The GMP and iconv libraries come from MSYS2, whose DLLs are
             --  on the path only under "alr exec": linked in, they leave an
             --  executable that runs from anywhere.
             for Switches ("Ada") use ("-static", "-lgnarl");
          when others =>
-            for Switches ("Ada") use ("-lgnarl");
+            for Trailing_Switches ("Ada") use
+              ("-Wl,--as-needed", "-lgnarl", "-Wl,--no-as-needed");
       end case;
    end Linker;
 

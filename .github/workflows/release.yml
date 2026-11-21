@@ -1,0 +1,189 @@
+name: Release binaries
+
+# A pushed version tag builds the release archives (Linux, macOS, Windows)
+# and attaches them to the tag's GitHub release, created as a draft for a
+# maintainer to review and publish. Started by hand, it builds any branch or
+# tag as a trial, leaving the archives as workflow artifacts, or, with
+# "publish", attaches them to an existing tag's release.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag or branch to build
+        required: true
+      publish:
+        description: Attach the archives to the tag's (draft) release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.ref || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  REF: ${{ inputs.ref || github.ref_name }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported Ubuntu runner, for the oldest C library
+          # the executable then needs (2.35).
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+          - os: macos-latest
+            platform: macos-arm64
+          - os: windows-latest
+            platform: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Keep line ends as committed
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+
+      - uses: alire-project/setup-alire@v4
+        with:
+          version: "2.1.0"
+
+      # The static GMP library the executable is linked with.
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          timeout 120 sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+          sudo apt-get install -y libgmp-dev
+
+      # As in ci.yml: GCC links against the SDK at a path built into it,
+      # and the selected linker cannot read the macOS 27 SDK.
+      - name: Link against the macOS 26 SDK (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sdks=/Library/Developer/CommandLineTools/SDKs
+          if [ -L "$sdks/MacOSX.sdk" ] && [ -d "$sdks/MacOSX26.sdk" ]; then
+            sudo ln -sfn MacOSX26.sdk "$sdks/MacOSX.sdk"
+          fi
+          ls -l "$sdks/MacOSX.sdk"
+
+      # As in ci.yml: under Alire's default cache a linker script's path
+      # is longer than Windows allows.
+      - name: Move Alire's cache to a short path (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p 'C:\temp\ac'
+          alr settings --global --set cache.dir 'C:\temp\ac'
+          alr settings --global --set toolchain.dir "$LOCALAPPDATA\\alire\\cache\\toolchains"
+          alr settings --global --set msys2.install_dir "$LOCALAPPDATA\\alire\\cache\\msys64"
+          alr version
+
+      - name: Install tar from MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          "$LOCALAPPDATA\\alire\\cache\\msys64\\usr\\bin\\pacman" --noconfirm -S tar
+
+      # The dependency builds CI saved for this manifest, read only: they
+      # take about 25 minutes to build on Windows.
+      - name: Restore Alire's builds (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\temp\ac
+          key: alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-none
+          restore-keys: |
+            alire-builds-${{ runner.os }}-${{ hashFiles('alire.toml') }}-
+
+      # The archive carries the CVC5 and Z3 that --verify runs.
+      - name: Install the SPARK solvers
+        run: alr -n install gnatprove
+
+      - name: Build, check and package
+        run: sh .github/scripts/build-release.sh ${{ matrix.platform }} "$RUNNER_TEMP/release"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adalang_analyzer-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/release/*.tar.gz
+            ${{ runner.temp }}/release/*.zip
+            ${{ runner.temp }}/release/*.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Write the release notes
+        run: |
+          git ls-remote --exit-code --tags origin "refs/tags/$REF" >/dev/null ||
+            { echo "$REF is not a tag: nothing is published" >&2; exit 1; }
+          version=${REF#v}
+          {
+            echo "## Downloads"
+            echo
+            echo "Unpack the archive for your system and run"
+            echo "\`bin/adalang_analyzer\` (\`bin\\adalang_analyzer.exe\` on Windows);"
+            echo "nothing needs to be installed beside it. The CVC5 and Z3"
+            echo "solvers that \`--verify\` runs are in the same \`bin\`"
+            echo "directory. Keep a GNAT toolchain on \`PATH\` (or installed by"
+            echo "Alire): the analyzer asks its \`gnatls\` where the Ada run-time"
+            echo "library's sources are."
+            echo
+            echo "| Archive | System |"
+            echo "| --- | --- |"
+            echo "| \`adalang_analyzer-$version-linux-x86_64.tar.gz\` | Linux on x86-64 with the GNU C library 2.35 or later (Ubuntu 22.04, Debian 12 and later) |"
+            echo "| \`adalang_analyzer-$version-macos-arm64.tar.gz\` | macOS 26 or later on Apple silicon |"
+            echo "| \`adalang_analyzer-$version-windows-x86_64.zip\` | Windows 10 or later on x86-64 |"
+            echo
+            echo "On macOS, an archive a browser downloaded is quarantined:"
+            echo "\`xattr -dr com.apple.quarantine adalang_analyzer-$version-macos-arm64\`"
+            echo "after unpacking it, or download it with \`curl -LO\`."
+            echo "\`SHA256SUMS\` holds the archives' checksums; each archive's"
+            echo "\`THIRD-PARTY.md\` lists the libraries and solvers it contains"
+            echo "and their licenses."
+            echo
+            awk -v v="$version" '
+              $0 ~ "^## \\[" v "\\]" { found = 1; print "## Changes"; next }
+              found && /^## \[/ { exit }
+              found { print }
+            ' CHANGELOG.md
+          } > notes.md
+          cat notes.md
+
+      - name: Create the draft release and attach the archives
+        run: |
+          (cd artifacts && cat *.sha256 > SHA256SUMS && cat SHA256SUMS)
+          if ! gh release view "$REF" >/dev/null 2>&1; then
+            gh release create "$REF" --draft --verify-tag \
+              --title "AdaLang Analyzer ${REF#v}" --notes-file notes.md
+          fi
+          gh release upload "$REF" --clobber \
+            artifacts/*.tar.gz artifacts/*.zip artifacts/SHA256SUMS
+          gh release view "$REF"

@@ -9,6 +9,21 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Release archives. A pushed version tag builds the analyzer on Linux
+  (x86-64, on Ubuntu 22.04: GNU C library 2.35 or later), macOS (Apple
+  silicon, macOS 26 or later) and Windows (x86-64), and attaches an archive
+  for each, with their SHA-256 checksums, to a draft GitHub release that
+  the CHANGELOG section introduces (`.github/workflows/release.yml`). An
+  archive holds the executable, the CVC5 and Z3 solvers of the GNATprove
+  distribution beside it, the README, CHANGELOG, LICENSE and NOTICE, the
+  solvers' licenses, and a `THIRD-PARTY.md` listing each library linked in
+  and its license as the Alire index gives it.
+  `.github/scripts/build-release.sh` builds one: GMP is linked in from its
+  static library, the build stops if the executable or a solver depends on
+  any library outside the system, and the packaged analyzer is run with no
+  toolchain, solver or home directory to find, and must run the solvers
+  beside it. Started by hand, the workflow builds any branch or tag as a
+  trial, or attaches the archives to an existing tag's release.
 - The configuration reference shows how to analyze the sources of Rational
   Apex and ApexAda views (`unit.1.ada`, `unit.2.ada`, child units and
   subunits with the dots of their names): a GPR project a view, with the
@@ -18,6 +33,28 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   both ways on two views written for the purpose; no view that Apex saved
   has been tried. Apex's own files (a view's switches and imports) are not
   read.
+
+### Changed
+
+- `cvc5` and `z3` beside the analyzer's executable, where a release archive
+  puts them, are used before those on `PATH` (and the GNATprove
+  installation of Alire after both); `ADALANG_CVC5` and `ADALANG_Z3` still
+  come first. A link to the executable is followed to find them. Before,
+  solvers there were run only when `PATH` held none: a dependency appends
+  the directory the analyzer was started from to its `PATH`.
+  `tests/run_solver_limits.sh` checks the order.
+
+### Fixed
+
+- On macOS and Linux the executable loaded the shared GNAT tasking run time
+  (`libgnarl`) of the toolchain that built it, beside the static one the
+  binder links in, and stopped at start-up on any computer without that
+  toolchain at the same place: the project file's `-lgnarl`, among the
+  linker switches, found the shared library first. It now comes last
+  (`Trailing_Switches`), where it supplies only what is still missing, and
+  the shared library is kept only by the test programs whose closure gives
+  the binder no tasking to link in. The Windows executable, linked
+  statically, did not have the problem.
 
 ## [1.17.1] - 2026-11-20
 

@@ -53,8 +53,23 @@ every file to be SPARK-ready first.
 
 ## Quick start
 
-Build with [Alire](https://alire.ada.dev/) and analyze a GNAT project with the
-curated low-noise preset:
+Download the archive for your system from the
+[latest release](https://github.com/mmartign/AdaLang_Analyzer/releases/latest)
+(Linux on x86-64, macOS on Apple silicon, Windows on x86-64), unpack it,
+and analyze a GNAT project with the curated low-noise preset:
+
+```sh
+tar -xzf adalang_analyzer-<version>-linux-x86_64.tar.gz
+adalang_analyzer-<version>-linux-x86_64/bin/adalang_analyzer --recommended -P my_project.gpr
+```
+
+The archive holds the analyzer, which needs nothing installed beside it,
+and the CVC5 and Z3 solvers that `--verify` runs. Keep a GNAT toolchain on
+`PATH`, or one that Alire installed: the analyzer asks it where the Ada
+run-time library's sources are. In an Alire workspace, run the analyzer
+through `alr exec --`, so that the projects yours imports are found.
+
+Or build it with [Alire](https://alire.ada.dev/):
 
 ```sh
 git clone https://github.com/mmartign/AdaLang_Analyzer.git
@@ -257,6 +272,15 @@ own copy and reports GNATprove's verdicts as GNATprove's, beside AdaLang's
 own.
 
 ## Requirements
+
+To run a release archive:
+
+- Linux on x86-64 with the GNU C library 2.35 or later (Ubuntu 22.04,
+  Debian 12 and later), macOS 26 or later on Apple silicon, or Windows 10
+  or later on x86-64;
+- a GNAT toolchain, for the sources of the Ada run-time library.
+
+To build from source:
 
 - [Alire](https://alire.ada.dev/) and a GNAT Ada toolchain;
 - optionally, the Alire `gnatprove` package for scalar VC discharge and
