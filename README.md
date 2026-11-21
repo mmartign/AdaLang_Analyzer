@@ -71,6 +71,11 @@ it was saved on:
 alr exec -- ./bin/adalang_analyzer --recommended -P legacy/legacy.prj
 ```
 
+Sources named as Rational Apex and ApexAda name them (`counters.1.ada`,
+`counters.2.ada`) are analyzed through a GPR project that gives that naming
+scheme, one project a view
+([how](https://mmartign.github.io/AdaLang_Analyzer/configuration.html#rational-apex-and-apexada-sources)).
+
 Create a SARIF quality gate for CI:
 
 ```sh

@@ -1,0 +1,8 @@
+--  The view app.ss/main.wrk, which imports util.ss/main.wrk.
+with "apex_naming.gpr";
+with "util.gpr";
+
+project App is
+   for Source_Dirs use ("../app.ss/main.wrk");
+   package Naming renames Apex_Naming.Naming;
+end App;

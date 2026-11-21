@@ -26,6 +26,7 @@ for test_script in \
   tests/run_precision_corpus.sh \
   tests/run_circular_dependencies.sh \
   tests/run_objectada_projects.sh \
+  tests/run_apex_views.sh \
   tests/run_line_ends.sh \
   tests/run_clone_detection.sh \
   tests/run_cli_robustness.sh \

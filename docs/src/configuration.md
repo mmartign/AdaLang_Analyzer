@@ -107,6 +107,73 @@ units a source depends on by its own file-naming convention, and accepts
 one compilation unit per file: those checks report on an ObjectAda project
 only where its sources follow that convention.
 
+### Rational Apex and ApexAda sources
+
+Rational Apex, and ApexAda, keep sources in the views of subsystems
+(`util.ss/main.wrk`, for example) and name them after their unit: a
+specification `counters.1.ada`, a body `counters.2.ada`, a child unit or a
+subunit with the dots of its name (`counters.limits.1.ada`,
+`counters.reset.2.ada`). The analyzer does not read the files in which
+Apex records a view's switches and imports: a GPR project file stands for
+each view. One abstract project holds the Apex naming scheme:
+
+```ada
+abstract project Apex_Naming is
+   package Naming is
+      for Casing use "lowercase";
+      for Dot_Replacement use ".";
+      for Spec_Suffix ("Ada") use ".1.ada";
+      for Body_Suffix ("Ada") use ".2.ada";
+   end Naming;
+end Apex_Naming;
+```
+
+and the project of a view names the view's directory and imports the
+projects of the views it imports:
+
+```ada
+with "apex_naming.gpr";
+with "util.gpr";
+
+project App is
+   for Source_Dirs use ("../app.ss/main.wrk");
+   package Naming renames Apex_Naming.Naming;
+end App;
+```
+
+```sh
+./bin/adalang_analyzer --recommended -P projects/app.gpr
+```
+
+As for any GPR project, the sources of the view are analyzed, and those of
+the views it imports resolve the names that refer to them. The project
+files need not be in the views: source directories are relative to the
+project file that names them. To analyze several views together, name
+their directories in one project, one view of each subsystem: a file found
+in two source directories of a project is taken from the first, and the
+other is left out without a warning.
+
+Without a project, the sources named on the command line are analyzed
+whatever their names, and resolve one another:
+
+```sh
+./bin/adalang_analyzer --recommended $(find app.ss/main.wrk util.ss/main.wrk -name '*.ada')
+```
+
+The compiler checks need the project. With it, `gprbuild` compiles the
+sources and finds the units they depend on by the project's naming scheme.
+Sources named on the command line are compiled by `gcc`, which looks for
+those units by GNAT's own file names and does not find them: the analyzer
+warns that it could not compile them, and those checks report nothing on
+them.
+
+As for ObjectAda, `Standard`, `Ada` and `System` resolve with the GNAT
+run-time, not with the predefined units of the Apex installation, and the
+pragmas and attributes that only Apex defines are not interpreted. The
+names a view takes from Apex's own subsystems resolve only if a project
+names their sources. This has been checked on the views of
+`tests/apex_views`, written for the purpose, not on views that Apex saved.
+
 Some checks take named parameters: a limit, a naming scheme, or a list of
 forbidden names. Set one with `-rule-param=<check>.<name>=<value>`,
 repeated for each parameter. Lists are comma-separated, and a later value

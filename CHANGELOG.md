@@ -5,6 +5,20 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- The configuration reference shows how to analyze the sources of Rational
+  Apex and ApexAda views (`unit.1.ada`, `unit.2.ada`, child units and
+  subunits with the dots of their names): a GPR project a view, with the
+  Apex naming scheme and a `with` for each view it imports, or the sources
+  named on the command line. Only with a project do the compiler checks
+  find the units a source depends on. `tests/run_apex_views.sh` checks
+  both ways on two views written for the purpose; no view that Apex saved
+  has been tried. Apex's own files (a view's switches and imports) are not
+  read.
+
 ## [1.17.1] - 2026-11-20
 
 Fixes of what running AdaLang Analyzer on Alire (alire-project/alire, main

@@ -1,0 +1,10 @@
+--  The file names of Rational Apex: unit.1.ada for a specification,
+--  unit.2.ada for a body, parent.child for a child unit or a subunit.
+abstract project Apex_Naming is
+   package Naming is
+      for Casing use "lowercase";
+      for Dot_Replacement use ".";
+      for Spec_Suffix ("Ada") use ".1.ada";
+      for Body_Suffix ("Ada") use ".2.ada";
+   end Naming;
+end Apex_Naming;
