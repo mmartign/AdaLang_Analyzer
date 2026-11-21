@@ -6,6 +6,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Containers.Vectors;
@@ -57,6 +58,16 @@ package body Adalang_Analyzer.Subprogram_Summaries is
 
    Summaries : Summary_Vectors.Vector;
 
+   --  The index in Summaries of the first summary of each name: Find was a
+   --  search of every summary for every call, which took PHCpack (5,500
+   --  sources) more than 15 minutes.
+   package Summary_Index_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type        => String,
+      Element_Type    => Positive,
+      Hash            => Ada.Strings.Hash,
+      Equivalent_Keys => "=");
+   Summary_Index : Summary_Index_Maps.Map;
+
    type Instantiation is record
       Unit      : Unbounded_String;
       Explicit  : Boolean := False;
@@ -83,6 +94,7 @@ package body Adalang_Analyzer.Subprogram_Summaries is
    procedure Reset is
    begin
       Summaries.Clear;
+      Summary_Index.Clear;
       Instantiations.Clear;
       Passed_Actuals.Clear;
    end Reset;
@@ -330,16 +342,13 @@ package body Adalang_Analyzer.Subprogram_Summaries is
    end Call_Declaration;
 
    function Find (Name : String) return Natural is
+      Position : constant Summary_Index_Maps.Cursor :=
+        Summary_Index.Find (Name);
    begin
-      for Index in Summaries.First_Index .. Summaries.Last_Index loop
-         if To_String (Summaries (Index).Name) = Name then
-            return Index;
-         end if;
-      end loop;
+      if Summary_Index_Maps.Has_Element (Position) then
+         return Summary_Index_Maps.Element (Position);
+      end if;
       return 0;
-   exception
-      when Constraint_Error =>
-         return 0;
    end Find;
 
    procedure Include (Names : in out Name_Vectors.Vector; Name : String) is
@@ -747,6 +756,9 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       Item.May_Block := Item.Direct_May_Block;
       Item.May_Raise := Item.Direct_May_Raise;
       Summaries.Append (Item);
+      if not Summary_Index.Contains (To_String (Item.Name)) then
+         Summary_Index.Insert (To_String (Item.Name), Summaries.Last_Index);
+      end if;
    exception
       when Exc : others =>
          Log_Verbose_Once

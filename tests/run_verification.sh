@@ -193,6 +193,9 @@ literal_bounds_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-literal-bounds-broken.XX
 state_constituents=$(mktemp "${TMPDIR:-/tmp}/adalang-state-constituents.XXXXXX")
 fp147=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp147.XXXXXX")
 fp145=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp145.XXXXXX")
+fp150=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp150.XXXXXX")
+target_name=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-target-name.XXXXXX")
+renaming_reads=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-renaming-reads.XXXXXX")
 formal_contracts=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts.XXXXXX")
 formal_contracts_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-formal-contracts-broken.XXXXXX")
 termination_iteration=$(mktemp "${TMPDIR:-/tmp}/adalang-termination-iteration.XXXXXX")
@@ -226,7 +229,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken" "$parameter_aliasing" "$parameter_aliasing_broken" "$loop_predicates" "$loop_predicates_broken" "$composite_membership" "$composite_membership_broken" "$abstract_operator" "$join_predicates" "$join_predicates_broken" "$guaranteed_operands" "$guaranteed_operands_broken" "$literal_bounds" "$literal_bounds_broken" "$state_constituents" "$fp147" "$fp145"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken" "$parameter_aliasing" "$parameter_aliasing_broken" "$loop_predicates" "$loop_predicates_broken" "$composite_membership" "$composite_membership_broken" "$abstract_operator" "$join_predicates" "$join_predicates_broken" "$guaranteed_operands" "$guaranteed_operands_broken" "$literal_bounds" "$literal_bounds_broken" "$state_constituents" "$fp147" "$fp145" "$fp150" "$target_name" "$renaming_reads"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -4202,5 +4205,64 @@ done
 for operation in Read_Then_Write Write_Under_Guard Read_Only; do
    must_not_prove "$fp145" data-dependencies "Global of $operation" FP-145
 done
+
+#  FP-150 to FP-155, found on Alire crates: the item of T'Read and the
+#  object of T'Asm_Output, the out actuals of a call through an access
+#  value and those of a view conversion, an object imported or whose
+#  access value or address is given away, the object a renaming names, and
+#  an assertion of False after a call were definite initialization errors
+#  or definite assertion failures. Only the two kept in the fixture, a read
+#  of an object with no value and an assertion of False reached for sure,
+#  still are.
+run_json "$fp150" tests/verification_fp150_outside_writes.adb
+python3 - "$fp150" <<'PY'
+import json, sys
+found = sorted((o["line"], o["kind"], o["operation"])
+               for o in json.load(open(sys.argv[1]))["proofObligations"]
+               if o["status"] == "definite-error")
+wanted = [(121, "initialization-check", "Y"), (126, "assertion", "False")]
+if found != wanted:
+    sys.exit("FP-150..155: definite errors %r, expected %r" % (found, wanted))
+stop = sorted((o["line"], o["status"])
+              for o in json.load(open(sys.argv[1]))["proofObligations"]
+              if o["kind"] == "initialization-check" and o["operation"] == "Stop")
+if not stop or any(status != "proved-safe" for _, status in stop):
+    sys.exit("FP-150: the index of a 'Read item lost its value: %r" % stop)
+PY
+
+#  "@" reads the target of its assignment: an initialization check for each,
+#  a definite error where the target has no value on any path, unproved
+#  where it may have none, proved where it has one.
+run_json "$target_name" tests/verification_target_name_read.adb
+python3 - "$target_name" <<'PY'
+import json, sys
+obligations = json.load(open(sys.argv[1]))["proofObligations"]
+found = sorted((o["line"], o["status"]) for o in obligations
+               if o["kind"] == "initialization-check" and o["operation"] == "@")
+wanted = [(13, "definite-error"), (20, "proved-safe"), (28, "proved-safe"),
+          (39, "unproved"), (47, "proved-safe"), (48, "unproved"),
+          (54, "proved-safe")]
+if found != wanted:
+    sys.exit("target names: initialization checks %r, expected %r" % (found, wanted))
+errors = sorted((o["line"], o["kind"]) for o in obligations
+                if o["status"] == "definite-error")
+if errors != [(13, "initialization-check")]:
+    sys.exit("target names: definite errors %r" % errors)
+PY
+
+#  A renaming of an object reads none of it; one of what a call or a
+#  dereference gives reads what the call or the dereference reads.
+run_json "$renaming_reads" tests/verification_renaming_reads.adb
+python3 - "$renaming_reads" <<'PY'
+import json, sys
+found = sorted((o["line"], o["operation"], o["status"])
+               for o in json.load(open(sys.argv[1]))["proofObligations"]
+               if o["kind"] == "initialization-check" and 31 <= o["line"] <= 39)
+wanted = [(35, "N", "definite-error"), (36, "Item", "unproved"),
+          (37, "Ref", "unproved"), (38, "RP", "unproved"),
+          (39, "AP", "unproved")]
+if found != wanted:
+    sys.exit("renamings: initialization checks %r, expected %r" % (found, wanted))
+PY
 
 echo "bounded verification tests passed"

@@ -44,4 +44,30 @@ package Adalang_Analyzer.Ada_Text is
    --  Shared by Adalang_Analyzer.Checks (Unreachable_Code and friends) and
    --  Adalang_Analyzer.Flow_Interp (reachability in the flow interpreter).
 
+   function Is_Attribute_Out_Argument
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Node is the argument an attribute call stores into: the
+   --  item of "T'Read (Stream, Item)" (RM 13.13.2) or the object of
+   --  "T'Asm_Output (Constraint, Object)" (System.Machine_Code). The
+   --  arguments are those of the attribute reference, or of a call whose
+   --  name it is. Such an argument is written, not read.
+
+   function Is_Escaping_Attribute_Prefix
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Node is the prefix of X'Access, X'Unchecked_Access,
+   --  X'Unrestricted_Access or X'Address: the object can be written
+   --  through the value the attribute gives, wherever it goes.
+
+   function Is_False_Literal
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Node is the literal False ("False", "Standard.False", in
+   --  parentheses or not).
+
+   function Follows_A_Call
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when a statement before Node in its statement list, or before
+   --  the statement holding it in an enclosing list of the same body,
+   --  makes a call: Node is reached only if that call returns. What it
+   --  cannot tell counts as a call.
+
 end Adalang_Analyzer.Ada_Text;

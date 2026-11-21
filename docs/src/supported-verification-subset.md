@@ -476,7 +476,8 @@ that always holds a value (see "Objects that always hold a value") is
 **Boundary.**
 
 - Tracked scalar objects and documented composite write summaries, at each
-  read.
+  read. A target name, `@`, is a read of the object, or of the part of it,
+  that the target of its assignment names; its operation reads `@`.
 - Each `out` parameter at the subprogram's normal exit, proved when every
   path that returns has assigned the whole parameter, passed it to a callee
   that always writes it, or given a value to each of its parts (see "Parts

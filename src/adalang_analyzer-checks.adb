@@ -682,7 +682,13 @@ package body Adalang_Analyzer.Checks is
                      end if;
 
                      if Rule_States (Known_Assertion_Failure) = Enabled then
-                        if Static_Condition_Value (Cond) = Bool_False then
+                        --  "pragma Assert (False)" after a call states that
+                        --  the call does not return: not a known failure.
+                        if Static_Condition_Value (Cond) = Bool_False
+                          and then not
+                            (Ada_Text.Is_False_Literal (Cond)
+                             and then Ada_Text.Follows_A_Call (Cond))
+                        then
                            Adalang_Analyzer.Proof_Obligations.Register_At
                              (Unit           => Unit,
                               Node           => Cond,

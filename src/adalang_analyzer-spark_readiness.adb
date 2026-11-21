@@ -394,6 +394,23 @@ package body Adalang_Analyzer.SPARK_Readiness is
       Seen    : in out Actual_Alias_Vectors.Vector)
    is
       Text : constant String := Canonical_Text (Actual);
+
+      --  An object of a scalar type is passed by copy (RM 6.2): passed to
+      --  an in parameter too, that formal is a copy taken at the call, and
+      --  SPARK allows it (SPARK RM 6.4.2: at least one formal immutable
+      --  and of a by-copy type that is not an access type).
+      --  "To_Hour_Minute_Seconds (Seconds, Hour, Minute, Seconds)",
+      --  stephes_ada_library; gade, openglada.
+      function Scalar return Boolean is
+      begin
+         --  An actual with no type known raises here: not taken as scalar.
+         return Actual.P_Expression_Type.P_Is_Scalar_Type;
+      exception
+         when others =>
+            return False;
+      end Scalar;
+
+      Is_Scalar : constant Boolean := Scalar;
    begin
       if Text = ""
         or else Actual.Kind not in Libadalang.Common.Ada_Identifier
@@ -405,6 +422,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
       for Prior of Seen loop
          if To_String (Prior.Text) = Text
            and then (Prior.Is_Written_Side or else Written)
+           and then not
+             (Is_Scalar
+              and then not (Prior.Is_Written_Side and then Written))
          then
             Report_Rule_Violation
               (Unit, Actual, Aliasing_Between_Parameters,
@@ -645,6 +665,41 @@ package body Adalang_Analyzer.SPARK_Readiness is
       when others =>
          return True;
    end Same_Parameter;
+
+   --  True when a declaration in Subprogram renames the formal Name of
+   --  Param, or a part of it: writes through the renaming ("Result :
+   --  Half_Word renames Borrow; ... Result := ...", simple_components'
+   --  Unbounded_Unsigneds) are not followed to the formal, so whether it
+   --  is given a value is not known here.
+   function Renamed_In
+     (Subprogram : Libadalang.Analysis.Subp_Body;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Name       : String) return Boolean
+   is
+      function Renames_Formal (Node : Libadalang.Analysis.Ada_Node'Class)
+        return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Renaming_Clause
+           and then Same_Parameter
+             (Node.As_Renaming_Clause.F_Renamed_Object, Param, Name)
+         then
+            return True;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Renames_Formal (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Renames_Formal;
+   begin
+      return Renames_Formal (Subprogram);
+   exception
+      when others =>
+         return True;
+   end Renamed_In;
 
    function Call_Declaration
      (Call : Libadalang.Analysis.Name'Class)
@@ -2582,6 +2637,8 @@ package body Adalang_Analyzer.SPARK_Readiness is
                    (In_Declared_SPARK (Subprogram)
                     or else not Formal_Keeps_A_Value
                                   (Param.F_Type_Expr.P_Designated_Type_Decl))
+                 and then not Renamed_In (Subprogram, Param,
+                                          Normalize_Rule_Name (Node_Text (Id)))
                then
                   declare
                      Bad_Return : Boolean := False;

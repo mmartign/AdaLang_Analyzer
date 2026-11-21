@@ -25,6 +25,7 @@ package body Adalang_Analyzer.Checks.Data_Flow is
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Analysis.Basic_Decl;
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Libadalang.Common.Call_Expr_Kind;
 
    --  The object an identifier denotes, through object renamings.
    function Identifier_Declaration
@@ -237,6 +238,50 @@ package body Adalang_Analyzer.Checks.Data_Flow is
       return False;
    end References_Declaration;
 
+   --  The object a view conversion given as an actual converts ("Get
+   --  (Long_Float (Y))"): for an out parameter, the call stores into it and
+   --  does not read it (RM 6.4.1(15)). The actual itself otherwise.
+   function Without_View_Conversion
+     (Actual : Libadalang.Analysis.Expr) return Libadalang.Analysis.Expr
+   is
+      Current : Libadalang.Analysis.Expr := Actual;
+   begin
+      while Current.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Current.As_Call_Expr.P_Kind =
+          Libadalang.Common.Type_Conversion
+        and then Current.As_Call_Expr.F_Suffix.Kind =
+          Libadalang.Common.Ada_Assoc_List
+        and then Current.As_Call_Expr.F_Suffix.Children_Count = 1
+        and then Current.As_Call_Expr.F_Suffix.Child (1).Kind =
+          Libadalang.Common.Ada_Param_Assoc
+      loop
+         Current :=
+           Current.As_Call_Expr.F_Suffix.Child (1).As_Param_Assoc.F_R_Expr;
+      end loop;
+      return Current;
+   exception
+      when others =>
+         return Actual;
+   end Without_View_Conversion;
+
+   --  True when Node holds a target name, "@" (RM 5.2.1), which reads the
+   --  destination of the assignment it is in.
+   function Has_Target_Name
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Libadalang.Common.Ada_Target_Name then
+         return True;
+      end if;
+      for I in 1 .. Node.Children_Count loop
+         if Has_Target_Name (Node.Child (I)) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Has_Target_Name;
+
    function Reads_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class;
       Decl : Libadalang.Analysis.Basic_Decl) return Boolean
@@ -288,7 +333,8 @@ package body Adalang_Analyzer.Checks.Data_Flow is
               Node.As_Assign_Stmt;
          begin
             return References_Declaration (Stmt.F_Expr, Decl)
-              or else (Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier
+              or else ((Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier
+                        or else Has_Target_Name (Stmt.F_Expr))
                        and then References_Declaration (Stmt.F_Dest, Decl));
          end;
       elsif Node.Kind = Libadalang.Common.Ada_Call_Expr then
@@ -302,10 +348,12 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                  Node.As_Call_Expr.F_Suffix.Child (I);
             begin
                if Child.Kind = Libadalang.Common.Ada_Param_Assoc
-                 and then Child.As_Param_Assoc.F_R_Expr.Kind =
+                 and then Without_View_Conversion
+                   (Child.As_Param_Assoc.F_R_Expr).Kind =
                    Libadalang.Common.Ada_Identifier
                  and then Matches_Declaration
-                   (Child.As_Param_Assoc.F_R_Expr, Decl)
+                   (Without_View_Conversion
+                      (Child.As_Param_Assoc.F_R_Expr), Decl)
                then
                   if Association_Reads_Actual (Child.As_Param_Assoc) then
                      return True;
@@ -780,10 +828,12 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          begin
             if Child.Kind = Libadalang.Common.Ada_Param_Assoc then
                Position := Position + 1;
-               if Child.As_Param_Assoc.F_R_Expr.Kind =
+               if Without_View_Conversion
+                    (Child.As_Param_Assoc.F_R_Expr).Kind =
                     Libadalang.Common.Ada_Identifier
                  and then Matches_Declaration
-                   (Child.As_Param_Assoc.F_R_Expr, Decl)
+                   (Without_View_Conversion (Child.As_Param_Assoc.F_R_Expr),
+                    Decl)
                  and then Association_Writes_Actual
                    (Node, Child.As_Param_Assoc, Position)
                then
@@ -809,10 +859,12 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          begin
             if Child.Kind = Libadalang.Common.Ada_Param_Assoc then
                Position := Position + 1;
-               if Child.As_Param_Assoc.F_R_Expr.Kind =
+               if Without_View_Conversion
+                    (Child.As_Param_Assoc.F_R_Expr).Kind =
                     Libadalang.Common.Ada_Identifier
                  and then Matches_Declaration
-                   (Child.As_Param_Assoc.F_R_Expr, Decl)
+                   (Without_View_Conversion (Child.As_Param_Assoc.F_R_Expr),
+                    Decl)
                  and then Association_Reads_Simple_Actual
                    (Node, Child.As_Param_Assoc, Position)
                then
@@ -839,10 +891,12 @@ package body Adalang_Analyzer.Checks.Data_Flow is
               Node.F_Suffix.Child (I);
          begin
             if Child.Kind = Libadalang.Common.Ada_Param_Assoc
-              and then Child.As_Param_Assoc.F_R_Expr.Kind =
+              and then Without_View_Conversion
+                (Child.As_Param_Assoc.F_R_Expr).Kind =
                 Libadalang.Common.Ada_Identifier
               and then Matches_Declaration
-                (Child.As_Param_Assoc.F_R_Expr, Decl)
+                (Without_View_Conversion (Child.As_Param_Assoc.F_R_Expr),
+                 Decl)
             then
                return True;
             end if;
@@ -1389,11 +1443,18 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                --  pure out actual -- itself a write, not a read of its
                --  prior value -- is correctly excluded via
                --  Association_Reads_Actual.
+               --  "X := @ + 1" reads X first.
                Is_Read : constant Boolean :=
                  Reads_Declaration (Stmt.F_Expr, Decl)
                  or else
                    (Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier
-                    and then Reads_Declaration (Stmt.F_Dest, Decl));
+                    and then Reads_Declaration (Stmt.F_Dest, Decl))
+                 or else
+                   (Has_Target_Name (Stmt.F_Expr)
+                    and then
+                      (if Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
+                       then Matches_Declaration (Stmt.F_Dest, Decl)
+                       else Reads_Declaration (Stmt.F_Dest, Decl)));
             begin
                if Is_Read then
                   return (Kind => Read_Access,
@@ -1442,6 +1503,19 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          elsif Node.Kind = Libadalang.Common.Ada_Identifier
            and then Matches_Declaration (Node, Decl)
          then
+            if Is_Attribute_Out_Argument (Node) then
+               --  The item of T'Read, the object of T'Asm_Output: stored
+               --  into (HiRTOS, rp2040_hal: "Asm ("mrs %0, ipsr",
+               --  UInt32'Asm_Output ("=r", IPSR))").
+               return (Kind => Write_Access,
+                        Node => Libadalang.Analysis.Ada_Node (Node));
+            elsif Is_Escaping_Attribute_Prefix (Node) then
+               --  X'Access, X'Address: what is done with the value is not
+               --  followed; it may store into X (simple_components'
+               --  "BIO_Write (..., Count'Access)", powerjoular, utilada).
+               return (Kind => Unknown_Access,
+                        Node => Libadalang.Analysis.Ada_Node (Node));
+            end if;
             return (Kind => Read_Access,
                      Node => Libadalang.Analysis.Ada_Node (Node));
          elsif Node.Kind = Libadalang.Common.Ada_Identifier then
@@ -1476,6 +1550,42 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                return (Kind => Unknown_Access,
                         Node => Libadalang.Analysis.Ada_Node (Node));
             elsif Reads_Declaration (Node, Decl) then
+               --  Decl may be named in the call only as what an attribute
+               --  stores into (T'Asm_Output, T'Read) or as the prefix of
+               --  X'Access / X'Address, which is no read of its value.
+               declare
+                  Escapes, Stored, Other : Boolean := False;
+
+                  procedure Classify
+                    (Item : Libadalang.Analysis.Ada_Node'Class) is
+                  begin
+                     if Libadalang.Analysis.Is_Null (Item) then
+                        return;
+                     elsif Item.Kind = Libadalang.Common.Ada_Identifier
+                       and then Matches_Declaration (Item, Decl)
+                     then
+                        if Is_Escaping_Attribute_Prefix (Item) then
+                           Escapes := True;
+                        elsif Is_Attribute_Out_Argument (Item) then
+                           Stored := True;
+                        else
+                           Other := True;
+                        end if;
+                     end if;
+                     for Index in 1 .. Item.Children_Count loop
+                        Classify (Item.Child (Index));
+                     end loop;
+                  end Classify;
+               begin
+                  Classify (Node);
+                  if not Other and then Escapes then
+                     return (Kind => Unknown_Access,
+                              Node => Libadalang.Analysis.Ada_Node (Node));
+                  elsif not Other and then Stored then
+                     return (Kind => Write_Access,
+                              Node => Libadalang.Analysis.Ada_Node (Node));
+                  end if;
+               end;
                return (Kind => Read_Access,
                         Node => Libadalang.Analysis.Ada_Node (Node));
             end if;
@@ -1622,8 +1732,17 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          when others =>
             return False;
       end Has_Named_Aspect;
+      --  "pragma Import (C, Sep, ...)" (clic) or the Import aspect.
+      function Is_Imported return Boolean is
+      begin
+         return Decl.P_Is_Imported;
+      exception
+         when others =>
+            return False;
+      end Is_Imported;
    begin
-      if Has_Named_Aspect ("Volatile")
+      if Is_Imported
+        or else Has_Named_Aspect ("Volatile")
         or else Has_Named_Aspect ("Atomic")
         or else Has_Named_Aspect ("Volatile_Full_Access")
         or else Has_Named_Aspect ("Address")

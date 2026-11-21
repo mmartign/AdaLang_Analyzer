@@ -1687,24 +1687,28 @@ package Adalang_Analyzer.Rules is
       Use_After_Free =>
         (Name        => To_Unbounded_String ("Use_After_Free"),
          Description => To_Unbounded_String
-           ("Find a local access object read or dereferenced after it was " &
+           ("Find a dereference of a local access object after it was " &
             "passed to an instantiation of Ada.Unchecked_Deallocation, " &
+            "which sets it to null, or of a local copy of it made before, " &
             "with no intervening assignment."),
          Guidance    => To_Unbounded_String
-           ("Assign the object (typically to null) immediately after " &
-            "freeing it, and before any further use."),
+           ("Do not use an access value after the object it designates " &
+            "is freed; clear or reassign every copy of it when the " &
+            "object is freed."),
          Quality     => Quality_Security,
          Severity    => Severity_High),
       Double_Free =>
         (Name        => To_Unbounded_String ("Double_Free"),
          Description => To_Unbounded_String
-           ("Find a second call to Ada.Unchecked_Deallocation on the " &
-            "same local access object, with no intervening " &
-            "assignment."),
+           ("Find a call of Ada.Unchecked_Deallocation on a local copy " &
+            "of an access object it already freed, with no intervening " &
+            "assignment to either. Freeing the same object twice is not " &
+            "reported: the first call sets it to null, and freeing null " &
+            "does nothing."),
          Guidance    => To_Unbounded_String
-           ("Assign the object (typically to null) or reassign it to a " &
-            "new allocation immediately after freeing it, and before " &
-            "any further call to Ada.Unchecked_Deallocation on it."),
+           ("Free each allocated object through one access value only, " &
+            "and clear the copies of that value when the object is " &
+            "freed."),
          Quality     => Quality_Security,
          Severity    => Severity_High),
       Unclosed_File_Handle =>

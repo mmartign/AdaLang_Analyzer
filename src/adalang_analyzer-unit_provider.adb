@@ -354,7 +354,9 @@ package body Adalang_Analyzer.Unit_Provider is
 
       declare
          Context : constant Analysis_Context :=
-           Create_Context (File_Reader => Reader);
+           Create_Context
+             (Charset     => Adalang_Analyzer.Project_Files.Source_Charset,
+              File_Reader => Reader);
       begin
          for Filename of Files loop
             if Has_Directive (Filename) then

@@ -62,6 +62,13 @@ package Adalang_Analyzer.Project_Files is
    --  when they ask for none. Lines that preprocessing removes are left
    --  blank, so positions in the preprocessed text are those of the file.
 
+   function Source_Charset return String;
+   --  The character set the sources of the loaded projects are read in:
+   --  "utf-8" when their compiler switches hold -gnatW8, as those of every
+   --  crate Alire configures do, "iso-8859-1" (GNAT's default) otherwise.
+   --  A source with identifiers or literals in UTF-8 read in the latter
+   --  does not parse (honki_tonks_zivilisationen).
+
    function Under_Project_SPARK_Mode (Filename : String) return Boolean;
    --  True when Filename is a source of a loaded project whose
    --  configuration pragmas (Compiler'Local_Configuration_Pragmas or

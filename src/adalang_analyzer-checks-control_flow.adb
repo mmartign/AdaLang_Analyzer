@@ -12,6 +12,7 @@
 --
 --  SPDX-License-Identifier: GPL-3.0-or-later
 
+with Ada.Characters.Handling;
 with Ada.Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
@@ -26,6 +27,7 @@ with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
 with Adalang_Analyzer.Report;      use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;       use Adalang_Analyzer.Rules;
+with Adalang_Analyzer.Subprogram_Summaries;
 
 package body Adalang_Analyzer.Checks.Control_Flow is
 
@@ -42,6 +44,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
    use type Libadalang.Analysis.Ada_Node;
    use type Libadalang.Analysis.Basic_Decl;
    use type Libadalang.Common.Ada_Node_Kind_Type;
+   use type Libadalang.Common.Call_Expr_Kind;
    use type Adalang_Analyzer.Checks.Data_Flow.Access_Kind;
 
    function Has_Substantive_Statement
@@ -158,6 +161,151 @@ package body Adalang_Analyzer.Checks.Control_Flow is
             "condition duplicates an earlier condition in this chain");
       end if;
    end Report_Duplicate_Condition;
+
+   --  True when evaluating Node may change what a later condition reads:
+   --  it calls a function whose effects are not known, or that writes an
+   --  object outside it (ada_toml's "elsif not Read_Codepoint then ...
+   --  elsif Codepoint_Buffer.Codepoint /= Delimiter", which tests the
+   --  next codepoint).
+   function May_Change_State
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      use Libadalang.Common;
+      Callee : Libadalang.Analysis.Name;
+
+      --  An instance of Ada.Unchecked_Conversion, which only gives its
+      --  argument another type (Ada_Drivers_Library's "To_Word").
+      function Is_Unchecked_Conversion
+        (Decl : Libadalang.Analysis.Basic_Decl) return Boolean is
+      begin
+         return Decl.Kind = Ada_Generic_Subp_Instantiation
+           and then Ada.Characters.Handling.To_Lower
+             (Canonical_Text
+                (Decl.As_Generic_Subp_Instantiation.F_Generic_Subp_Name))
+             in "ada.unchecked_conversion" | "unchecked_conversion";
+      exception
+         when others =>
+            return False;
+      end Is_Unchecked_Conversion;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      end if;
+      Callee := Libadalang.Analysis.No_Name;
+      if Node.Kind = Ada_Call_Expr and then Node.As_Call_Expr.P_Kind = Call
+      then
+         Callee := Node.As_Call_Expr.F_Name;
+      elsif Node.Kind = Ada_Identifier
+        and then Node.Parent.Kind /= Ada_Call_Expr
+        and then Node.As_Identifier.P_Is_Call
+      then
+         Callee := Node.As_Name;
+      end if;
+      if not Libadalang.Analysis.Is_Null (Callee) then
+         declare
+            Decl : constant Libadalang.Analysis.Basic_Decl :=
+              Callee.P_Referenced_Decl (Imprecise_Fallback => True);
+         begin
+            if Libadalang.Analysis.Is_Null (Decl)
+              or else
+                (Decl.Kind not in Ada_Enum_Literal_Decl
+                                | Ada_Synthetic_Char_Enum_Lit
+                                | Ada_Synthetic_Subp_Decl
+                 and then not Is_Unchecked_Conversion (Decl)
+                 and then
+                   (not Subprogram_Summaries.Callee_State_Effects_Known (Node)
+                    or else Subprogram_Summaries.Callee_Global_Write_Count
+                              (Node) > 0))
+            then
+               return True;
+            end if;
+         end;
+      end if;
+      for Index in 1 .. Node.Children_Count loop
+         if May_Change_State (Node.Child (Index)) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return True;
+   end May_Change_State;
+
+   --  True when the value Stmt assigns reads its target (a name the same
+   --  as the target's, or the object it names) or makes a call that may
+   --  change state (May_Change_State): then the second assignment of the
+   --  same value need not store what the first did.
+   function Reads_Target_Or_Calls
+     (Stmt : Libadalang.Analysis.Assign_Stmt) return Boolean
+   is
+      Target : constant String := Canonical_Text (Stmt.F_Dest);
+      Decl   : constant Libadalang.Analysis.Basic_Decl :=
+        Data_Flow.Assigned_Declaration (Stmt);
+
+      function Visit (Node : Libadalang.Analysis.Ada_Node'Class)
+        return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Canonical_Text (Node) = Target
+           or else Node.Kind = Libadalang.Common.Ada_Target_Name
+         then
+            return True;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Visit (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Visit;
+   begin
+      return Visit (Stmt.F_Expr)
+        or else May_Change_State (Stmt.F_Expr)
+        or else (not Libadalang.Analysis.Is_Null (Decl)
+                 and then Data_Flow.Reads_Declaration (Stmt.F_Expr, Decl));
+   exception
+      when others =>
+         return True;
+   end Reads_Target_Or_Calls;
+
+   --  True when Stmt stores what a call of an imported function returns
+   --  ("Result := Close (Fd);"), or of a function that changes state: the
+   --  call is made for its effect, and the value, a status, is often not
+   --  looked at (utilada's Util.Processes,
+   --  simple_components' ODBC and OpenSSL bindings).
+   function Stores_Imported_Result
+     (Stmt : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      use Libadalang.Common;
+      Value : Libadalang.Analysis.Expr;
+      Decl  : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Stmt.Kind /= Ada_Assign_Stmt then
+         return False;
+      end if;
+      Value := Stmt.As_Assign_Stmt.F_Expr;
+      while Value.Kind = Ada_Paren_Expr loop
+         Value := Value.As_Paren_Expr.F_Expr;
+      end loop;
+      if Value.Kind = Ada_Call_Expr then
+         Decl := Value.As_Call_Expr.F_Name.P_Referenced_Decl;
+      elsif Value.Kind in Ada_Identifier | Ada_Dotted_Name then
+         Decl := Value.As_Name.P_Referenced_Decl;
+      else
+         return False;
+      end if;
+      --  Or of a function that changes state: Ada has no other way to
+      --  call it ("b3 := UnZ_IO.Read_Byte_Decrypted;" skips a byte of a
+      --  header, Zip-Ada).
+      return not Libadalang.Analysis.Is_Null (Decl)
+        and then Decl.P_Is_Subprogram
+        and then (Decl.P_Is_Imported or else May_Change_State (Value));
+   exception
+      when others =>
+         return False;
+   end Stores_Imported_Result;
 
    --  Reports Identical_Branches when an if/elsif/else statement chain has
    --  two textually identical bodies immediately adjacent to each other
@@ -743,11 +891,18 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                      Decl    : constant Libadalang.Analysis.Basic_Decl :=
                        Data_Flow.Assigned_Declaration (Stmt);
                   begin
+                     --  The same assignment twice repeats a value only
+                     --  where its value reads neither the target nor what
+                     --  a call can change: "Flag := Flag xor True;" twice
+                     --  toggles twice (rp2040_hal's FIFO clear), "B :=
+                     --  Next_Byte;" twice reads two bytes (Zip-Ada).
                      if Current /= ""
                        and then Current = To_String (Previous_Assignment)
                        and then (Libadalang.Analysis.Is_Null (Decl)
                                  or else not Data_Flow.Is_Externally_Observable
                                    (Decl))
+                       and then not Reads_Target_Or_Calls
+                         (Stmt.As_Assign_Stmt)
                      then
                         Report_Rule_Violation
                           (Unit, Stmt, Repeated_Statement,
@@ -783,6 +938,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                        and then not Is_Self_Assignment
                        and then not Data_Flow.Is_Externally_Observable (Decl)
                        and then not Is_Discard_Name (Decl)
+                       and then not Stores_Imported_Result (Stmt)
                      then
                         declare
                            Subprogram : constant
@@ -1029,6 +1185,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               and then not Renames_Nonlocal_Object (Decl, Subprogram)
               and then not Data_Flow.Is_Externally_Observable (Decl)
               and then not Is_Discard_Name (Decl)
+              and then not Stores_Imported_Result (Stmt)
               and then not Data_Flow.Has_Read_After
                 (Subprogram.F_Stmts, Decl, Stmt)
               and then not Read_By_Nested_Body (Decl, Subprogram, Stmt)
@@ -2020,28 +2177,335 @@ package body Adalang_Analyzer.Checks.Control_Flow is
           (Callee_Decl.As_Generic_Subp_Instantiation.F_Generic_Subp_Name);
    end Is_Deallocation_Call;
 
+   --  True when Node is Region or lies inside it.
+   function Is_Within
+     (Node   : Libadalang.Analysis.Ada_Node'Class;
+      Region : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Node);
+   begin
+      if Libadalang.Analysis.Is_Null (Region) then
+         return False;
+      end if;
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current = Libadalang.Analysis.Ada_Node (Region) then
+            return True;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return False;
+   end Is_Within;
+
+   --  True when the statement Target lies in, or that, after the raise
+   --  statement Raise_At, the exception it raises can be handled in: a
+   --  handler of a body or block whose statements hold Raise_At.
+   function Handled_After_Raise
+     (Raise_At : Libadalang.Analysis.Ada_Node'Class;
+      Target   : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Raise_At);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current.Parent) loop
+         if Current.Parent.Kind = Libadalang.Common.Ada_Handled_Stmts
+           and then Current = Libadalang.Analysis.Ada_Node
+                                (Current.Parent.As_Handled_Stmts.F_Stmts)
+           and then Is_Within
+             (Target, Current.Parent.As_Handled_Stmts.F_Exceptions)
+         then
+            return True;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return False;
+   end Handled_After_Raise;
+
+   --  True when Target, a node of the body that holds the statement From,
+   --  can be executed after From completes, by the structure of the
+   --  statements: the statements after From in its list, then those after
+   --  the compound statement holding the list (not the other branches of
+   --  an if or case statement), the handlers of a body or block whose
+   --  statements raise, and, around a loop, its body again, but for an
+   --  Object declared inside the loop, which each iteration declares anew.
+   --  A return, a raise and an exit end the walk the way they leave. What
+   --  is not followed (a goto, a select statement) counts as reached.
+   function Reached_After
+     (From   : Libadalang.Analysis.Ada_Node'Class;
+      Target : Libadalang.Analysis.Ada_Node'Class;
+      Object : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+      use Libadalang.Common;
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (From);
+      Exited  : Boolean;
+   begin
+      loop
+         declare
+            List    : constant Libadalang.Analysis.Ada_Node := Current.Parent;
+            Seen    : Boolean := False;
+            Stopped : Libadalang.Analysis.Ada_Node :=
+              Libadalang.Analysis.No_Ada_Node;
+         begin
+            if Libadalang.Analysis.Is_Null (List)
+              or else List.Kind /= Ada_Stmt_List
+            then
+               return True;
+            end if;
+            for Index in 1 .. List.Children_Count loop
+               declare
+                  Item : constant Libadalang.Analysis.Ada_Node :=
+                    List.Child (Index);
+               begin
+                  if Seen then
+                     if Is_Within (Target, Item) then
+                        return True;
+                     elsif Ada_Text.Terminates_Statement (Item) then
+                        Stopped := Item;
+                        exit;
+                     end if;
+                  elsif Item = Current then
+                     Seen := True;
+                  end if;
+               end;
+            end loop;
+
+            Exited := False;
+            if not Libadalang.Analysis.Is_Null (Stopped) then
+               case Stopped.Kind is
+                  when Ada_Raise_Stmt =>
+                     return Handled_After_Raise (Stopped, Target);
+                  when Ada_Return_Stmt | Ada_Extended_Return_Stmt =>
+                     return False;
+                  when Ada_Exit_Stmt =>
+                     if not Libadalang.Analysis.Is_Null
+                       (Stopped.As_Exit_Stmt.F_Loop_Name)
+                     then
+                        return True;
+                     end if;
+                     --  Out of the innermost loop: after it.
+                     Current := Stopped.Parent;
+                     while not Libadalang.Analysis.Is_Null (Current)
+                       and then Current.Kind not in Ada_Base_Loop_Stmt
+                     loop
+                        Current := Current.Parent;
+                     end loop;
+                     if Libadalang.Analysis.Is_Null (Current) then
+                        return True;
+                     end if;
+                     Exited := True;
+                  when others =>
+                     return True;
+               end case;
+            end if;
+
+            if not Exited then
+               declare
+                  Owner : constant Libadalang.Analysis.Ada_Node := List.Parent;
+                  Node  : Libadalang.Analysis.Ada_Node := Owner;
+               begin
+                  if Owner.Kind in Ada_Base_Loop_Stmt then
+                     --  The next iteration.
+                     if Is_Within (Target, Owner)
+                       and then not Is_Within (Object, Owner)
+                     then
+                        return True;
+                     end if;
+                     Current := Owner;
+                  else
+                     if Owner.Kind = Ada_Handled_Stmts
+                       and then List = Libadalang.Analysis.Ada_Node
+                                         (Owner.As_Handled_Stmts.F_Stmts)
+                       and then Is_Within
+                         (Target, Owner.As_Handled_Stmts.F_Exceptions)
+                     then
+                        --  An exception raised after From.
+                        return True;
+                     end if;
+                     --  Up to the statement holding the list: after it.
+                     while not Libadalang.Analysis.Is_Null (Node)
+                       and then not Libadalang.Analysis.Is_Null (Node.Parent)
+                       and then Node.Parent.Kind /= Ada_Stmt_List
+                     loop
+                        if Node.Kind in Ada_Base_Subp_Body | Ada_Task_Body
+                          | Ada_Entry_Body | Ada_Package_Body
+                        then
+                           return False;
+                        end if;
+                        Node := Node.Parent;
+                     end loop;
+                     if Libadalang.Analysis.Is_Null (Node)
+                       or else Libadalang.Analysis.Is_Null (Node.Parent)
+                       or else Node.Kind = Ada_Extended_Return_Stmt
+                     then
+                        return False;
+                     elsif Node.Kind not in Ada_If_Stmt | Ada_Case_Stmt
+                       | Ada_Decl_Block | Ada_Begin_Block
+                     then
+                        return True;
+                     end if;
+                     Current := Node;
+                  end if;
+               end;
+            end if;
+         end;
+      end loop;
+   exception
+      when others =>
+         return True;
+   end Reached_After;
+
+   --  True when Node, or a name in it, dereferences the object Object:
+   --  "P.all", "P.Field", "P (I)", "P'Length".
+   function Dereferences
+     (Node   : Libadalang.Analysis.Ada_Node'Class;
+      Object : Libadalang.Analysis.Basic_Decl) return Boolean
+   is
+      use Libadalang.Common;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif Node.Kind = Ada_Identifier
+        and then Data_Flow.Referenced_Declaration (Node) = Object
+      then
+         declare
+            Parent : constant Libadalang.Analysis.Ada_Node := Node.Parent;
+         begin
+            return
+              (Parent.Kind = Ada_Explicit_Deref
+               and then Libadalang.Analysis.Ada_Node
+                          (Parent.As_Explicit_Deref.F_Prefix) =
+                        Libadalang.Analysis.Ada_Node (Node))
+              or else (Parent.Kind = Ada_Dotted_Name
+                       and then Libadalang.Analysis.Ada_Node
+                                  (Parent.As_Dotted_Name.F_Prefix) =
+                                Libadalang.Analysis.Ada_Node (Node))
+              or else (Parent.Kind = Ada_Call_Expr
+                       and then Libadalang.Analysis.Ada_Node
+                                  (Parent.As_Call_Expr.F_Name) =
+                                Libadalang.Analysis.Ada_Node (Node))
+              or else (Parent.Kind = Ada_Attribute_Ref
+                       and then Libadalang.Analysis.Ada_Node
+                                  (Parent.As_Attribute_Ref.F_Prefix) =
+                                Libadalang.Analysis.Ada_Node (Node)
+                       and then not Ada_Text.Is_Escaping_Attribute_Prefix
+                                      (Node));
+         end;
+      end if;
+      for Index in 1 .. Node.Children_Count loop
+         if Dereferences (Node.Child (Index), Object) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Dereferences;
+
    --  Use_After_Free / Double_Free: Stmt is a call to a Free-like
    --  procedure introduced by an Ada.Unchecked_Deallocation instantiation
-   --  (Is_Deallocation_Call above). When the freed actual is a simple
-   --  local object, First_Access finds the first read or write of it
-   --  anywhere at or after the call: a write (typically "P := null;")
-   --  makes the object safe again and is not reported. A read is either
-   --  an ordinary use-after-free (e.g. "X := P.all;") or, when the read
-   --  site is itself a second call to the deallocation procedure, a
-   --  double free -- both are Read_Access as far as First_Access is
-   --  concerned, since Ada.Unchecked_Deallocation's formal is "in out"
-   --  and First_Access (via Call_Reads_Simple_Actual) classifies any
-   --  non-out-only formal mode as a read before ever considering it a
-   --  write, so the second free's own Write is never reached; only the
-   --  read site's identity (Is_Deallocation_Call on it) tells the two
-   --  apart. Inherits First_Access's documented source-order (not
-   --  branch-sensitive) boundary, the same tradeoff Uninitialized_Read
-   --  already accepts.
+   --  (Is_Deallocation_Call above), whose actual is P, a local object.
+   --
+   --  The call leaves P null (RM 13.11.2): a later dereference of P raises
+   --  Constraint_Error (Use_After_Free), a second Free (P) does nothing
+   --  and is not reported. A local object Q that holds a copy of P made
+   --  before the call ("Q := P;", "Q : T := P;", neither written between
+   --  the copy and the call) still designates the freed object: freeing Q
+   --  is a Double_Free, dereferencing it a Use_After_Free.
+   --
+   --  The accesses of P and of each copy are taken in source order
+   --  (Data_Flow.First_Access); one that cannot run after the call
+   --  (Reached_After: another branch, after a handler that raises again, a
+   --  new iteration of a loop that declares the object) is passed over;
+   --  the first write that can stops the search.
    procedure Analyze_Deallocation_Call
      (Unit : Libadalang.Analysis.Analysis_Unit;
       Stmt : Libadalang.Analysis.Call_Stmt;
       Call : Libadalang.Analysis.Call_Expr)
    is
+      Max_Steps : constant := 1_000;
+
+      --  Reports the first reached dereference (or, of a copy, second
+      --  free) of Object after Stmt.
+      procedure Follow
+        (Subprogram : Libadalang.Analysis.Subp_Body;
+         Name       : String;
+         Object     : Libadalang.Analysis.Basic_Decl;
+         Copy_Of    : String)
+      is
+         After  : Libadalang.Analysis.Ada_Node :=
+           Libadalang.Analysis.Ada_Node (Stmt);
+         Result : Data_Flow.Access_Result;
+         Copy   : constant String :=
+           (if Copy_Of = "" then "" else ", a copy of " & Copy_Of);
+         Freed  : constant String :=
+           ", which was freed by an earlier call to " &
+           "Ada.Unchecked_Deallocation, with no intervening assignment";
+         Read_Reported : Boolean := False;
+      begin
+         for Step in 1 .. Max_Steps loop
+            Result := Data_Flow.First_Access (Subprogram, Object, After);
+            exit when Result.Kind in Data_Flow.No_Access
+                                   | Data_Flow.Unknown_Access;
+            if Reached_After (Stmt, Result.Node, Object) then
+               exit when Result.Kind = Data_Flow.Write_Access;
+               if Result.Node.Kind = Libadalang.Common.Ada_Call_Expr
+                 and then Is_Deallocation_Call (Result.Node.As_Call_Expr)
+               then
+                  if Copy_Of /= "" then
+                     if Rule_States (Double_Free) = Enabled then
+                        Report_Rule_Violation
+                          (Unit, Result.Node, Double_Free,
+                           "frees " & Name & Copy & Freed &
+                             ": the object is freed a second time");
+                     end if;
+                     exit;
+                  end if;
+                  --  Free of a null access value: nothing.
+               elsif not Read_Reported
+                 and then Dereferences (Result.Node, Object)
+               then
+                  if Rule_States (Use_After_Free) = Enabled then
+                     Report_Rule_Violation
+                       (Unit, Result.Node, Use_After_Free,
+                        "reads " & Name & Copy & Freed);
+                  end if;
+                  --  Dereferencing P itself, now null, raises; a copy
+                  --  still designates the freed object.
+                  exit when Copy_Of = "";
+                  Read_Reported := True;
+               end if;
+            end if;
+            exit when Result.Node = After;
+            After := Result.Node;
+         end loop;
+      end Follow;
+
+      --  True when Object is written (or not known not to be) between
+      --  From and To, in source order.
+      function Written_Between
+        (Subprogram : Libadalang.Analysis.Subp_Body;
+         Object     : Libadalang.Analysis.Basic_Decl;
+         From, To   : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+         After  : Libadalang.Analysis.Ada_Node := From;
+         Result : Data_Flow.Access_Result;
+      begin
+         for Step in 1 .. Max_Steps loop
+            Result := Data_Flow.First_Access (Subprogram, Object, After);
+            if Result.Kind = Data_Flow.No_Access
+              or else Is_Within (Result.Node, To)
+              or else Natural (Result.Node.Sloc_Range.Start_Line) >
+                      Natural (To.Sloc_Range.Start_Line)
+            then
+               return False;
+            elsif Result.Kind /= Data_Flow.Read_Access
+              or else Result.Node = After
+            then
+               return True;
+            end if;
+            After := Result.Node;
+         end loop;
+         return True;
+      end Written_Between;
    begin
       if not Is_Deallocation_Call (Call) then
          return;
@@ -2074,6 +2538,66 @@ package body Adalang_Analyzer.Checks.Control_Flow is
               Data_Flow.Referenced_Declaration (Actual);
             Subprogram : constant Libadalang.Analysis.Subp_Body :=
               Data_Flow.Enclosing_Subprogram (Stmt);
+            Freed      : constant String := Canonical_Text (Actual);
+
+            --  Follows each local object that holds a copy of the freed one
+            --  at Stmt.
+            procedure Follow_Copies (Node : Libadalang.Analysis.Ada_Node'Class)
+            is
+               Copy_Node : Libadalang.Analysis.Ada_Node;
+               Source    : Libadalang.Analysis.Expr;
+               Target    : Libadalang.Analysis.Basic_Decl :=
+                 Libadalang.Analysis.No_Basic_Decl;
+            begin
+               if Libadalang.Analysis.Is_Null (Node)
+                 or else Natural (Node.Sloc_Range.Start_Line) >
+                         Natural (Stmt.Sloc_Range.Start_Line)
+               then
+                  return;
+               end if;
+               Source := Libadalang.Analysis.No_Expr;
+               if Node.Kind = Libadalang.Common.Ada_Assign_Stmt
+                 and then Node.As_Assign_Stmt.F_Dest.Kind =
+                   Libadalang.Common.Ada_Identifier
+               then
+                  Source := Node.As_Assign_Stmt.F_Expr;
+                  Target := Data_Flow.Referenced_Declaration
+                    (Node.As_Assign_Stmt.F_Dest);
+               elsif Node.Kind = Libadalang.Common.Ada_Object_Decl
+                 and then Node.As_Object_Decl.F_Ids.Children_Count = 1
+               then
+                  Source := Node.As_Object_Decl.F_Default_Expr;
+                  Target := Node.As_Basic_Decl;
+               end if;
+               Copy_Node := Libadalang.Analysis.Ada_Node (Node);
+               if not Libadalang.Analysis.Is_Null (Source)
+                 and then Source.Kind = Libadalang.Common.Ada_Identifier
+                 and then Data_Flow.Referenced_Declaration (Source) = Decl
+                 and then not Libadalang.Analysis.Is_Null (Target)
+                 and then Target /= Decl
+                 and then Target.Kind in
+                   Libadalang.Common.Ada_Object_Decl_Range
+                 and then Is_Local_To_Subprogram (Target, Subprogram)
+                 and then not Renames_Nonlocal_Object (Target, Subprogram)
+                 --  The copy is made on every way to the call.
+                 and then
+                   (Node.Kind = Libadalang.Common.Ada_Object_Decl
+                    or else Reached_After (Copy_Node, Stmt, Decl))
+                 and then not Written_Between
+                   (Subprogram, Decl, Copy_Node,
+                    Libadalang.Analysis.Ada_Node (Stmt))
+                 and then not Written_Between
+                   (Subprogram, Target, Copy_Node,
+                    Libadalang.Analysis.Ada_Node (Stmt))
+               then
+                  Follow
+                    (Subprogram, Canonical_Text (Target.P_Defining_Name),
+                     Target, Freed);
+               end if;
+               for Index in 1 .. Node.Children_Count loop
+                  Follow_Copies (Node.Child (Index));
+               end loop;
+            end Follow_Copies;
          begin
             if Libadalang.Analysis.Is_Null (Decl)
               or else Decl.Kind not in Libadalang.Common.Ada_Object_Decl_Range
@@ -2084,44 +2608,8 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                return;
             end if;
 
-            declare
-               Result : constant Data_Flow.Access_Result :=
-                 Data_Flow.First_Access (Subprogram, Decl, Stmt);
-               --  A second Free(Decl) call is itself found here as a
-               --  Read_Access, not a Write_Access: Ada.Unchecked_
-               --  Deallocation's formal is "in out", and First_Access
-               --  (via Call_Reads_Simple_Actual/Association_Reads_Simple_
-               --  Actual) classifies any non-out-only formal mode as a
-               --  read before ever considering it a write. So the read
-               --  site's own identity -- is it itself a call to the
-               --  deallocation procedure? -- is what separates a
-               --  Double_Free from an ordinary Use_After_Free read, not
-               --  the Access_Kind.
-               Is_Second_Free : constant Boolean :=
-                 Result.Kind = Data_Flow.Read_Access
-                 and then Result.Node.Kind = Libadalang.Common.Ada_Call_Expr
-                 and then Is_Deallocation_Call (Result.Node.As_Call_Expr);
-            begin
-               if Is_Second_Free then
-                  if Rule_States (Double_Free) = Enabled then
-                     Report_Rule_Violation
-                       (Unit, Result.Node, Double_Free,
-                        "frees " & Canonical_Text (Actual) &
-                          " a second time; it was already freed by an " &
-                          "earlier call to Ada.Unchecked_Deallocation, " &
-                          "with no intervening assignment");
-                  end if;
-               elsif Result.Kind = Data_Flow.Read_Access
-                 and then Rule_States (Use_After_Free) = Enabled
-               then
-                  Report_Rule_Violation
-                    (Unit, Result.Node, Use_After_Free,
-                     "reads " & Canonical_Text (Actual) &
-                       ", which was freed by an earlier call to " &
-                       "Ada.Unchecked_Deallocation, with no intervening " &
-                       "assignment");
-               end if;
-            end;
+            Follow (Subprogram, Freed, Decl, Copy_Of => "");
+            Follow_Copies (Subprogram);
          end;
       end;
    exception
@@ -2479,9 +2967,28 @@ package body Adalang_Analyzer.Checks.Control_Flow is
             Cond     : constant Libadalang.Analysis.Expr := Alt.F_Cond_Expr;
             Cond_Text : constant String := Canonical_Text (Cond);
             Value    : constant Abstract_Bool := Static_Condition_Value (Cond);
+
+            --  True when a condition from the one at From (0 the first) to
+            --  the one before this elsif may change what this one reads.
+            function Changes_From (From : Natural) return Boolean is
+            begin
+               if From = 0 and then May_Change_State (First_Cond) then
+                  return True;
+               end if;
+               for J in Natural'Max (From, 1) .. I - 1 loop
+                  if May_Change_State
+                       (Alternatives.Child (J).As_Elsif_Stmt_Part.F_Cond_Expr)
+                  then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Changes_From;
          begin
             if Cond_Text /= "" and then Cond_Text = First_Text then
-               Report_Duplicate_Condition (Unit, Cond);
+               if not Changes_From (0) then
+                  Report_Duplicate_Condition (Unit, Cond);
+               end if;
             else
                for J in 1 .. I - 1 loop
                   declare
@@ -2493,7 +3000,9 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                          Canonical_Text
                            (Previous.As_Elsif_Stmt_Part.F_Cond_Expr)
                      then
-                        Report_Duplicate_Condition (Unit, Cond);
+                        if not Changes_From (J) then
+                           Report_Duplicate_Condition (Unit, Cond);
+                        end if;
                         exit;  --  adalang-analyzer: ignore No_Exit
                      end if;
                   end;
@@ -2645,9 +3154,28 @@ package body Adalang_Analyzer.Checks.Control_Flow is
             Cond     : constant Libadalang.Analysis.Expr := Alt.F_Cond_Expr;
             Cond_Text : constant String := Canonical_Text (Cond);
             Value    : constant Abstract_Bool := Static_Condition_Value (Cond);
+
+            --  True when a condition from the one at From (0 the first) to
+            --  the one before this elsif may change what this one reads.
+            function Changes_From (From : Natural) return Boolean is
+            begin
+               if From = 0 and then May_Change_State (First_Cond) then
+                  return True;
+               end if;
+               for J in Natural'Max (From, 1) .. I - 1 loop
+                  if May_Change_State
+                       (Alternatives.Child (J).As_Elsif_Expr_Part.F_Cond_Expr)
+                  then
+                     return True;
+                  end if;
+               end loop;
+               return False;
+            end Changes_From;
          begin
             if Cond_Text /= "" and then Cond_Text = First_Text then
-               Report_Duplicate_Condition (Unit, Cond);
+               if not Changes_From (0) then
+                  Report_Duplicate_Condition (Unit, Cond);
+               end if;
             else
                for J in 1 .. I - 1 loop
                   declare
@@ -2659,7 +3187,9 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                          Canonical_Text
                            (Previous.As_Elsif_Expr_Part.F_Cond_Expr)
                      then
-                        Report_Duplicate_Condition (Unit, Cond);
+                        if not Changes_From (J) then
+                           Report_Duplicate_Condition (Unit, Cond);
+                        end if;
                         exit;  --  adalang-analyzer: ignore No_Exit
                      end if;
                   end;

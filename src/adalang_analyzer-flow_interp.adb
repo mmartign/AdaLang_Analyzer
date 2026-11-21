@@ -1237,6 +1237,31 @@ package body Adalang_Analyzer.Flow_Interp is
    is
       Current : Libadalang.Analysis.Ada_Node :=
         Libadalang.Analysis.Ada_Node (Node);
+      --  The name climbed through so far calls a function or dereferences
+      --  an access value, which reads Node: a renaming of what it gives
+      --  ("Str : String renames Data.Token (First, Last);", gnatcoll's
+      --  JSON parser) reads Node.
+      Evaluated : Boolean := False;
+
+      --  Prefix is of an access type: selecting a component or an element
+      --  through it dereferences it ("Source.Content.Nodes (N)", Content
+      --  an access value, SPARKlib's formal ordered maps). Taken to be one
+      --  where its type is not known.
+      function Is_Access_Value
+        (Prefix : Libadalang.Analysis.Ada_Node) return Boolean
+      is
+         Of_Type : Libadalang.Analysis.Base_Type_Decl;
+      begin
+         if Prefix.Kind not in Libadalang.Common.Ada_Expr then
+            return False;
+         end if;
+         Of_Type := Prefix.As_Expr.P_Expression_Type;
+         return not Libadalang.Analysis.Is_Null (Of_Type)
+           and then Of_Type.P_Is_Access_Type;
+      exception
+         when others =>
+            return True;
+      end Is_Access_Value;
 
       function Is_Nonvalue_Attribute
         (Prefix : Libadalang.Analysis.Ada_Node) return Boolean
@@ -1266,37 +1291,11 @@ package body Adalang_Analyzer.Flow_Interp is
             return False;
       end Is_Nonvalue_Attribute;
 
-      --  True when Item is the second argument of "T'Read (Stream, Item)",
-      --  the attribute's out parameter (RM 13.13.2): it is written. The
-      --  arguments are those of the attribute reference, or of a call
-      --  whose name it is.
+      --  The argument of "T'Read (Stream, Item)" and of
+      --  "T'Asm_Output (Constraint, Object)" is stored into, not read.
       function Is_Read_Item
         (Item : Libadalang.Analysis.Ada_Node) return Boolean
-      is
-         Assoc : constant Libadalang.Analysis.Ada_Node := Item.Parent;
-         Owner : Libadalang.Analysis.Ada_Node;
-      begin
-         if Assoc.Kind /= Libadalang.Common.Ada_Param_Assoc
-           or else Libadalang.Analysis.Ada_Node (Assoc.As_Param_Assoc.F_R_Expr)
-             /= Item
-           or else Assoc.Parent.Kind /= Libadalang.Common.Ada_Assoc_List
-           or else Assoc.Parent.Children_Count /= 2
-           or else Assoc.Parent.Child (2) /= Assoc
-         then
-            return False;
-         end if;
-         Owner := Assoc.Parent.Parent;
-         if Owner.Kind = Libadalang.Common.Ada_Call_Expr then
-            Owner := Libadalang.Analysis.Ada_Node (Owner.As_Call_Expr.F_Name);
-         end if;
-         return Owner.Kind = Libadalang.Common.Ada_Attribute_Ref
-           and then Text_Utils.Normalize_Rule_Name
-             (Ada_Text.Node_Text (Owner.As_Attribute_Ref.F_Attribute))
-               = "read";
-      exception
-         when others =>
-            return False;
-      end Is_Read_Item;
+      is (Ada_Text.Is_Attribute_Out_Argument (Item));
    begin
       if Libadalang.Analysis.Is_Null (Current)
         or else Current.Kind /= Libadalang.Common.Ada_Identifier
@@ -1330,9 +1329,16 @@ package body Adalang_Analyzer.Flow_Interp is
                 (Ada_Text.Node_Text
                    (Current.Parent.Parent.Parent.As_Pragma_Node.F_Id));
          begin
-            if Pragma_Name = "unreferenced"
-              or else Pragma_Name = "unmodified"
-              or else Pragma_Name = "warnings"
+            --  Only a pragma that evaluates an expression where it stands
+            --  reads the objects it names; "pragma Import (C, Sep,
+            --  "__gnat_dir_separator")", "pragma Volatile (Reg)" and the
+            --  like name an entity (clic's Directory_Separator).
+            if Pragma_Name not in
+                 "assert" | "assert-and-cut" | "assume" | "check" | "debug"
+               | "loop-invariant" | "loop-variant" | "precondition"
+               | "postcondition" | "contract-cases" | "refined-post"
+               | "invariant" | "type-invariant" | "predicate"
+               | "test-case" | "inspection-point"
             then
                return False;
             end if;
@@ -1349,9 +1355,18 @@ package body Adalang_Analyzer.Flow_Interp is
          begin
             if Libadalang.Analysis.Is_Null (Parent) then
                return True;
-            elsif Parent.Kind = Libadalang.Common.Ada_Assign_Stmt
-              and then Libadalang.Analysis.Ada_Node
-                (Parent.As_Assign_Stmt.F_Dest) = Current
+            elsif
+              (Parent.Kind = Libadalang.Common.Ada_Assign_Stmt
+               and then Libadalang.Analysis.Ada_Node
+                 (Parent.As_Assign_Stmt.F_Dest) = Current)
+              or else
+                --  "Result : Half_Word renames Borrow;" names Borrow, an
+                --  out parameter that has no value yet (simple_components'
+                --  Unbounded_Unsigneds): the renaming reads no value.
+                (Parent.Kind = Libadalang.Common.Ada_Renaming_Clause
+                 and then Libadalang.Analysis.Ada_Node
+                   (Parent.As_Renaming_Clause.F_Renamed_Object) = Current
+                 and then not Evaluated)
             then
                return False;
             elsif
@@ -1386,6 +1401,26 @@ package body Adalang_Analyzer.Flow_Interp is
                  and then Libadalang.Analysis.Ada_Node
                    (Parent.As_Explicit_Deref.F_Prefix) = Current)
             then
+               Evaluated := Evaluated
+                 or else Parent.Kind = Libadalang.Common.Ada_Explicit_Deref
+                 or else
+                   (Parent.Kind = Libadalang.Common.Ada_Call_Expr
+                    and then Parent.As_Call_Expr.P_Kind not in
+                      Libadalang.Common.Array_Index
+                      | Libadalang.Common.Array_Slice
+                      | Libadalang.Common.Type_Conversion)
+                 or else
+                   (Parent.Kind = Libadalang.Common.Ada_Dotted_Name
+                    and then Libadalang.Analysis.Ada_Node
+                      (Parent.As_Dotted_Name.F_Prefix) = Current
+                    and then
+                      (Parent.As_Dotted_Name.F_Suffix.P_Is_Call
+                       or else Is_Access_Value (Current)))
+                 or else
+                   (Parent.Kind = Libadalang.Common.Ada_Call_Expr
+                    and then Libadalang.Analysis.Ada_Node
+                      (Parent.As_Call_Expr.F_Name) = Current
+                    and then Is_Access_Value (Current));
                Current := Parent;
             else
                return True;
@@ -3323,6 +3358,52 @@ package body Adalang_Analyzer.Flow_Interp is
       when Libadalang.Common.Property_Error =>
          return Forget_Element_Values (Symbols, Writer);
    end Element_Write_Symbols;
+
+   --  The formals and actuals of Call. Those of a call through an access
+   --  value ("Process (Done => D)", Process an access-to-procedure
+   --  parameter; OpenGLAda's "API.Gen_Buffers (1, Id)") come from the
+   --  call, its name referencing no subprogram (utilada, openglada).
+   function Call_Params_Of
+     (Call : Libadalang.Analysis.Call_Expr'Class)
+      return Libadalang.Analysis.Param_Actual_Array is
+   begin
+      return Call.F_Name.P_Call_Params;
+   exception
+      when others =>
+         return Call.P_Call_Params;
+   end Call_Params_Of;
+
+   --  The object a view conversion given as an actual converts: Y of
+   --  "Get (Long_Float (Y))" (sdlada, stephes_ada_library, simple_components'
+   --  "Sqrt (Word (Left), Word (Root), Word (Remainder))"). An out
+   --  parameter of an elementary type passed so is not read (RM 6.4.1(15));
+   --  the call stores into the object. The actual itself otherwise.
+   function Without_View_Conversion
+     (Actual : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Actual);
+   begin
+      while Current.Kind = Libadalang.Common.Ada_Call_Expr
+        and then Current.As_Call_Expr.P_Kind =
+          Libadalang.Common.Type_Conversion
+        and then Current.As_Call_Expr.F_Suffix.Kind =
+          Libadalang.Common.Ada_Assoc_List
+        and then Current.As_Call_Expr.F_Suffix.Children_Count = 1
+        and then Current.As_Call_Expr.F_Suffix.Child (1).Kind =
+          Libadalang.Common.Ada_Param_Assoc
+      loop
+         Current :=
+           Libadalang.Analysis.Ada_Node
+             (Current.As_Call_Expr.F_Suffix.Child (1).As_Param_Assoc
+                .F_R_Expr);
+      end loop;
+      return Current;
+   exception
+      when others =>
+         return Libadalang.Analysis.Ada_Node (Actual);
+   end Without_View_Conversion;
 
    --  The name whose object a call writes through the out or in out
    --  actual Actual. For an actual made of indexes and slices of a name of
@@ -5720,7 +5801,8 @@ package body Adalang_Analyzer.Flow_Interp is
    --  component of one.
    function Only_Names_Its_Target
      (Actual : Libadalang.Analysis.Ada_Node'Class) return Boolean
-   is (Actual.Kind = Libadalang.Common.Ada_Identifier
+   is (Without_View_Conversion (Actual).Kind =
+         Libadalang.Common.Ada_Identifier
        or else
          (Config.Verification_Mode
           and then Verified_In_SPARK
@@ -6659,8 +6741,10 @@ package body Adalang_Analyzer.Flow_Interp is
             declare
                Formal    : constant Libadalang.Analysis.Defining_Name :=
                  Libadalang.Analysis.Param (Pair).As_Defining_Name;
+               --  What a view conversion converts is what is written.
                Actual    : constant Libadalang.Analysis.Expr :=
-                 Libadalang.Analysis.Actual (Pair).As_Expr;
+                 Without_View_Conversion
+                   (Libadalang.Analysis.Actual (Pair)).As_Expr;
                Out_Only  : constant Boolean :=
                  Formal_Mode (Formal) in Libadalang.Common.Ada_Mode_Out;
                May_Write : constant Boolean :=
@@ -6734,6 +6818,51 @@ package body Adalang_Analyzer.Flow_Interp is
       when others =>
          Havoc_Identifiers_In (Call, State);
    end Havoc_Call_Actuals;
+
+   --  What a call statement leaves of the objects an attribute in it stores
+   --  into: the item of "T'Read (Stream, Item)" and the object of each
+   --  "T'Asm_Output (Constraint, Object)" given to System.Machine_Code.Asm.
+   --  They have a value, which is not known. (gid, zipada, wisitoken and
+   --  getada read their headers with 'Read; HiRTOS and rp2040_hal read
+   --  registers with Asm.)
+   procedure Initialize_Attribute_Outputs
+     (Call  : Libadalang.Analysis.Name'Class;
+      State : in out Flow_State)
+   is
+      procedure Visit (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Ada_Text.Is_Attribute_Out_Argument (Node) then
+            declare
+               Target : constant Libadalang.Analysis.Ada_Node :=
+                 Written_Name_Of_Actual (Node);
+            begin
+               --  A store takes no value away: an index of the item
+               --  ("Character'Read (S, Text (Stop))") keeps its value's
+               --  initialization (tokeneer's File.GetString).
+               Forget_Identifiers_In (Target, State);
+               if Node.Kind = Libadalang.Common.Ada_Identifier then
+                  Flow_Set_Initialized
+                    (State, Flow_Referenced_Name (Node), Bool_True);
+               else
+                  Note_Part_Written (Node, State);
+               end if;
+            end;
+            return;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            Visit (Node.Child (Index));
+         end loop;
+      end Visit;
+   begin
+      Visit (Call);
+   exception
+      when Exc : others =>
+         Log_Verbose_Once
+           ("skipping the objects an attribute call stores into: " &
+            Ada.Exceptions.Exception_Message (Exc));
+   end Initialize_Attribute_Outputs;
 
    --  What a call of SPARK code leaves of the globals it writes: an object
    --  that was initialized when the call was made still is, for every
@@ -10828,6 +10957,179 @@ package body Adalang_Analyzer.Flow_Interp is
       return Libadalang.Analysis.Ada_Node (Name);
    end Name_Beside_Actuals;
 
+   --  Answers of Value_From_Outside, by object.
+   package Outside_Value_Maps is new Ada.Containers.Hashed_Maps
+     (Key_Type        => Libadalang.Analysis.Ada_Node,
+      Element_Type    => Boolean,
+      Hash            => Libadalang.Analysis.Hash,
+      Equivalent_Keys => Libadalang.Analysis."=");
+   Outside_Values : Outside_Value_Maps.Map;
+
+   --  True when the object Key, a defining name, can be given a value the
+   --  statements around it do not show: it is imported ("pragma Import (C,
+   --  Sep, ...)", clic), or its address or an access value designating it
+   --  is taken in the region that declares it ("Count'Access" given to a C
+   --  function, "To_Pointer (Size'Address).all := ...", an address clause;
+   --  simple_components), and something may store through it. That it has
+   --  no value on every path to a read is then not known.
+   function Value_From_Outside
+     (Key : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+      Found : Boolean := False;
+
+      procedure Visit (Node : Libadalang.Analysis.Ada_Node'Class) is
+      begin
+         if Found or else Libadalang.Analysis.Is_Null (Node) then
+            return;
+         elsif Node.Kind = Libadalang.Common.Ada_Identifier
+           and then Ada_Text.Is_Escaping_Attribute_Prefix (Node)
+           and then Flow_Referenced_Name (Node) = Key
+         then
+            Found := True;
+            return;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            Visit (Node.Child (Index));
+         end loop;
+      end Visit;
+
+      Region : Libadalang.Analysis.Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Key)
+        or else Key.Kind /= Libadalang.Common.Ada_Defining_Name
+      then
+         return False;
+      elsif Outside_Values.Contains (Key) then
+         return Outside_Values.Element (Key);
+      end if;
+
+      declare
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Key.As_Defining_Name.P_Basic_Decl;
+      begin
+         Found := not Libadalang.Analysis.Is_Null (Decl)
+           and then (Decl.P_Is_Imported or else Has_Aspect (Decl, "Address"));
+      end;
+      if not Found then
+         Region := Key.Parent;
+         while not Libadalang.Analysis.Is_Null (Region)
+           and then Region.Kind not in Libadalang.Common.Ada_Subp_Body
+             | Libadalang.Common.Ada_Task_Body
+             | Libadalang.Common.Ada_Entry_Body
+             | Libadalang.Common.Ada_Package_Body
+             | Libadalang.Common.Ada_Compilation_Unit
+         loop
+            Region := Region.Parent;
+         end loop;
+         if Libadalang.Analysis.Is_Null (Region) then
+            Region := Key.Unit.Root;
+         end if;
+         Visit (Region);
+      end if;
+      Outside_Values.Include (Key, Found);
+      return Found;
+   exception
+      when others =>
+         return False;
+   end Value_From_Outside;
+
+   --  Initialized, what the state says of the object Key at a read, unless
+   --  it says the object has no value and the object can get one from
+   --  outside (Value_From_Outside): then not known.
+   function Outside_Aware
+     (Initialized : Abstract_Bool;
+      Key         : Libadalang.Analysis.Ada_Node) return Abstract_Bool
+   is (if Initialized = Bool_False and then Value_From_Outside (Key)
+       then Bool_Unknown
+       else Initialized);
+
+   --  The read a target name, "@" (RM 5.2.1), makes of the target of its
+   --  assignment: the object, or the part of it the target names, has to
+   --  have a value there, as at any other read of it ("T := @ + 1", T
+   --  declared without one). Checked as the read of the target's object
+   --  would be; nothing is checked for a target that is not a part of an
+   --  object (the object an access value designates).
+   procedure Check_Target_Name_Read
+     (Unit  : Libadalang.Analysis.Analysis_Unit;
+      Node  : Libadalang.Analysis.Ada_Node'Class;
+      State : Flow_State;
+      Final : Boolean := False)
+   is
+      Current : Libadalang.Analysis.Ada_Node := Node.Parent;
+      Name    : Libadalang.Analysis.Ada_Node;
+      Key     : Libadalang.Analysis.Ada_Node;
+   begin
+      while not Libadalang.Analysis.Is_Null (Current)
+        and then Current.Kind /= Libadalang.Common.Ada_Assign_Stmt
+      loop
+         Current := Current.Parent;
+      end loop;
+      if Libadalang.Analysis.Is_Null (Current) then
+         return;
+      end if;
+      Name := Libadalang.Analysis.Ada_Node (Current.As_Assign_Stmt.F_Dest);
+      Key := Target_Object (Name);
+      if Libadalang.Analysis.Is_Null (Key) then
+         return;
+      end if;
+      --  An object or a parameter, as for the read of an identifier.
+      Current := Key;
+      while not Libadalang.Analysis.Is_Null (Current)
+        and then Current.Kind not in Libadalang.Common.Ada_Object_Decl_Range
+                                   | Libadalang.Common.Ada_Param_Spec_Range
+      loop
+         if Current.Kind in Libadalang.Common.Ada_Basic_Decl then
+            return;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      if Libadalang.Analysis.Is_Null (Current) then
+         return;
+      end if;
+      --  The name of the object in the target, as Target_Object finds it.
+      loop
+         if Name.Kind = Libadalang.Common.Ada_Call_Expr then
+            Name := Libadalang.Analysis.Ada_Node (Name.As_Call_Expr.F_Name);
+         elsif Name.Kind = Libadalang.Common.Ada_Dotted_Name
+           and then Flow_Referenced_Name (Name) /= Key
+         then
+            Name := Libadalang.Analysis.Ada_Node (Name.As_Dotted_Name.F_Prefix);
+         else
+            exit;
+         end if;
+      end loop;
+      if Flow_Referenced_Name (Name) /= Key then
+         return;
+      end if;
+      case Outside_Aware (Read_Initialization (Name, Key, State), Key) is
+         when Bool_True =>
+            --  proof-path: initialization-target-name
+            Record_Proved_Safe
+              (Unit, Node, Proof.Initialization_Check, Proof.Flow_Analysis,
+               "object is initialized on every incoming path",
+               "initialization => true", Final => Final);
+         when Bool_False =>
+            Record_Definite_Error
+              (Unit, Node, Proof.Initialization_Check, Proof.Flow_Analysis,
+               "object is uninitialized on every incoming path",
+               "initialization => false", Final => Final);
+         when Bool_Unknown =>
+            Record_Unproved
+              (Unit, Node, Proof.Initialization_Check, Proof.Flow_Analysis,
+               "object initialization is not established",
+               Imprecision => "incoming paths disagree or object is external",
+               Final => Final);
+      end case;
+      Proof.Set_Subject (Unit, Node, Proof.Initialization_Check, Key);
+   exception
+      when E : others =>
+         Report_Recoverable_Failure_Once
+           (Rule       => "Initialization_Check",
+            Operation  => "classify target name initialization",
+            Source     => Ada_Text.Safe_Filename (Unit),
+            Occurrence => E);
+   end Check_Target_Name_Read;
+
    procedure Scan_Expression_For_Flow_Bugs
      (Unit  : Libadalang.Analysis.Analysis_Unit;
       Node  : Libadalang.Analysis.Ada_Node'Class;
@@ -10875,7 +11177,8 @@ package body Adalang_Analyzer.Flow_Interp is
                   Record_Standing_Value
                     (Unit, Node, Key, State, False, Standing);
                   if not Standing then
-                     case Read_Initialization (Node, Key, State) is
+                     case Outside_Aware (Read_Initialization (Node, Key, State),
+                                         Key) is
                         when Bool_True =>
                            --  proof-path: initialization-live
                            Record_Proved_Safe
@@ -10912,6 +11215,12 @@ package body Adalang_Analyzer.Flow_Interp is
                   Source     => Ada_Text.Safe_Filename (Unit),
                   Occurrence => E);
          end;
+      end if;
+
+      if Config.Verification_Mode
+        and then Node.Kind = Libadalang.Common.Ada_Target_Name
+      then
+         Check_Target_Name_Read (Unit, Node, State);
       end if;
 
       if Config.Rule_States (Rules.Division_By_Zero) = Config.Enabled
@@ -10953,7 +11262,7 @@ package body Adalang_Analyzer.Flow_Interp is
                begin
                   Scan_Expression_For_Flow_Bugs
                     (Unit, Name_Beside_Actuals (Call), State, Symbols);
-                  for Pair of Call.F_Name.P_Call_Params loop
+                  for Pair of Call_Params_Of (Call) loop
                      if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
                        Libadalang.Common.Ada_Mode_Out
                        or else not Only_Names_Its_Target
@@ -11139,7 +11448,24 @@ package body Adalang_Analyzer.Flow_Interp is
             then VC.Decide (Cond, State, Symbols) else VC.Unknown_Outcome);
          VC_Result : constant VC.VC_Result := VC_Outcome.Result;
       begin
-         if (Value = Bool_False
+         if Value = Bool_False
+           and then Ada_Text.Is_False_Literal (Cond)
+           and then Ada_Text.Follows_A_Call (Cond)
+         then
+            --  "pragma Assert (False)" says its place is not reached; after
+            --  a call, it is reached only if the call returns, which is not
+            --  known (HiRTOS: after the first context switch, which does
+            --  not return but is not declared No_Return).
+            Record_Unproved
+              (Unit, Cond, Proof.Assertion_Check,
+               Proof.Abstract_Interpretation,
+               "assertion of False after a call: this point is reached " &
+                 "only if the call returns, which is not established",
+               Imprecision =>
+                 "whether a call that is not declared No_Return returns " &
+                 "is not modelled",
+               Final => Final);
+         elsif (Value = Bool_False
              or else
                (VC_Result = VC.VC_Refuted
                 and then not Contains_VC_Arithmetic (Cond)))
@@ -11894,6 +12220,7 @@ package body Adalang_Analyzer.Flow_Interp is
                Havoc_Global_Effects (Call, Next);
                Keep_Initialized (Call, State, Next);
                Havoc_Call_Actuals (Call, Next);
+               Initialize_Attribute_Outputs (Call, Next);
                Initialize_Global_Outputs (Call, Next);
                Apply_Call_Postcondition (Call, Next);
                Bound_Written_Actuals (Call, Next);
@@ -14546,10 +14873,12 @@ package body Adalang_Analyzer.Flow_Interp is
                  Libadalang.Common.Ada_Generic_Package_Instantiation
                then
                   declare
-                     Template : constant Libadalang.Analysis.Generic_Decl :=
+                     Template : Libadalang.Analysis.Generic_Decl;
+                  begin
+                     --  Here, for the handler below to take what it raises.
+                     Template :=
                        Node.As_Generic_Package_Instantiation
                          .P_Designated_Generic_Decl;
-                  begin
                      Note_Instance_Objects (Template);
                      Note_Instance_Objects (Template.P_Body_Part_For_Decl);
                   exception
@@ -18671,7 +19000,7 @@ package body Adalang_Analyzer.Flow_Interp is
         (Node        : Libadalang.Analysis.Ada_Node'Class;
          Initialized : Abstract_Bool) is
       begin
-         case Initialized is
+         case Outside_Aware (Initialized, Flow_Referenced_Name (Node)) is
             when Bool_True =>
                --  proof-path: initialization-final
                Record_Proved_Safe
@@ -20263,6 +20592,13 @@ package body Adalang_Analyzer.Flow_Interp is
                      end if;
                   end if;
                end;
+            elsif Node.Kind = Libadalang.Common.Ada_Target_Name then
+               --  "@" reads the target of its assignment, decided here on
+               --  the converged state as the read of an identifier is.
+               if Boundary_Supported and then not Unreached (Here) then
+                  Check_Target_Name_Read
+                    (Unit, Node, State_At (Here), Final => True);
+               end if;
             elsif Node.Kind = Libadalang.Common.Ada_Identifier
               and then Value_Read_Required (Node)
             then
@@ -20388,7 +20724,7 @@ package body Adalang_Analyzer.Flow_Interp is
                   begin
                      Finalize_Node
                        (Name_Beside_Actuals (Node.As_Call_Expr), Here);
-                     for Pair of Node.As_Call_Expr.F_Name.P_Call_Params loop
+                     for Pair of Call_Params_Of (Node.As_Call_Expr) loop
                         if Formal_Mode (Libadalang.Analysis.Param (Pair)) /=
                           Libadalang.Common.Ada_Mode_Out
                           or else not Only_Names_Its_Target
@@ -21267,10 +21603,14 @@ package body Adalang_Analyzer.Flow_Interp is
             declare
                Instance : constant Libadalang.Analysis.Generic_Instantiation :=
                  Node.As_Generic_Instantiation;
-               Decl     : constant Libadalang.Analysis.Basic_Decl :=
+               Decl     : Libadalang.Analysis.Basic_Decl;
+            begin
+               --  Resolved here, not where Decl is declared, so that the
+               --  handler below takes what an instantiation in a unit that
+               --  does not parse raises (a Property_Error stopped the run).
+               Decl :=
                  Libadalang.Analysis.Basic_Decl
                    (Instance.P_Designated_Generic_Decl);
-            begin
                if Libadalang.Analysis.Is_Null (Decl) then
                   Incomplete := True;
                else
@@ -21764,11 +22104,12 @@ package body Adalang_Analyzer.Flow_Interp is
             declare
                Inst : constant Libadalang.Analysis.Generic_Instantiation :=
                  Node.As_Generic_Instantiation;
-               Gen  : constant Libadalang.Analysis.Generic_Decl :=
-                 Inst.P_Designated_Generic_Decl;
+               Gen  : Libadalang.Analysis.Generic_Decl;
                Mode : SPARK_Mode_State;
                Part : Libadalang.Analysis.Body_Node;
             begin
+               --  Here, for the handler below to take what it raises.
+               Gen := Inst.P_Designated_Generic_Decl;
                if not Libadalang.Analysis.Is_Null (Gen)
                  and then Declared_In_SPARK (Inst)
                then

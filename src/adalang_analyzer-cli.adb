@@ -1957,7 +1957,9 @@ package body Adalang_Analyzer.CLI is
          declare
             Summary_Ctx : constant Libadalang.Analysis.Analysis_Context :=
               Libadalang.Analysis.Create_Context
-                (Unit_Provider =>
+                (Charset       =>
+                   Adalang_Analyzer.Project_Files.Source_Charset,
+                 Unit_Provider =>
                    Adalang_Analyzer.Unit_Provider.Create
                      (Primary  => Source_Units,
                       Fallback =>
@@ -1993,7 +1995,8 @@ package body Adalang_Analyzer.CLI is
          end;
 
          Ctx := Libadalang.Analysis.Create_Context
-           (Unit_Provider =>
+           (Charset       => Adalang_Analyzer.Project_Files.Source_Charset,
+            Unit_Provider =>
               Adalang_Analyzer.Unit_Provider.Create
                 (Primary  => Source_Units,
                  Fallback => Libadalang.Unit_Files.Default_Provider),

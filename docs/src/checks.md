@@ -161,8 +161,8 @@ name is accepted wherever the check's own name is (see
 | DO-178C support | `Missing_Requirement_Trace` | Reliability | High | Reports subprogram bodies without a nearby low-level requirement identifier. | — |
 | DO-178C support | `Malformed_Requirement_Trace` | Maintainability | Medium | Reports requirement annotations with no identifier. | — |
 | DO-178C support | `Suppression_Without_Rationale` | Maintainability | High | Reports analyzer suppressions that do not record a reviewable rationale. | — |
-| Safety | `Use_After_Free` | Security | High | Reports a local access object read after `Ada.Unchecked_Deallocation` frees it, with no intervening assignment. | — |
-| Safety | `Double_Free` | Security | High | Reports a local access object passed to `Ada.Unchecked_Deallocation` a second time, with no intervening assignment. | — |
+| Safety | `Use_After_Free` | Security | High | Reports a dereference of a local access object, or of a local copy of it, after `Ada.Unchecked_Deallocation` frees it, with no intervening assignment. | — |
+| Safety | `Double_Free` | Security | High | Reports a second free, through a local copy, of an object `Ada.Unchecked_Deallocation` already freed, with no intervening assignment. | — |
 | Data flow | `Unclosed_File_Handle` | Reliability | Medium | Reports a local `Ada.Text_IO`/`Ada.Streams.Stream_IO` file opened with `Open`/`Create` and not demonstrably closed on every normal-return or exception-handler path. | — |
 | Data flow | `Unused_With_Clause` | Maintainability | Low | Reports a with clause naming a unit never referenced elsewhere in the file. | — |
 | Restricted construct | `No_Use_Package_Clause` | Maintainability | Low | Reports use clauses that make a whole package's declarations directly visible (use type clauses are not reported). | `use_package_clauses` |

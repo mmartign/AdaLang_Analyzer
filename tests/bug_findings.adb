@@ -7,8 +7,8 @@ procedure Bug_Findings is
    Flag : Boolean := True;
 begin
    --  Identity, repeated, and absorbing operations exercise expression rules.
-   A := A + 0;
-   A := A + 0;
+   B := A + 0;
+   B := A + 0;
    B := A * 0;
 
    --  The contradictory condition and duplicate branch bodies are deliberate.

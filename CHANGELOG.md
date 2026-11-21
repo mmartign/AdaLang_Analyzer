@@ -44,8 +44,69 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   the directory the analyzer was started from to its `PATH`.
   `tests/run_solver_limits.sh` checks the order.
 
+- Use_After_Free reports a dereference of the freed object, and of a
+  local copy of its access value made before the Free; Double_Free, a
+  Free of such a copy. A second Free of the same object, which the first
+  sets to null (RM 13.11.2), is no longer reported, nor is a use the Free
+  cannot reach: in the other branch, after a handler that frees and raises
+  again, or in an iteration of a loop that declares the object anew
+  (FP-156).
+- Aliasing_Between_Parameters follows SPARK RM 6.4.2: an object of a
+  scalar type given to an in parameter and to an in out or out one is not
+  reported (FP-159).
+
 ### Fixed
 
+What running AdaLang Analyzer on 35 of the most used and most starred
+crates of the Alire index showed (FP-150 to FP-161, in
+`quality/known_analysis_issues.tsv`). Of the 124 definite errors
+`--verify` gave there, 121 were false, in these shapes:
+
+- The item of `T'Read` and the object of `T'Asm_Output` hold a value
+  after the call; neither is read (FP-150: gid, Zip-Ada, wisitoken,
+  simple_components, HiRTOS, rp2040_hal).
+- The out actuals of a call through an access value are not read
+  (FP-151: utilada, OpenGLAda), nor is the object of a view conversion
+  given as an out actual (FP-152: sdlada, stephes_ada_library).
+- An object that is imported, or whose access value or address is given
+  away, is not known to have no value; only a pragma that evaluates an
+  expression reads the objects it names (FP-153: clic, simple_components,
+  powerjoular, utilada). An imported object is seen outside, as a volatile
+  one is: Repeated_Statement, Overwritten_Assignment and Dead_Store do not
+  report its writes (a device register written twice, Ada_Drivers_Library).
+- The renaming of an object reads no value of it (that of what a function
+  call or a dereference gives still reads what the call or the
+  dereference reads), and Uninitialized_Output does not report an out
+  parameter the body renames (FP-154).
+- `pragma Assert (False)` after a call is unproved, not a definite error
+  nor a Known_Assertion_Failure (FP-155: HiRTOS).
+
+The three that are right are in simple_components, and were reported
+upstream with the other defects found there
+(alire-project/dak_simple_components#9). And in the other checks:
+
+- Repeated_Statement does not report an assignment repeated whose value
+  reads its target or calls a function that may change state, one whose
+  effects are not known or that writes an object outside it (FP-157);
+  Duplicate_Condition, a
+  condition the same as an earlier one where a call between them changes
+  what it reads (FP-158); Overwritten_Assignment and Dead_Store, the
+  value, a status, that a call of an imported function or of one that may
+  change state returns (FP-160).
+- A target name, `@`, reads the target of its assignment.
+  Overwritten_Assignment and Dead_Store reported the value it reads
+  (`T := X * 3; T := @ + 1;`, AWS), and Repeated_Statement a repeated
+  `T := @ + 1;` (FP-162). Uninitialized_Read now finds `T := @ + 1;` of a
+  `T` with no value, and `--verify` has an initialization check at `@`,
+  where it had none and proved the reads of `T` after it (FP-163).
+- The sources of a project compiled with `-gnatW8`, as Alire compiles
+  every crate, are read as UTF-8; they were read as ISO-8859-1 and
+  identifiers in UTF-8 did not parse. `--verify` stopped with no report on
+  a Property_Error raised in the declarations of a block whose handler was
+  to take it (FP-161: honki_tonks_zivilisationen).
+- The summaries of the subprograms were searched one by one for every
+  call: PHCpack (5,508 sources, 1.3 million lines) took more than 15
+  minutes under `--recommended`; it takes 7.
 - On macOS and Linux the executable loaded the shared GNAT tasking run time
   (`libgnarl`) of the toolchain that built it, beside the static one the
   binder links in, and stopped at start-up on any computer without that

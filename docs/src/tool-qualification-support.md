@@ -96,7 +96,7 @@ the benchmark run itself.
 
 - **100 of 302** checks were enabled by at least one benchmark
   preset run (`--recommended` / `--spark` / `--automotive` / `--verify`)
-  over an external corpus; **78** produced at least one finding on that
+  over an external corpus; **74** produced at least one finding on that
   real code.
 - The remaining 202 are not reached by those preset
   runs -- mostly style rules outside every preset, plus any check newer than
@@ -240,8 +240,8 @@ the whole-catalogue view and the per-class tool-error-effect analysis.
 | `Missing_Requirement_Trace` | `readiness` | Reports subprogram bodies without a nearby low-level requirement identifier. | `none` | `tests/do178c_findings.adb` | `tests/do178c_clean.adb` |
 | `Malformed_Requirement_Trace` | `readiness` | Reports requirement annotations with no identifier. | `none` | `tests/do178c_findings.adb` | `tests/do178c_clean.adb` |
 | `Suppression_Without_Rationale` | `policy` | Reports analyzer suppressions that do not record a reviewable rationale. | `none` | `tests/do178c_findings.adb` | `tests/do178c_clean.adb` |
-| `Use_After_Free` | `defect` | Reports a local access object read after `Ada.Unchecked_Deallocation` frees it, with no intervening assignment. | `none` | `tests/precision_use_after_free_finding.adb` | `tests/precision_use_after_free_clean.adb` |
-| `Double_Free` | `defect` | Reports a local access object passed to `Ada.Unchecked_Deallocation` a second time, with no intervening assignment. | `none` | `tests/precision_double_free_finding.adb` | `tests/precision_double_free_clean.adb` |
+| `Use_After_Free` | `defect` | Reports a dereference of a local access object, or of a local copy of it, after `Ada.Unchecked_Deallocation` frees it, with no intervening assignment. | `none` | `tests/precision_use_after_free_finding.adb` | `tests/precision_use_after_free_clean.adb` |
+| `Double_Free` | `defect` | Reports a second free, through a local copy, of an object `Ada.Unchecked_Deallocation` already freed, with no intervening assignment. | `none` | `tests/precision_double_free_finding.adb` | `tests/precision_double_free_clean.adb` |
 | `Unclosed_File_Handle` | `defect` | Reports a local `Ada.Text_IO`/`Ada.Streams.Stream_IO` file opened with `Open`/`Create` and not demonstrably closed on every normal-return or exception-handler path. | `none` | `tests/precision_unclosed_file_handle_finding.adb` | `tests/precision_unclosed_file_handle_clean.adb` |
 | `Unused_With_Clause` | `defect` | Reports a with clause naming a unit never referenced elsewhere in the file. | `gnatcheck-comparison` | `tests/precision_unused_with_clause_finding.adb` | `tests/precision_unused_with_clause_clean.adb` |
 | `No_Use_Package_Clause` | `policy` | Reports use clauses that make a whole package's declarations directly visible (use type clauses are not reported). | `gnatcheck-comparison` | `tests/precision_use_package_clause_finding.adb` | `tests/precision_use_package_clause_clean.adb` |

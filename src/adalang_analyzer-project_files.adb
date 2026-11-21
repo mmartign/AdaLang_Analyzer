@@ -33,6 +33,7 @@ with GPR2.Project.Tree;
 with GPR2.Project.View;
 
 with Libadalang.Preprocessing;
+with Libadalang.Project_Provider;
 
 with Adalang_Analyzer.Config;
 with Adalang_Analyzer.ObjectAda_Projects;
@@ -55,6 +56,32 @@ package body Adalang_Analyzer.Project_Files is
    function Source_Reader
      return Langkit_Support.File_Readers.File_Reader_Reference
    is (Preprocessor);
+
+   --  "utf-8" once a loaded project asks for it.
+   Charset : Ada.Strings.Unbounded.Unbounded_String :=
+     Ada.Strings.Unbounded.To_Unbounded_String ("iso-8859-1");
+
+   function Source_Charset return String is
+     (Ada.Strings.Unbounded.To_String (Charset));
+
+   --  Records the character set Tree's compiler switches ask for.
+   procedure Note_Charset (Tree : GPR2.Project.Tree.Object) is
+   begin
+      if Ada.Characters.Handling.To_Lower
+           (Libadalang.Project_Provider.Default_Charset_From_Project (Tree))
+         = "utf-8"
+      then
+         Charset := Ada.Strings.Unbounded.To_Unbounded_String ("utf-8");
+      end if;
+   exception
+      when Error : others =>
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "adalang-analyzer: warning: could not read the project's "
+            & "character set ("
+            & Ada.Exceptions.Exception_Message (Error)
+            & "); sources are read as ISO-8859-1");
+   end Note_Charset;
 
    --  Records the preprocessing Tree's compiler switches ask for. A
    --  project that asks for none leaves an earlier project's in place.
@@ -364,6 +391,7 @@ package body Adalang_Analyzer.Project_Files is
       end loop;
 
       Note_Preprocessing (Tree);
+      Note_Charset (Tree);
 
       Tree.Unload;
    exception
