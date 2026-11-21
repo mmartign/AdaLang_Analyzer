@@ -8,7 +8,8 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 ## [1.17.2] - 2026-11-21
 
 The first release with binaries: archives of the analyzer and its solvers
-for Linux, macOS and Windows, which run with no Ada toolchain installed.
+for Linux, macOS and Windows, which need nothing built or installed beside
+them but a GNAT toolchain, for the sources of the Ada run-time library.
 And the fixes of what running it on 35 of the most used and most starred
 crates of the Alire index showed: 121 of the 124 definite errors `--verify`
 gave there were false, in eight shapes, now gone; the three that are right
