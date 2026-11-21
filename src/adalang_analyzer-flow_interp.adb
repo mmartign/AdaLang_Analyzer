@@ -10943,8 +10943,11 @@ package body Adalang_Analyzer.Flow_Interp is
    is
       Name : constant Libadalang.Analysis.Name := Call.F_Name;
    begin
+      --  The pairs come from Call_Params_Of: the name of a call through an
+      --  access value ("API.Gen_Buffers (1, Id)", OpenGLAda) references no
+      --  call, and asking it raised, which made the whole call a read.
       if Name.Kind = Libadalang.Common.Ada_Dotted_Name then
-         for Pair of Name.P_Call_Params loop
+         for Pair of Call_Params_Of (Call) loop
             if Libadalang.Analysis.Ada_Node
                  (Libadalang.Analysis.Actual (Pair)) =
                Libadalang.Analysis.Ada_Node (Name.As_Dotted_Name.F_Prefix)
@@ -10955,6 +10958,9 @@ package body Adalang_Analyzer.Flow_Interp is
          end loop;
       end if;
       return Libadalang.Analysis.Ada_Node (Name);
+   exception
+      when Libadalang.Common.Property_Error =>
+         return Libadalang.Analysis.Ada_Node (Name);
    end Name_Beside_Actuals;
 
    --  Answers of Value_From_Outside, by object.

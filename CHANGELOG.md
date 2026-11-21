@@ -5,6 +5,26 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A call through an access-to-subprogram object named with a package
+  prefix (`API.Gen_Buffers (1, Id)`) wrote its `out` actuals for
+  `--verify` only where the name had none: with one, the actuals and the
+  names of the formals were taken for reads. The 14 definite errors that
+  1.17.2 still gave on OpenGLAda, where the fix of `FP-151` did not reach,
+  are gone (`FP-164`).
+
+### Known limitations
+
+- Three postconditions of HiRTOS about the CPU state, which it reads
+  through machine code and changes with an `Asm` statement, are definite
+  errors under `--verify`: their value is taken to be the same before and
+  after the `Asm` statement. A reduction of the code gives `Unproved`;
+  what else in the project leads to the verdict is not yet known
+  (`FP-165`).
+
 ## [1.17.2] - 2026-11-21
 
 The first release with binaries: archives of the analyzer and its solvers
