@@ -5,7 +5,31 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.17.2] - 2026-11-21
+
+The first release with binaries: archives of the analyzer and its solvers
+for Linux, macOS and Windows, which run with no Ada toolchain installed.
+And the fixes of what running it on 35 of the most used and most starred
+crates of the Alire index showed: 121 of the 124 definite errors `--verify`
+gave there were false, in eight shapes, now gone; the three that are right
+were reported upstream with the other defects found.
+
+What to expect: on the ten corpora, with every preset (run of 2026-11-21),
+no finding is new and no definite error is new or gone, and the figures of
+the gap ledger stand: `--verify` proves 12,034 of the 15,043 checks
+GNATprove proves, 80.0%. 54 findings are gone, all of them false (read in
+the sources): 17 `Dead_Store`, 14 `Use_After_Free`, 10
+`Uninitialized_Read`, 8 `Double_Free`, 3 `Overwritten_Assignment`, one
+`Aliasing_Between_Parameters` (CoAP-SPARK) and one `Repeated_Statement`
+(Ada_Drivers_Library, a device register written twice), on gnatcoll-core,
+AWS and the three others. 47 obligations that 1.17.1 raised where nothing
+is read are gone (46 initialization checks and the range check of a
+conversion), none of them paired with a check of GNATprove's; 339
+initialization checks are new, at target names (AWS 335, CoAP-SPARK 4);
+five that were unproved are proved (Tokeneer 2, AWS 3), and no proof is
+lost. On the SPARK testsuite no obligation changes, and one
+`Aliasing_Between_Parameters` finding is gone (`FP-159`). Each document
+under `benchmarks/` says what changed on its corpus.
 
 ### Added
 
