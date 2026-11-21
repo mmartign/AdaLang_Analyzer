@@ -61,6 +61,11 @@ jobs:
         with:
           version: "2.1.0"
 
+      # Non-interactive, Alire takes the solution it has when its solver's
+      # time is up: on macOS that left xmlada, vss_text and libgpr out.
+      - name: Let the dependency solver finish
+        run: alr settings --global --set solver.timeout 3600
+
       # The static GMP library the executable is linked with.
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
