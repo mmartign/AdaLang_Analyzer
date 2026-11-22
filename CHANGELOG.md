@@ -5,22 +5,25 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.17.4] - 2026-11-23
 
 The fixes of what running it on eleven GitHub repositories (Brent
 Seidel's projects, ravenadm, Synth, AdaBase) showed. On them, 17 false
 findings are gone and none is added.
 
-On the ten corpora, with every preset (run of 2026-11-22), no finding is
-new, no definite error is new or gone, and no check is proved or unproved
-that was not before: the gap ledger does not move. 7 findings are gone,
+What to expect: on the ten corpora, with every preset (run of
+2026-11-22), no finding is new, no definite error is new or gone, and no
+check is proved or unproved that was not before: the gap ledger does not
+move, `--verify` proving 12,035 of the 15,043 checks GNATprove proves,
+80.0%. On the SPARK testsuite nothing changes. 7 findings are gone,
 all false: on AWS, 3 `Overwritten_Assignment` on the flags
 `aws-net-log.adb` sets around a call of a callback that can read them,
 and 2 `Uninitialized_Read` on objects whose access value a call in an
 assignment is given (`Arg'Unchecked_Access`, `Is_Composite'Access`); on
 gnatcoll-core, 1 `Overwritten_Assignment` on `Handle_Symbolic_Links`,
 saved, set and restored around calls that read it, and 1 such
-`Uninitialized_Read` (`Err_Code'Access`).
+`Uninitialized_Read` (`Err_Code'Access`). Each document under `benchmarks/`
+says what changed on its corpus.
 
 ### Fixed
 
