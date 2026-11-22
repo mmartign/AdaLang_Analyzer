@@ -5,7 +5,30 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.17.3] - 2026-11-22
+
+The fixes of what running it on 57 more crates of the Alire index showed,
+and of the definite errors the 1.17.2 sweep still left (14 on OpenGLAda, 3
+on HiRTOS). On those 57 crates, 204 false findings and 7 false definite
+errors are gone and none is added; the 12 real defects found in six of the
+projects were reported upstream.
+
+What to expect: on the ten corpora, with every preset (run of 2026-11-22),
+no definite error is new or gone, and the gap ledger moves by one:
+`--verify` proves 12,035 of the 15,043 checks GNATprove proves, 80.0% (one
+more Tokeneer overflow check). 87 overflow checks that were unproved are
+proved, each an operation of a static expression (`FP-169`). On AWS, 5
+`Uninitialized_Output` and 2 `Infinite_Loop` findings are gone from every
+lane, all false; 13 initialization checks raised where nothing is read are
+gone (`FP-164`); and 6 `Exception_Propagation` findings are new, all of
+them right: calls that reach an explicit `raise` through a call with no
+actual. In the lane compared with GNATcheck, 3 `Constant_Condition`
+findings on CubeDOS and 5 on libkeccak are gone, all false (`FP-166`). 8
+checks that 1.17.2 proved are no longer proved (gnatcoll-core 6, AWS 2),
+each after a call that is now known to reach a subprogram whose effects
+are not known. On the SPARK testsuite no finding changes, and three
+overflow checks in static expressions are proved. Each document under
+`benchmarks/` says what changed on its corpus.
 
 ### Fixed
 
