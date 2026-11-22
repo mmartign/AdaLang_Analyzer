@@ -767,10 +767,26 @@ package body Adalang_Analyzer.Subprogram_Summaries is
             --  calls is a callee too, whose writes are the caller's
             --  (Excel_Writer's Tokenize_with_Size, FP-168). The name of a
             --  Call_Expr or a Call_Stmt is taken there; a name that does
-            --  not resolve to a subprogram is left as it was before.
+            --  not resolve to a subprogram is left as it was before. As
+            --  there, a dispatching call has no callee one can name: which
+            --  body runs is not known (gnatcoll's "Instance.Get_User_Data",
+            --  whose root body raises Program_Error to say that it is to be
+            --  overridden).
             declare
                Decl : Libadalang.Analysis.Basic_Decl;
                Up   : constant Libadalang.Analysis.Ada_Node := Node.Parent;
+
+               function Dispatching return Boolean is
+               begin
+                  if Up.Kind = Libadalang.Common.Ada_Dotted_Name
+                    and then Libadalang.Analysis.Ada_Node
+                               (Up.As_Dotted_Name.F_Suffix) =
+                             Libadalang.Analysis.Ada_Node (Node)
+                  then
+                     return Up.As_Dotted_Name.P_Is_Dispatching_Call;
+                  end if;
+                  return Node.As_Identifier.P_Is_Dispatching_Call;
+               end Dispatching;
             begin
                if not
                    (Up.Kind = Libadalang.Common.Ada_Call_Stmt
@@ -798,7 +814,11 @@ package body Adalang_Analyzer.Subprogram_Summaries is
                         | Libadalang.Common.Ada_Synthetic_Char_Enum_Lit
                         | Libadalang.Common.Ada_Synthetic_Subp_Decl
                   then
-                     Include (Item.Callees, Declaration_Name (Decl));
+                     if Dispatching then
+                        Item.Effects_Complete := False;
+                     else
+                        Include (Item.Callees, Declaration_Name (Decl));
+                     end if;
                   end if;
                end if;
             exception

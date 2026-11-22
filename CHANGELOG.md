@@ -9,6 +9,13 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A call with no actual in an expression (`N : constant Natural :=
+  Tokenize;`, `return To_Set;`) was no call for the summaries of what a
+  subprogram writes and raises: what the callee wrote and raised was not
+  the caller's. It is a call now, and a dispatching one has, as with
+  actuals, effects that are not known. `Exception_Propagation` reports the
+  calls that reach an explicit `raise` that way, and a check that rested on
+  such a call having no effect may no longer be proved (`FP-168`).
 - A call through an access-to-subprogram object named with a package
   prefix (`API.Gen_Buffers (1, Id)`) wrote its `out` actuals for
   `--verify` only where the name had none: with one, the actuals and the
