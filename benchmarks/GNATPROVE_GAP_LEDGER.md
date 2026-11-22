@@ -1,6 +1,6 @@
 # What separates `--verify` from GNATprove: a ledger
 
-Recorded 2026-11-22 with AdaLang Analyzer 1.17.3, against the GNATprove
+Recorded 2026-11-22 with AdaLang Analyzer 1.17.4, against the GNATprove
 output saved by the 2026-10-02 runs of the five fully proved corpora
 (`sparknacl`, `saatana`, `libkeccak`, `coap_spark`, `tokeneer`). The ledger
 was started on 2026-10-05. What each release has added since is in

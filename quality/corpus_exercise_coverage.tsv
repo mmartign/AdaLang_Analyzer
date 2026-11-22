@@ -14,7 +14,7 @@ Magic_Number	yes	automotive	2	1562	166
 Unused_Parameter	yes	recommended	4	82	8
 Wrong_Parameter_Mode	yes	recommended	4	67	33
 Dead_Store	yes	automotive,recommended,spark,verify	10	480	64
-Overwritten_Assignment	yes	automotive,recommended,spark,verify	10	19	4
+Overwritten_Assignment	yes	automotive,recommended,spark,verify	10	4	2
 Shadowed_Declaration	yes	automotive	2	486	60
 Unreachable_Case_Alternative	yes	automotive,recommended	4	0	0
 Overlapping_Case_Ranges	yes	automotive,recommended	4	0	0
@@ -75,7 +75,7 @@ Missing_Depends_Contract	yes	automotive,spark,verify	10	4376	264
 Incomplete_Depends_Contract	yes	automotive,spark,verify	10	0	0
 Depends_Contract_Mismatch	yes	automotive,spark,verify	10	4	2
 Uninitialized_Output	yes	automotive,recommended,spark,verify	10	210	47
-Uninitialized_Read	yes	automotive,recommended	4	6	4
+Uninitialized_Read	yes	automotive,recommended	4	1	1
 Missing_Overriding_Indicator	yes	automotive	2	0	0
 Inefficient_String_Concatenation	no	-	0	0	0
 Circular_Package_Dependency	yes	automotive	2	0	0
