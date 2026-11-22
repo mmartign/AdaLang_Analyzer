@@ -7232,14 +7232,28 @@ package body Adalang_Analyzer.Flow_Interp is
             Ada.Exceptions.Exception_Message (Exc));
    end Apply_Call_Postcondition;
 
+   --  Whether Name is a call, False when that cannot be told.
+   function Is_Call_Name (Name : Libadalang.Analysis.Name) return Boolean is
+   begin
+      return Name.P_Is_Call;
+   exception
+      when others =>
+         return False;
+   end Is_Call_Name;
+
    --  Invalidates whatever Node's own evaluation could change: writable
    --  actual parameters and Global outputs of calls found within it, and
    --  every variable directly assigned to when Node is a statement list
    --  containing assignments (the pre-loop-body havoc case). Does not
    --  descend into a nested subprogram body, which is analyzed separately.
+   --  With Bare_Calls, a call with no actual list counts too (FP-174); the
+   --  graph interpretation gives those their effects itself, the way it
+   --  gives every call of a node (Apply_Function_Call_Effects), and does
+   --  not ask for them here.
    procedure Havoc_Effects_In
-     (Node  : Libadalang.Analysis.Ada_Node'Class;
-      State : in out Flow_State)
+     (Node       : Libadalang.Analysis.Ada_Node'Class;
+      State      : in out Flow_State;
+      Bare_Calls : Boolean := True)
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
@@ -7256,10 +7270,27 @@ package body Adalang_Analyzer.Flow_Interp is
                Havoc_Call_Actuals (Node.As_Call_Expr.F_Name, State);
             else
                for Index in 1 .. Node.Children_Count loop
-                  Havoc_Effects_In (Node.Child (Index), State);
+                  Havoc_Effects_In (Node.Child (Index), State, Bare_Calls);
                end loop;
             end if;
             return;
+
+         when Libadalang.Common.Ada_Identifier
+            | Libadalang.Common.Ada_Dotted_Name =>
+            --  A call with no actual: "latest_version : constant String :=
+            --  determine_tag;" of ravenadm, whose nested function sets
+            --  objects of the procedure as up-level objects (FP-174). The
+            --  prefix of "Obj.Op" is an actual, written by Op if its formal
+            --  is; a name that does not resolve is left as it was.
+            if Bare_Calls and then Is_Call_Name (Node.As_Name) then
+               Havoc_Global_Effects (Node.As_Name, State);
+               Havoc_Call_Actuals (Node.As_Name, State);
+               if Node.Kind = Libadalang.Common.Ada_Dotted_Name then
+                  Havoc_Effects_In
+                    (Node.As_Dotted_Name.F_Prefix, State, Bare_Calls);
+               end if;
+               return;
+            end if;
 
          when Libadalang.Common.Ada_Subp_Body =>
             return;
@@ -7269,7 +7300,7 @@ package body Adalang_Analyzer.Flow_Interp is
       end case;
 
       for I in 1 .. Node.Children_Count loop
-         Havoc_Effects_In (Node.Child (I), State);
+         Havoc_Effects_In (Node.Child (I), State, Bare_Calls);
       end loop;
    end Havoc_Effects_In;
 
@@ -11782,17 +11813,20 @@ package body Adalang_Analyzer.Flow_Interp is
       declare
          Alt  : constant Libadalang.Analysis.Elsif_Stmt_Part :=
            Alternatives.Child (Index).As_Elsif_Stmt_Part;
-         Cond : constant Libadalang.Analysis.Expr := Alt.F_Cond_Expr;
+         Cond  : constant Libadalang.Analysis.Expr := Alt.F_Cond_Expr;
+         --  As in Interpret_If, after the calls of the condition.
+         After : Flow_State := State;
       begin
          Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
-         Check_Flow_Condition (Unit, Cond, State);
+         Havoc_Effects_In (Cond, After);
+         Check_Flow_Condition (Unit, Cond, After);
 
          declare
             Cond_Value              : constant Abstract_Bool :=
-              Boolean_Value (Cond, State);
+              Boolean_Value (Cond, After);
             True_State, False_State : Flow_State;
          begin
-            Narrow_By_Condition (Cond, State, True_State, False_State);
+            Narrow_By_Condition (Cond, After, True_State, False_State);
 
             if Cond_Value = Bool_True then
                return Interpret_Statements (Unit, Alt.F_Stmts, True_State);
@@ -11818,17 +11852,22 @@ package body Adalang_Analyzer.Flow_Interp is
       Stmt  : Libadalang.Analysis.If_Stmt;
       State : Flow_State) return Flow_Result
    is
-      Cond : constant Libadalang.Analysis.Expr := Stmt.F_Cond_Expr;
+      Cond  : constant Libadalang.Analysis.Expr := Stmt.F_Cond_Expr;
+      --  The calls of the condition run before its value is known: it is
+      --  judged, and the branches entered, with what they may write
+      --  forgotten (FP-174).
+      After : Flow_State := State;
    begin
       Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
-      Check_Flow_Condition (Unit, Cond, State);
+      Havoc_Effects_In (Cond, After);
+      Check_Flow_Condition (Unit, Cond, After);
 
       declare
          Cond_Value               : constant Abstract_Bool :=
-           Boolean_Value (Cond, State);
+           Boolean_Value (Cond, After);
          True_State, False_State  : Flow_State;
       begin
-         Narrow_By_Condition (Cond, State, True_State, False_State);
+         Narrow_By_Condition (Cond, After, True_State, False_State);
 
          if Cond_Value = Bool_True then
             return Interpret_Statements (Unit, Stmt.F_Then_Stmts, True_State);
@@ -12022,15 +12061,21 @@ package body Adalang_Analyzer.Flow_Interp is
                     := Spec.As_While_Loop_Spec.F_Expr;
                   True_State, False_State  : Flow_State;
                   Header                   : Flow_State := State;
+                  --  After the calls of the condition (FP-174).
+                  Entry_State              : Flow_State := State;
                begin
                   Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
                   --  The condition is tested again after every iteration:
                   --  it is constant only with what the body assigns
                   --  forgotten (PHCpack's "Redo := True; while Redo loop
-                  --  ... Redo := False;", FP-166).
+                  --  ... Redo := False;", FP-166), and what its own calls
+                  --  may write.
                   Havoc_Effects_In (Body_Stmts, Header);
+                  Havoc_Effects_In (Cond, Header);
                   Check_Flow_Condition (Unit, Cond, Header);
-                  Narrow_By_Condition (Cond, State, True_State, False_State);
+                  Havoc_Effects_In (Cond, Entry_State);
+                  Narrow_By_Condition
+                    (Cond, Entry_State, True_State, False_State);
                   Havoced := True_State;
                end;
             end if;
@@ -12127,8 +12172,12 @@ package body Adalang_Analyzer.Flow_Interp is
         Stmt.F_Alternatives;
       Selector     : constant Abstract_Int :=
         Integer_Value (Stmt.F_Expr, State);
+      --  The alternatives are entered after the calls of the selector
+      --  (FP-174).
+      After        : Flow_State := State;
    begin
       Scan_Expression_For_Flow_Bugs (Unit, Stmt.F_Expr, State);
+      Havoc_Effects_In (Stmt.F_Expr, After);
 
       if Selector.Known then
          for I in 1 .. Alternatives.Children_Count loop
@@ -12136,9 +12185,9 @@ package body Adalang_Analyzer.Flow_Interp is
                Alt : constant Libadalang.Analysis.Case_Stmt_Alternative :=
                  Alternatives.Child (I).As_Case_Stmt_Alternative;
             begin
-               case Case_Alternative_Match_Result (Alt, Selector, State) is
+               case Case_Alternative_Match_Result (Alt, Selector, After) is
                   when Match =>
-                     return Interpret_Statements (Unit, Alt.F_Stmts, State);
+                     return Interpret_Statements (Unit, Alt.F_Stmts, After);
                   when No_Match =>  --  adalang-analyzer: ignore Null_Case_Alternative -- rationale: keep scanning
                      null;  --  adalang-analyzer: ignore Null_Statement
                   when Unknown_Match =>
@@ -12149,7 +12198,7 @@ package body Adalang_Analyzer.Flow_Interp is
       end if;
 
       declare
-         Result : Flow_Result := (State => State, Terminated => False);
+         Result : Flow_Result := (State => After, Terminated => False);
          First  : Boolean := True;
       begin
          for I in 1 .. Alternatives.Children_Count loop
@@ -12157,7 +12206,7 @@ package body Adalang_Analyzer.Flow_Interp is
                Alt    : constant Libadalang.Analysis.Case_Stmt_Alternative :=
                  Alternatives.Child (I).As_Case_Stmt_Alternative;
                Branch : constant Flow_Result :=
-                 Interpret_Statements (Unit, Alt.F_Stmts, State);
+                 Interpret_Statements (Unit, Alt.F_Stmts, After);
             begin
                if First then
                   Result := Branch;
@@ -12204,10 +12253,14 @@ package body Adalang_Analyzer.Flow_Interp is
    --  across a construct this pass doesn't understand; Terminates_Statement
    --  still recognizes return/raise/goto/unconditional-exit so reachability
    --  past them is handled uniformly.
+   --  Bare_Calls as for Havoc_Effects_In: False where the graph
+   --  interpretation runs a statement of its own, and gives the calls of the
+   --  node their effects itself (Process_Node).
    function Interpret_Statement
-     (Unit  : Libadalang.Analysis.Analysis_Unit;
-      Stmt  : Libadalang.Analysis.Ada_Node'Class;
-      State : Flow_State) return Flow_Result
+     (Unit       : Libadalang.Analysis.Analysis_Unit;
+      Stmt       : Libadalang.Analysis.Ada_Node'Class;
+      State      : Flow_State;
+      Bare_Calls : Boolean := True) return Flow_Result
    is
    begin
       case Stmt.Kind is
@@ -12228,8 +12281,8 @@ package body Adalang_Analyzer.Flow_Interp is
                      "assigned value is outside the target subtype range",
                      Constraint => Target.Constraint);
                end;
-               Havoc_Effects_In (Assign.F_Dest, Next);
-               Havoc_Effects_In (Assign.F_Expr, Next);
+               Havoc_Effects_In (Assign.F_Dest, Next, Bare_Calls);
+               Havoc_Effects_In (Assign.F_Expr, Next, Bare_Calls);
                Forget_Designated_Values (Assign.F_Dest, Next);
 
                declare
@@ -12318,8 +12371,14 @@ package body Adalang_Analyzer.Flow_Interp is
                end if;
 
                Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
-               Check_Flow_Condition (Unit, Cond, State);
-               return (State => State, Terminated => False);
+               declare
+                  --  After the calls of the condition (FP-174).
+                  After : Flow_State := State;
+               begin
+                  Havoc_Effects_In (Cond, After, Bare_Calls);
+                  Check_Flow_Condition (Unit, Cond, After);
+                  return (State => After, Terminated => False);
+               end;
             end;
 
          when others =>
@@ -13179,8 +13238,10 @@ package body Adalang_Analyzer.Flow_Interp is
                Full : constant Boolean := Value_Is_Full (Default, State);
             begin
                --  A call in the initial value can write its out and in out
-               --  actuals and its global outputs (FP-105).
-               Havoc_Effects_In (Default, State);
+               --  actuals and its global outputs (FP-105). A call with no
+               --  actual list has its effects from the graph, as a call of
+               --  the node.
+               Havoc_Effects_In (Default, State, Bare_Calls => False);
                for Id of Decl.F_Ids loop
                   declare
                      Key : constant Libadalang.Analysis.Ada_Node :=
@@ -15326,7 +15387,8 @@ package body Adalang_Analyzer.Flow_Interp is
             when CFG.Statement_Node =>
                if Source.Kind = Libadalang.Common.Ada_Assign_Stmt then
                   Output :=
-                    Interpret_Statement (Unit, Source, Input).State;
+                    Interpret_Statement
+                      (Unit, Source, Input, Bare_Calls => False).State;
                   declare
                      Dest : constant Libadalang.Analysis.Name :=
                        Source.As_Assign_Stmt.F_Dest;
@@ -15392,7 +15454,8 @@ package body Adalang_Analyzer.Flow_Interp is
                   Scan_Expression_For_Flow_Bugs
                     (Unit, Source, Input, Input_Symbols);
                   Output :=
-                    Interpret_Statement (Unit, Source, Input).State;
+                    Interpret_Statement
+                      (Unit, Source, Input, Bare_Calls => False).State;
                   declare
                      Primed : constant VC.Symbolic_State :=
                        Primed_For_Call
@@ -16125,7 +16188,9 @@ package body Adalang_Analyzer.Flow_Interp is
                               Dest : constant Libadalang.Analysis.Name :=
                                 Source.As_Assign_Stmt.F_Dest;
                               After : constant Flow_State :=
-                                Interpret_Statement (Unit, Source, State).State;
+                                Interpret_Statement
+                                  (Unit, Source, State,
+                                   Bare_Calls => False).State;
                            begin
                               --  An array-element/slice write or a
                               --  pointer-dereference write is never

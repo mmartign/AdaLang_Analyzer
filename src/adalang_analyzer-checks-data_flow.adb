@@ -435,7 +435,8 @@ package body Adalang_Analyzer.Checks.Data_Flow is
      (Call : Libadalang.Analysis.Call_Expr'Class)
       return Libadalang.Analysis.Base_Subp_Spec
    is
-      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+      Actual_Count : constant Natural :=
+        Call.F_Suffix.Children_Count + Prefix_Actual_Count (Call);
 
       function Best_Of_Kind
         (Skip_Bodies : Boolean) return Libadalang.Analysis.Base_Subp_Spec
@@ -542,7 +543,9 @@ package body Adalang_Analyzer.Checks.Data_Flow is
      (Call     : Libadalang.Analysis.Call_Expr'Class;
       Position : Positive) return Libadalang.Analysis.Defining_Name
    is
-      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+      --  The prefix of a call in prefix notation is its first actual.
+      Shift        : constant Natural := Prefix_Actual_Count (Call);
+      Actual_Count : constant Natural := Call.F_Suffix.Children_Count + Shift;
 
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
@@ -559,7 +562,7 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          for Formal of Spec.P_Params loop
             for Id of Formal.F_Ids loop
                Index := Index + 1;
-               if Index = Position then
+               if Index = Position + Shift then
                   return Id.As_Defining_Name;
                end if;
             end loop;
@@ -617,7 +620,8 @@ package body Adalang_Analyzer.Checks.Data_Flow is
      (Call            : Libadalang.Analysis.Call_Expr'Class;
       Designator_Name : String) return Libadalang.Analysis.Defining_Name
    is
-      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+      Actual_Count : constant Natural :=
+        Call.F_Suffix.Children_Count + Prefix_Actual_Count (Call);
 
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
@@ -905,6 +909,32 @@ package body Adalang_Analyzer.Checks.Data_Flow is
 
       return False;
    end Has_Simple_Actual;
+
+   --  True when Node, with the syntax of a call, names an object or a type,
+   --  not a subprogram: "A (I)" of an array A, "Integer (I)", "R.Table (I)".
+   --  Not known (False) when the name does not resolve, or when it is a
+   --  call ("F (I)" of a function F, of an access-to-subprogram object).
+   function Names_No_Subprogram
+     (Node : Libadalang.Analysis.Call_Expr) return Boolean
+   is
+      Referenced : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Node.F_Name.P_Is_Call then
+         return False;
+      end if;
+      Referenced := Node.F_Name.P_Referenced_Decl;
+      return not Libadalang.Analysis.Is_Null (Referenced)
+        and then Referenced.Kind in
+          Libadalang.Common.Ada_Object_Decl_Range
+          | Libadalang.Common.Ada_Param_Spec
+          | Libadalang.Common.Ada_Component_Decl
+          | Libadalang.Common.Ada_Generic_Formal_Obj_Decl
+          | Libadalang.Common.Ada_Base_Type_Decl
+          | Libadalang.Common.Ada_Generic_Formal_Type_Decl;
+   exception
+      when others =>
+         return False;
+   end Names_No_Subprogram;
 
    function Assigned_Declaration
      (Node : Libadalang.Analysis.Ada_Node'Class)
@@ -1436,16 +1466,22 @@ package body Adalang_Analyzer.Checks.Data_Flow is
             declare
                Stmt    : constant Libadalang.Analysis.Assign_Stmt :=
                  Node.As_Assign_Stmt;
-               --  Checked directly against the RHS/complex destination
-               --  (not via Reads_Declaration's own Ada_Assign_Stmt case,
-               --  which treats every mention in F_Expr as a read for
-               --  Dead_Store's coarser purposes) so that passing Decl as a
-               --  pure out actual -- itself a write, not a read of its
-               --  prior value -- is correctly excluded via
-               --  Association_Reads_Actual.
+               --  The value is walked as any expression is, so that
+               --  passing Decl as a pure out actual -- itself a write,
+               --  not a read of its prior value -- is a write, and passing
+               --  it to a call whose formals Libadalang does not resolve
+               --  is an access not known, not a read (FP-172: Ada-Lisp-
+               --  Embedded's "temp := i2c_ptr.read (addr,
+               --  BBS.embed.i2c.MCP23017.IOCON, err);", a call that no
+               --  longer resolves once the constant of another package is
+               --  an actual). Reads_Declaration, which takes such an
+               --  actual for a read for Dead_Store's purposes, judges the
+               --  value no more. A read is reported at the statement.
+               Value : constant Access_Result :=
+                 First_Access_At (Stmt.F_Expr, Decl, After, Depth);
                --  "X := @ + 1" reads X first.
                Is_Read : constant Boolean :=
-                 Reads_Declaration (Stmt.F_Expr, Decl)
+                 Value.Kind = Read_Access
                  or else
                    (Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier
                     and then Reads_Declaration (Stmt.F_Dest, Decl))
@@ -1459,6 +1495,12 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                if Is_Read then
                   return (Kind => Read_Access,
                            Node => Libadalang.Analysis.Ada_Node (Node));
+               elsif Value.Kind /= No_Access then
+                  --  An out actual of a call in the value ("Nb_Touch :=
+                  --  This.I2C_Read (Reg, Status);", an ordinary Ada
+                  --  function with an out parameter), or a call that may
+                  --  read or write Decl.
+                  return Value;
                elsif Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
                  and then Matches_Declaration (Stmt.F_Dest, Decl)
                then
@@ -1486,19 +1528,8 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                   return (Kind => Write_Access,
                            Node => Libadalang.Analysis.Ada_Node (Node));
                end if;
-               --  Decl is neither read by the RHS nor the assignment's own
-               --  (simple) destination, but the RHS can still be, or
-               --  contain, a function call using Decl as an out-mode
-               --  actual -- e.g. "Nb_Touch := This.I2C_Read (Reg,
-               --  Status);", an ordinary Ada function with an out
-               --  parameter, called for its return value inside a larger
-               --  expression rather than as its own call statement. This
-               --  whole Ada_Assign_Stmt case, once reached, always returns
-               --  without ever falling through to the generic child
-               --  recursion below -- where the Ada_Call_Expr case that
-               --  would otherwise recognize that write lives -- so
-               --  delegate to it explicitly over just the RHS.
-               return First_Access_At (Stmt.F_Expr, Decl, After, Depth);
+               return (Kind => No_Access,
+                       Node => Libadalang.Analysis.No_Ada_Node);
             end;
          elsif Node.Kind = Libadalang.Common.Ada_Identifier
            and then Matches_Declaration (Node, Decl)
@@ -1540,6 +1571,11 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                            Node => Libadalang.Analysis.Ada_Node (Node));
                elsif Call_Writes_Declaration (Node.As_Call_Expr, Decl) then
                   return (Kind => Write_Access,
+                           Node => Libadalang.Analysis.Ada_Node (Node));
+               elsif Names_No_Subprogram (Node.As_Call_Expr) then
+                  --  "A (I)", "Integer (I)": an index or the operand of a
+                  --  conversion is read; there is no formal to resolve.
+                  return (Kind => Read_Access,
                            Node => Libadalang.Analysis.Ada_Node (Node));
                end if;
                --  The actual is present but its formal mode remains
@@ -1589,7 +1625,21 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                return (Kind => Read_Access,
                         Node => Libadalang.Analysis.Ada_Node (Node));
             end if;
-            return Nested_Call_Access (Node.As_Call_Expr.F_Name);
+            declare
+               Result : constant Access_Result :=
+                 Nested_Call_Access (Node.As_Call_Expr.F_Name);
+            begin
+               if Result.Kind /= No_Access then
+                  return Result;
+               end if;
+            end;
+            --  Decl is no simple actual of this call and nothing here reads
+            --  it, but an actual can be a call of its own with Decl as an
+            --  out actual: "R := Twice (Run (Command, Status));" (ravenadm's
+            --  "HT.USS (Unix.piped_command (command, status))", BBS-BBB-
+            --  Ada's "uint8_to_status (self.hw.read (..., err))"). The
+            --  walk goes on into the parts of the call, below, where that
+            --  call is found.
          end if;
       end if;
 

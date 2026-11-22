@@ -1,0 +1,3 @@
+package Precision_Overwritten_Assignment_Unread_Global_Finding is
+   procedure Run;
+end Precision_Overwritten_Assignment_Unread_Global_Finding;

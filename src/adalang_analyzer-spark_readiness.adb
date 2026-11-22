@@ -901,7 +901,8 @@ package body Adalang_Analyzer.SPARK_Readiness is
      (Call : Libadalang.Analysis.Call_Expr'Class)
       return Libadalang.Analysis.Base_Subp_Spec
    is
-      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+      Actual_Count : constant Natural :=
+        Call.F_Suffix.Children_Count + Prefix_Actual_Count (Call);
 
       function Best_Of_Kind
         (Skip_Bodies : Boolean) return Libadalang.Analysis.Base_Subp_Spec
@@ -1037,7 +1038,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
      (Call     : Libadalang.Analysis.Call_Expr'Class;
       Position : Positive) return Libadalang.Analysis.Defining_Name
    is
-      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+      --  The prefix of a call in prefix notation is its first actual.
+      Shift        : constant Natural := Prefix_Actual_Count (Call);
+      Actual_Count : constant Natural := Call.F_Suffix.Children_Count + Shift;
 
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);
@@ -1054,7 +1057,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
          for Formal of Spec.P_Params loop
             for Id of Formal.F_Ids loop
                Index := Index + 1;
-               if Index = Position then
+               if Index = Position + Shift then
                   return Id.As_Defining_Name;
                end if;
             end loop;
@@ -1115,7 +1118,8 @@ package body Adalang_Analyzer.SPARK_Readiness is
      (Call            : Libadalang.Analysis.Call_Expr'Class;
       Designator_Name : String) return Libadalang.Analysis.Defining_Name
    is
-      Actual_Count : constant Natural := Call.F_Suffix.Children_Count;
+      Actual_Count : constant Natural :=
+        Call.F_Suffix.Children_Count + Prefix_Actual_Count (Call);
 
       Callee : constant Libadalang.Analysis.Basic_Decl :=
         Call.F_Name.P_Referenced_Decl (Imprecise_Fallback => True);

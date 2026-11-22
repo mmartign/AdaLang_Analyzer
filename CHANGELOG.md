@@ -5,6 +5,63 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+The fixes of what running it on eleven GitHub repositories (Brent
+Seidel's projects, ravenadm, Synth, AdaBase) showed. On them, 17 false
+findings are gone and none is added.
+
+On the ten corpora, with every preset (run of 2026-11-22), no finding is
+new, no definite error is new or gone, and no check is proved or unproved
+that was not before: the gap ledger does not move. 7 findings are gone,
+all false: on AWS, 3 `Overwritten_Assignment` on the flags
+`aws-net-log.adb` sets around a call of a callback that can read them,
+and 2 `Uninitialized_Read` on objects whose access value a call in an
+assignment is given (`Arg'Unchecked_Access`, `Is_Composite'Access`); on
+gnatcoll-core, 1 `Overwritten_Assignment` on `Handle_Symbolic_Links`,
+saved, set and restored around calls that read it, and 1 such
+`Uninitialized_Read` (`Err_Code'Access`).
+
+### Fixed
+
+- `Uninitialized_Read` did not take the `out` actual of a call that is an
+  actual of another call for a write: after `R := Twice (Run (Command,
+  Status));` the read of `Status` was reported. The walk that finds the
+  first access stopped at the outer call when its callee told it nothing,
+  without looking at the actuals; it goes on into them now. 7 findings on
+  ravenadm (`HT.USS (Unix.piped_command (command, status))`) and 5 on
+  BBS-BBB-Ada (`uint8_to_status (self.hw.read (addr, reg, err))`) are
+  gone, all false (`FP-171`).
+- `Uninitialized_Read` took the `out` actual of a call in prefix notation
+  that Libadalang does not resolve for a read (Ada-Lisp-Embedded's
+  `temp := i2c_ptr.read (addr, BBS.embed.i2c.MCP23017.IOCON, err);`). The
+  value of an assignment was judged with the policy of `Dead_Store`, for
+  which an actual whose formal is not resolved is read, and the pairing of
+  positional actuals with formals used when they do not resolve did not
+  count the prefix as the first actual. The value is now walked as any
+  expression is, where such a call is an access not known, and the pairing
+  counts the prefix, also for the checks of SPARK readiness (`FP-172`).
+- `Uninitialized_Read` missed a read as an index or as the operand of a
+  conversion outside an assignment: `if A (I) > 0 then` of an `I` with no
+  value was not reported (`FP-173`).
+- `Constant_Condition`, outside `--verify`, missed what a function called
+  with no actual writes, and what the calls in a condition write: on
+  ravenadm, `latest_version : constant String := determine_tag;`, whose
+  nested function sets `available` and `good_pattern`, left three
+  conditions on them always true or false; all three findings, false, are
+  gone. A condition, an exit condition and a case selector are judged after
+  the calls in them (`FP-174`; `FP-168` had fixed the same for
+  `--verify`).
+- `Overwritten_Assignment` took no call for a read of an object declared in
+  a package: `Full := False; Reader; Full := True;` was reported even where
+  `Reader` reads `Full`. A statement between the two assignments that can
+  run code of the program (a call of a subprogram other than of the
+  predefined library or of a pure unit, a call that dispatches or does not
+  resolve, an access value) now reads such an object, unless it belongs to
+  a package body where no body reads it. On Synth, `fullpop := False;
+  parallel_deep_scan (...); fullpop := True;`, whose scan tasks read
+  `fullpop`, is no longer reported (`FP-175`).
+
 ## [1.17.3] - 2026-11-22
 
 The fixes of what running it on 57 more crates of the Alire index showed,

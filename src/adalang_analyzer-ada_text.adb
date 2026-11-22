@@ -245,4 +245,59 @@ package body Adalang_Analyzer.Ada_Text is
          return True;
    end Follows_A_Call;
 
+   function Prefix_Actual_Count
+     (Call : Libadalang.Analysis.Call_Expr'Class) return Natural
+   is
+      Name     : constant Libadalang.Analysis.Name := Call.F_Name;
+      Resolved : Boolean;
+   begin
+      if Name.Kind /= Libadalang.Common.Ada_Dotted_Name then
+         return 0;
+      end if;
+      begin
+         Resolved := not Libadalang.Analysis.Is_Null (Name.P_Referenced_Decl);
+      exception
+         when others =>
+            Resolved := False;
+      end;
+      if Resolved then
+         return (if Name.P_Is_Dot_Call then 1 else 0);
+      end if;
+
+      declare
+         Callee : constant Libadalang.Analysis.Basic_Decl :=
+           Name.P_Referenced_Decl (Imprecise_Fallback => True);
+         Prefix : constant Libadalang.Analysis.Basic_Decl :=
+           Name.As_Dotted_Name.F_Prefix.P_Referenced_Decl
+             (Imprecise_Fallback => True);
+         Ancestor : Libadalang.Analysis.Ada_Node;
+      begin
+         if Libadalang.Analysis.Is_Null (Callee)
+           or else Libadalang.Analysis.Is_Null (Prefix)
+           or else Callee.Kind not in Libadalang.Common.Ada_Basic_Subp_Decl
+                                    | Libadalang.Common.Ada_Base_Subp_Body
+           or else Prefix.Kind not in Libadalang.Common.Ada_Object_Decl_Range
+                                    | Libadalang.Common.Ada_Param_Spec
+                                    | Libadalang.Common.Ada_Component_Decl
+                                    | Libadalang.Common.Ada_Discriminant_Spec
+         then
+            return 0;
+         end if;
+         Ancestor := Callee.Parent;
+         while not Libadalang.Analysis.Is_Null (Ancestor) loop
+            if Ancestor.Kind in Libadalang.Common.Ada_Protected_Def
+                              | Libadalang.Common.Ada_Protected_Body
+                              | Libadalang.Common.Ada_Task_Def
+            then
+               return 0;
+            end if;
+            Ancestor := Ancestor.Parent;
+         end loop;
+         return 1;
+      end;
+   exception
+      when others =>
+         return 0;
+   end Prefix_Actual_Count;
+
 end Adalang_Analyzer.Ada_Text;

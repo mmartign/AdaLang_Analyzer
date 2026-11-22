@@ -1,0 +1,3 @@
+package Precision_Overwritten_Assignment_Program_Read_Clean is
+   procedure Run;
+end Precision_Overwritten_Assignment_Program_Read_Clean;

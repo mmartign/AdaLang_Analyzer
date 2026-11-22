@@ -624,6 +624,16 @@ package body Adalang_Analyzer.Checks.Control_Flow is
    --  declared in it otherwise (FP-144: "Width := 0; Append (Result, Item);
    --  Width := Item'Length;" overwrites, Ada.Strings.Unbounded.Append
    --  running no body of the procedure that declares Width).
+   --
+   --  With no Owner, whether running Node can run code of the program,
+   --  which can read an object declared in a package: a call of a
+   --  subprogram other than one of the predefined library (Ada, System,
+   --  Interfaces, GNAT) or of a pure unit counts too. A call of another
+   --  package of the program can call back into the one that declares the
+   --  object; a call of a subprogram of that package can read it, directly
+   --  or in the tasks it starts (FP-175: Synth's "fullpop := False;
+   --  parallel_deep_scan (...); fullpop := True;", whose scan tasks read
+   --  fullpop).
    function May_Run_Body_Of
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Owner : Libadalang.Analysis.Subp_Body) return Boolean
@@ -642,6 +652,38 @@ package body Adalang_Analyzer.Checks.Control_Flow is
          end loop;
          return False;
       end Inside_Owner;
+
+      function Predefined
+        (Callee : Libadalang.Analysis.Basic_Decl) return Boolean
+      is
+         Top  : constant Libadalang.Analysis.Basic_Decl :=
+           Callee.P_Top_Level_Decl (Callee.Unit);
+      begin
+         if Libadalang.Analysis.Is_Null (Top) then
+            return False;
+         end if;
+         declare
+            Name : constant String :=
+              Ada.Characters.Handling.To_Lower
+                (Node_Text (Top.P_Defining_Name));
+            function Under (Root : String) return Boolean is
+              (Name = Root
+               or else
+                 (Name'Length > Root'Length
+                  and then Name (Name'First .. Name'First + Root'Length) =
+                    Root & "."));
+         begin
+            return Under ("ada") or else Under ("system")
+              or else Under ("interfaces") or else Under ("gnat")
+              or else Name = "standard"
+              or else Top.P_Has_Aspect
+                (Langkit_Support.Text.To_Unbounded_Text
+                   (Langkit_Support.Text.To_Text ("Pure")));
+         end;
+      exception
+         when others =>
+            return False;
+      end Predefined;
 
       function Visit
         (Current : Libadalang.Analysis.Ada_Node'Class) return Boolean is
@@ -666,8 +708,16 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                   if Current.Kind not in Libadalang.Common.Ada_Op then
                      return True;
                   end if;
-               elsif Inside_Owner (Callee)
-                 or else Current.As_Name.P_Is_Dispatching_Call
+               elsif Callee.Kind not in
+                       Libadalang.Common.Ada_Enum_Literal_Decl
+                     | Libadalang.Common.Ada_Synthetic_Char_Enum_Lit
+                     | Libadalang.Common.Ada_Synthetic_Subp_Decl
+                 and then
+                   (Current.As_Name.P_Is_Dispatching_Call
+                    or else
+                      (if Libadalang.Analysis.Is_Null (Owner)
+                       then not Predefined (Callee)
+                       else Inside_Owner (Callee)))
                then
                   return True;
                end if;
@@ -686,6 +736,49 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       when others =>
          return True;
    end May_Run_Body_Of;
+
+   --  The package, task or protected body an object of no subprogram is
+   --  declared in, directly or in a package nested there: the package
+   --  body, or the package specification, whose objects every unit that
+   --  depends on it sees. Null when there is none.
+   function Object_Owner
+     (Decl : Libadalang.Analysis.Basic_Decl) return Libadalang.Analysis.Ada_Node
+   is
+      Current : Libadalang.Analysis.Ada_Node := Decl.Parent;
+   begin
+      while not Libadalang.Analysis.Is_Null (Current) loop
+         if Current.Kind in Libadalang.Common.Ada_Package_Body
+                          | Libadalang.Common.Ada_Base_Package_Decl
+                          | Libadalang.Common.Ada_Task_Body
+                          | Libadalang.Common.Ada_Protected_Body
+         then
+            return Current;
+         end if;
+         Current := Current.Parent;
+      end loop;
+      return Libadalang.Analysis.No_Ada_Node;
+   end Object_Owner;
+
+   --  Whether a body declared in the package body Owner, at any depth, or
+   --  the statements of a task body there, read Decl. A body that is
+   --  separate may.
+   function Read_In_Package_Body
+     (Decl  : Libadalang.Analysis.Basic_Decl;
+      Owner : Libadalang.Analysis.Package_Body) return Boolean is
+   begin
+      for Item of Owner.F_Decls.F_Decls loop
+         if Item.Kind in Libadalang.Common.Ada_Body_Stub
+           or else (Item.Kind in Libadalang.Common.Ada_Body_Node
+                    and then Data_Flow.Reads_Declaration (Item, Decl))
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return True;
+   end Read_In_Package_Body;
 
    --  Whether the procedure Call invokes applies pragma Inspection_Point in
    --  its body, the RM H.3.2 way to keep a value observable -- e.g. a
@@ -1022,6 +1115,43 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                               end loop;
                               return False;
                            end Runs_Body_Of_Owner;
+
+                           --  An object declared in a package, or in a
+                           --  task or protected body, which the code of
+                           --  the program a later statement runs can read
+                           --  (FP-175). One of a package body is read only
+                           --  by the bodies declared there.
+                           function Read_By_Program_Code return Boolean is
+                              Package_Owner : Libadalang.Analysis.Ada_Node;
+                              Runs_Code     : Boolean := False;
+                           begin
+                              if Target_Is_Local
+                                or else Decl.Kind /=
+                                  Libadalang.Common.Ada_Object_Decl
+                                or else not Libadalang.Analysis.Is_Null (Owner)
+                              then
+                                 return False;
+                              end if;
+                              for J in I + 1 .. Overwrite loop
+                                 if May_Run_Body_Of
+                                      (List.Child (J),
+                                       Libadalang.Analysis.No_Subp_Body)
+                                 then
+                                    Runs_Code := True;
+                                    exit;  --  adalang-analyzer: ignore No_Exit
+                                 end if;
+                              end loop;
+                              if not Runs_Code then
+                                 return False;
+                              end if;
+                              Package_Owner := Object_Owner (Decl);
+                              return Libadalang.Analysis.Is_Null
+                                       (Package_Owner)
+                                or else Package_Owner.Kind /=
+                                  Libadalang.Common.Ada_Package_Body
+                                or else Read_In_Package_Body
+                                  (Decl, Package_Owner.As_Package_Body);
+                           end Read_By_Program_Code;
                         begin
                            for J in I + 1 .. List.Children_Count loop
                               declare
@@ -1069,6 +1199,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                                 and then Read_By_Nested_Body
                                   (Decl, Owner, Stmt)
                                 and then Runs_Body_Of_Owner)
+                             and then not Read_By_Program_Code
                            then
                               Report_Rule_Violation
                                 (Unit, Stmt, Overwritten_Assignment,

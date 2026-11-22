@@ -70,4 +70,17 @@ package Adalang_Analyzer.Ada_Text is
    --  makes a call: Node is reached only if that call returns. What it
    --  cannot tell counts as a call.
 
+   function Prefix_Actual_Count
+     (Call : Libadalang.Analysis.Call_Expr'Class) return Natural;
+   --  1 when Call is written in prefix notation, "Obj.Op (A, B)" (RM
+   --  4.1.3(9.2)): Obj is then the first actual, and the positional actuals
+   --  of the suffix go to the second formal on; 0 otherwise. Libadalang
+   --  says so for a call it resolves. For one it does not, as the lenient
+   --  pairings of actuals with formals of Checks.Data_Flow and
+   --  SPARK_Readiness take, a dotted name whose prefix names an
+   --  object and whose callee is a subprogram, not an operation of a
+   --  protected or task type, is taken for one (FP-172: Ada-Lisp-
+   --  Embedded's "i2c_ptr.read (addr, IOCON, err)" paired err with the
+   --  third formal, the in formal reg, instead of the fourth, error).
+
 end Adalang_Analyzer.Ada_Text;
