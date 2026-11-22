@@ -11,6 +11,7 @@ with Ada.Containers.Indefinite_Ordered_Sets;
 with Ada.Containers.Vectors;
 with Ada.Exceptions;
 with Ada.Strings.Fixed;
+with Ada.Characters.Handling;
 with Ada.Strings.Hash;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
@@ -57,10 +58,13 @@ package body Adalang_Analyzer.Flow_Contracts is
    --  What a subprogram may touch. Complete is False as soon as something
    --  it does could not be followed; Objects is then a lower bound only
    --  and proves nothing.
+   --  Machine_Code: the subprogram, or one it calls, runs machine code,
+   --  which reads and changes what no Ada object stands for (FP-165).
    type Effects is record
-      Complete : Boolean := True;
-      Reason   : Unbounded_String;
-      Objects  : Access_Maps.Map;
+      Complete     : Boolean := True;
+      Reason       : Unbounded_String;
+      Objects      : Access_Maps.Map;
+      Machine_Code : Boolean := False;
    end record;
 
    type Effects_State is (In_Progress, Done);
@@ -758,6 +762,24 @@ package body Adalang_Analyzer.Flow_Contracts is
          return False;
    end Is_Pure_Unit;
 
+   --  True for a subprogram of System.Machine_Code: its unit is pure, but
+   --  machine code reads and changes what no Ada object stands for, the
+   --  registers and the state of the processor (HiRTOS reads the CPSR with
+   --  "mrs" and changes the mode with "svc", FP-165).
+   function Is_Machine_Code
+     (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean
+   is
+      Unit_Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Decl.P_Enclosing_Compilation_Unit.P_Decl;
+   begin
+      return Ada.Characters.Handling.To_Lower
+        (Langkit_Support.Text.To_UTF8
+           (Unit_Decl.P_Fully_Qualified_Name)) = "system.machine_code";
+   exception
+      when others =>
+         return False;
+   end Is_Machine_Code;
+
    --  The body of the subprogram Decl declares; null when there is none to
    --  look at.
    function Completion_Of
@@ -935,7 +957,10 @@ package body Adalang_Analyzer.Flow_Contracts is
                         "Global aspect");
                   end if;
                elsif Is_Pure_Unit (Decl) then
-                  --  A subprogram of a pure unit has no state to touch.
+                  --  A subprogram of a pure unit has no state to touch, as
+                  --  far as Ada objects go: machine code still reads and
+                  --  changes the registers and the state of the processor.
+                  Result.Machine_Code := Is_Machine_Code (Decl);
                   return Result;
                elsif Termination.Is_Library_Unit_Entity (Decl) then
                   Give_Up
@@ -1094,6 +1119,7 @@ package body Adalang_Analyzer.Flow_Contracts is
          if not Callee.Complete then
             Give_Up (Into, To_String (Callee.Reason));
          end if;
+         Into.Machine_Code := Into.Machine_Code or else Callee.Machine_Code;
          for Item of Callee.Objects loop
             Use_Object
               (Item.Site,
@@ -1543,6 +1569,16 @@ package body Adalang_Analyzer.Flow_Contracts is
       when others =>
          return False;
    end Touches_Nothing_Outside;
+
+   function Runs_Machine_Code
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+   begin
+      return Callee_Effects (Callee, Caller).Machine_Code;
+   exception
+      when others =>
+         return True;
+   end Runs_Machine_Code;
 
    --  The Global contract a call of Decl from Caller goes by; null when
    --  it has none.

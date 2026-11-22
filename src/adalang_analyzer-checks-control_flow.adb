@@ -82,22 +82,57 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       return False;
    end Has_Substantive_Statement;
 
+   --  True when Stmt is "exit <Name>;" and Name is Target or a loop
+   --  enclosing it, so that it leaves Target from inside a nested loop:
+   --  the loop Name denotes is the innermost enclosing loop so named
+   --  (RM 5.7(4)), so the walk up from the exit meets Target before any
+   --  loop so named inside it.
+   function Exits_Past
+     (Stmt   : Libadalang.Analysis.Exit_Stmt;
+      Target : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+      Name : constant Libadalang.Analysis.Name := Stmt.F_Loop_Name;
+      Walk : Libadalang.Analysis.Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Name)
+        or else Libadalang.Analysis.Is_Null (Target)
+      then
+         return False;
+      end if;
+      Walk := Stmt.Parent;
+      while not Libadalang.Analysis.Is_Null (Walk) loop
+         if Walk = Target then
+            return True;
+         elsif Walk.Kind in Libadalang.Common.Ada_For_Loop_Stmt
+                          | Libadalang.Common.Ada_Loop_Stmt
+                          | Libadalang.Common.Ada_While_Loop_Stmt
+           and then Walk.Parent.Kind = Libadalang.Common.Ada_Named_Stmt
+           and then Canonical_Text
+             (Walk.Parent.As_Named_Stmt.F_Decl.F_Name) = Canonical_Text (Name)
+         then
+            return False;
+         end if;
+         Walk := Walk.Parent;
+      end loop;
+      return False;
+   end Exits_Past;
+
    --  True when Node's subtree contains a statement that can end the loop
-   --  under analysis: exit, return, or raise. A bare "exit" only counts
-   --  while Exit_Terminates is True; once the scan has stepped inside a
-   --  nested loop, an "exit" found there only terminates that inner loop
-   --  (not the outer one Analyze_Infinite_Loop is checking), so the
-   --  recursive descent into a nested loop's own subtree continues with
-   --  Exit_Terminates set to False. "return"/"raise" unwind past every
-   --  enclosing loop regardless of nesting depth, so they always count.
-   --  A labeled "exit <Outer_Name>;" naming the loop under analysis from
-   --  inside a nested loop is not specially recognized and is treated the
-   --  same as a bare exit, a narrow, documented conservative gap rather
-   --  than a soundness issue: it can only under-report a termination path,
-   --  never claim one that isn't there.
+   --  under analysis, Target: exit, return, or raise. A bare "exit" only
+   --  counts while Exit_Terminates is True; once the scan has stepped
+   --  inside a nested loop, an "exit" found there only terminates that
+   --  inner loop (not the outer one Analyze_Infinite_Loop is checking), so
+   --  the recursive descent into a nested loop's own subtree continues
+   --  with Exit_Terminates set to False, and there only an exit naming
+   --  Target or a loop enclosing it counts (honki_tonks_zivilisationen's
+   --  "exit SpielstandSchleife;" from the inner AuswahlSchleife, FP-167).
+   --  "return"/"raise" unwind past every enclosing loop regardless of
+   --  nesting depth, so they always count.
    function Has_Loop_Termination
      (Node            : Libadalang.Analysis.Ada_Node'Class;
-      Exit_Terminates : Boolean := True) return Boolean
+      Exit_Terminates : Boolean := True;
+      Target          : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node) return Boolean
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
@@ -106,7 +141,8 @@ package body Adalang_Analyzer.Checks.Control_Flow is
 
       case Node.Kind is
          when Libadalang.Common.Ada_Exit_Stmt =>
-            return Exit_Terminates;
+            return Exit_Terminates
+              or else Exits_Past (Node.As_Exit_Stmt, Target);
 
          when Libadalang.Common.Ada_Return_Stmt
             | Libadalang.Common.Ada_Extended_Return_Stmt
@@ -126,7 +162,9 @@ package body Adalang_Analyzer.Checks.Control_Flow is
              | Libadalang.Common.Ada_While_Loop_Stmt;
       begin
          for I in 1 .. Node.Children_Count loop
-            if Has_Loop_Termination (Node.Child (I), Next_Exit_Terminates) then
+            if Has_Loop_Termination
+              (Node.Child (I), Next_Exit_Terminates, Target)
+            then
                return True;
             end if;
          end loop;
@@ -2902,7 +2940,8 @@ package body Adalang_Analyzer.Checks.Control_Flow is
 
       if Rule_States (Infinite_Loop) = Enabled
         and then Is_Unconditional
-        and then not Has_Loop_Termination (Loop_Node.F_Stmts)
+        and then not Has_Loop_Termination
+          (Loop_Node.F_Stmts, Target => Loop_Node.As_Ada_Node)
       then
          Report_Rule_Violation
            (Unit, Loop_Node, Infinite_Loop,

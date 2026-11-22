@@ -3257,6 +3257,23 @@ package body Adalang_Analyzer.Flow_Interp is
       return Answer;
    end Is_Function_Of_Arguments;
 
+   --  The oracle of VC.Set_Assumed_Function_Oracle: a function of its
+   --  arguments that runs machine code is one only as SPARK takes it
+   --  (HiRTOS's Cpu_In_Privileged_Mode, FP-165).
+   function Is_Assumed_Function
+     (Call : Libadalang.Analysis.Name'Class) return Boolean
+   is
+      Decl : constant Libadalang.Analysis.Basic_Decl :=
+        Call_Declaration (Call);
+   begin
+      return Libadalang.Analysis.Is_Null (Decl)
+        or else Adalang_Analyzer.Flow_Contracts.Runs_Machine_Code
+                  (Decl, Call);
+   exception
+      when others =>
+         return True;
+   end Is_Assumed_Function;
+
    --  True for a name of what an access value designates, or of elements
    --  of it: "P.all", "R.P.all (1 .. N)", "P (I)".
    function Through_Access
@@ -10471,11 +10488,39 @@ package body Adalang_Analyzer.Flow_Interp is
       declare
          Expr_Type : constant Libadalang.Analysis.Base_Type_Decl :=
            Node.As_Expr.P_Expression_Type;
+
+         --  A static expression is evaluated exactly, at compile time: an
+         --  operation in it has no overflow check, and the value of the
+         --  whole is in the base range of its type or the unit is illegal
+         --  (RM 4.9(33-35)): HAC's "-2**63" and "2**63 - 1" of an
+         --  Integer_64 (FP-169). Only what would not be proved otherwise
+         --  is proved so.
+         function Static_Exempt return Boolean is
+         begin
+            return Node.As_Expr.P_Is_Static_Expr
+              and then
+                (Known_Arithmetic_Overflow (Node.As_Expr, State)
+                 or else
+                   (Config.Verification_Mode
+                    and then not Arithmetic_Proved_Safe
+                                   (Node.As_Expr, State)));
+         exception
+            when others =>
+               return False;
+         end Static_Exempt;
       begin
          if not Libadalang.Analysis.Is_Null (Expr_Type)
            and then Expr_Type.P_Is_Int_Type
          then
-            if Known_Arithmetic_Overflow (Node.As_Expr, State) then
+            if Static_Exempt then
+               --  proof-path: overflow-static
+               Record_Proved_Safe
+                 (Unit, Node, Proof.Integer_Overflow_Check,
+                  Proof.Abstract_Interpretation,
+                  "an operation of a static expression is evaluated exactly",
+                  "the operation is part of a static expression (RM 4.9)",
+                  Final => Final);
+            elsif Known_Arithmetic_Overflow (Node.As_Expr, State) then
                Record_Definite_Error
                  (Unit, Node, Proof.Integer_Overflow_Check,
                   Proof.Abstract_Interpretation,
@@ -11976,9 +12021,15 @@ package body Adalang_Analyzer.Flow_Interp is
                   Cond                     : constant Libadalang.Analysis.Expr
                     := Spec.As_While_Loop_Spec.F_Expr;
                   True_State, False_State  : Flow_State;
+                  Header                   : Flow_State := State;
                begin
                   Scan_Expression_For_Flow_Bugs (Unit, Cond, State);
-                  Check_Flow_Condition (Unit, Cond, State);
+                  --  The condition is tested again after every iteration:
+                  --  it is constant only with what the body assigns
+                  --  forgotten (PHCpack's "Redo := True; while Redo loop
+                  --  ... Redo := False;", FP-166).
+                  Havoc_Effects_In (Body_Stmts, Header);
+                  Check_Flow_Condition (Unit, Cond, Header);
                   Narrow_By_Condition (Cond, State, True_State, False_State);
                   Havoced := True_State;
                end;
@@ -13986,6 +14037,25 @@ package body Adalang_Analyzer.Flow_Interp is
             end loop;
          end May_Initialize_Identifiers_In;
 
+         --  A subprogram declared in the one analyzed, whose effects are
+         --  not known, can write any object of it that it sees, as an
+         --  up-level object: none is then known to be uninitialized either
+         --  (Excel_Writer's Write_as_Formula, whose nested functions set
+         --  Is_Valid and call Interfaces.Shift_Right, FP-168).
+         procedure May_Initialize_All is
+         begin
+            for Index in 1 .. Binding_Count (State) loop
+               declare
+                  Key : constant Libadalang.Analysis.Ada_Node :=
+                    Binding_At (State, Index).Decl;
+               begin
+                  if Flow_Initialization (State, Key) = Bool_False then
+                     Flow_Set_Initialized (State, Key, Bool_Unknown);
+                  end if;
+               end;
+            end loop;
+         end May_Initialize_All;
+
          --  A function with an "out" or "in out" parameter writes its
          --  actual. Whether it does on every path is not worked out, so
          --  unlike a procedure call's actual the object is not taken as
@@ -14046,6 +14116,7 @@ package body Adalang_Analyzer.Flow_Interp is
                  or else Inside_Subprogram (Decl)
                then
                   Flow_Forget_All_Values (State);
+                  May_Initialize_All;
                else
                   Havoc_Nonlocal (State);
                end if;
@@ -14491,6 +14562,22 @@ package body Adalang_Analyzer.Flow_Interp is
             Collect
               (Subp_Body, Calls, Root => True, Depth => Depth,
                First_Only => True);
+            --  The declarations of the body are elaborated when it runs:
+            --  the initial value of an object declared there is evaluated
+            --  too (Excel_Writer's "data : constant Byte_Buffer :=
+            --  Tokenize_Skip_Head;", FP-168).
+            if Calls.Is_Empty
+              and then Subp_Body.Kind = Libadalang.Common.Ada_Subp_Body
+            then
+               for Item of Subp_Body.As_Subp_Body.F_Decls.F_Decls loop
+                  if Item.Kind = Libadalang.Common.Ada_Object_Decl then
+                     Collect
+                       (Item.As_Object_Decl.F_Default_Expr, Calls,
+                        Root => False, Depth => Depth, First_Only => True);
+                  end if;
+                  exit when not Calls.Is_Empty;
+               end loop;
+            end if;
             return not Calls.Is_Empty;
          exception
             when others =>
@@ -22279,6 +22366,7 @@ package body Adalang_Analyzer.Flow_Interp is
 begin
    Set_Encapsulation_Oracle (Encapsulating_Key'Access);
    VC.Set_Function_Oracle (Is_Function_Of_Arguments'Access);
+   VC.Set_Assumed_Function_Oracle (Is_Assumed_Function'Access);
    VC.Set_Relaxed_Oracle (Has_Relaxed_Initialization'Access);
    VC.Set_Loop_Fixed_Oracle (Bound_Name_Unwritten'Access);
    Adalang_Analyzer.Subprogram_Summaries.Set_SPARK_Mode_Oracle

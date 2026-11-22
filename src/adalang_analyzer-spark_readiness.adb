@@ -701,6 +701,62 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return True;
    end Renamed_In;
 
+   --  True when a subprogram declared in Subprogram assigns Param, as an
+   --  up-level object, or passes it as an actual: Subprogram may give
+   --  Param its value by calling it, which this rule does not follow
+   --  (apdf's Image_ref and its recursive Insert, Excel_Writer's
+   --  Write_as_Formula and the nested functions it calls in its
+   --  declarations, FP-168).
+   function Written_In_Nested
+     (Subprogram : Libadalang.Analysis.Subp_Body;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Name       : String) return Boolean
+   is
+      function Writes (Node : Libadalang.Analysis.Ada_Node'Class)
+        return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif (Node.Kind = Libadalang.Common.Ada_Assign_Stmt
+                and then Same_Parameter
+                  (Node.As_Assign_Stmt.F_Dest, Param, Name))
+           or else
+             (Node.Kind = Libadalang.Common.Ada_Param_Assoc
+              and then Same_Parameter
+                (Node.As_Param_Assoc.F_R_Expr, Param, Name))
+         then
+            return True;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Writes (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Writes;
+
+      function In_Nested_Body
+        (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind in Libadalang.Common.Ada_Base_Subp_Body then
+            return Writes (Node);
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if In_Nested_Body (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end In_Nested_Body;
+   begin
+      return In_Nested_Body (Subprogram.F_Decls);
+   exception
+      when others =>
+         return True;
+   end Written_In_Nested;
+
    function Call_Declaration
      (Call : Libadalang.Analysis.Name'Class)
       return Libadalang.Analysis.Basic_Decl
@@ -2639,6 +2695,8 @@ package body Adalang_Analyzer.SPARK_Readiness is
                                   (Param.F_Type_Expr.P_Designated_Type_Decl))
                  and then not Renamed_In (Subprogram, Param,
                                           Normalize_Rule_Name (Node_Text (Id)))
+                 and then not Written_In_Nested
+                   (Subprogram, Param, Normalize_Rule_Name (Node_Text (Id)))
                then
                   declare
                      Bad_Return : Boolean := False;

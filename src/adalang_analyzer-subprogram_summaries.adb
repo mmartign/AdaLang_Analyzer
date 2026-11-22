@@ -455,6 +455,25 @@ package body Adalang_Analyzer.Subprogram_Summaries is
          return Libadalang.Analysis.No_Basic_Decl;
    end Written_Declaration;
 
+   --  True when Name is that of a formal of the subprogram Item is of.
+   function Has_Formal (Item : Summary; Name : String) return Boolean is
+   begin
+      for Effect of Item.Formals loop
+         if To_String (Effect.Name) = Name then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Has_Formal;
+
+   --  Marks the write of the formal Decl named Name. A formal that is not
+   --  one of Item's is one of a subprogram that encloses it, written as an
+   --  up-level object, as a global is (FP-168).
+   procedure Note_Parameter_Write
+     (Item : in out Summary;
+      Decl : Libadalang.Analysis.Basic_Decl;
+      Name : String);
+
    procedure Mark_Formal_Write
      (Item : in out Summary;
       Name : String)
@@ -477,6 +496,18 @@ package body Adalang_Analyzer.Subprogram_Summaries is
            ("skipping formal-write marking: " &
             Ada.Exceptions.Exception_Message (Exc));
    end Mark_Formal_Write;
+
+   procedure Note_Parameter_Write
+     (Item : in out Summary;
+      Decl : Libadalang.Analysis.Basic_Decl;
+      Name : String) is
+   begin
+      if Has_Formal (Item, Name) then
+         Mark_Formal_Write (Item, Name);
+      elsif Name /= "" then
+         Include (Item.Global_Writes, Object_Key (Decl, Name));
+      end if;
+   end Note_Parameter_Write;
 
    function Ultimate_Written_Name
      (Dest  : Libadalang.Analysis.Name'Class;
@@ -577,7 +608,8 @@ package body Adalang_Analyzer.Subprogram_Summaries is
                if Libadalang.Analysis.Is_Null (Decl) then
                   Item.Effects_Complete := False;
                elsif Decl.Kind in Libadalang.Common.Ada_Param_Spec_Range then
-                  Mark_Formal_Write (Item, Ultimate_Written_Name (Actual));
+                  Note_Parameter_Write
+                    (Item, Decl, Ultimate_Written_Name (Actual));
                elsif not Is_Within (Decl, Root) then
                   Include
                     (Item.Global_Writes,
@@ -590,6 +622,65 @@ package body Adalang_Analyzer.Subprogram_Summaries is
       when others =>
          Item.Effects_Complete := False;
    end Scan_Call_Actual_Writes;
+
+   --  A subprogram declared inside Root can write a formal of Root as an
+   --  up-level object, and Root then writes it by calling that subprogram
+   --  (apdf's Image_ref, whose recursive Insert sets Image_Index;
+   --  Excel_Writer's Write_as_Formula, whose nested functions set
+   --  Is_Valid, FP-168). Matched by name, as Mark_Formal_Write matches,
+   --  which can only add a may-write; where a name does not resolve, the
+   --  effects of Root are not known.
+   procedure Scan_Nested_Formal_Writes
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Item : in out Summary)
+   is
+      procedure Mark (Dest : Libadalang.Analysis.Name'Class) is
+         Decl : constant Libadalang.Analysis.Basic_Decl :=
+           Written_Declaration (Dest);
+      begin
+         if not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind in Libadalang.Common.Ada_Param_Spec_Range
+         then
+            Mark_Formal_Write (Item, Ultimate_Written_Name (Dest));
+         end if;
+      end Mark;
+
+      procedure Mark_Actuals (Call : Libadalang.Analysis.Name'Class) is
+      begin
+         for Pair of Call.P_Call_Params loop
+            if Formal_Is_Writable (Libadalang.Analysis.Param (Pair))
+              and then Libadalang.Analysis.Actual (Pair).Kind in
+                Libadalang.Common.Ada_Name
+            then
+               Mark (Libadalang.Analysis.Actual (Pair).As_Name);
+            end if;
+         end loop;
+      end Mark_Actuals;
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return;
+      end if;
+
+      case Node.Kind is
+         when Libadalang.Common.Ada_Assign_Stmt =>
+            Mark (Node.As_Assign_Stmt.F_Dest);
+         when Libadalang.Common.Ada_Call_Stmt =>
+            Mark_Actuals (Node.As_Call_Stmt.F_Call);
+         when Libadalang.Common.Ada_Call_Expr =>
+            if Node.As_Call_Expr.P_Kind = Libadalang.Common.Call then
+               Mark_Actuals (Node.As_Call_Expr);
+            end if;
+         when others =>
+            null;  --  adalang-analyzer: ignore Null_Statement
+      end case;
+
+      for Index in 1 .. Node.Children_Count loop
+         Scan_Nested_Formal_Writes (Node.Child (Index), Item);
+      end loop;
+   exception
+      when others =>
+         Item.Effects_Complete := False;
+   end Scan_Nested_Formal_Writes;
 
    procedure Scan_Effects
      (Node : Libadalang.Analysis.Ada_Node'Class;
@@ -605,6 +696,7 @@ package body Adalang_Analyzer.Subprogram_Summaries is
         and then Libadalang.Analysis.Ada_Node (Node) /=
           Libadalang.Analysis.Ada_Node (Root)
       then
+         Scan_Nested_Formal_Writes (Node, Item);
          return;
       end if;
 
@@ -623,8 +715,8 @@ package body Adalang_Analyzer.Subprogram_Summaries is
                if Libadalang.Analysis.Is_Null (Decl) then
                   Item.Effects_Complete := False;
                elsif Decl.Kind in Libadalang.Common.Ada_Param_Spec_Range then
-                  Mark_Formal_Write
-                    (Item,
+                  Note_Parameter_Write
+                    (Item, Decl,
                      Ultimate_Written_Name (Node.As_Assign_Stmt.F_Dest));
                elsif not Is_Within (Decl, Root) then
                   Include
@@ -667,6 +759,53 @@ package body Adalang_Analyzer.Subprogram_Summaries is
                else
                   Item.Effects_Complete := False;
                end if;
+            end;
+
+         when Libadalang.Common.Ada_Identifier =>
+            --  A call with no actual in an expression ("N : constant
+            --  Natural := Tokenize;") is a name, not a Call_Expr: what it
+            --  calls is a callee too, whose writes are the caller's
+            --  (Excel_Writer's Tokenize_with_Size, FP-168). The name of a
+            --  Call_Expr or a Call_Stmt is taken there; a name that does
+            --  not resolve to a subprogram is left as it was before.
+            declare
+               Decl : Libadalang.Analysis.Basic_Decl;
+               Up   : constant Libadalang.Analysis.Ada_Node := Node.Parent;
+            begin
+               if not
+                   (Up.Kind = Libadalang.Common.Ada_Call_Stmt
+                    or else
+                      (Up.Kind = Libadalang.Common.Ada_Call_Expr
+                       and then Libadalang.Analysis.Ada_Node
+                                  (Up.As_Call_Expr.F_Name) =
+                                Libadalang.Analysis.Ada_Node (Node))
+                    or else
+                      (Up.Kind = Libadalang.Common.Ada_Dotted_Name
+                       and then Up.Parent.Kind in
+                         Libadalang.Common.Ada_Call_Expr
+                           | Libadalang.Common.Ada_Call_Stmt))
+                 and then Node.As_Identifier.P_Is_Call
+               then
+                  Decl := Call_Declaration (Node);
+                  --  An enumeration literal is a call too, to nothing.
+                  if not Libadalang.Analysis.Is_Null (Decl)
+                    and then Decl.Kind in
+                      Libadalang.Common.Ada_Basic_Subp_Decl
+                        | Libadalang.Common.Ada_Base_Subp_Body
+                    and then Decl.Kind not in
+                      Libadalang.Common.Ada_Entry_Decl
+                        | Libadalang.Common.Ada_Enum_Literal_Decl
+                        | Libadalang.Common.Ada_Synthetic_Char_Enum_Lit
+                        | Libadalang.Common.Ada_Synthetic_Subp_Decl
+                  then
+                     Include (Item.Callees, Declaration_Name (Decl));
+                  end if;
+               end if;
+            exception
+               when Exc : others =>
+                  Log_Verbose_Once
+                    ("skipping a call with no actual: " &
+                     Ada.Exceptions.Exception_Message (Exc));
             end;
 
          when others =>

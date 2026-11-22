@@ -10,6 +10,7 @@ with Ada.Calendar;
 with Ada.Command_Line;
 with Ada.Containers.Hashed_Maps;
 with Ada.Containers.Indefinite_Hashed_Maps;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Directories;
 with Ada.Environment_Variables;
 with Ada.Strings.Fixed;
@@ -6663,6 +6664,30 @@ package body Adalang_Analyzer.VC_Prover is
       Function_Of_Arguments := Oracle;
    end Set_Function_Oracle;
 
+   Assumed_Function : Function_Oracle := null;
+
+   procedure Set_Assumed_Function_Oracle (Oracle : Function_Oracle) is
+   begin
+      Assumed_Function := Oracle;
+   end Set_Assumed_Function_Oracle;
+
+   --  The function symbols of the calls Assumed_Function answers for.
+   package Symbol_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+     (Element_Type        => String,
+      Hash                => Ada.Strings.Hash,
+      Equivalent_Elements => "=");
+   Assumed_Symbols : Symbol_Sets.Set;
+
+   function Mentions_Assumed_Function (Formula : String) return Boolean is
+   begin
+      for Symbol of Assumed_Symbols loop
+         if Ada.Strings.Fixed.Index (Formula, Symbol) > 0 then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Mentions_Assumed_Function;
+
    --  The key under which the value of a whole object that is not a
    --  scalar is kept. Its component is the object itself, which no record
    --  component is, so that it meets neither the object's scalar
@@ -7007,6 +7032,11 @@ package body Adalang_Analyzer.VC_Prover is
              (Canonical.P_Defining_Name,
               To_String (Instances) & "!" & To_String (Signature));
       begin
+         if Assumed_Function /= null
+           and then Assumed_Function (Function_Name)
+         then
+            Assumed_Symbols.Include (Symbol);
+         end if;
          if Length (Arguments) = 0 then
             return To_Unbounded_String (Symbol);
          end if;
@@ -12767,7 +12797,9 @@ package body Adalang_Analyzer.VC_Prover is
       if Direct = Solver_Unavailable then
          return (Result => VC_Unavailable,
                  Provenance => No_Unsupported_Provenance);
-      elsif Direct = Solver_Unsat then
+      elsif Direct = Solver_Unsat
+        and then not Mentions_Assumed_Function (To_String (Formula))
+      then
          return (Result => VC_Refuted,
                  Provenance => No_Unsupported_Provenance);
       else

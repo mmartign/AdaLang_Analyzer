@@ -284,6 +284,14 @@ package Adalang_Analyzer.VC_Prover is
 
    procedure Set_Function_Oracle (Oracle : Function_Oracle);
 
+   --  Which of those functions are so only as SPARK takes them: their
+   --  value comes from machine code, which reads what no Ada object stands
+   --  for (HiRTOS's Cpu_In_Privileged_Mode reads the CPSR with "mrs",
+   --  FP-165). A proof takes them so, as GNATprove does; a refutation, a
+   --  claim about every execution, does not rest on them: a goal whose
+   --  formula has one is not refuted. Without an oracle there are none.
+   procedure Set_Assumed_Function_Oracle (Oracle : Function_Oracle);
+
    --  Which objects have relaxed initialization (SPARK RM 6.10). A part of
    --  one, read in the expression being decided, is taken as having a
    --  value whatever the state says of the whole object: that read is

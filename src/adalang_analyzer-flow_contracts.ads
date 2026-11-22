@@ -95,6 +95,14 @@ package Adalang_Analyzer.Flow_Contracts is
    --  end and touches none. A constant whose value depends on no variable
    --  is not such an object. False whenever the effects are not known.
 
+   function Runs_Machine_Code
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when a call to Callee made from Caller may run machine code
+   --  (System.Machine_Code.Asm), in Callee or in what it calls: what that
+   --  reads and changes, the registers and the state of the processor, no
+   --  Ada object stands for (HiRTOS's Cpu_In_Privileged_Mode, FP-165).
+
    procedure For_Each_Input
      (Callee : Libadalang.Analysis.Basic_Decl'Class;
       Caller : Libadalang.Analysis.Ada_Node'Class;

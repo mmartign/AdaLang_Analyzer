@@ -15,15 +15,30 @@ and versioning follows [Semantic Versioning](https://semver.org/).
   names of the formals were taken for reads. The 14 definite errors that
   1.17.2 still gave on OpenGLAda, where the fix of `FP-151` did not reach,
   are gone (`FP-164`).
-
-### Known limitations
-
-- Three postconditions of HiRTOS about the CPU state, which it reads
-  through machine code and changes with an `Asm` statement, are definite
-  errors under `--verify`: their value is taken to be the same before and
-  after the `Asm` statement. A reduction of the code gives `Unproved`;
-  what else in the project leads to the verdict is not yet known
-  (`FP-165`).
+- `Constant_Condition` judged the condition of a `while` loop from the
+  state before the loop: `Redo := True; while Redo loop ... Redo := False;`
+  was "always true", though the condition is tested again after every
+  iteration. It is now judged with what the body assigns forgotten
+  (`FP-166`).
+- `Infinite_Loop` did not take `exit Outer;` from inside a nested loop for
+  a way out of `Outer` (`FP-167`).
+- An `out` parameter that a nested subprogram writes, as an up-level
+  object, was taken as never written: a caller's read of the actual, and
+  the read of the parameter after the nested call, were definite
+  initialization errors under `--verify`, and `Uninitialized_Output`
+  reported the parameter (`FP-168`).
+- An operation of a static expression had an overflow check: `-2**63` of an
+  `Integer_64` was a definite overflow error, though a static expression is
+  evaluated exactly (`FP-169`).
+- `Uninitialized_Read` took the names in the `Pre`, `Post` and `Global`
+  aspects of a nested subprogram declaration for reads where it is
+  declared (`FP-170`).
+- A function whose value comes from machine code (`System.Machine_Code.Asm`
+  reading a register) is a function of its arguments as SPARK takes it, so
+  one value before and after an `Asm` statement that changes it: three
+  postconditions of HiRTOS about the CPU mode were definite errors under
+  `--verify`. A proof still takes it so, as GNATprove does; a definite
+  error no longer rests on it (`FP-165`).
 
 ## [1.17.2] - 2026-11-21
 

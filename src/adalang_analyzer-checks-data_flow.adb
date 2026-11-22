@@ -1621,11 +1621,23 @@ package body Adalang_Analyzer.Checks.Data_Flow is
             --  reads an up-level object the procedure that calls it has
             --  set by then), and so is a task body, which runs once the
             --  task is activated. A call of a nested subprogram, here,
-            --  is followed into its body (Nested_Call_Access).
+            --  is followed into its body (Nested_Call_Access). The aspects
+            --  of a subprogram, entry or type declaration are not
+            --  evaluated where it is declared either: Pre, Post and
+            --  predicates are evaluated where it is called or checked,
+            --  and Global and Depends never (qoi's "procedure Pop ...
+            --  with Pre => P in Data'Range" before P is set, libkeccak's
+            --  "Global => (Output => (Aba, ...))", FP-170).
             if Libadalang.Analysis.Is_Null (Child)
-              or else Child.Kind not in Libadalang.Common.Ada_Base_Subp_Body
-                | Libadalang.Common.Ada_Entry_Body
-                | Libadalang.Common.Ada_Task_Body
+              or else
+                (Child.Kind not in Libadalang.Common.Ada_Base_Subp_Body
+                   | Libadalang.Common.Ada_Entry_Body
+                   | Libadalang.Common.Ada_Task_Body
+                 and then not
+                   (Child.Kind = Libadalang.Common.Ada_Aspect_Spec
+                    and then Node.Kind in
+                      Libadalang.Common.Ada_Basic_Subp_Decl
+                      | Libadalang.Common.Ada_Base_Type_Decl))
             then
                declare
                   Result : constant Access_Result :=
