@@ -18,7 +18,7 @@ Overwritten_Assignment	yes	automotive,recommended,spark,verify	10	19	4
 Shadowed_Declaration	yes	automotive	2	486	60
 Unreachable_Case_Alternative	yes	automotive,recommended	4	0	0
 Overlapping_Case_Ranges	yes	automotive,recommended	4	0	0
-Infinite_Loop	yes	automotive,recommended,spark,verify	10	39	16
+Infinite_Loop	yes	automotive,recommended,spark,verify	10	31	14
 Duplicate_Boolean_Operand	yes	recommended	4	0	0
 Redundant_Abs	no	-	0	0	0
 Redundant_Unary_Minus	no	-	0	0	0
@@ -74,7 +74,7 @@ Global_Contract_Mismatch	yes	automotive,spark,verify	10	655	66
 Missing_Depends_Contract	yes	automotive,spark,verify	10	4376	264
 Incomplete_Depends_Contract	yes	automotive,spark,verify	10	0	0
 Depends_Contract_Mismatch	yes	automotive,spark,verify	10	4	2
-Uninitialized_Output	yes	automotive,recommended,spark,verify	10	230	48
+Uninitialized_Output	yes	automotive,recommended,spark,verify	10	210	47
 Uninitialized_Read	yes	automotive,recommended	4	6	4
 Missing_Overriding_Indicator	yes	automotive	2	0	0
 Inefficient_String_Concatenation	no	-	0	0	0
@@ -107,7 +107,7 @@ No_Rendezvous	yes	automotive	2	39	19
 No_Select	yes	automotive	2	9	6
 No_Requeue	yes	automotive	2	4	3
 No_Asynchronous_Transfer	yes	automotive	2	0	0
-Exception_Propagation	yes	automotive	2	1401	116
+Exception_Propagation	yes	automotive	2	1407	116
 No_Dispatching_Call	yes	automotive	2	1341	89
 No_Classwide_Type	yes	automotive	2	747	150
 No_Controlled_Type	yes	automotive	2	20	13
