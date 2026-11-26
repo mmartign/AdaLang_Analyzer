@@ -43,7 +43,7 @@ matcher, `compare.awk`.
 | [cubedos](cubedos/) | cubesatlab | Satellite message-passing bus (not fully proved) | 10 | 0 | 0 | 0 |
 | [spark_testsuite](spark_testsuite/) | AdaCore | SPARK regression testsuite — 124 curated micro-tests, run per unit (90 fully-proved oracle + 34 deliberately-broken tripwire) | 705 | 327 | 0 | 0 |
 
-These are the figures of release 1.17.4 (run of 2026-11-22 against the
+These are the figures of release 1.17.5 (run of 2026-11-26 against the
 GNATprove output of 2026-10-02). A matched pair is a
 `(file, line, check kind)` at which each tool has exactly one obligation;
 "both safe" is the number of pairs AdaLang proves too.
@@ -77,7 +77,7 @@ span far more distinct code shapes than the six real projects reach; its
 value is that breadth, not the count. It
 also carries 34 deliberately-broken units where GNATprove's own `medium`/
 `high` verdict is the tripwire — AdaLang never once answered one of those
-`proved-safe`. See `spark_testsuite/RESULTS_2026-11-22.md`.
+`proved-safe`. See `spark_testsuite/RESULTS_2026-11-26.md`.
 
 What the two zero columns don't show:
 
@@ -143,10 +143,10 @@ In the other direction AdaLang proves nine of the 22 checks GNATprove
 leaves unproved there, each of which holds, GNATprove's provers stopping
 short: the `sparknacl-sign.adb` preservations above, and seven
 preconditions in CoAP-SPARK, `Fits_Into (Val, 16)` of a 16-bit value given
-to a 16-bit field (`coap_spark/RESULTS_2026-11-22.md`). It reports no
+to a 16-bit field (`coap_spark/RESULTS_2026-11-26.md`). It reports no
 definite error on a check GNATprove proves. `benchmarks/gnatprove_gap_ledger.py` regenerates
 the ledger from the lanes' results. How the figure got to 12,035, release
-by release, is in `CHANGELOG.md` (1.8.1 to 1.17.4), with the analyzer faults
+by release, is in `CHANGELOG.md` (1.8.1 to 1.17.5), with the analyzer faults
 that the work turned up on the way (`FP-104`, `FP-106` to `FP-122`,
 `FP-124` to `FP-131`, `FP-133` to `FP-144`).
 
