@@ -5,15 +5,24 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.17.5] - 2026-11-26
 
 The fixes of what running 1.17.4 on thirteen of Gautier de Montmollin's
 GitHub repositories (globe-3d, engine-3d, pascal-to-ada, GWindows, LEA,
-AZip, TeXCAD, Wasabee and others) showed. On those and on the eleven
-repositories of 1.17.4, 20 false findings and 2 false definite errors
-are gone, 2 initialization checks are proved, and nothing is added. On
-the ten corpora, with every preset, nothing changes: no finding, and no
-check's verdict.
+AZip, TeXCAD, Wasabee and others) showed, among them a false-safe result:
+`-1` written for a modular type. On those and on the eleven repositories
+of 1.17.4, 20 false findings and 2 false definite errors are gone, 2
+initialization checks are proved, and nothing is added.
+
+What to expect: on the ten corpora, with every preset (run of
+2026-11-26), nothing changes: no finding is new or gone, no definite
+error is new or gone, and no check is proved or unproved that was not
+before. The gap ledger does not move, `--verify` proving 12,035 of the
+15,043 checks GNATprove proves, 80.0%. On the SPARK testsuite nothing
+changes. Code that compares a modular object with `-1` (an imported C
+function's error value read into an `Unsigned_32`, say) gets the checks
+of that branch back: they were `Unreachable`, and are now proved, unproved
+or definite errors as they deserve.
 
 ### Fixed
 
