@@ -17948,24 +17948,6 @@ package body Adalang_Analyzer.Flow_Interp is
          Origin   : Operator_Origin := Predefined;
          Operand  : Boolean;
 
-         --  True for the types of a context that takes the universal
-         --  integer as it is.
-         function Is_Universal
-           (Typ : Libadalang.Analysis.Base_Type_Decl) return Boolean
-         is
-            Name : constant String :=
-              Langkit_Support.Text.To_UTF8
-                (Typ.P_Canonical_Fully_Qualified_Name);
-
-            function Starts_With (Start : String) return Boolean
-            is (Name'Length >= Start'Length
-                and then Name (Name'First .. Name'First + Start'Length - 1) =
-                  Start);
-         begin
-            return Starts_With ("standard.universal_")
-              or else Starts_With ("standard.root_");
-         end Is_Universal;
-
          --  The length when a declaration gives the bounds with static
          --  values: it is then a number to a compiler too.
          function Declared_Length return Abstract_Int is
@@ -18054,7 +18036,7 @@ package body Adalang_Analyzer.Flow_Interp is
             --  converted to that type, whatever Libadalang resolves the
             --  expected type to ((Bit_Len + 7) / 8 <= Data'Length).
             if (Libadalang.Analysis.Is_Null (Expected)
-                or else Is_Universal (Expected))
+                or else Is_Universal_Numeric (Expected))
               and then Context.Kind in Libadalang.Common.Ada_Bin_Op_Range
               and then Context.As_Bin_Op.F_Op.Kind /=
                 Libadalang.Common.Ada_Op_Pow
@@ -18086,7 +18068,7 @@ package body Adalang_Analyzer.Flow_Interp is
                      end;
                      if not Libadalang.Analysis.Is_Null (Found)
                        and then Found.P_Is_Int_Type
-                       and then not Is_Universal (Found)
+                       and then not Is_Universal_Numeric (Found)
                      then
                         return Found;
                      end if;
@@ -18114,7 +18096,7 @@ package body Adalang_Analyzer.Flow_Interp is
                begin
                   if not Libadalang.Analysis.Is_Null (Typ)
                     and then Typ.P_Is_Int_Type
-                    and then not Is_Universal (Typ)
+                    and then not Is_Universal_Numeric (Typ)
                   then
                      Expected := Typ;
                   end if;
@@ -18122,7 +18104,7 @@ package body Adalang_Analyzer.Flow_Interp is
             end if;
             if Libadalang.Analysis.Is_Null (Expected)
               or else not Expected.P_Is_Int_Type
-              or else Is_Universal (Expected)
+              or else Is_Universal_Numeric (Expected)
               or else Attribute.P_Is_Static_Expr
             then
                return;

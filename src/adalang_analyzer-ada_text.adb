@@ -132,15 +132,30 @@ package body Adalang_Analyzer.Ada_Text is
    is
       Assoc : Libadalang.Analysis.Ada_Node;
       Owner : Libadalang.Analysis.Ada_Node;
+      Item  : Libadalang.Analysis.Ada_Node;
    begin
-      if Libadalang.Analysis.Is_Null (Node) then
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind = Libadalang.Common.Ada_Paren_Expr
+      then
          return False;
       end if;
-      Assoc := Node.Parent;
+
+      --  The object may be written in parentheses: "Unsigned_8'Asm_Output
+      --  ("=q", (Result))" stores into Result all the same (engine-3d,
+      --  FP-178). The parentheses themselves are not the item: a walk
+      --  over the call goes on to the name inside them.
+      Item := Libadalang.Analysis.Ada_Node (Node);
+      while not Libadalang.Analysis.Is_Null (Item.Parent)
+        and then Item.Parent.Kind = Libadalang.Common.Ada_Paren_Expr
+      loop
+         Item := Item.Parent;
+      end loop;
+
+      Assoc := Item.Parent;
       if Libadalang.Analysis.Is_Null (Assoc)
         or else Assoc.Kind /= Libadalang.Common.Ada_Param_Assoc
         or else Libadalang.Analysis.Ada_Node (Assoc.As_Param_Assoc.F_R_Expr)
-          /= Libadalang.Analysis.Ada_Node (Node)
+          /= Item
         or else Assoc.Parent.Kind /= Libadalang.Common.Ada_Assoc_List
         or else Assoc.Parent.Children_Count /= 2
         or else Assoc.Parent.Child (2) /= Assoc

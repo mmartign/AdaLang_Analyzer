@@ -1364,6 +1364,35 @@ package body Adalang_Analyzer.Checks.Data_Flow is
    --  bounds the walk through those that call one another.
    Max_Nested_Call_Depth : constant := 4;
 
+   --  Whether the destination Dest of an assignment is the object Decl as
+   --  a whole: its identifier, or an expanded name of it ("G.X := N;" for
+   --  an X declared in a package G, which may be declared in the
+   --  subprogram itself: ayacc's "yy.action", zip-ada's
+   --  "UnZ_Glob.compsize", FP-177). An expanded name is told from a
+   --  selected component by its suffix, which resolves to the object
+   --  itself where a component's resolves to the component; there is no
+   --  fallback to the spelling for it.
+   function Is_Whole_Destination
+     (Dest : Libadalang.Analysis.Name;
+      Decl : Libadalang.Analysis.Basic_Decl) return Boolean is
+   begin
+      if Dest.Kind = Libadalang.Common.Ada_Identifier then
+         return Matches_Declaration (Dest, Decl);
+      elsif Dest.Kind = Libadalang.Common.Ada_Dotted_Name then
+         declare
+            Resolved : constant Libadalang.Analysis.Basic_Decl :=
+              Referenced_Declaration (Dest.As_Dotted_Name.F_Suffix);
+         begin
+            return not Libadalang.Analysis.Is_Null (Resolved)
+              and then Resolved = Decl;
+         end;
+      end if;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Is_Whole_Destination;
+
    function First_Access_At
      (Node  : Libadalang.Analysis.Ada_Node'Class;
       Decl  : Libadalang.Analysis.Basic_Decl;
@@ -1456,6 +1485,102 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          when others =>
             return Unknown;
       end Nested_Call_Access;
+
+      --  FP-179: the default expression of a formal that a call gives no
+      --  actual is evaluated at the call, not where the subprogram is
+      --  declared (the walk below passes over it there). A subprogram
+      --  declared inside the one that declares Decl can name Decl in such
+      --  a default: GWindows' "function CreateWindowEx (... dwStyle :
+      --  Interfaces.C.unsigned := Style; ...)", imported, declared before
+      --  Style is set and called after. What the default does to Decl
+      --  first is what the call does.
+      function Default_Access
+        (Call_Name : Libadalang.Analysis.Name'Class;
+         Call      : Libadalang.Analysis.Name'Class) return Access_Result
+      is
+         None     : constant Access_Result :=
+           (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
+         Callee   : Libadalang.Analysis.Basic_Decl;
+         Scope    : Libadalang.Analysis.Subp_Body;
+         Ancestor : Libadalang.Analysis.Ada_Node;
+      begin
+         if not Call_Name.P_Is_Call then
+            return None;
+         end if;
+
+         --  A pragma argument names the subprogram and calls it only in a
+         --  pragma that evaluates its arguments ("pragma Assert (Ready)"):
+         --  "pragma Machine_Attribute (SendMessage, "ms_abi");", which
+         --  Libadalang takes for a call (GWindows' Immediate_Popup_Menu),
+         --  evaluates no default.
+         if Call_Name.Parent.Kind =
+              Libadalang.Common.Ada_Pragma_Argument_Assoc
+           and then not Libadalang.Analysis.Is_Null (Call_Name.Parent.Parent)
+           and then not Libadalang.Analysis.Is_Null
+                          (Call_Name.Parent.Parent.Parent)
+           and then Call_Name.Parent.Parent.Parent.Kind =
+                      Libadalang.Common.Ada_Pragma_Node
+           and then Canonical_Text
+                      (Call_Name.Parent.Parent.Parent.As_Pragma_Node.F_Id)
+                    not in "assert" | "assert_and_cut" | "assume" | "check"
+                         | "loop_invariant" | "loop_variant" | "debug"
+         then
+            return None;
+         end if;
+
+         Callee := Call_Name.P_Referenced_Decl;
+         Scope := Enclosing_Subprogram (Decl);
+         if Libadalang.Analysis.Is_Null (Callee)
+           or else Libadalang.Analysis.Is_Null (Scope)
+         then
+            return None;
+         end if;
+         Ancestor := Callee.Parent;
+         while not Libadalang.Analysis.Is_Null (Ancestor)
+           and then Ancestor /= Libadalang.Analysis.Ada_Node (Scope)
+         loop
+            Ancestor := Ancestor.Parent;
+         end loop;
+         if Libadalang.Analysis.Is_Null (Ancestor) then
+            return None;
+         elsif Depth >= Max_Nested_Call_Depth then
+            return (Kind => Unknown_Access,
+                    Node => Libadalang.Analysis.Ada_Node (Call));
+         end if;
+
+         for Pair of Call.P_Call_Params loop
+            declare
+               Value : constant Libadalang.Analysis.Expr :=
+                 Libadalang.Analysis.Actual (Pair).As_Expr;
+               Spec  : Libadalang.Analysis.Param_Spec;
+            begin
+               if not Libadalang.Analysis.Is_Null (Value)
+                 and then Value.Parent.Kind = Libadalang.Common.Ada_Param_Spec
+               then
+                  Spec := Value.Parent.As_Param_Spec;
+                  if Libadalang.Analysis.Ada_Node (Spec.F_Default_Expr) =
+                    Libadalang.Analysis.Ada_Node (Value)
+                  then
+                     declare
+                        Result : constant Access_Result :=
+                          First_Access_At
+                            (Value, Decl, Spec.F_Type_Expr, Depth + 1);
+                     begin
+                        if Result.Kind /= No_Access then
+                           return (Kind => Result.Kind,
+                                   Node => Libadalang.Analysis.Ada_Node (Call));
+                        end if;
+                     end;
+                  end if;
+               end if;
+            end;
+         end loop;
+         return None;
+      exception
+         when others =>
+            return (Kind => Unknown_Access,
+                    Node => Libadalang.Analysis.Ada_Node (Call));
+      end Default_Access;
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return (Kind => No_Access, Node => Libadalang.Analysis.No_Ada_Node);
@@ -1479,17 +1604,21 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                --  value no more. A read is reported at the statement.
                Value : constant Access_Result :=
                  First_Access_At (Stmt.F_Expr, Decl, After, Depth);
+               Whole : constant Boolean :=
+                 Is_Whole_Destination (Stmt.F_Dest, Decl);
                --  "X := @ + 1" reads X first.
                Is_Read : constant Boolean :=
                  Value.Kind = Read_Access
                  or else
                    (Stmt.F_Dest.Kind /= Libadalang.Common.Ada_Identifier
+                    and then not Whole
                     and then Reads_Declaration (Stmt.F_Dest, Decl))
                  or else
                    (Has_Target_Name (Stmt.F_Expr)
                     and then
                       (if Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
-                       then Matches_Declaration (Stmt.F_Dest, Decl)
+                         or else Whole
+                       then Whole
                        else Reads_Declaration (Stmt.F_Dest, Decl)));
             begin
                if Is_Read then
@@ -1501,10 +1630,9 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                   --  function with an out parameter), or a call that may
                   --  read or write Decl.
                   return Value;
-               elsif Stmt.F_Dest.Kind = Libadalang.Common.Ada_Identifier
-                 and then Matches_Declaration (Stmt.F_Dest, Decl)
-               then
-                  --  Assigned_Declaration alone would miss this write
+               elsif Whole then
+                  --  The whole object, by its identifier or an expanded
+                  --  name. Assigned_Declaration alone would miss this write
                   --  whenever Libadalang's own semantic resolution fails
                   --  for the destination identifier (e.g. an unrelated
                   --  Property_Error elsewhere in the same declarative
@@ -1552,8 +1680,11 @@ package body Adalang_Analyzer.Checks.Data_Flow is
          elsif Node.Kind = Libadalang.Common.Ada_Identifier then
             --  A call with no actual ("Set;", "X := Next;").
             declare
-               Result : constant Access_Result :=
-                 Nested_Call_Access (Node.As_Identifier);
+               Defaults : constant Access_Result :=
+                 Default_Access (Node.As_Identifier, Node.As_Identifier);
+               Result   : constant Access_Result :=
+                 (if Defaults.Kind /= No_Access then Defaults
+                  else Nested_Call_Access (Node.As_Identifier));
             begin
                if Result.Kind /= No_Access then
                   return Result;
@@ -1626,8 +1757,12 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                         Node => Libadalang.Analysis.Ada_Node (Node));
             end if;
             declare
-               Result : constant Access_Result :=
-                 Nested_Call_Access (Node.As_Call_Expr.F_Name);
+               Defaults : constant Access_Result :=
+                 Default_Access
+                   (Node.As_Call_Expr.F_Name, Node.As_Call_Expr);
+               Result   : constant Access_Result :=
+                 (if Defaults.Kind /= No_Access then Defaults
+                  else Nested_Call_Access (Node.As_Call_Expr.F_Name));
             begin
                if Result.Kind /= No_Access then
                   return Result;
@@ -1677,7 +1812,9 @@ package body Adalang_Analyzer.Checks.Data_Flow is
             --  predicates are evaluated where it is called or checked,
             --  and Global and Depends never (qoi's "procedure Pop ...
             --  with Pre => P in Data'Range" before P is set, libkeccak's
-            --  "Global => (Output => (Aba, ...))", FP-170).
+            --  "Global => (Output => (Aba, ...))", FP-170). Nor is the
+            --  default expression of a formal: a call that gives the
+            --  formal no actual evaluates it (Default_Access, FP-179).
             if Libadalang.Analysis.Is_Null (Child)
               or else
                 (Child.Kind not in Libadalang.Common.Ada_Base_Subp_Body
@@ -1687,7 +1824,12 @@ package body Adalang_Analyzer.Checks.Data_Flow is
                    (Child.Kind = Libadalang.Common.Ada_Aspect_Spec
                     and then Node.Kind in
                       Libadalang.Common.Ada_Basic_Subp_Decl
-                      | Libadalang.Common.Ada_Base_Type_Decl))
+                      | Libadalang.Common.Ada_Base_Type_Decl)
+                 and then not
+                   (Node.Kind = Libadalang.Common.Ada_Param_Spec
+                    and then Child =
+                      Libadalang.Analysis.Ada_Node
+                        (Node.As_Param_Spec.F_Default_Expr)))
             then
                declare
                   Result : constant Access_Result :=

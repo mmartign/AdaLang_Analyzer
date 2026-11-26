@@ -114,6 +114,13 @@ package Adalang_Analyzer.Flow_Eval is
    --  usual way of selecting code for one configuration, not a condition
    --  that has gone constant by mistake.
 
+   function Is_Universal_Numeric
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Boolean;
+   --  Whether Typ is one of the universal or root numeric types of
+   --  Standard: the type of a context that takes the universal integer as
+   --  it is, and the type Libadalang gives a unary operator on a universal
+   --  operand (FP-176).
+
    function Expression_Modulus
      (Node       : Libadalang.Analysis.Ada_Node'Class;
       Is_Modular : out Boolean) return Abstract_Int;

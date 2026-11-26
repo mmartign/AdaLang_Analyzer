@@ -5,6 +5,51 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+The fixes of what running 1.17.4 on thirteen of Gautier de Montmollin's
+GitHub repositories (globe-3d, engine-3d, pascal-to-ada, GWindows, LEA,
+AZip, TeXCAD, Wasabee and others) showed. On those and on the eleven
+repositories of 1.17.4, 20 false findings and 2 false definite errors
+are gone, 2 initialization checks are proved, and nothing is added. On
+the ten corpora, with every preset, nothing changes: no finding, and no
+check's verdict.
+
+### Fixed
+
+- `--verify` and `Constant_Condition` took `-1` written for a modular type
+  for the integer -1, not for the type's last value. With `V` an
+  `Unsigned_32`, `if V = -1 then` was always false and the branch it
+  guards unreachable, so a division by zero there was `Unreachable` where
+  it is a definite error; `pragma Assert (V /= -1)` was proved, and with
+  `Last : constant Unsigned_32 := -1`, `10 / Integer (Last + 1)` was
+  `Proved_Safe`: false-safe results. Libadalang gives a unary operator
+  whose operand is of a universal type (`-1`, `-(1)`, `Unsigned_32'(-1)`)
+  the universal type, so the reduction by the modulus of `FP-091` was not
+  applied to it; it now has the type the context expects, on both proof
+  paths. engine-3d's `if Video_Selector = -1 then`, which tests what an
+  imported C function returns, is no longer reported always false
+  (`FP-176`).
+- `Uninitialized_Read` took an assignment to an object by its expanded
+  name for a read of it: `G.X := N;`, with `G` a package declared in the
+  subprogram, was reported, and the write missed. ayacc-generated parsers
+  (`yy.action`, `yy.index`) and zip-ada's `UnZ_Glob` showed it (`FP-177`).
+- The object of `T'Asm_Output` written in parentheses was read, not
+  stored into: `Unsigned_8'Asm_Output ("=q", (Result))` gave a definite
+  initialization error under `--verify` and an `Uninitialized_Read`
+  (engine-3d) (`FP-178`).
+- `Uninitialized_Read` took the default expression of a formal for a read
+  where the subprogram is declared. GWindows declares an imported
+  `CreateWindowEx` with `dwStyle : Interfaces.C.unsigned := Style` before
+  `Style` is set, and calls it after. The default is now read at each
+  call that leaves the formal out, of a subprogram declared in the one
+  looked at (`FP-179`). `--verify` still checks such a default where the
+  subprogram is declared: it is unproved there when the object is set
+  later, which is sound.
+- `Unclosed_File_Handle` did not take `Delete` for closing the file it
+  deletes (RM A.8.2): `Open (F, In_File, Script); Delete (F);` was
+  reported (GWindows) (`FP-180`).
+
 ## [1.17.4] - 2026-11-23
 
 The fixes of what running it on eleven GitHub repositories (Brent

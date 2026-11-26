@@ -50,7 +50,9 @@ package Adalang_Analyzer.Ada_Text is
    --  item of "T'Read (Stream, Item)" (RM 13.13.2) or the object of
    --  "T'Asm_Output (Constraint, Object)" (System.Machine_Code). The
    --  arguments are those of the attribute reference, or of a call whose
-   --  name it is. Such an argument is written, not read.
+   --  name it is, in parentheses or not ("(Result)": Node is then Result,
+   --  never the parenthesized expression). Such an argument is written,
+   --  not read.
 
    function Is_Escaping_Attribute_Prefix
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean;

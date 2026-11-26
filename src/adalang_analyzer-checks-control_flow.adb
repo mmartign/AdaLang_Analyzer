@@ -1626,7 +1626,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
    begin
       if Op_Name in "open" | "create" then
          Op := Opens_Resource;
-      elsif Op_Name = "close" then
+      elsif Op_Name in "close" | "delete" then
          Op := Closes_Resource;
       else
          return (Op => Not_A_Resource_Call, Decl => Libadalang.Analysis.No_Basic_Decl);
@@ -1686,6 +1686,10 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                Op := Opens_Resource;
             elsif Full_Name in "ada.text_io.close"
               | "ada.streams.stream_io.close"
+              --  Delete closes the file it deletes (RM A.8.2, A.12.1):
+              --  "Open (F, ...); Delete (F);" (GWindows' gwin_util,
+              --  FP-180).
+              | "ada.text_io.delete" | "ada.streams.stream_io.delete"
             then
                Op := Closes_Resource;
             elsif Instantiated_Resource_Package (Callee) /= "" then
@@ -1695,7 +1699,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                begin
                   if Op_Name in "open" | "create" then
                      Op := Opens_Resource;
-                  elsif Op_Name = "close" then
+                  elsif Op_Name in "close" | "delete" then
                      Op := Closes_Resource;
                   else
                      return

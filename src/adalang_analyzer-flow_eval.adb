@@ -3443,6 +3443,21 @@ package body Adalang_Analyzer.Flow_Eval is
          return Unknown_Range;
    end Unconstrained_Modular_Range;
 
+   function Is_Universal_Numeric
+     (Typ : Libadalang.Analysis.Base_Type_Decl) return Boolean
+   is
+      Name : constant String :=
+        Langkit_Support.Text.To_UTF8 (Typ.P_Canonical_Fully_Qualified_Name);
+
+      function Starts_With (Start : String) return Boolean
+      is (Name'Length >= Start'Length
+          and then Name (Name'First .. Name'First + Start'Length - 1) =
+            Start);
+   begin
+      return Starts_With ("standard.universal_")
+        or else Starts_With ("standard.root_");
+   end Is_Universal_Numeric;
+
    function Modular_Type_Of
      (Node : Libadalang.Analysis.Ada_Node'Class) return Modular_Info
    is
@@ -3452,7 +3467,25 @@ package body Adalang_Analyzer.Flow_Eval is
       then
          return (others => <>);
       end if;
-      return Modular_Type (Node.As_Expr.P_Expression_Type);
+
+      declare
+         Typ : constant Libadalang.Analysis.Base_Type_Decl :=
+           Node.As_Expr.P_Expression_Type;
+      begin
+         --  Libadalang gives a unary operator whose operand is of a
+         --  universal type -- "-1", "-(1)", "-Character'Pos (C)" -- the
+         --  universal type, even where the operator is that of the type
+         --  the context expects: against an Unsigned_32, "-1" is the "-"
+         --  of Unsigned_32 and is 16#FFFF_FFFF#. The type expected there
+         --  is the operator's own (FP-176).
+         if Node.Kind = Libadalang.Common.Ada_Un_Op
+           and then not Libadalang.Analysis.Is_Null (Typ)
+           and then Is_Universal_Numeric (Typ)
+         then
+            return Modular_Type (Node.As_Expr.P_Expected_Expression_Type);
+         end if;
+         return Modular_Type (Typ);
+      end;
    exception
       when others =>
          --  An operator whose type cannot be resolved is not assumed to be
