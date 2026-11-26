@@ -95,8 +95,11 @@ jobs:
         # took 54 to 70 s there, and more have been added since. macOS runners
         # went 110, 125, 118, 135, 139, 158 and 140 s across the 1.12 releases
         # with the same 94 s locally: 150 s left no margin for runner noise.
+        # 180 s did not either on macOS: 122, 173, 180 and 143 s across
+        # 1.17.2 to 1.17.4, then 183 s for 1.17.5 with Linux (54 to 83 s)
+        # and Windows (131 to 137 s) flat, so macOS gets 240 s.
         env:
-          ADALANG_MAX_SMOKE_SECONDS: 180
+          ADALANG_MAX_SMOKE_SECONDS: ${{ runner.os == 'macOS' && 240 || 180 }}
         run: sh tests/run_all.sh
 
   windows:
