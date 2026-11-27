@@ -191,7 +191,7 @@ GNATprove proved safe, and called safe only nine checks that GNATprove could
 not prove -- two SPARKNaCl loop invariants and seven CoAP-SPARK
 preconditions, all of which hold, on which GNATprove's provers reach their
 time or step limit. Over every check GNATprove proves on those
-corpora, AdaLang proves four fifths (12,035 of 15,043) and is
+corpora, AdaLang proves four fifths (12,038 of 15,043) and is
 `Unproved`/`Unsupported`, or has no obligation, for the rest --
 consistent with "a much narrower scalar subset" above. This is
 evidence of precision on the subset AdaLang attempts, not of matching
