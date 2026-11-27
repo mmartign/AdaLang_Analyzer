@@ -5,12 +5,31 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.17.6] - 2026-11-27
 
 The fixes of what running 1.17.5 on coreboot's libgfxinit and libhwbase
-(SPARK code that ships in firmware) showed, and of what validating them
-on our corpora showed. Neither library has a defect the analyzer finds;
-everything it reported wrongly there is fixed here.
+(SPARK code that ships in firmware, in eleven configurations from i945 to
+Alder Lake) showed, and of what validating them on our corpora and on
+the SPARK testsuite showed. In their firmware configurations neither
+library has a defect the analyzer finds; everything it reported wrongly
+there is fixed here.
+
+What to expect: on the ten corpora, with every preset (run of
+2026-11-27), no proof is lost and no definite error is new or gone.
+Tokeneer proves 3 more `Global` aspects, so the gap ledger moves to
+`--verify` proving 12,038 of the 15,043 checks GNATprove proves, 80.0%
+(12,035 in 1.17.5). An unproved postcondition of Ada_Drivers_Library goes:
+it was checked against the other of the two `STM32.I2C` units the corpus
+lists. `Global_Contract_Mismatch` goes from 617 sites to none,
+`Missing_Global_Contract` from 1,498 to 796, `Wrong_Parameter_Mode` from
+79 to 50, `Uninitialized_Output` from 85 to 71 and `Dead_Store` from 182
+to 177. On the SPARK testsuite the data dependencies of one subprogram,
+which GNATprove proves, are proved (`FP-190`), and 7 false
+`Global_Contract_Mismatch` findings go. SPARK code that hides its
+state behind state abstractions gets far fewer `Global` findings; a
+subprogram that reaches `Ada.Text_IO` or `Interfaces.C.Strings` only
+through calls may get a new `Missing_Global_Contract`, as GNATprove would
+generate a `Global` for it.
 
 ### Fixed
 
