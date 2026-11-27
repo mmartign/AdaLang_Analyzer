@@ -36,6 +36,13 @@ package Adalang_Analyzer.SPARK_Readiness is
    --  that is not told here (Param is renamed, or written by a subprogram
    --  declared in Subprogram).
 
+   function Runs_At_Least_Once
+     (Spec : Libadalang.Analysis.For_Loop_Spec) return Boolean;
+   --  True when the for loop Spec goes round at least once: "for I in" a
+   --  range, a subtype mark or "S range L .. H" whose bounds are static
+   --  and not empty, or a whole enumeration type, which has a literal at
+   --  least (FP-183).
+
    function Effective_SPARK_Enabled
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
    --  False when Decl, or the nearest enclosing unit that says, has

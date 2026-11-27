@@ -38,6 +38,42 @@ package body Verification_FP145_Output_Globals with SPARK_Mode is
       X := X + 1;
    end Out_Actual_Then_Read;
 
+   procedure Loop_Once_Then_Read is
+   begin
+      for I in 1 .. 1 loop
+         X := I;
+      end loop;
+      X := X + 1;
+   end Loop_Once_Then_Read;
+
+   procedure Exit_Then_Write_Relaxed (C : Boolean) is
+   begin
+      Once :
+      for I in 1 .. 1 loop
+         exit Once when C;
+         R := 1;
+         R := R + 1;
+      end loop Once;
+   end Exit_Then_Write_Relaxed;
+
+   procedure Loop_Maybe_Then_Read (N : Natural) is
+   begin
+      for I in 1 .. N loop
+         X := I;
+      end loop;
+      X := X + 1;
+   end Loop_Maybe_Then_Read;
+
+   procedure Exit_Then_Write (C : Boolean) is
+   begin
+      Once :
+      for I in 1 .. 1 loop
+         exit Once when C;
+         X := 1;
+         X := X + 1;
+      end loop Once;
+   end Exit_Then_Write;
+
    procedure Read_Then_Write is
    begin
       X := X + 1;

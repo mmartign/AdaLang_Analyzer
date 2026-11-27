@@ -4242,13 +4242,20 @@ fi
 #  whole global first, by an assignment or a call of a subprogram that
 #  lists it as Output, they still are.
 run_json_pair "$fp145" tests/verification_fp145_output_globals
+#  FP-190: a for loop over a static range that is not empty goes round at
+#  least once; a global with relaxed initialization may be left as it was
+#  on a path that does not read it, one that leaves a loop before the
+#  write.
 for operation in Init Write_Then_Read Call_Then_Read \
-  Both_Branches_Then_Read Out_Actual_Then_Read
+  Both_Branches_Then_Read Out_Actual_Then_Read Loop_Once_Then_Read \
+  Exit_Then_Write_Relaxed
 do
    must_prove "$fp145" data-dependencies "Global of $operation" \
      flow-analysis 'FP-145: written before it is read'
 done
-for operation in Read_Then_Write Write_Under_Guard Read_Only; do
+for operation in Read_Then_Write Write_Under_Guard Read_Only \
+  Loop_Maybe_Then_Read Exit_Then_Write
+do
    must_not_prove "$fp145" data-dependencies "Global of $operation" FP-145
 done
 

@@ -21,6 +21,7 @@ with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;    use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Config;      use Adalang_Analyzer.Config;
+with Adalang_Analyzer.Flow_Interp;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.SPARK_Readiness;
 with Adalang_Analyzer.Subprogram_Summaries;
@@ -2270,10 +2271,16 @@ package body Adalang_Analyzer.Flow_Contracts is
    --  Object then takes a value the body gave it, not the one it had on
    --  entry, and Object needs to be no input. False where that is not
    --  shown, and where a handler of the body touches Object, as it may run
-   --  before the assignment is done.
+   --  before the assignment is done. With Partial, a path that does not
+   --  touch Object at all is allowed beside those that write it first: one
+   --  that leaves a loop before the write, or goes through a branch or a
+   --  loop that does not write it (SPARK testsuite S530-019: a constituent
+   --  with relaxed initialization written in a loop of one pass, after an
+   --  exit; FP-190).
    function Written_First_Here
      (Subprogram : Libadalang.Analysis.Base_Subp_Body'Class;
-      Object     : Libadalang.Analysis.Defining_Name) return Boolean
+      Object     : Libadalang.Analysis.Defining_Name;
+      Partial    : Boolean) return Boolean
    is
       Key         : constant String := Key_Of (Object);
       Declaration : constant Libadalang.Analysis.Basic_Decl :=
@@ -2384,28 +2391,68 @@ package body Adalang_Analyzer.Flow_Contracts is
 
       --  What a statement, or a list of them, does to Object on every path
       --  through it: gives the whole of it a value before anything else
-      --  touches it (Written), does not touch it (Untouched), or neither,
-      --  or what it does is not told (Failed).
-      type Outcome is (Written, Untouched, Failed);
+      --  touches it (Written), does not touch it (Untouched), does one or
+      --  the other on each path (Mixed), or what it does is not told
+      --  (Failed). No path of the first three reads the value Object had
+      --  before the statement.
+      type Outcome is (Written, Untouched, Mixed, Failed);
 
       function Of_List (List : Libadalang.Analysis.Ada_Node'Class)
         return Outcome;
 
-      --  The first pass of a plain loop: Written when a statement writes
-      --  Object first and nothing before it can leave the loop, an exit
-      --  or a goto.
-      function Of_Pass (List : Libadalang.Analysis.Ada_Node'Class)
-        return Outcome;
+      --  The passes of the loop Loop_Node, whose statements are List: what
+      --  the paths that leave it, by an exit or by its end, do. Written
+      --  when the first pass writes Object first and nothing before the
+      --  write can leave the loop; an exit before it gives Mixed. An exit
+      --  of an outer loop or a goto fail it.
+      function Of_Pass
+        (Loop_Node : Libadalang.Analysis.Ada_Node'Class;
+         List      : Libadalang.Analysis.Ada_Node'Class) return Outcome;
 
       --  The paths through two branches of a choice taken together:
-      --  Written when both write, Untouched when neither touches.
+      --  Written when both write, Untouched when neither touches, Mixed
+      --  when they differ.
       function Of_Branches (Left, Right : Outcome) return Outcome
-      is (if Left = Right then Left else Failed);
+      is (if Left = Failed or else Right = Failed then Failed
+          elsif Left = Right then Left
+          else Mixed);
 
       function Of_Statement (Node : Libadalang.Analysis.Ada_Node'Class)
         return Outcome is
       begin
-         if Writes_Whole (Node) then
+         if Node.Kind = Libadalang.Common.Ada_Goto_Stmt then
+            --  It may jump over the write.
+            return Failed;
+         elsif Node.Kind in Libadalang.Common.Ada_Base_Loop_Stmt then
+            --  A loop that does not touch Object may still leave by an exit
+            --  of an outer loop.
+            if Touches (Node.As_Base_Loop_Stmt.F_Spec) then
+               return Failed;
+            elsif Node.Kind = Libadalang.Common.Ada_Loop_Stmt then
+               --  A plain loop goes round at least once: what its first
+               --  pass does before anything in it can leave the loop
+               --  (TISMain's main loop and Clock.CurrentTime; FP-189).
+               return Of_Pass (Node, Node.As_Base_Loop_Stmt.F_Stmts);
+            end if;
+
+            --  A for loop over a static range that is not empty goes round
+            --  at least once (S530-019's "for Unused_Loop_Var in 1 .. 1");
+            --  another for loop, or a while loop, may not go round at all.
+            declare
+               Passes : constant Outcome :=
+                 Of_Pass (Node, Node.As_Base_Loop_Stmt.F_Stmts);
+            begin
+               if Passes = Written
+                 and then Node.Kind = Libadalang.Common.Ada_For_Loop_Stmt
+                 and then SPARK_Readiness.Runs_At_Least_Once
+                            (Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec)
+               then
+                  return Written;
+               end if;
+               return (if Passes in Failed | Untouched then Passes
+                       else Mixed);
+            end;
+         elsif Writes_Whole (Node) then
             return Written;
          elsif not Touches (Node) then
             return Untouched;
@@ -2484,23 +2531,21 @@ package body Adalang_Analyzer.Flow_Contracts is
                   return Of_List (Block.F_Stmts.F_Stmts);
                end;
 
-            when Libadalang.Common.Ada_Loop_Stmt =>
-               --  A plain loop goes round at least once: what its first
-               --  pass does before anything in it can leave the loop
-               --  (TISMain's main loop and Clock.CurrentTime; FP-189).
-               if not Libadalang.Analysis.Is_Null (Node.As_Loop_Stmt.F_Spec)
-               then
-                  return Failed;
-               end if;
-               return Of_Pass (Node.As_Loop_Stmt.F_Stmts);
+            when Libadalang.Common.Ada_Named_Stmt =>
+               return Of_Statement (Node.As_Named_Stmt.F_Stmt);
 
             when others =>
                return Failed;
          end case;
       end Of_Statement;
 
+      --  The statements one after the other: once every path has written
+      --  Object, what follows does not matter; until then, a path that has
+      --  not touched it goes on to the next statement.
       function Of_List (List : Libadalang.Analysis.Ada_Node'Class)
-        return Outcome is
+        return Outcome
+      is
+         So_Far : Outcome := Untouched;
       begin
          if Libadalang.Analysis.Is_Null (List) then
             return Untouched;
@@ -2510,51 +2555,134 @@ package body Adalang_Analyzer.Flow_Contracts is
                declare
                   This : constant Outcome := Of_Statement (List.Child (Index));
                begin
-                  if This /= Untouched then
+                  if This in Written | Failed then
                      return This;
+                  elsif This = Mixed then
+                     So_Far := Mixed;
                   end if;
                end;
             end if;
          end loop;
-         return Untouched;
+         return So_Far;
       end Of_List;
 
-      function Of_Pass (List : Libadalang.Analysis.Ada_Node'Class)
-        return Outcome
+      function Of_Pass
+        (Loop_Node : Libadalang.Analysis.Ada_Node'Class;
+         List      : Libadalang.Analysis.Ada_Node'Class) return Outcome
       is
-         function Leaves (Node : Libadalang.Analysis.Ada_Node'Class)
-           return Boolean is
+         --  How a statement of the pass may leave the loop for the
+         --  statement after it: not at all (Stays), by an exit of Loop_Node
+         --  (Leaves_Loop), or where that is not told, by a goto (Elsewhere).
+         --  An exit of a loop inside the statement stays; one of a loop
+         --  around Loop_Node does not lead to the statement after it, and
+         --  is counted where that loop is.
+         type Leaving is (Stays, Leaves_Loop, Elsewhere);
+
+         --  The loop an exit leaves: the one its name gives, or the
+         --  innermost around it.
+         function Target (Stmt : Libadalang.Analysis.Exit_Stmt)
+           return Libadalang.Analysis.Ada_Node
+         is
+            Node : Libadalang.Analysis.Ada_Node := Stmt.Parent;
+         begin
+            if not Libadalang.Analysis.Is_Null (Stmt.F_Loop_Name) then
+               declare
+                  Decl : constant Libadalang.Analysis.Basic_Decl :=
+                    Stmt.F_Loop_Name.P_Referenced_Decl;
+               begin
+                  if Libadalang.Analysis.Is_Null (Decl)
+                    or else Decl.Kind /= Libadalang.Common.Ada_Named_Stmt_Decl
+                    or else Decl.Parent.Kind /= Libadalang.Common.Ada_Named_Stmt
+                  then
+                     return Libadalang.Analysis.No_Ada_Node;
+                  end if;
+                  return Decl.Parent.As_Named_Stmt.F_Stmt.As_Ada_Node;
+               end;
+            end if;
+            while not Libadalang.Analysis.Is_Null (Node)
+              and then Node.Kind not in Libadalang.Common.Ada_Base_Loop_Stmt
+            loop
+               Node := Node.Parent;
+            end loop;
+            return Node;
+         end Target;
+
+         --  By place, as Within: the loop a named exit leaves is reached
+         --  through its name.
+         function Same_Place
+           (Left, Right : Libadalang.Analysis.Ada_Node'Class) return Boolean
+         is (Within (Left, Right) and then Within (Right, Left));
+
+         function How_It_Leaves
+           (Stmt : Libadalang.Analysis.Ada_Node'Class;
+            Node : Libadalang.Analysis.Ada_Node'Class) return Leaving
+         is
+            Result : Leaving := Stays;
          begin
             if Libadalang.Analysis.Is_Null (Node) then
-               return False;
-            elsif Node.Kind in Libadalang.Common.Ada_Exit_Stmt
-                             | Libadalang.Common.Ada_Goto_Stmt
-            then
-               return True;
+               return Stays;
+            elsif Node.Kind = Libadalang.Common.Ada_Goto_Stmt then
+               return Elsewhere;
+            elsif Node.Kind = Libadalang.Common.Ada_Exit_Stmt then
+               declare
+                  Left : constant Libadalang.Analysis.Ada_Node :=
+                    Target (Node.As_Exit_Stmt);
+               begin
+                  if Libadalang.Analysis.Is_Null (Left) then
+                     return Elsewhere;
+                  elsif Same_Place (Left, Loop_Node) then
+                     return Leaves_Loop;
+                  elsif Within (Left, Stmt) or else Within (Loop_Node, Left)
+                  then
+                     return Stays;
+                  end if;
+                  return Elsewhere;
+               end;
             end if;
             for Index in 1 .. Node.Children_Count loop
-               if Leaves (Node.Child (Index)) then
-                  return True;
-               end if;
+               declare
+                  Child : constant Leaving :=
+                    How_It_Leaves (Stmt, Node.Child (Index));
+               begin
+                  if Child = Elsewhere then
+                     return Elsewhere;
+                  elsif Child = Leaves_Loop then
+                     Result := Leaves_Loop;
+                  end if;
+               end;
             end loop;
-            return False;
-         end Leaves;
+            return Result;
+         end How_It_Leaves;
+
+         So_Far : Outcome := Untouched;
+         Left   : Boolean := False;
       begin
          for Index in 1 .. List.Children_Count loop
             if not Libadalang.Analysis.Is_Null (List.Child (Index)) then
                declare
-                  This : constant Outcome := Of_Statement (List.Child (Index));
+                  Stmt : constant Libadalang.Analysis.Ada_Node :=
+                    List.Child (Index);
+                  This : constant Outcome := Of_Statement (Stmt);
+                  How  : constant Leaving := How_It_Leaves (Stmt, Stmt);
                begin
-                  if This = Written then
-                     return Written;
-                  elsif This = Failed or else Leaves (List.Child (Index))
-                  then
+                  if This = Failed or else How = Elsewhere then
                      return Failed;
+                  end if;
+                  Left := Left or else How = Leaves_Loop;
+
+                  --  A path may have left before the write, untouched.
+                  if This = Written then
+                     return (if Left then Mixed else Written);
+                  elsif This = Mixed then
+                     So_Far := Mixed;
                   end if;
                end;
             end if;
          end loop;
-         return Failed;
+
+         --  A pass that does not write Object on every path: the next one
+         --  does again what this one did, from where it left Object.
+         return So_Far;
       end Of_Pass;
    begin
       if Subprogram.Kind /= Libadalang.Common.Ada_Subp_Body then
@@ -2570,7 +2698,10 @@ package body Adalang_Analyzer.Flow_Contracts is
          then
             return False;
          end if;
-         return Of_List (Body_Node.F_Stmts.F_Stmts) = Written;
+         return (case Of_List (Body_Node.F_Stmts.F_Stmts) is
+                    when Written => True,
+                    when Mixed   => Partial,
+                    when Untouched | Failed => False);
       end;
    exception
       when others =>
@@ -3144,7 +3275,17 @@ package body Adalang_Analyzer.Flow_Contracts is
                     and then not Termination.Is_Library_Unit_Entity
                                    (Object.P_Basic_Decl));
          Assume_Imports_Touch_Nothing := Assumed;  --  adalang-analyzer: ignore Function_Side_Effect
-         Result := Written_First_Here (Subprogram, Object)
+
+         --  A path that leaves Object as it was is allowed for what
+         --  GNATprove would report, and for an object with relaxed
+         --  initialization, whose value need not be given on every path
+         --  (FP-190). For an obligation on an object of another kind, every
+         --  path is to give it a value.
+         Result := Written_First_Here
+             (Subprogram, Object,
+              Partial => As_GNATprove
+                or else Flow_Interp.Has_Relaxed_Initialization
+                          (Object.As_Ada_Node))
            or else Parts_Written_First (Subprogram, Object);
       exception
          when others =>

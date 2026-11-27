@@ -26,9 +26,9 @@ everything it reported wrongly there is fixed here.
   is held to its `Refined_Global`, and an `Output` global may be read
   once the body has given the whole of it a value, on every path, before
   any read; a read that may come first is still reported. Our own corpora
-  carried it, none of it triaged until now: Tokeneer 314 sites, libkeccak
-  246, SPARKNaCl 53, CubeDOS 11, project_bias 7, CoAP-SPARK 5 and
-  Saatana 3, all false; libgfxinit had 106. With `FP-189` below, none
+  carried it, none of it triaged until now: 617 sites, Tokeneer 305,
+  libkeccak 243, SPARKNaCl 43, CubeDOS 11, project_bias 7, CoAP-SPARK 5
+  and Saatana 3, all false; libgfxinit had 106. With `FP-189` below, none
   remain (`FP-181`).
 - `Uninitialized_Output` took a loop for one that may not go round at all
   whenever it could be left early: `for Try in Positive range 1 .. 32
@@ -72,6 +72,17 @@ everything it reported wrongly there is fixed here.
   program), a record written a component at a time, a plain loop, and a
   call inside the package body, which is held to the callee's
   `Refined_Global` (`FP-189`).
+- `Global_Contract_Mismatch` also reported such a read where the write
+  is in a `for` loop, or follows an `exit` that leaves the loop before it:
+  the SPARK testsuite's S530-019 writes a constituent with relaxed
+  initialization in `for Unused_Loop_Var in 1 .. 1 loop`, after the exit
+  taken when a call fails, and reads it after the write. A `for` loop over
+  a static range that is not empty now goes round at least once, and a
+  path that leaves a loop, or goes through a branch, without touching the
+  global does not read it. For `--verify`, every path is still to give
+  such a global a value unless it has relaxed initialization; the data
+  dependencies of S530-019's `initGlobalsA`, which GNATprove proves, are
+  proved (`FP-190`).
 
 ### Changed
 
