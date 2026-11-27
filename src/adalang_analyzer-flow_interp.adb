@@ -526,9 +526,6 @@ package body Adalang_Analyzer.Flow_Interp is
          Flow_Forget_All_Values (State);
    end Forget_Evaluated_Effects;
 
-   function Has_Relaxed_Initialization
-     (Key : Libadalang.Analysis.Ada_Node) return Boolean;
-
    --  What Cond having the value Truth says of the objects with relaxed
    --  initialization it names whole as the prefix of X'Initialized: each
    --  has a value in every part in State. Through "not", the operands of
@@ -952,9 +949,13 @@ package body Adalang_Analyzer.Flow_Interp is
             Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
               Decl.As_Subp_Body.P_Decl_Part
                 (Imprecise_Fallback => True);
+            --  The declaration of this body, not another subprogram of
+            --  its name (FP-182).
+            Own : constant Libadalang.Analysis.Basic_Decl :=
+              Flow_Contracts.Own_Declaration (Decl, Decl_Part);
          begin
-            if not Libadalang.Analysis.Is_Null (Decl_Part) then
-               Result := Decl_Part.P_Get_Aspect_Spec_Expr
+            if not Libadalang.Analysis.Is_Null (Own) then
+               Result := Own.P_Get_Aspect_Spec_Expr
                  (Langkit_Support.Text.To_Unbounded_Text
                     (Langkit_Support.Text.To_Text (Name)));
             end if;
@@ -999,6 +1000,11 @@ package body Adalang_Analyzer.Flow_Interp is
    begin
       if Decl.Kind = Libadalang.Common.Ada_Subp_Body then
          Part := Decl.As_Subp_Body.P_Decl_Part (Imprecise_Fallback => True);
+         --  The declaration of this body, not another subprogram of its
+         --  name (FP-182).
+         if not Libadalang.Analysis.Is_Null (Part) then
+            Part := Flow_Contracts.Own_Declaration (Decl, Part);
+         end if;
       elsif Decl.Kind in Libadalang.Common.Ada_Null_Subp_Decl
                        | Libadalang.Common.Ada_Expr_Function
       then
@@ -1099,9 +1105,13 @@ package body Adalang_Analyzer.Flow_Interp is
             Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
               Decl.As_Subp_Body.P_Decl_Part
                 (Imprecise_Fallback => True);
+            Own : constant Libadalang.Analysis.Basic_Decl :=
+              (if Libadalang.Analysis.Is_Null (Decl_Part)
+               then Libadalang.Analysis.No_Basic_Decl
+               else Flow_Contracts.Own_Declaration (Decl, Decl_Part));
          begin
-            return not Libadalang.Analysis.Is_Null (Decl_Part)
-              and then Has_Aspect (Decl_Part, Name);
+            return not Libadalang.Analysis.Is_Null (Own)
+              and then Has_Aspect (Own, Name);
          end;
       end if;
       return False;
@@ -6040,9 +6050,14 @@ package body Adalang_Analyzer.Flow_Interp is
                   Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
                     Subprogram.As_Subp_Body.P_Decl_Part
                       (Imprecise_Fallback => True);
+                  Own : constant Libadalang.Analysis.Basic_Decl :=
+                    (if Libadalang.Analysis.Is_Null (Decl_Part)
+                     then Libadalang.Analysis.No_Basic_Decl
+                     else Flow_Contracts.Own_Declaration
+                            (Subprogram, Decl_Part));
                begin
-                  return not Libadalang.Analysis.Is_Null (Decl_Part)
-                    and then Listed_By (Decl_Part);
+                  return not Libadalang.Analysis.Is_Null (Own)
+                    and then Listed_By (Own);
                end;
             end if;
             return False;

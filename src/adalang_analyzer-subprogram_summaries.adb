@@ -19,6 +19,7 @@ with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Config; use Adalang_Analyzer.Config;
+with Adalang_Analyzer.Flow_Contracts;
 with Adalang_Analyzer.Text_Utils;
 
 package body Adalang_Analyzer.Subprogram_Summaries is
@@ -866,8 +867,14 @@ package body Adalang_Analyzer.Subprogram_Summaries is
            Libadalang.Analysis.No_Basic_Decl;
       begin
          Decl_Part := Subprogram.P_Decl_Part (Imprecise_Fallback => True);
+         --  The declaration of this body, not another subprogram of its
+         --  name, whose summary this would replace (FP-182: libgfxinit's
+         --  two Panel.Setup_PP_Sequencer).
          if not Libadalang.Analysis.Is_Null (Decl_Part) then
-            Key_Decl := Decl_Part;
+            Decl_Part := Flow_Contracts.Own_Declaration (Subprogram, Decl_Part);
+            if not Libadalang.Analysis.Is_Null (Decl_Part) then
+               Key_Decl := Decl_Part;
+            end if;
          end if;
       exception
          when Exc : others =>

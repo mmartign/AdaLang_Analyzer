@@ -27,6 +27,15 @@ package Adalang_Analyzer.SPARK_Readiness is
    --  index A has; it holds no exit, return, raise or goto; and on every
    --  path through its body it assigns "A (I)". Target is the name A.
 
+   function Written_On_Every_Return
+     (Subprogram : Libadalang.Analysis.Subp_Body;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Id         : Libadalang.Analysis.Defining_Name'Class) return Boolean;
+   --  True when Subprogram returns normally only after its parameter Param,
+   --  named Id, is set, as Uninitialized_Output sees it; True as well when
+   --  that is not told here (Param is renamed, or written by a subprogram
+   --  declared in Subprogram).
+
    function Effective_SPARK_Enabled
      (Decl : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
    --  False when Decl, or the nearest enclosing unit that says, has

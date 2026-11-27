@@ -86,6 +86,58 @@ package Adalang_Analyzer.Flow_Contracts is
    --  or by the Refined_State of a package body that From is in. Null when
    --  it is a constituent of none.
 
+   function Same_Formals
+     (First, Other : Libadalang.Analysis.Basic_Decl'Class) return Boolean;
+   --  True when the subprograms First and Other have the same formals, by
+   --  name and in order: First is then a declaration of the subprogram
+   --  that Other completes, not another subprogram of the same name.
+
+   function Own_Declaration
+     (Subprogram : Libadalang.Analysis.Basic_Decl'Class;
+      Found      : Libadalang.Analysis.Basic_Decl'Class)
+      return Libadalang.Analysis.Basic_Decl;
+   --  The declaration that Subprogram, a body, completes: Found, as a
+   --  property of Libadalang found it, when it has the same formals; else
+   --  the declaration of the same name and formals in the package that
+   --  holds the body, in its body before it or in its declaration. A
+   --  lookup by name may give another subprogram of the name (FP-182:
+   --  libgfxinit's two Panel.Setup_PP_Sequencer; Ada_Drivers_Library's
+   --  overloaded STM32.Timers.Configure_Channel_Output). Null when there
+   --  is none.
+
+   function Caller_Global
+     (Callee : Libadalang.Analysis.Basic_Decl'Class;
+      Caller : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Expr;
+   --  The Global contract a call to Callee made from Caller is held to:
+   --  the Refined_Global of its body where Caller sees the refinement
+   --  (inside the package body that holds it), else its Global aspect.
+   --  Null when it has neither.
+
+   function Is_Not_A_Global
+     (Name : Libadalang.Analysis.Defining_Name'Class) return Boolean;
+   --  True when the object Name declares is not a global of any
+   --  subprogram: a constant whose value depends on no variable, or a
+   --  generic formal object of mode in. SPARK lists no such object in a
+   --  Global aspect.
+
+   function Object_Of
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Depth : Natural := 0) return Libadalang.Analysis.Defining_Name;
+   --  The object Node is, or is a part of, or designates: the root of a
+   --  name, behind any renaming. Null when Node is not such a name.
+
+   function Written_First
+     (Subprogram   : Libadalang.Analysis.Base_Subp_Body'Class;
+      Object       : Libadalang.Analysis.Defining_Name;
+      As_GNATprove : Boolean := False) return Boolean;
+   --  True when the body of Subprogram gives the whole of Object a value
+   --  before anything in it may read Object, on every path, so that no
+   --  read of Object takes the value it had on entry. False where that is
+   --  not shown. With As_GNATprove, an imported subprogram with no Global
+   --  aspect is taken to touch nothing, as GNATprove takes it: for a check
+   --  that says what GNATprove would report, never for an obligation.
+
    function Touches_Nothing_Outside
      (Callee : Libadalang.Analysis.Basic_Decl'Class;
       Caller : Libadalang.Analysis.Ada_Node'Class) return Boolean;

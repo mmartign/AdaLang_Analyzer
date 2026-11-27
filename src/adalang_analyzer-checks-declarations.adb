@@ -1250,7 +1250,14 @@ package body Adalang_Analyzer.Checks.Declarations is
                              (Unit, Id, Wrong_Parameter_Mode,
                               "parameter '" & Node_Text (Id) &
                                 "' is only read; use mode in");
-                        elsif Is_Wholly_Written and then not Is_Read then
+                        elsif Is_Wholly_Written and then not Is_Read
+                          --  Mode out would lose the caller's value on a
+                          --  path that does not write it ("Override :=
+                          --  True" under an if, libgfxinit's
+                          --  Check_PP_Delays; FP-187).
+                          and then SPARK_Readiness.Written_On_Every_Return
+                                     (Subprogram, Param, Id)
+                        then
                            Report_Rule_Violation
                              (Unit, Id, Wrong_Parameter_Mode,
                               "parameter '" & Node_Text (Id) &

@@ -191,6 +191,7 @@ join_predicates_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-join-predicates-broken.
 literal_bounds=$(mktemp "${TMPDIR:-/tmp}/adalang-literal-bounds.XXXXXX")
 literal_bounds_broken=$(mktemp "${TMPDIR:-/tmp}/adalang-literal-bounds-broken.XXXXXX")
 state_constituents=$(mktemp "${TMPDIR:-/tmp}/adalang-state-constituents.XXXXXX")
+own_state=$(mktemp "${TMPDIR:-/tmp}/adalang-own-state.XXXXXX")
 fp147=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp147.XXXXXX")
 fp145=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp145.XXXXXX")
 fp150=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-fp150.XXXXXX")
@@ -235,7 +236,7 @@ pre_globals=$(mktemp "${TMPDIR:-/tmp}/adalang-verify-pre-globals.XXXXXX")
 own_name_qualifier=$(mktemp "${TMPDIR:-/tmp}/adalang-own-name-qualifier.XXXXXX")
 cross_project=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project.XXXXXX")
 cross_project_stderr=$(mktemp "${TMPDIR:-/tmp}/adalang-cross-project-stderr.XXXXXX")
-trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken" "$parameter_aliasing" "$parameter_aliasing_broken" "$loop_predicates" "$loop_predicates_broken" "$composite_membership" "$composite_membership_broken" "$abstract_operator" "$join_predicates" "$join_predicates_broken" "$guaranteed_operands" "$guaranteed_operands_broken" "$literal_bounds" "$literal_bounds_broken" "$state_constituents" "$fp147" "$fp145" "$fp150" "$target_name" "$renaming_reads" "$fp164" "$fp168" "$fp165" "$fp168_unknown" "$fp176" "$fp178"' EXIT HUP INT TERM
+trap 'rm -f "$clean" "$loop" "$unsupported" "$call" "$many" "$initialization" "$initialization_defaults" "$initialization_rename" "$exception_model" "$vc_clean" "$vc_error" "$vc_unsupported" "$vc_unavailable" "$vc_guarded" "$vc_contracts" "$vc_division" "$vc_division_refuted" "$vc_division_zero_possible" "$vc_call_inlined" "$vc_unsupported_provenance" "$vc_contract_loop_provenance" "$vc_runtime_solver" "$vc_call_statement_body" "$vc_conversion" "$vc_conversion_modular" "$vc_quantified" "$vc_quantified_outside" "$vc_enum_assignment" "$vc_enum_error" "$vc_unsupported_sort" "$vc_derived_overflow_base" "$symbolic_assignment" "$symbolic_branch" "$symbolic_join" "$symbolic_call" "$symbolic_prepost" "$symbolic_loop" "$loop_vc_relational" "$loop_vc_broken" "$loop_branch_clean" "$loop_branch_broken" "$loop_branch_elsif_clean" "$loop_branch_elsif_broken" "$loop_branch_nested_if" "$loop_branch_elsif_nested_if" "$loop_branch_sequential_clean" "$loop_branch_sequential_broken" "$loop_branch_third_conditional" "$loop_branch_case_clean" "$loop_branch_case_broken" "$loop_branch_case_multi_choice" "$loop_branch_case_no_others" "$loop_branch_case_nested_if" "$loop_branch_ite_precision" "$loop_branch_ite_unsafe" "$loop_branch_ite_cond_unsupported" "$loop_branch_ite_cond_unsupported_precision" "$loop_branch_ite_cond_unsupported_unsafe" "$loop_invariant_independent_failure" "$loop_array_write" "$loop_record_write" "$loop_length_symbolic" "$length_attribute_unsound" "$loop_variant_dynamic_bound" "$loop_variant_increases" "$loop_variant_succ" "$loop_variant_wrong" "$loop_variant_unsupported" "$loop_variant_leading_order" "$slice_index_conservative" "$assert_false_guarded" "$out_forwarding" "$interprocedural_effects" "$interprocedural_ordinary" "$loop_stale_init" "$loop_stale_range" "$loop_stale_range_obligation" "$loop_stale_index" "$loop_stale_division" "$loop_stale_overflow" "$loop_stale_assert" "$loop_stale_precondition" "$global_aspect_clean" "$global_aspect_guard" "$initialization_pragma_unreferenced" "$own_name_qualifier" "$aborted_fixpoint" "$fp086" "$fp087" "$fp088" "$fp089" "$membership" "$own_range" "$fp090" "$fp091" "$fp092" "$fp093" "$fp094" "$converged" "$completion" "$spark_project" "$spark_bare" "$fp097" "$fp098" "$fp099" "$fp100" "$symbolic_bounds" "$symbolic_dimensions" "$fp101" "$initializer_bounds" "$pre_globals" "$deferred" "$termination" "$termination_iteration" "$flow_contracts" "$expression_functions" "$function_terms" "$call_frame" "$fp110" "$call_postcondition" "$fp112" "$fp113" "$quantified_invariant" "$named_values" "$forward_goto" "$named_loops" "$type_size" "$provisional_error" "$fp115" "$fp116" "$length_conversion" "$length_limits" "$length_check" "$length_check_state" "$standing_values" "$fp117" "$fp118" "$call_actuals" "$array_bounds" "$expression_forms" "$object_parts" "$fp119" "$fp120" "$record_actuals" "$condition_parts" "$predicates" "$fp121" "$access_values" "$fp122" "$generic_instances" "$quantified_values" "$fp124" "$fp125" "$part_frames" "$unknown_effects" "$flow_dependencies" "$unchecked_conversion" "$predicate_checks" "$old_values" "$fp129" "$loop_parameter" "$fp130" "$loop_summary" "$loop_entry_widening" "$declared_bound_division" "$subtype_clamp" "$loop_standing_facts" "$element_writes" "$static_constants" "$static_constants_external" "$instance_passes" "$dereferences" "$dereferences_ada" "$translation_pieces" "$fp131" "$outside_objects" "$formal_contracts" "$fp137" "$operator_calls" "$renamed_contracts" "$element_ranges" "$body_invariants" "$formal_contracts_broken" "$array_contents" "$fp138" "$fp139" "$array_stores" "$array_loops" "$array_records" "$array_values" "$loop_entry_records" "$relaxed_initialization" "$fp141" "$relaxed_elements" "$access_contexts" "$discriminants" "$resource_leaks" "$contract_checks" "$imported_generics" "$loop_frame" "$loop_frame_broken" "$fp143" "$contract_reach" "$contract_reach_broken" "$parameter_aliasing" "$parameter_aliasing_broken" "$loop_predicates" "$loop_predicates_broken" "$composite_membership" "$composite_membership_broken" "$abstract_operator" "$join_predicates" "$join_predicates_broken" "$guaranteed_operands" "$guaranteed_operands_broken" "$literal_bounds" "$literal_bounds_broken" "$state_constituents" "$own_state" "$fp147" "$fp145" "$fp150" "$target_name" "$renaming_reads" "$fp164" "$fp168" "$fp165" "$fp168_unknown" "$fp176" "$fp178"' EXIT HUP INT TERM
 
 run_json()
 {
@@ -4124,6 +4125,45 @@ for project in good bad; do
            "constituent before it is written is not left unproved" >&2
          exit 1
       fi
+   fi
+done
+
+#  FP-182, FP-188: a state abstraction of a package, Part_Of a state of
+#  its parent whose refinement the package does not see, is what the
+#  package names, not the parent's state, and so is it in a sibling that
+#  withs the package (libhwbase's HW.Time.Timer.Abstract_Time; libgfxinit's
+#  Registers.Register_State in DP_Aux_Request). In the good project each
+#  Depends aspect is what the body does; in the bad one Raw_Value_Max and
+#  Sample depend on nothing, though they say Abstract_Time.
+for project in good bad; do
+   status=0
+   "$analyzer" -P "tests/verification_own_state/$project.gpr" \
+     --verify -q --format=json --output="$own_state" \
+     >/dev/null 2>&1 || status=$?
+   if [ "$status" -gt 1 ]; then
+      echo "verification run failed for the own-state $project project" \
+        "with status $status" >&2
+      exit "$status"
+   fi
+   must_prove "$own_state" flow-dependencies 'Depends of Raw_Value_Min' \
+     flow-analysis 'FP-182: own state'
+   if [ "$project" = good ]; then
+      must_prove "$own_state" flow-dependencies 'Depends of Raw_Value_Max' \
+        flow-analysis 'FP-182: own state through a call'
+      must_prove "$own_state" flow-dependencies 'Depends of Sample' \
+        flow-analysis 'FP-188: a state of a with-ed sibling'
+      if grep -F '"ruleId": "Depends_Contract_Mismatch"' "$own_state" \
+        >/dev/null
+      then
+         echo "FP-182: a Depends mismatch is reported on the own-state" \
+           "project" >&2
+         exit 1
+      fi
+   else
+      must_not_prove "$own_state" flow-dependencies \
+        'Depends of Raw_Value_Max' 'FP-182: mutation'
+      must_not_prove "$own_state" flow-dependencies 'Depends of Sample' \
+        'FP-188: mutation'
    fi
 done
 

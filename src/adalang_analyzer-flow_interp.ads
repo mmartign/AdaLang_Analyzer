@@ -77,4 +77,12 @@ package Adalang_Analyzer.Flow_Interp is
    --  unit, or nowhere, is left as it is. A no-op unless
    --  Config.Verification_Mode is enabled.
 
+   function Has_Relaxed_Initialization
+     (Key : Libadalang.Analysis.Ada_Node) return Boolean;
+   --  True when the object or parameter whose defining name is Key is one
+   --  SPARK code can leave with parts that have no value: the aspect
+   --  Relaxed_Initialization is on it, on its type or on what its type is
+   --  made of, or on the subprogram of a parameter, which names the
+   --  parameters it is for. Not a state abstraction.
+
 end Adalang_Analyzer.Flow_Interp;

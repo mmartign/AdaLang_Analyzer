@@ -1235,6 +1235,34 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       return False;
    end Is_Inside_Loop;
 
+   --  True when the outermost loop around Node in its subprogram reads
+   --  Decl anywhere: a value Node stores may be read on the next pass,
+   --  before Node in the text ("Fill_Aux_Request (Request => Request, ...)"
+   --  at the end of the loop of libgfxinit's I2C_Out_Packet, whose next
+   --  pass sends Request; FP-186).
+   function Read_In_Enclosing_Loop
+     (Decl : Libadalang.Analysis.Basic_Decl;
+      Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Ancestor  : Libadalang.Analysis.Ada_Node := Node.Parent;
+      Outermost : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+   begin
+      while not Libadalang.Analysis.Is_Null (Ancestor)
+        and then Ancestor.Kind not in Libadalang.Common.Ada_Subp_Body
+      loop
+         if Ancestor.Kind in Libadalang.Common.Ada_Base_Loop_Stmt then
+            Outermost := Ancestor;
+         end if;
+         Ancestor := Ancestor.Parent;
+      end loop;
+      return not Libadalang.Analysis.Is_Null (Outermost)
+        and then Data_Flow.Reads_Declaration (Outermost, Decl);
+   exception
+      when others =>
+         return True;
+   end Read_In_Enclosing_Loop;
+
    function Is_Object_Renaming_Name
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
@@ -2885,6 +2913,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                              and then not Is_Discard_Name (Decl)
                              and then not Data_Flow.Has_Read_After_Node
                                (Subprogram.F_Stmts, Decl, Stmt)
+                             and then not Read_In_Enclosing_Loop (Decl, Stmt)
                              and then not Read_By_Nested_Body
                                (Decl, Subprogram, Stmt)
                              and then not Callee_Has_Inspection_Point

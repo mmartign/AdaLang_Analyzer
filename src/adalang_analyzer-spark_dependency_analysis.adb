@@ -58,9 +58,13 @@ package body Adalang_Analyzer.SPARK_Dependency_Analysis is
             Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
               Decl.As_Subp_Body.P_Decl_Part
                 (Imprecise_Fallback => True);
+            --  The declaration of this body, not another subprogram of its
+            --  name (libgfxinit's two Panel.Setup_PP_Sequencer; FP-182).
+            Own : constant Libadalang.Analysis.Basic_Decl :=
+              Flow_Contracts.Own_Declaration (Decl, Decl_Part);
          begin
-            if not Libadalang.Analysis.Is_Null (Decl_Part) then
-               Result := Decl_Part.P_Get_Aspect_Spec_Expr
+            if not Libadalang.Analysis.Is_Null (Own) then
+               Result := Own.P_Get_Aspect_Spec_Expr
                  (Langkit_Support.Text.To_Unbounded_Text
                     (Langkit_Support.Text.To_Text (Name)));
             end if;

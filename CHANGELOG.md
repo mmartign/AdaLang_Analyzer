@@ -5,6 +5,86 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+The fixes of what running 1.17.5 on coreboot's libgfxinit and libhwbase
+(SPARK code that ships in firmware) showed, and of what validating them
+on our corpora showed. Neither library has a defect the analyzer finds;
+everything it reported wrongly there is fixed here.
+
+### Fixed
+
+- `Global_Contract_Mismatch` did not know state abstractions. A name in a
+  Global aspect counted only when it denoted an object, so
+  `Global => (Output => S)` allowed nothing, and every read or write of a
+  constituent of `S` was reported, in the smallest package with one
+  state. The body's `Refined_Global` was not looked at; a constant whose
+  value depends on no variable, which SPARK lists in no Global aspect,
+  counted as a global; a renaming was not taken for the object it
+  renames. Now a constituent is allowed as the state it is part of allows
+  it (by `Part_Of` or a `Refined_State`, through further states), a body
+  is held to its `Refined_Global`, and an `Output` global may be read
+  once the body has given the whole of it a value, on every path, before
+  any read; a read that may come first is still reported. Our own corpora
+  carried it, none of it triaged until now: Tokeneer 314 sites, libkeccak
+  246, SPARKNaCl 53, CubeDOS 11, project_bias 7, CoAP-SPARK 5 and
+  Saatana 3, all false; libgfxinit had 106. With `FP-189` below, none
+  remain (`FP-181`).
+- `Uninitialized_Output` took a loop for one that may not go round at all
+  whenever it could be left early: `for Try in Positive range 1 .. 32
+  loop ... exit when Success; end loop` was reported for what its first
+  pass sets. A loop that goes round at least once (a plain loop, or a for
+  loop over a static non-empty range, subtype or enumeration type) now
+  sets what its first pass sets before every exit and, for a for loop, by
+  the end of the pass (`FP-183`). An out parameter with relaxed
+  initialization is no longer checked (`FP-184`), and a function called
+  in a declaration of the subprogram sets the out parameter it is given
+  (`FP-185`).
+- `Dead_Store` no longer reports the value a call stores at the end of a
+  loop pass that the next pass reads (`FP-186`).
+- `Wrong_Parameter_Mode` no longer advises mode `out` for an `in out`
+  parameter written only on some paths, where `out` would lose the
+  caller's value (`FP-187`).
+- `Depends_Contract_Mismatch` and the flow-dependencies obligation
+  replaced a state that a package names in its own contracts by the
+  state it is `Part_Of`, wherever the refinement of that state was not
+  visible: libhwbase's `HW.Time.Timer` was told its result depends on
+  `HW.Time.State`, not on its own `Abstract_Time`. A state or object the
+  body can name is now what it sees, as GNATprove sees it. Validating
+  that showed what it had hidden, fixed with it: a call in `pragma Debug`
+  counted as a data and a flow dependency, which for GNATprove it is
+  not; the states of two instances of a generic were one object; a read
+  of an element of an object with `Effective_Reads` did not depend on
+  the index; a body with no declaration of its own was held to the
+  contracts of another subprogram of its name; and a callee with no
+  contract whose formals are all of mode `in` passed none of them on.
+  libgfxinit and libhwbase have no `Depends_Contract_Mismatch` left in
+  their firmware configurations; three remain in that of the Linux test
+  program, whose `MMIO_Range` body (not SPARK) keeps the base address
+  with the registers' contents, so the flows those contracts declare are
+  not there (`FP-182`, `FP-188`).
+- `Global_Contract_Mismatch` reported a read of an `Output` global that
+  the body writes first where the analyzer could not see that the write
+  comes first: a call it does not follow before the write (a generic
+  formal function, in libkeccak, which cannot reach the locals it is
+  about; an imported subprogram or one of the predefined units with no
+  Global aspect, which GNATprove takes to touch no object of the
+  program), a record written a component at a time, a plain loop, and a
+  call inside the package body, which is held to the callee's
+  `Refined_Global` (`FP-189`).
+
+### Changed
+
+- `Missing_Global_Contract` goes by the same accesses as
+  `Global_Contract_Mismatch`: a constant whose value depends on no
+  variable is no global state, and a call to a subprogram whose Global
+  aspect names a state abstraction touches that state. A subprogram that
+  reads only such constants is no longer reported; one that reaches state
+  only through such calls now is, as GNATprove would generate a Global
+  for it (`Ada.Text_IO`'s `File_System`, `Interfaces.C.Strings`'
+  `C_Memory`). On the ten benchmark corpora the findings go from 1,498
+  to 796 sites.
+
 ## [1.17.5] - 2026-11-26
 
 The fixes of what running 1.17.4 on thirteen of Gautier de Montmollin's

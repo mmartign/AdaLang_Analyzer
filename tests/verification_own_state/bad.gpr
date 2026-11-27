@@ -1,0 +1,10 @@
+--  A parent whose state is refined in a body its children do not see, a
+--  private child with states of its own Part_Of it, and a sibling that
+--  withs the child (FP-182, libhwbase's HW.Time.Timer; FP-188, libgfxinit's
+--  Registers.Register_State in DP_Aux_Request). See run_verification.sh.
+project Bad is
+   for Source_Dirs use ("bad");
+   for Object_Dir use "../../obj/verification_own_state/bad";
+   for Create_Missing_Dirs use "True";
+   for Main use ();
+end Bad;

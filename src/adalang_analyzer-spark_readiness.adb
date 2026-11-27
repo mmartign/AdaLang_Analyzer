@@ -10,13 +10,17 @@ with Ada.Containers.Vectors;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
+with GNATCOLL.GMP.Integers;
+with Langkit_Support.Slocs;
 with Langkit_Support.Text;
 with Libadalang.Common;
 
 with Adalang_Analyzer.Ada_Text;    use Adalang_Analyzer.Ada_Text;
 with Adalang_Analyzer.Config;      use Adalang_Analyzer.Config;
+with Adalang_Analyzer.Flow_Contracts;
 with Adalang_Analyzer.Flow_Domain; use Adalang_Analyzer.Flow_Domain;
 with Adalang_Analyzer.Flow_Eval;   use Adalang_Analyzer.Flow_Eval;
+with Adalang_Analyzer.Flow_Interp;
 with Adalang_Analyzer.Proof_Obligations;
 with Adalang_Analyzer.Report;      use Adalang_Analyzer.Report;
 with Adalang_Analyzer.Rules;       use Adalang_Analyzer.Rules;
@@ -60,9 +64,14 @@ package body Adalang_Analyzer.SPARK_Readiness is
             Decl_Part : constant Libadalang.Analysis.Basic_Decl :=
               Decl.As_Subp_Body.P_Decl_Part
                 (Imprecise_Fallback => True);
+            --  The declaration of this body, not another subprogram of
+            --  its name (libgfxinit's two Panel.Setup_PP_Sequencer;
+            --  FP-182).
+            Own : constant Libadalang.Analysis.Basic_Decl :=
+              Flow_Contracts.Own_Declaration (Decl, Decl_Part);
          begin
-            if not Libadalang.Analysis.Is_Null (Decl_Part) then
-               Result := Decl_Part.P_Get_Aspect_Spec_Expr
+            if not Libadalang.Analysis.Is_Null (Own) then
+               Result := Own.P_Get_Aspect_Spec_Expr
                  (Langkit_Support.Text.To_Unbounded_Text
                     (Langkit_Support.Text.To_Text (Name)));
             end if;
@@ -187,6 +196,29 @@ package body Adalang_Analyzer.SPARK_Readiness is
       then
          return Libadalang.Analysis.No_Ada_Node;
       end if;
+
+      --  A renaming declared outside Root stands for the object it renames
+      --  ("Raw_Clock : Frequency_Type renames Variable.Raw_Clock",
+      --  libgfxinit; FP-181).
+      if not Libadalang.Analysis.Is_Null
+               (Decl.As_Object_Decl.F_Renaming_Clause)
+      then
+         declare
+            Renamed : constant Libadalang.Analysis.Defining_Name :=
+              Flow_Contracts.Object_Of
+                (Decl.As_Object_Decl.F_Renaming_Clause.F_Renamed_Object);
+         begin
+            if Libadalang.Analysis.Is_Null (Renamed)
+              or else Renamed.P_Basic_Decl.Kind /=
+                Libadalang.Common.Ada_Object_Decl
+              or else Is_Within (Renamed.P_Basic_Decl, Root)
+            then
+               return Libadalang.Analysis.No_Ada_Node;
+            end if;
+            return Libadalang.Analysis.Ada_Node (Renamed);
+         end;
+      end if;
+
       return Libadalang.Analysis.Ada_Node
         (Node.As_Name.P_Referenced_Defining_Name);
    exception
@@ -210,9 +242,57 @@ package body Adalang_Analyzer.SPARK_Readiness is
       return False;
    end Is_Parameter_Key;
 
+   --  True when Left and Right are written at the same place. By place,
+   --  not by "=", which compares entities: a name reached through an
+   --  instance or a Part_Of is not the entity its declaration gives.
+   function Same_Place
+     (Left, Right : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+      use type Langkit_Support.Slocs.Source_Location;
+   begin
+      return not Libadalang.Analysis.Is_Null (Left)
+        and then not Libadalang.Analysis.Is_Null (Right)
+        and then Left.Unit.Get_Filename = Right.Unit.Get_Filename
+        and then Langkit_Support.Slocs.Start_Sloc (Left.Sloc_Range) =
+          Langkit_Support.Slocs.Start_Sloc (Right.Sloc_Range);
+   exception
+      when others =>
+         return False;
+   end Same_Place;
+
+   --  True when Left and Right are reached through the same instances,
+   --  told apart by where each instantiation is: the states of two
+   --  instances of a generic are two states, though both are declared at
+   --  its State (FP-182, libgfxinit's Registers.Regs and GTT_32).
+   function Same_Instances
+     (Left, Right : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+      A : constant Libadalang.Analysis.Generic_Instantiation_Array :=
+        Left.P_Generic_Instantiations;
+      B : constant Libadalang.Analysis.Generic_Instantiation_Array :=
+        Right.P_Generic_Instantiations;
+   begin
+      if A'Length /= B'Length then
+         return False;
+      end if;
+      for Offset in 0 .. A'Length - 1 loop
+         if not Same_Place
+                  (Libadalang.Analysis.Ada_Node (A (A'First + Offset)),
+                   Libadalang.Analysis.Ada_Node (B (B'First + Offset)))
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   exception
+      when others =>
+         return True;
+   end Same_Instances;
+
    function Equivalent_Keys
      (Left, Right : Libadalang.Analysis.Ada_Node) return Boolean is
-     (Left = Right
+     (((Left = Right or else Same_Place (Left, Right))
+       and then Same_Instances (Left, Right))
       or else
         (Is_Parameter_Key (Left)
          and then Is_Parameter_Key (Right)
@@ -261,6 +341,63 @@ package body Adalang_Analyzer.SPARK_Readiness is
       end if;
    end Include;
 
+   --  True when Key, an object, is a global of no subprogram: a constant
+   --  whose value depends on no variable, which SPARK lists in no Global
+   --  aspect ("ClassStringLookUp", tokeneer; FP-181).
+   function Is_Not_A_Global (Key : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+   begin
+      return not Libadalang.Analysis.Is_Null (Key)
+        and then Key.Kind = Libadalang.Common.Ada_Defining_Name
+        and then Flow_Contracts.Is_Not_A_Global (Key.As_Defining_Name);
+   exception
+      when others =>
+         return False;
+   end Is_Not_A_Global;
+
+   --  The key of what Node, a name in a Global aspect, denotes: an object
+   --  as Referenced_Object_Key gives it, or a state abstraction (FP-181:
+   --  a state was no key, so a Global aspect naming states allowed
+   --  nothing).
+   function Referenced_Global_Key
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Root : Libadalang.Analysis.Subp_Body)
+      return Libadalang.Analysis.Ada_Node
+   is
+      Decl : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Libadalang.Analysis.Is_Null (Node)
+        or else Node.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return Libadalang.Analysis.No_Ada_Node;
+      end if;
+
+      Decl := Node.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
+      if not Libadalang.Analysis.Is_Null (Decl)
+        and then Decl.Kind = Libadalang.Common.Ada_Abstract_State_Decl
+      then
+         return Libadalang.Analysis.Ada_Node
+           (Node.As_Name.P_Referenced_Defining_Name);
+      end if;
+      return Referenced_Object_Key (Node, Root);
+   exception
+      when others =>
+         return Libadalang.Analysis.No_Ada_Node;
+   end Referenced_Global_Key;
+
+   --  True when Key denotes a state abstraction.
+   function Is_State_Key (Key : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+   begin
+      return not Libadalang.Analysis.Is_Null (Key)
+        and then Key.Kind = Libadalang.Common.Ada_Defining_Name
+        and then Key.As_Defining_Name.P_Basic_Decl.Kind =
+          Libadalang.Common.Ada_Abstract_State_Decl;
+   exception
+      when others =>
+         return False;
+   end Is_State_Key;
+
    procedure Include_Identifier
      (Items      : in out Access_Vectors.Vector;
       Node       : Libadalang.Analysis.Ada_Node'Class;
@@ -271,7 +408,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
       Key : constant Libadalang.Analysis.Ada_Node :=
         Referenced_Object_Key (Node, Root);
    begin
-      if not Libadalang.Analysis.Is_Null (Key) then
+      if not Libadalang.Analysis.Is_Null (Key)
+        and then not Is_Not_A_Global (Key)
+      then
          Include
            (Items, Key, Node_Text (Node), Node, Is_Read, Is_Written);
       end if;
@@ -291,7 +430,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
       elsif Expr.Kind = Libadalang.Common.Ada_Identifier then
          declare
             Key : constant Libadalang.Analysis.Ada_Node :=
-              Referenced_Object_Key (Expr, Root);
+              Referenced_Global_Key (Expr, Root);
          begin
             if not Libadalang.Analysis.Is_Null (Key) then
                Include
@@ -492,8 +631,13 @@ package body Adalang_Analyzer.SPARK_Readiness is
          Decl := Target.P_Referenced_Decl;
          if not Libadalang.Analysis.Is_Null (Decl) then
             declare
+               --  Inside the package body that holds the callee's body,
+               --  the call is held to its Refined_Global, as GNATprove
+               --  holds it (tokeneer's AdminToken.Init calling Clear,
+               --  "Global => (In_Out => State)", refined as Output of
+               --  every constituent; FP-189).
                Global : constant Libadalang.Analysis.Expr :=
-                 Contract_Expression (Decl, "Global");
+                 Flow_Contracts.Caller_Global (Decl, Root);
             begin
                Parse_Global (Global, Root, Call, Items);
             end;
@@ -523,7 +667,13 @@ package body Adalang_Analyzer.SPARK_Readiness is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return;
-      elsif Node.Kind = Libadalang.Common.Ada_Subp_Body then
+      elsif Node.Kind = Libadalang.Common.Ada_Subp_Body
+        --  GNATprove takes no data dependency from pragma Debug, which
+        --  may call code that is not SPARK (libgfxinit; FP-182).
+        or else (Node.Kind = Libadalang.Common.Ada_Pragma_Node
+                 and then Normalize_Rule_Name
+                            (Node_Text (Node.As_Pragma_Node.F_Id)) = "debug")
+      then
          return;
       elsif Node.Kind = Libadalang.Common.Ada_Assign_Stmt then
          Collect_Accesses
@@ -1339,6 +1489,85 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return False;
    end Statement_Writes_Parameter;
 
+   --  True when a call in the initial value of an object declared in Decls
+   --  passes Param as an out actual: the call runs before the statements
+   --  ("Ret : constant int := c_map (addr => Addr, ...)", libhwbase's
+   --  HW.File.Map; FP-185).
+   function Declarations_Write_Parameter
+     (Decls : Libadalang.Analysis.Ada_Node'Class;
+      Param : Libadalang.Analysis.Param_Spec;
+      Name  : String) return Boolean
+   is
+      function Walk (Node : Libadalang.Analysis.Ada_Node'Class)
+        return Boolean
+      is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind = Libadalang.Common.Ada_Call_Expr
+           and then Node.As_Call_Expr.F_Suffix.Kind =
+             Libadalang.Common.Ada_Assoc_List
+         then
+            declare
+               Call     : constant Libadalang.Analysis.Call_Expr :=
+                 Node.As_Call_Expr;
+               Position : Natural := 0;
+            begin
+               for Child of Call.F_Suffix.Children loop
+                  if Child.Kind = Libadalang.Common.Ada_Param_Assoc then
+                     Position := Position + 1;
+                     if Same_Parameter
+                          (Child.As_Param_Assoc.F_R_Expr, Param, Name)
+                     then
+                        declare
+                           Assoc  : constant Libadalang.Analysis.Param_Assoc
+                             := Child.As_Param_Assoc;
+                           Formal : constant Libadalang.Analysis.Defining_Name
+                             :=
+                             (if Libadalang.Analysis.Is_Null
+                                   (Assoc.F_Designator)
+                              then Callee_Formal_At_Position (Call, Position)
+                              else Callee_Formal_By_Name
+                                     (Call,
+                                      Normalize_Rule_Name
+                                        (Node_Text (Assoc.F_Designator))));
+                        begin
+                           if not Libadalang.Analysis.Is_Null (Formal)
+                             and then Formal_Mode (Formal) =
+                               Libadalang.Common.Ada_Mode_Out
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end if;
+                  end if;
+               end loop;
+            end;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Walk (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Walk;
+   begin
+      if Libadalang.Analysis.Is_Null (Decls) then
+         return False;
+      end if;
+      for Item of Decls.Children loop
+         if Item.Kind = Libadalang.Common.Ada_Object_Decl
+           and then Walk (Item.As_Object_Decl.F_Default_Expr)
+         then
+            return True;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Declarations_Write_Parameter;
+
    function Contains_Loop_Escape
      (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
@@ -1727,13 +1956,250 @@ package body Adalang_Analyzer.SPARK_Readiness is
       end if;
    end Merge;
 
+   --  The exits that leave the loop whose body is being interpreted,
+   --  gathered over its first pass (FP-183). Initialization only ever
+   --  goes from unset to set, so a later pass reaches each exit with at
+   --  least what the first one had: what holds at every exit of the first
+   --  pass holds wherever the loop is left by an exit.
+   type Exit_State is record
+      Active      : Boolean := False;
+      --  An exit here leaves Loop_Node.
+      Loop_Node   : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.No_Ada_Node;
+      Has_Exit    : Boolean := False;
+      --  Param is set at every exit met so far.
+      Initialized : Boolean := True;
+      --  A goto, or an exit that names another loop: where the loop is
+      --  left from is not known.
+      Unsupported : Boolean := False;
+   end record;
+
+   --  True when the for loop Spec goes round at least once: "for I in"
+   --  a range, a subtype mark or "S range L .. H" whose bounds are static
+   --  and not empty, or a whole enumeration type, which has a literal at
+   --  least ("for D in Delays_Enum", "for P in DPLLs", "for Try in
+   --  Positive range 1 .. 32"; libgfxinit, FP-183).
+   function Runs_At_Least_Once
+     (Spec : Libadalang.Analysis.For_Loop_Spec) return Boolean
+   is
+      Iter : constant Libadalang.Analysis.Ada_Node := Spec.F_Iter_Expr;
+
+      --  The static position of the enumeration literal Bound names.
+      function Position
+        (Bound : Libadalang.Analysis.Ada_Node'Class;
+         Known : out Boolean) return Long_Long_Integer
+      is
+         Decl : Libadalang.Analysis.Basic_Decl;
+      begin
+         Known := False;
+         if Bound.Kind not in Libadalang.Common.Ada_Identifier
+                | Libadalang.Common.Ada_Dotted_Name
+         then
+            return 0;
+         end if;
+         Decl := Bound.As_Name.P_Referenced_Decl;
+         if Libadalang.Analysis.Is_Null (Decl)
+           or else Decl.Kind /= Libadalang.Common.Ada_Enum_Literal_Decl
+         then
+            return 0;
+         end if;
+         --  Representation values go up with the positions (RM 13.4).
+         Known := True;
+         return Long_Long_Integer'Value
+           (GNATCOLL.GMP.Integers.Image
+              (Decl.As_Enum_Literal_Decl.P_Enum_Rep));
+      exception
+         when others =>
+            Known := False;
+            return 0;
+      end Position;
+
+      --  True when Bounds, a "L .. H" of enumeration literals, is not
+      --  empty.
+      function Enumeration_Range_Not_Empty
+        (Bounds : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+         Low_Known, High_Known : Boolean;
+         Low, High             : Long_Long_Integer;
+      begin
+         if Bounds.Kind /= Libadalang.Common.Ada_Bin_Op
+           or else Bounds.As_Bin_Op.F_Op /=
+             Libadalang.Common.Ada_Op_Double_Dot
+         then
+            return False;
+         end if;
+         Low := Position (Bounds.As_Bin_Op.F_Left, Low_Known);
+         High := Position (Bounds.As_Bin_Op.F_Right, High_Known);
+         return Low_Known and then High_Known and then Low <= High;
+      end Enumeration_Range_Not_Empty;
+
+      --  True when Name denotes an enumeration subtype that is not empty.
+      function Enumeration_Subtype_Not_Empty
+        (Name  : Libadalang.Analysis.Ada_Node'Class;
+         Depth : Natural := 0) return Boolean
+      is
+         Decl : Libadalang.Analysis.Basic_Decl;
+      begin
+         if Depth > 8
+           or else Name.Kind not in Libadalang.Common.Ada_Identifier
+                     | Libadalang.Common.Ada_Dotted_Name
+         then
+            return False;
+         end if;
+         Decl := Name.As_Name.P_Referenced_Decl;
+         if Libadalang.Analysis.Is_Null (Decl) then
+            return False;
+         elsif Decl.Kind = Libadalang.Common.Ada_Concrete_Type_Decl then
+            return Decl.As_Concrete_Type_Decl.F_Type_Def.Kind =
+              Libadalang.Common.Ada_Enum_Type_Def;
+         elsif Decl.Kind = Libadalang.Common.Ada_Subtype_Decl then
+            declare
+               Indication : constant Libadalang.Analysis.Subtype_Indication
+                 := Decl.As_Subtype_Decl.F_Subtype;
+            begin
+               if Libadalang.Analysis.Is_Null (Indication.F_Constraint) then
+                  return Enumeration_Subtype_Not_Empty
+                    (Indication.F_Name, Depth + 1);
+               elsif Indication.F_Constraint.Kind =
+                 Libadalang.Common.Ada_Range_Constraint
+               then
+                  return Enumeration_Range_Not_Empty
+                    (Indication.F_Constraint.As_Range_Constraint.F_Range
+                       .F_Range);
+               end if;
+            end;
+         end if;
+         return False;
+      exception
+         when others =>
+            return False;
+      end Enumeration_Subtype_Not_Empty;
+   begin
+      if Spec.F_Loop_Type.Kind /= Libadalang.Common.Ada_Iter_Type_In then
+         return False;
+      end if;
+
+      declare
+         Bounds : constant Abstract_Range :=
+           Discrete_Definition_Range (Iter, Empty_Flow_State);
+      begin
+         if Bounds.Has_Low and then Bounds.Has_High then
+            return Bounds.Low <= Bounds.High;
+         end if;
+      end;
+
+      if Iter.Kind = Libadalang.Common.Ada_Subtype_Indication then
+         declare
+            Indication : constant Libadalang.Analysis.Subtype_Indication :=
+              Iter.As_Subtype_Indication;
+         begin
+            if not Libadalang.Analysis.Is_Null (Indication.F_Constraint)
+              and then Indication.F_Constraint.Kind =
+                Libadalang.Common.Ada_Range_Constraint
+            then
+               return Enumeration_Range_Not_Empty
+                 (Indication.F_Constraint.As_Range_Constraint.F_Range
+                    .F_Range);
+            end if;
+            return Enumeration_Subtype_Not_Empty (Indication.F_Name);
+         end;
+      end if;
+      return Enumeration_Range_Not_Empty (Iter)
+        or else Enumeration_Subtype_Not_Empty (Iter);
+   exception
+      when others =>
+         return False;
+   end Runs_At_Least_Once;
+
+   --  True when the exit statement Stmt leaves Loop_Node: it names no loop,
+   --  or names that one.
+   function Exits_Loop
+     (Stmt      : Libadalang.Analysis.Exit_Stmt;
+      Loop_Node : Libadalang.Analysis.Ada_Node) return Boolean is
+   begin
+      if Libadalang.Analysis.Is_Null (Stmt.F_Loop_Name) then
+         return True;
+      elsif Libadalang.Analysis.Is_Null (Loop_Node)
+        or else Libadalang.Analysis.Is_Null (Loop_Node.Parent)
+        or else Loop_Node.Parent.Kind /= Libadalang.Common.Ada_Named_Stmt
+      then
+         return False;
+      end if;
+      return Normalize_Rule_Name (Node_Text (Stmt.F_Loop_Name)) =
+        Normalize_Rule_Name
+          (Node_Text (Loop_Node.Parent.As_Named_Stmt.F_Decl.F_Name));
+   exception
+      when others =>
+         return False;
+   end Exits_Loop;
+
+   --  True when something in Node writes a part of Param, not all of it: a
+   --  component, an element or a slice, as the target of an assignment or
+   --  as an actual. Such a write counts as setting Param here (see
+   --  Same_Parameter), which a pass of a loop does not make true of the
+   --  whole of an array (FP-183).
+   function Writes_Part_Of
+     (Node  : Libadalang.Analysis.Ada_Node'Class;
+      Param : Libadalang.Analysis.Param_Spec;
+      Name  : String) return Boolean
+   is
+      function Partial (Target : Libadalang.Analysis.Ada_Node'Class)
+        return Boolean
+      is (Target.Kind /= Libadalang.Common.Ada_Identifier
+          and then Same_Parameter (Target, Param, Name));
+   begin
+      if Libadalang.Analysis.Is_Null (Node) then
+         return False;
+      elsif (Node.Kind = Libadalang.Common.Ada_Assign_Stmt
+             and then Partial (Node.As_Assign_Stmt.F_Dest))
+        or else (Node.Kind = Libadalang.Common.Ada_Param_Assoc
+                 and then Partial (Node.As_Param_Assoc.F_R_Expr))
+      then
+         return True;
+      end if;
+      for Index in 1 .. Node.Children_Count loop
+         if Writes_Part_Of (Node.Child (Index), Param, Name) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   exception
+      when others =>
+         return True;
+   end Writes_Part_Of;
+
    function Interpret_Initialization
      (Node        : Libadalang.Analysis.Ada_Node'Class;
       Param       : Libadalang.Analysis.Param_Spec;
       Name        : String;
       Initial     : Boolean;
-      Bad_Return  : in out Boolean) return Init_Result;
+      Bad_Return  : in out Boolean;
+      Exits       : in out Exit_State) return Init_Result;
 
+   function Interpret_List
+     (List        : Libadalang.Analysis.Ada_Node'Class;
+      Param       : Libadalang.Analysis.Param_Spec;
+      Name        : String;
+      Initial     : Boolean;
+      Bad_Return  --  adalang-analyzer: ignore Wrong_Parameter_Mode
+        : in out Boolean;
+      Exits       --  adalang-analyzer: ignore Wrong_Parameter_Mode
+        : in out Exit_State)
+      return Init_Result
+   is
+      Result : Init_Result :=
+        (Can_Fall_Through => True, Initialized => Initial);
+   begin
+      for I in 1 .. List.Children_Count loop
+         exit when not Result.Can_Fall_Through;
+         Result := Interpret_Initialization
+           (List.Child (I), Param, Name, Result.Initialized, Bad_Return,
+            Exits);
+      end loop;
+      return Result;
+   end Interpret_List;
+
+   --  A statement list outside any loop.
    function Interpret_List
      (List        : Libadalang.Analysis.Ada_Node'Class;
       Param       : Libadalang.Analysis.Param_Spec;
@@ -1743,15 +2209,9 @@ package body Adalang_Analyzer.SPARK_Readiness is
         : in out Boolean)
       return Init_Result
    is
-      Result : Init_Result :=
-        (Can_Fall_Through => True, Initialized => Initial);
+      Exits : Exit_State;
    begin
-      for I in 1 .. List.Children_Count loop
-         exit when not Result.Can_Fall_Through;
-         Result := Interpret_Initialization
-           (List.Child (I), Param, Name, Result.Initialized, Bad_Return);
-      end loop;
-      return Result;
+      return Interpret_List (List, Param, Name, Initial, Bad_Return, Exits);
    end Interpret_List;
 
    function Interpret_Initialization
@@ -1759,8 +2219,27 @@ package body Adalang_Analyzer.SPARK_Readiness is
       Param       : Libadalang.Analysis.Param_Spec;
       Name        : String;
       Initial     : Boolean;
-      Bad_Return  : in out Boolean) return Init_Result
+      Bad_Return  : in out Boolean;
+      Exits       : in out Exit_State) return Init_Result
    is
+      --  The body of the loop Node, interpreted with the exits that leave
+      --  it gathered into Inner; an exit or a goto that leaves for
+      --  further out makes the enclosing loop's exits unknown too.
+      function Loop_Body
+        (Inner : in out Exit_State) return Init_Result
+      is
+         Result : Init_Result;
+      begin
+         Inner := (Active => True, Loop_Node => Node.As_Ada_Node,
+                   others => <>);
+         Result := Interpret_List
+           (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name, Initial,
+            Bad_Return, Inner);
+         if Inner.Unsupported and then Exits.Active then
+            Exits.Unsupported := True;
+         end if;
+         return Result;
+      end Loop_Body;
    begin
       if Libadalang.Analysis.Is_Null (Node) then
          return (True, Initial);
@@ -1774,22 +2253,43 @@ package body Adalang_Analyzer.SPARK_Readiness is
             Bad_Return := Bad_Return or else not Initial;
             return (False, Initial);
 
-         when Libadalang.Common.Ada_Raise_Stmt
-            | Libadalang.Common.Ada_Goto_Stmt =>
+         when Libadalang.Common.Ada_Raise_Stmt =>
             return (False, Initial);
+
+         when Libadalang.Common.Ada_Goto_Stmt =>
+            if Exits.Active then
+               Exits.Unsupported := True;
+            end if;
+            return (False, Initial);
+
+         when Libadalang.Common.Ada_Exit_Stmt =>
+            if not Exits.Active then
+               return (True, Initial);
+            elsif not Exits_Loop (Node.As_Exit_Stmt, Exits.Loop_Node) then
+               Exits.Unsupported := True;
+            end if;
+            Exits.Has_Exit := True;
+            Exits.Initialized := Exits.Initialized and then Initial;
+            return
+              (Can_Fall_Through =>
+                 not Libadalang.Analysis.Is_Null
+                       (Node.As_Exit_Stmt.F_Cond_Expr),
+               Initialized => Initial);
 
          when Libadalang.Common.Ada_If_Stmt =>
             declare
                Stmt   : constant Libadalang.Analysis.If_Stmt :=
                  Node.As_If_Stmt;
                Result : Init_Result := Interpret_List
-                 (Stmt.F_Then_Stmts, Param, Name, Initial, Bad_Return);
+                 (Stmt.F_Then_Stmts, Param, Name, Initial, Bad_Return,
+                  Exits);
             begin
                for Alt of Stmt.F_Alternatives loop
                   Result := Merge
                     (Result,
                      Interpret_List
-                       (Alt.F_Stmts, Param, Name, Initial, Bad_Return));
+                       (Alt.F_Stmts, Param, Name, Initial, Bad_Return,
+                        Exits));
                end loop;
                if Libadalang.Analysis.Is_Null (Stmt.F_Else_Part) then
                   Result := Merge (Result, (True, Initial));
@@ -1798,7 +2298,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
                     (Result,
                      Interpret_List
                        (Stmt.F_Else_Part.F_Stmts, Param, Name, Initial,
-                        Bad_Return));
+                        Bad_Return, Exits));
                end if;
                return Result;
             end;
@@ -1811,7 +2311,8 @@ package body Adalang_Analyzer.SPARK_Readiness is
                for Alt of Node.As_Case_Stmt.F_Alternatives loop
                   declare
                      Branch : constant Init_Result := Interpret_List
-                       (Alt.F_Stmts, Param, Name, Initial, Bad_Return);
+                       (Alt.F_Stmts, Param, Name, Initial, Bad_Return,
+                        Exits);
                   begin
                      if First then
                         Result := Branch;
@@ -1826,8 +2327,11 @@ package body Adalang_Analyzer.SPARK_Readiness is
 
          when Libadalang.Common.Ada_Decl_Block =>
             return Interpret_List
-              (Node.As_Decl_Block.F_Stmts.F_Stmts, Param, Name, Initial,
-               Bad_Return);
+              (Node.As_Decl_Block.F_Stmts.F_Stmts, Param, Name,
+               Initial
+               or else Declarations_Write_Parameter
+                         (Node.As_Decl_Block.F_Decls.F_Decls, Param, Name),
+               Bad_Return, Exits);
 
          when Libadalang.Common.Ada_For_Loop_Stmt =>
             --  Two distinct, narrow proofs that a for-loop unconditionally
@@ -1854,23 +2358,30 @@ package body Adalang_Analyzer.SPARK_Readiness is
             --  unconditional "Param (I) := ...;" indexed by exactly that
             --  control variable, proves every index gets written -- with
             --  no need to reason about the range's bounds at all.
+            --
+            --  The scalar proof also holds with exits (FP-183): when the
+            --  loop goes round at least once, Param is set after it if it
+            --  is set at every exit of the first pass and, where a pass
+            --  can end, at the end of the first pass ("for Try in 1 .. 32
+            --  loop Aux_Request (..., Success); exit when Success; ...",
+            --  libgfxinit).
             declare
                Spec        : constant Libadalang.Analysis.For_Loop_Spec :=
                  Node.As_For_Loop_Stmt.F_Spec.As_For_Loop_Spec;
-               Body_Result : constant Init_Result := Interpret_List
-                 (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name, Initial,
-                  Bad_Return);
+               Inner       : Exit_State;
+               Body_Result : constant Init_Result := Loop_Body (Inner);
                Index_Type  : constant Libadalang.Analysis.Base_Type_Decl :=
                  Array_Index_Type (Param);
             begin
                if Spec.F_Loop_Type.Kind /= Libadalang.Common.Ada_Iter_Type_In
-                 or else Contains_Loop_Escape (Node.As_Base_Loop_Stmt.F_Stmts)
+                 or else Inner.Unsupported
                then
                   return (True, Initial);
                end if;
 
                if not Libadalang.Analysis.Is_Null (Index_Type) then
-                  if Loop_Covers_Index_Range
+                  if not Contains_Loop_Escape (Node.As_Base_Loop_Stmt.F_Stmts)
+                    and then Loop_Covers_Index_Range
                        (Spec, Index_Type, Param, Name)
                     and then List_Always_Writes_Loop_Index
                        (Node.As_Base_Loop_Stmt.F_Stmts,
@@ -1879,33 +2390,55 @@ package body Adalang_Analyzer.SPARK_Readiness is
                   then
                      return (True, True);
                   end if;
-                  return (True, Initial);
+                  if Writes_Part_Of
+                       (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name)
+                  then
+                     return (True, Initial);
+                  end if;
                end if;
 
-               if Body_Result.Initialized then
-                  declare
-                     Bounds : constant Static_Interval :=
-                       Choice_Interval (Spec.F_Iter_Expr);
-                  begin
-                     if Bounds.Known and then Bounds.Low <= Bounds.High then
-                        return (True, True);
-                     end if;
-                  end;
+               if Runs_At_Least_Once (Spec) then
+                  return
+                    (Can_Fall_Through =>
+                       Inner.Has_Exit or else Body_Result.Can_Fall_Through,
+                     Initialized      =>
+                       Inner.Initialized
+                       and then (Body_Result.Initialized
+                                 or else not Body_Result.Can_Fall_Through));
                end if;
                return (True, Initial);
             end;
 
-         when Libadalang.Common.Ada_While_Loop_Stmt
-            | Libadalang.Common.Ada_Loop_Stmt =>
-            --  Inspect returns inside the body, but do not assume that a loop
-            --  initializes an output: even a plain loop can leave through an
-            --  exit before the assignment, and neither has a statically
-            --  known non-empty iteration count the way a numeric for-loop
-            --  can.
+         when Libadalang.Common.Ada_Loop_Stmt =>
+            --  A plain loop goes round at least once and is left only by
+            --  an exit (or a return, a raise): Param is set after it if it
+            --  is set at every exit of the first pass (FP-183; FDI training
+            --  in libgfxinit). With no exit, nothing follows it.
             declare
-               Ignored : constant Init_Result := Interpret_List
-                 (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name, Initial,
-                  Bad_Return);
+               Inner       : Exit_State;
+               Body_Result : constant Init_Result := Loop_Body (Inner);
+               pragma Unreferenced (Body_Result);
+            begin
+               if Inner.Unsupported
+                 or else
+                   (not Libadalang.Analysis.Is_Null (Array_Index_Type (Param))
+                    and then Writes_Part_Of
+                               (Node.As_Base_Loop_Stmt.F_Stmts, Param, Name))
+               then
+                  return (True, Initial);
+               elsif not Inner.Has_Exit then
+                  return (False, Initial);
+               end if;
+               return (True, Inner.Initialized);
+            end;
+
+         when Libadalang.Common.Ada_While_Loop_Stmt =>
+            --  Inspect returns inside the body, but do not assume that the
+            --  loop initializes an output: its condition may be false at
+            --  once.
+            declare
+               Inner   : Exit_State;
+               Ignored : constant Init_Result := Loop_Body (Inner);
                pragma Unreferenced (Ignored);
             begin
                return (True, Initial);
@@ -2600,6 +3133,55 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return False;
    end Formal_Keeps_A_Value;
 
+   --  True when Subprogram returns normally only after Param, one of its
+   --  parameters, named Id, is set: by its declarations, its statements
+   --  or, where one is left by, the exception handler.
+   function Set_On_Every_Return
+     (Subprogram : Libadalang.Analysis.Subp_Body;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Id         : Libadalang.Analysis.Defining_Name'Class) return Boolean
+   is
+      Name       : constant String := Normalize_Rule_Name (Node_Text (Id));
+      Bad_Return : Boolean := False;
+      Result     : constant Init_Result := Interpret_List
+        (Subprogram.F_Stmts.F_Stmts, Param, Name,
+         Declarations_Write_Parameter
+           (Subprogram.F_Decls.F_Decls, Param, Name),
+         Bad_Return);
+   begin
+      for Handler of Subprogram.F_Stmts.F_Exceptions loop
+         declare
+            Handler_Result : constant Init_Result :=
+              Interpret_List
+                (Handler.As_Exception_Handler.F_Stmts, Param, Name, False,
+                 Bad_Return);
+         begin
+            if Handler_Result.Can_Fall_Through
+              and then not Handler_Result.Initialized
+            then
+               Bad_Return := True;
+            end if;
+         end;
+      end loop;
+      return not Bad_Return
+        and then (Result.Initialized or else not Result.Can_Fall_Through);
+   end Set_On_Every_Return;
+
+   function Written_On_Every_Return
+     (Subprogram : Libadalang.Analysis.Subp_Body;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Id         : Libadalang.Analysis.Defining_Name'Class) return Boolean
+   is
+      Name : constant String := Normalize_Rule_Name (Node_Text (Id));
+   begin
+      return Renamed_In (Subprogram, Param, Name)
+        or else Written_In_Nested (Subprogram, Param, Name)
+        or else Set_On_Every_Return (Subprogram, Param, Id);
+   exception
+      when others =>
+         return True;
+   end Written_On_Every_Return;
+
    procedure Analyze_Subprogram
      (Unit       : Libadalang.Analysis.Analysis_Unit;
       Subprogram : Libadalang.Analysis.Subp_Body)
@@ -2614,6 +3196,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
         or else Rule_States (Potentially_Blocking_Operation) = Enabled;
       Actual_Global   : Access_Vectors.Vector;
       Declared_Global : Access_Vectors.Vector;
+      Allowed_Global  : Access_Vectors.Vector;
       Outputs         : Access_Vectors.Vector;
       Depends_Outputs : Access_Vectors.Vector;
       Global          : Libadalang.Analysis.Expr;
@@ -2647,19 +3230,106 @@ package body Adalang_Analyzer.SPARK_Readiness is
       if Rule_States (Global_Contract_Mismatch) = Enabled
         and then not Libadalang.Analysis.Is_Null (Global)
       then
+         --  The body is held to its Refined_Global when it has one, and
+         --  to the Global otherwise (FP-181).
+         declare
+            Refined : constant Libadalang.Analysis.Expr :=
+              Contract_Expression (Subprogram, "Refined_Global");
+         begin
+            if Libadalang.Analysis.Is_Null (Refined) then
+               Allowed_Global := Declared_Global;
+            else
+               Parse_Global (Refined, Subprogram, Name_Node, Allowed_Global);
+            end if;
+         end;
+
          for Actual of Actual_Global loop
             declare
-               Index : constant Natural := Find (Declared_Global, Actual.Key);
+               Found, Can_Read, Can_Write : Boolean := False;
                Missing_Read, Missing_Write : Boolean := False;
+
+               --  The state abstraction Key is a constituent of, as seen
+               --  from Subprogram: by its Part_Of or by a Refined_State
+               --  around Subprogram.
+               function Enclosing_State
+                 (Key : Libadalang.Analysis.Ada_Node)
+                  return Libadalang.Analysis.Ada_Node is
+               begin
+                  if Libadalang.Analysis.Is_Null (Key)
+                    or else Key.Kind /= Libadalang.Common.Ada_Defining_Name
+                  then
+                     return Libadalang.Analysis.No_Ada_Node;
+                  end if;
+                  return Libadalang.Analysis.Ada_Node
+                    (Flow_Contracts.Encapsulating_State
+                       (Key.As_Defining_Name, Subprogram));
+               end Enclosing_State;
+
+               procedure Allow (Index : Positive) is
+               begin
+                  Found := True;
+                  Can_Read := Can_Read or else Allowed_Global (Index).Is_Read;
+                  Can_Write :=
+                    Can_Write or else Allowed_Global (Index).Is_Written;
+               end Allow;
+
+               Max_Depth : constant := 8;
+               State     : Libadalang.Analysis.Ada_Node := Actual.Key;
+               Index     : Natural := Find (Allowed_Global, Actual.Key);
             begin
-               if Index = 0 then
-                  Missing_Read := Actual.Is_Read;
-                  Missing_Write := Actual.Is_Written;
+               --  What the contract allows of the object or state the
+               --  body touches (FP-181): the entry that names it; else the
+               --  entry naming a state it is a constituent of, directly or
+               --  through further states; else, for a state, the entries
+               --  naming its constituents, as a Refined_Global lists them.
+               if Index /= 0 then
+                  Allow (Index);
                else
-                  Missing_Read := Actual.Is_Read
-                    and then not Declared_Global (Index).Is_Read;
-                  Missing_Write := Actual.Is_Written
-                    and then not Declared_Global (Index).Is_Written;
+                  for Depth in 1 .. Max_Depth loop
+                     State := Enclosing_State (State);
+                     exit when Libadalang.Analysis.Is_Null (State);
+                     Index := Find (Allowed_Global, State);
+                     if Index /= 0 then
+                        Allow (Index);
+                        exit;
+                     end if;
+                  end loop;
+               end if;
+
+               if not Found and then Is_State_Key (Actual.Key) then
+                  for Item in Allowed_Global.First_Index ..
+                    Allowed_Global.Last_Index
+                  loop
+                     State := Allowed_Global (Item).Key;
+                     for Depth in 1 .. Max_Depth loop
+                        State := Enclosing_State (State);
+                        exit when Libadalang.Analysis.Is_Null (State);
+                        if Equivalent_Keys (State, Actual.Key) then
+                           Allow (Item);
+                           exit;
+                        end if;
+                     end loop;
+                  end loop;
+               end if;
+
+               Missing_Read := Actual.Is_Read and then not Can_Read;
+               Missing_Write := Actual.Is_Written and then not Can_Write;
+
+               --  An Output global may be read once the body has given it
+               --  a value, on every path, before any read (Static_Init,
+               --  libgfxinit's hw-gfx-gma-panel.adb; FP-181); a read that
+               --  may come first takes the value it had on entry, which
+               --  Output does not allow (Ada-Lisp's decrement_exit_block).
+               if Missing_Read
+                 and then Found
+                 and then Can_Write
+                 and then Actual.Is_Written
+                 and then Actual.Key.Kind = Libadalang.Common.Ada_Defining_Name
+                 and then Flow_Contracts.Written_First
+                   (Subprogram, Actual.Key.As_Defining_Name,
+                    As_GNATprove => True)
+               then
+                  Missing_Read := False;
                end if;
 
                if Missing_Read or else Missing_Write then
@@ -2701,51 +3371,28 @@ package body Adalang_Analyzer.SPARK_Readiness is
                                           Normalize_Rule_Name (Node_Text (Id)))
                  and then not Written_In_Nested
                    (Subprogram, Param, Normalize_Rule_Name (Node_Text (Id)))
+                 --  SPARK code may leave such a parameter without a value
+                 --  (Read_EDID's Raw_EDID, libgfxinit; FP-184): its Post
+                 --  says when it has one, which is for proof.
+                 and then not Flow_Interp.Has_Relaxed_Initialization
+                                (Libadalang.Analysis.Ada_Node (Id))
                then
-                  declare
-                     Bad_Return : Boolean := False;
-                     Result : constant Init_Result := Interpret_List
-                       (Subprogram.F_Stmts.F_Stmts, Param,
-                        Normalize_Rule_Name (Node_Text (Id)), False,
-                        Bad_Return);
-                  begin
-                     if Subprogram.F_Stmts.F_Exceptions.Children_Count > 0 then
-                        for Handler of Subprogram.F_Stmts.F_Exceptions loop
-                           declare
-                              Handler_Result : constant Init_Result :=
-                                Interpret_List
-                                  (Handler.As_Exception_Handler.F_Stmts, Param,
-                                   Normalize_Rule_Name (Node_Text (Id)),
-                                   False, Bad_Return);
-                           begin
-                              if Handler_Result.Can_Fall_Through
-                                and then not Handler_Result.Initialized
-                              then
-                                 Bad_Return := True;
-                              end if;
-                           end;
-                        end loop;
-                     end if;
-
-                     if Bad_Return
-                       or else
-                         (Result.Can_Fall_Through
-                          and then not Result.Initialized)
-                     then
-                        Report_Rule_Violation
-                          (Unit, Id, Uninitialized_Output,
-                           "out parameter '" & Node_Text (Id) &
-                             "' is not initialized on every normal return " &
-                             "path");
-                     end if;
-                  end;
+                  if not Set_On_Every_Return (Subprogram, Param, Id) then
+                     Report_Rule_Violation
+                       (Unit, Id, Uninitialized_Output,
+                        "out parameter '" & Node_Text (Id) &
+                          "' is not initialized on every normal return " &
+                          "path");
+                  end if;
                end if;
             end loop;
          end if;
       end loop;
 
+      --  A state abstraction is left out, as before states were keys: the
+      --  Depends checks here go by objects.
       for Item of Declared_Global loop
-         if Item.Is_Written then
+         if Item.Is_Written and then not Is_State_Key (Item.Key) then
             Include
               (Outputs, Item.Key, To_String (Item.Name), Item.Site,
                Is_Read => False, Is_Written => True);
