@@ -448,4 +448,19 @@ package Adalang_Analyzer.Flow_Eval is
    --  Safe_Add/Sub/Mul/Pow fold a binary integer operation, collapsing to
    --  Unknown_Int on overflow rather than propagating Constraint_Error.
 
+   function Statement_Cannot_Raise
+     (Stmt : Libadalang.Analysis.Ada_Node'Class) return Boolean;
+   --  True when Stmt provably raises no exception: a null statement, a
+   --  pragma that checks and runs nothing, or an assignment to a whole
+   --  variable or parameter (not a component, an element or through an
+   --  access value) of a value no check can fail for its subtype: an
+   --  integer within the subtype's static range, an enumeration literal
+   --  where the subtype is an enumeration type's first subtype, an
+   --  "others" or exact-length positional aggregate of such values for a
+   --  one-dimensional array, or a record aggregate, for a record type
+   --  without discriminants, that names each component with such a value.
+   --  Tagged and access types, subtypes with predicates and anything not
+   --  recognized are taken to be able to raise. What a handler of the
+   --  enclosing statements can see as set when it runs (FP-191, FP-192).
+
 end Adalang_Analyzer.Flow_Eval;

@@ -2276,11 +2276,15 @@ package body Adalang_Analyzer.Flow_Contracts is
    --  that leaves a loop before the write, or goes through a branch or a
    --  loop that does not write it (SPARK testsuite S530-019: a constituent
    --  with relaxed initialization written in a loop of one pass, after an
-   --  exit; FP-190).
+   --  exit; FP-190). A call of a subprogram with no Global aspect, whose
+   --  body is known, writes Object first when that body does, on every
+   --  path to its end: at Depth above 0, Subprogram is such a callee, where
+   --  a return before the write fails, as does a handler (FP-196).
    function Written_First_Here
      (Subprogram : Libadalang.Analysis.Base_Subp_Body'Class;
       Object     : Libadalang.Analysis.Defining_Name;
-      Partial    : Boolean) return Boolean
+      Partial    : Boolean;
+      Depth      : Natural := 0) return Boolean
    is
       Key         : constant String := Key_Of (Object);
       Declaration : constant Libadalang.Analysis.Basic_Decl :=
@@ -2306,6 +2310,82 @@ package body Adalang_Analyzer.Flow_Contracts is
       is (Name.Kind in Libadalang.Common.Ada_Identifier
                      | Libadalang.Common.Ada_Dotted_Name
           and then Key_Of (Name.As_Name.P_Referenced_Defining_Name) = Key);
+
+      --  True when a return statement is in Node, outside the bodies
+      --  declared there: in a callee, a path through it may give control
+      --  back before Object is written (FP-196).
+      function Contains_Return (Node : Libadalang.Analysis.Ada_Node'Class)
+        return Boolean is
+      begin
+         if Libadalang.Analysis.Is_Null (Node) then
+            return False;
+         elsif Node.Kind in Libadalang.Common.Ada_Return_Stmt
+                          | Libadalang.Common.Ada_Extended_Return_Stmt
+         then
+            return True;
+         elsif Node.Kind in Libadalang.Common.Ada_Body_Node then
+            return False;
+         end if;
+         for Index in 1 .. Node.Children_Count loop
+            if Contains_Return (Node.Child (Index)) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Contains_Return;
+
+      --  True when the call Call of Callee, which has no Global aspect and
+      --  whose actuals do not touch Object, gives Object a value before
+      --  anything reads it, on every path through Callee's body: a body
+      --  that is known (not a dispatching call, not one of an instance or
+      --  through a renaming), has no Refined_Global, no handler and no
+      --  default expression of a formal that touches Object, and writes
+      --  the whole of Object first on every path to its end ("procedure
+      --  Init is begin Normalize; Seen := Res; end Init;", Normalize
+      --  giving Res a value; Ironclad's Arch.Clocks.Initialize_Sources and
+      --  Normalize_TSC_Hz, FP-196).
+      function Callee_Writes_First
+        (Call   : Libadalang.Analysis.Name;
+         Callee : Libadalang.Analysis.Basic_Decl) return Boolean
+      is
+         Completion : Libadalang.Analysis.Ada_Node;
+         Spec       : Libadalang.Analysis.Base_Subp_Spec;
+      begin
+         if Depth >= 3
+           or else Call.P_Is_Dispatching_Call
+           or else Callee.Kind = Libadalang.Common.Ada_Generic_Subp_Instantiation
+           or else Callee.P_Generic_Instantiations'Length > 0
+         then
+            return False;
+         end if;
+         Completion := Completion_Of (Callee);
+         if Libadalang.Analysis.Is_Null (Completion)
+           or else Completion.Kind /= Libadalang.Common.Ada_Subp_Body
+           or else Completion = Subprogram.As_Ada_Node
+           or else not Libadalang.Analysis.Is_Null
+                         (Aspect_Expression
+                            (Completion.As_Subp_Body, "Refined_Global"))
+           or else not Libadalang.Analysis.Is_Null
+                         (Aspect_Expression (Completion.As_Subp_Body, "Global"))
+         then
+            return False;
+         end if;
+         Spec := Callee.P_Subp_Spec_Or_Null;
+         if Libadalang.Analysis.Is_Null (Spec) then
+            return False;
+         end if;
+         for Formal of Spec.P_Params loop
+            if Touches (Formal.F_Default_Expr) then
+               return False;
+            end if;
+         end loop;
+         return Written_First_Here
+           (Completion.As_Subp_Body, Object, Partial => False,
+            Depth => Depth + 1);
+      exception
+         when others =>
+            return False;
+      end Callee_Writes_First;
 
       function Writes_Whole (Node : Libadalang.Analysis.Ada_Node'Class)
         return Boolean is
@@ -2378,7 +2458,7 @@ package body Adalang_Analyzer.Flow_Contracts is
                --  holds it (FP-189).
                Global := Caller_Global (Callee, Subprogram);
                if Libadalang.Analysis.Is_Null (Global) then
-                  return False;
+                  return Callee_Writes_First (Call, Callee);
                end if;
                Listed := Parse_Global (Global);
                return Listed.Resolved
@@ -2420,8 +2500,14 @@ package body Adalang_Analyzer.Flow_Contracts is
       function Of_Statement (Node : Libadalang.Analysis.Ada_Node'Class)
         return Outcome is
       begin
-         if Node.Kind = Libadalang.Common.Ada_Goto_Stmt then
-            --  It may jump over the write.
+         if Node.Kind = Libadalang.Common.Ada_Goto_Stmt
+           or else (Depth > 0
+                    and then Node.Kind in
+                      Libadalang.Common.Ada_Return_Stmt
+                      | Libadalang.Common.Ada_Extended_Return_Stmt)
+         then
+            --  A goto may jump over the write; a callee returning before
+            --  the write leaves Object as it was for the caller.
             return Failed;
          elsif Node.Kind in Libadalang.Common.Ada_Base_Loop_Stmt then
             --  A loop that does not touch Object may still leave by an exit
@@ -2454,7 +2540,9 @@ package body Adalang_Analyzer.Flow_Contracts is
             end;
          elsif Writes_Whole (Node) then
             return Written;
-         elsif not Touches (Node) then
+         elsif not Touches (Node)
+           and then not (Depth > 0 and then Contains_Return (Node))
+         then
             return Untouched;
          end if;
 
@@ -2695,6 +2783,8 @@ package body Adalang_Analyzer.Flow_Contracts is
       begin
          if Touches (Body_Node.F_Stmts.F_Exceptions)
            or else Touches (Body_Node.F_Decls)
+           or else (Depth > 0
+                    and then Body_Node.F_Stmts.F_Exceptions.Children_Count > 0)
          then
             return False;
          end if;

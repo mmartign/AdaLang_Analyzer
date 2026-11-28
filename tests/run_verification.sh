@@ -4245,16 +4245,18 @@ run_json_pair "$fp145" tests/verification_fp145_output_globals
 #  FP-190: a for loop over a static range that is not empty goes round at
 #  least once; a global with relaxed initialization may be left as it was
 #  on a path that does not read it, one that leaves a loop before the
-#  write.
+#  write. FP-196: a subprogram with no Global aspect that gives the
+#  global a value on every path to its end writes it first; one that may
+#  return before does not.
 for operation in Init Write_Then_Read Call_Then_Read \
   Both_Branches_Then_Read Out_Actual_Then_Read Loop_Once_Then_Read \
-  Exit_Then_Write_Relaxed
+  Exit_Then_Write_Relaxed Callee_Write_Then_Read
 do
    must_prove "$fp145" data-dependencies "Global of $operation" \
      flow-analysis 'FP-145: written before it is read'
 done
 for operation in Read_Then_Write Write_Under_Guard Read_Only \
-  Loop_Maybe_Then_Read Exit_Then_Write
+  Loop_Maybe_Then_Read Exit_Then_Write Callee_Return_Then_Read
 do
    must_not_prove "$fp145" data-dependencies "Global of $operation" FP-145
 done

@@ -4958,6 +4958,357 @@ package body Adalang_Analyzer.Flow_Eval is
       Standing_Facts.Clear;
    end Forget_Standing_Facts;
 
+   function Statement_Cannot_Raise
+     (Stmt : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      function Lower (Node : Libadalang.Analysis.Ada_Node'Class)
+        return String
+      is (Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Node)));
+
+      --  True when Type_Expr names an enumeration type's first subtype,
+      --  which every literal of the type belongs to.
+      function Whole_Enumeration
+        (Type_Expr : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is
+         Decl : Libadalang.Analysis.Basic_Decl;
+      begin
+         if Libadalang.Analysis.Is_Null (Type_Expr)
+           or else Type_Expr.Kind /= Libadalang.Common.Ada_Subtype_Indication
+           or else not Libadalang.Analysis.Is_Null
+                         (Type_Expr.As_Subtype_Indication.F_Constraint)
+         then
+            return False;
+         end if;
+         Decl := Type_Expr.As_Subtype_Indication.F_Name.P_Referenced_Decl;
+         return not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind = Libadalang.Common.Ada_Concrete_Type_Decl
+           and then Decl.As_Concrete_Type_Decl.F_Type_Def.Kind =
+             Libadalang.Common.Ada_Enum_Type_Def;
+      end Whole_Enumeration;
+
+      --  The subtype indication of the components of the array type Typ.
+      function Component_Type_Expr
+        (Typ : Libadalang.Analysis.Base_Type_Decl)
+         return Libadalang.Analysis.Type_Expr
+      is
+         Current : Libadalang.Analysis.Base_Type_Decl := Typ;
+      begin
+         for Unused in 1 .. 8 loop
+            exit when Libadalang.Analysis.Is_Null (Current);
+            if Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+               Current := Current.As_Subtype_Decl.F_Subtype
+                 .P_Designated_Type_Decl;
+            elsif Current.Kind = Libadalang.Common.Ada_Concrete_Type_Decl
+              and then Current.As_Concrete_Type_Decl.F_Type_Def.Kind =
+                Libadalang.Common.Ada_Array_Type_Def
+            then
+               return Current.As_Concrete_Type_Decl.F_Type_Def
+                 .As_Array_Type_Def.F_Component_Type.F_Type_Expr;
+            else
+               exit;
+            end if;
+         end loop;
+         return Libadalang.Analysis.No_Type_Expr;
+      end Component_Type_Expr;
+
+      --  True when Typ is an array or a record type, or a subtype of one,
+      --  and neither it nor a subtype it goes through declares a
+      --  predicate. (Has_Subtype_Predicate answers for discrete types.)
+      function Composite_Without_Predicate
+        (Typ : Libadalang.Analysis.Base_Type_Decl) return Boolean
+      is
+         Current : Libadalang.Analysis.Base_Type_Decl := Typ;
+
+         function Declares_Predicate
+           (Decl : Libadalang.Analysis.Basic_Decl) return Boolean
+         is
+            function Has (Name : String) return Boolean is
+              (Libadalang.Analysis.Exists
+                 (Decl.P_Get_Aspect
+                    (Langkit_Support.Text.To_Unbounded_Text
+                       (Langkit_Support.Text.To_Text (Name)))));
+         begin
+            return Has ("Predicate") or else Has ("Static_Predicate")
+              or else Has ("Dynamic_Predicate");
+         end Declares_Predicate;
+      begin
+         for Unused in 1 .. 8 loop
+            if Libadalang.Analysis.Is_Null (Current) then
+               return False;
+            end if;
+            for Part of Current.P_All_Parts loop
+               if Declares_Predicate (Part) then
+                  return False;
+               end if;
+            end loop;
+            if Current.Kind = Libadalang.Common.Ada_Subtype_Decl then
+               Current := Current.As_Subtype_Decl.F_Subtype
+                 .P_Designated_Type_Decl;
+            else
+               return Current.Kind = Libadalang.Common.Ada_Concrete_Type_Decl
+                 and then Current.As_Concrete_Type_Decl.F_Type_Def.Kind in
+                   Libadalang.Common.Ada_Array_Type_Def
+                   | Libadalang.Common.Ada_Record_Type_Def;
+            end if;
+         end loop;
+         return False;
+      exception
+         when others =>
+            return False;
+      end Composite_Without_Predicate;
+
+      --  True when no check fails when Value is stored in an object of
+      --  type Typ, of the scalar range Bounds, of an enumeration first
+      --  subtype if Enumeration, and, for an array, with the index range
+      --  Index.
+      function Fits
+        (Value       : Libadalang.Analysis.Ada_Node'Class;
+         Typ         : Libadalang.Analysis.Base_Type_Decl;
+         Bounds      : Abstract_Range;
+         Enumeration : Boolean;
+         Index       : Abstract_Range;
+         Depth       : Natural) return Boolean
+      is
+         Assocs : Libadalang.Analysis.Ada_Node;
+      begin
+         if Depth > 6 or else Libadalang.Analysis.Is_Null (Value)
+           or else Libadalang.Analysis.Is_Null (Typ)
+           or else Typ.P_Is_Tagged_Type
+           or else Typ.P_Is_Access_Type
+           or else (if Typ.P_Is_Scalar_Type then Has_Subtype_Predicate (Typ)
+                    else not Composite_Without_Predicate (Typ))
+         then
+            return False;
+         elsif Value.Kind = Libadalang.Common.Ada_Paren_Expr then
+            return Fits (Value.As_Paren_Expr.F_Expr, Typ, Bounds,
+                         Enumeration, Index, Depth + 1);
+         end if;
+
+         if Value.Kind in Libadalang.Common.Ada_Aggregate
+                        | Libadalang.Common.Ada_Bracket_Aggregate
+         then
+            if not Libadalang.Analysis.Is_Null
+                     (Value.As_Base_Aggregate.F_Ancestor_Expr)
+            then
+               return False;
+            end if;
+            Assocs := Libadalang.Analysis.Ada_Node
+              (Value.As_Base_Aggregate.F_Assocs);
+
+            if Typ.P_Is_Array_Type then
+               if not Libadalang.Analysis.Is_Null (Typ.P_Index_Type (1)) then
+                  return False;  --  more than one dimension
+               end if;
+               declare
+                  Element : constant Libadalang.Analysis.Type_Expr :=
+                    Component_Type_Expr (Typ);
+                  Element_Type : Libadalang.Analysis.Base_Type_Decl;
+                  Constraint   : Subtype_Constraint;
+                  Element_Bounds : Abstract_Range;
+                  Positional   : Natural := 0;
+               begin
+                  if Libadalang.Analysis.Is_Null (Element) then
+                     return False;
+                  end if;
+                  Element_Type := Element.P_Designated_Type_Decl;
+                  Constraint := Declared_Constraint (Element, Empty_Flow_State);
+                  Element_Bounds :=
+                    (if Constraint.Present then Constraint.Bounds
+                     elsif Libadalang.Analysis.Is_Null (Element_Type)
+                       or else not Element_Type.P_Is_Scalar_Type
+                     then Unknown_Range
+                     else Type_Range (Element_Type, Empty_Flow_State));
+                  for Assoc of Assocs.Children loop
+                     if Assoc.Kind /= Libadalang.Common.Ada_Aggregate_Assoc
+                       or else not Fits
+                         (Assoc.As_Aggregate_Assoc.F_R_Expr, Element_Type,
+                          Element_Bounds, Whole_Enumeration (Element),
+                          Array_Index_Range (Element_Type, 1, Empty_Flow_State),
+                          Depth + 1)
+                     then
+                        return False;
+                     end if;
+                     declare
+                        Designators : constant Libadalang.Analysis.Ada_Node :=
+                          Libadalang.Analysis.Ada_Node
+                            (Assoc.As_Aggregate_Assoc.F_Designators);
+                     begin
+                        if Designators.Children_Count = 0 then
+                           Positional := Positional + 1;
+                        elsif Designators.Children_Count /= 1
+                          or else Designators.Child (1).Kind /=
+                            Libadalang.Common.Ada_Others_Designator
+                          or else Assocs.Children_Count /= 1
+                        then
+                           return False;
+                        end if;
+                     end;
+                  end loop;
+                  --  "others" alone takes the bounds of the target; a
+                  --  positional aggregate has to have its length, which
+                  --  the declaration of the target gives, or else its type.
+                  if Positional = 0 then
+                     return True;
+                  end if;
+                  declare
+                     Bounds_Of_Target : constant Abstract_Range :=
+                       (if Index.Has_Low and then Index.Has_High then Index
+                        else Array_Index_Range (Typ, 1, Empty_Flow_State));
+                  begin
+                     return Bounds_Of_Target.Has_Low
+                       and then Bounds_Of_Target.Has_High
+                       and then Bounds_Of_Target.High - Bounds_Of_Target.Low
+                         + 1 = Long_Long_Integer (Positional);
+                  end;
+               end;
+
+            elsif Typ.P_Is_Record_Type then
+               if Typ.Kind /= Libadalang.Common.Ada_Concrete_Type_Decl
+                 or else Typ.As_Concrete_Type_Decl.F_Type_Def.Kind /=
+                   Libadalang.Common.Ada_Record_Type_Def
+                 or else not Libadalang.Analysis.Is_Null
+                               (Typ.As_Concrete_Type_Decl.F_Discriminants)
+               then
+                  return False;
+               end if;
+               for Assoc of Assocs.Children loop
+                  if Assoc.Kind /= Libadalang.Common.Ada_Aggregate_Assoc then
+                     return False;
+                  end if;
+                  declare
+                     Designators : constant Libadalang.Analysis.Ada_Node :=
+                       Libadalang.Analysis.Ada_Node
+                         (Assoc.As_Aggregate_Assoc.F_Designators);
+                     Key       : Libadalang.Analysis.Ada_Node;
+                     Component : Libadalang.Analysis.Basic_Decl;
+                     Type_Expr : Libadalang.Analysis.Type_Expr;
+                  begin
+                     if Designators.Children_Count /= 1
+                       or else Designators.Child (1).Kind /=
+                         Libadalang.Common.Ada_Identifier
+                     then
+                        return False;
+                     end if;
+                     Key := Libadalang.Analysis.Ada_Node
+                       (Designators.Child (1).As_Name
+                          .P_Referenced_Defining_Name);
+                     if Libadalang.Analysis.Is_Null (Key) then
+                        return False;
+                     end if;
+                     Component := Key.As_Defining_Name.P_Basic_Decl;
+                     if Libadalang.Analysis.Is_Null (Component)
+                       or else Component.Kind /=
+                         Libadalang.Common.Ada_Component_Decl
+                     then
+                        return False;
+                     end if;
+                     Type_Expr :=
+                       Component.As_Component_Decl.F_Component_Def.F_Type_Expr;
+                     if not Fits
+                       (Assoc.As_Aggregate_Assoc.F_R_Expr,
+                        Type_Expr.P_Designated_Type_Decl,
+                        Declared_Range (Key), Whole_Enumeration (Type_Expr),
+                        Declared_Index_Range (Key, 1, Empty_Flow_State),
+                        Depth + 1)
+                     then
+                        return False;
+                     end if;
+                  end;
+               end loop;
+               return Assocs.Children_Count > 0;
+            end if;
+            return False;
+         end if;
+
+         if not Typ.P_Is_Scalar_Type then
+            return False;
+         elsif Value.Kind = Libadalang.Common.Ada_Char_Literal then
+            return Enumeration;
+         elsif Value.Kind in Libadalang.Common.Ada_Identifier
+                           | Libadalang.Common.Ada_Dotted_Name
+         then
+            declare
+               Decl : constant Libadalang.Analysis.Basic_Decl :=
+                 Value.As_Name.P_Referenced_Decl;
+            begin
+               if not Libadalang.Analysis.Is_Null (Decl)
+                 and then Decl.Kind = Libadalang.Common.Ada_Enum_Literal_Decl
+               then
+                  return Enumeration;
+               end if;
+            end;
+         end if;
+
+         declare
+            Known : Abstract_Int := Integer_Value (Value, Empty_Flow_State);
+         begin
+            if not Known.Known then
+               Known := Named_Number_Value (Value);
+            end if;
+            return Known.Known
+              and then Bounds.Has_Low and then Bounds.Has_High
+              and then Bounds.Low <= Known.Value
+              and then Known.Value <= Bounds.High;
+         end;
+      end Fits;
+   begin
+      case Stmt.Kind is
+         when Libadalang.Common.Ada_Null_Stmt =>
+            return True;
+
+         when Libadalang.Common.Ada_Pragma_Node =>
+            declare
+               Name : constant String := Lower (Stmt.As_Pragma_Node.F_Id);
+            begin
+               return Name = "warnings" or else Name = "unreferenced"
+                 or else Name = "unmodified" or else Name = "annotate"
+                 or else Name = "style_checks"
+                 or else Name = "inspection_point";
+            end;
+
+         when Libadalang.Common.Ada_Assign_Stmt =>
+            declare
+               Dest : constant Libadalang.Analysis.Name :=
+                 Stmt.As_Assign_Stmt.F_Dest;
+               Key  : Libadalang.Analysis.Ada_Node;
+               Decl : Libadalang.Analysis.Basic_Decl;
+               Type_Expr : Libadalang.Analysis.Type_Expr;
+            begin
+               if Dest.Kind /= Libadalang.Common.Ada_Identifier then
+                  return False;
+               end if;
+               Key := Libadalang.Analysis.Ada_Node
+                 (Dest.P_Referenced_Defining_Name);
+               if Libadalang.Analysis.Is_Null (Key) then
+                  return False;
+               end if;
+               Decl := Key.As_Defining_Name.P_Basic_Decl;
+               if Libadalang.Analysis.Is_Null (Decl) then
+                  return False;
+               elsif Decl.Kind = Libadalang.Common.Ada_Param_Spec then
+                  Type_Expr := Decl.As_Param_Spec.F_Type_Expr;
+               elsif Decl.Kind = Libadalang.Common.Ada_Object_Decl
+                 and then Libadalang.Analysis.Is_Null
+                            (Decl.As_Object_Decl.F_Renaming_Clause)
+               then
+                  Type_Expr := Decl.As_Object_Decl.F_Type_Expr;
+               else
+                  return False;
+               end if;
+               return Fits
+                 (Stmt.As_Assign_Stmt.F_Expr, Type_Expr.P_Designated_Type_Decl,
+                  Declared_Range (Key), Whole_Enumeration (Type_Expr),
+                  Declared_Index_Range (Key, 1, Empty_Flow_State), 0);
+            end;
+
+         when others =>
+            return False;
+      end case;
+   exception
+      when others =>
+         return False;
+   end Statement_Cannot_Raise;
+
 begin
    Set_Standing_Oracle (Standing_Fact_Of'Access);
 end Adalang_Analyzer.Flow_Eval;

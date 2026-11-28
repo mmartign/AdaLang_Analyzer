@@ -1,5 +1,33 @@
 package body Verification_FP145_Output_Globals with SPARK_Mode is
 
+   procedure Set_X is
+   begin
+      X := 5;
+      if X > 1 then
+         X := X - 1;
+      end if;
+   end Set_X;
+
+   procedure Set_X_Unless (C : Boolean) is
+   begin
+      if C then
+         return;
+      end if;
+      X := 5;
+   end Set_X_Unless;
+
+   procedure Callee_Write_Then_Read is
+   begin
+      Set_X;
+      X := X + 1;
+   end Callee_Write_Then_Read;
+
+   procedure Callee_Return_Then_Read (C : Boolean) is
+   begin
+      Set_X_Unless (C);
+      X := X + 1;
+   end Callee_Return_Then_Read;
+
    procedure Init is
    begin
       X := 0;

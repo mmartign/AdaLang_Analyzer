@@ -17,6 +17,7 @@ with Ada.Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
+with Langkit_Support.Errors;
 with Langkit_Support.Text;
 with Libadalang.Common;
 
@@ -117,8 +118,42 @@ package body Adalang_Analyzer.Checks.Control_Flow is
       return False;
    end Exits_Past;
 
+   --  True when Stmt jumps to a label outside Target, which leaves it
+   --  (Ironclad's Devices.Partitions.Parse_GPT_Partitions, "goto
+   --  Return_End;" out of a plain loop, FP-197). A label that does not
+   --  resolve counts as outside, so that no loop is reported on a guess.
+   function Goto_Leaves
+     (Stmt   : Libadalang.Analysis.Goto_Stmt;
+      Target : Libadalang.Analysis.Ada_Node) return Boolean
+   is
+      Decl : Libadalang.Analysis.Basic_Decl;
+      Walk : Libadalang.Analysis.Ada_Node;
+   begin
+      if Libadalang.Analysis.Is_Null (Target) then
+         return True;
+      end if;
+      begin
+         Decl := Stmt.F_Label_Name.P_Referenced_Decl;
+      exception
+         when Langkit_Support.Errors.Property_Error =>
+            return True;
+      end;
+      if Libadalang.Analysis.Is_Null (Decl) then
+         return True;
+      end if;
+      Walk := Decl.Parent;
+      while not Libadalang.Analysis.Is_Null (Walk) loop
+         if Walk = Target then
+            return False;
+         end if;
+         Walk := Walk.Parent;
+      end loop;
+      return True;
+   end Goto_Leaves;
+
    --  True when Node's subtree contains a statement that can end the loop
-   --  under analysis, Target: exit, return, or raise. A bare "exit" only
+   --  under analysis, Target: exit, return, raise, or a goto to a label
+   --  outside it (Goto_Leaves). A bare "exit" only
    --  counts while Exit_Terminates is True; once the scan has stepped
    --  inside a nested loop, an "exit" found there only terminates that
    --  inner loop (not the outer one Analyze_Infinite_Loop is checking), so
@@ -148,6 +183,9 @@ package body Adalang_Analyzer.Checks.Control_Flow is
             | Libadalang.Common.Ada_Extended_Return_Stmt
             | Libadalang.Common.Ada_Raise_Stmt =>
             return True;
+
+         when Libadalang.Common.Ada_Goto_Stmt =>
+            return Goto_Leaves (Node.As_Goto_Stmt, Target);
 
          when others =>
             null;  --  adalang-analyzer: ignore Null_Statement
@@ -1152,6 +1190,57 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                                 or else Read_In_Package_Body
                                   (Decl, Package_Owner.As_Package_Body);
                            end Read_By_Program_Code;
+
+                           --  Whether an exception handler of the
+                           --  subprogram can see the value: a statement
+                           --  after Stmt, up to the overwriting one, which
+                           --  can raise before writing, can raise, and a
+                           --  handler of statements enclosing them reads
+                           --  the target ("Locked := True; <loop that can
+                           --  raise>; Locked := False;" with "when
+                           --  Constraint_Error => if Locked then Release";
+                           --  Ironclad's Memory.MMU, FP-191). Asked only
+                           --  once a later write is found to overwrite.
+                           function Read_By_Handler return Boolean is
+                              Can_Raise : Boolean := False;
+                              Walk      : Libadalang.Analysis.Ada_Node :=
+                                List.Parent;
+                           begin
+                              for J in I + 1 .. Overwrite loop
+                                 if not Statement_Cannot_Raise
+                                      (List.Child (J))
+                                 then
+                                    Can_Raise := True;
+                                    exit;  --  adalang-analyzer: ignore No_Exit
+                                 end if;
+                              end loop;
+                              if not Can_Raise then
+                                 return False;
+                              end if;
+                              while not Libadalang.Analysis.Is_Null (Walk)
+                                and then Walk.Kind not in
+                                  Libadalang.Common.Ada_Body_Node
+                              loop
+                                 if Walk.Kind =
+                                   Libadalang.Common.Ada_Handled_Stmts
+                                 then
+                                    for Handler of
+                                      Walk.As_Handled_Stmts.F_Exceptions
+                                    loop
+                                       if Handler.Kind =
+                                         Libadalang.Common.Ada_Exception_Handler
+                                         and then Data_Flow
+                                           .Reads_Assigned_Target
+                                             (Handler, Assignment)
+                                       then
+                                          return True;
+                                       end if;
+                                    end loop;
+                                 end if;
+                                 Walk := Walk.Parent;
+                              end loop;
+                              return False;
+                           end Read_By_Handler;
                         begin
                            for J in I + 1 .. List.Children_Count loop
                               declare
@@ -1200,6 +1289,7 @@ package body Adalang_Analyzer.Checks.Control_Flow is
                                   (Decl, Owner, Stmt)
                                 and then Runs_Body_Of_Owner)
                              and then not Read_By_Program_Code
+                             and then not Read_By_Handler
                            then
                               Report_Rule_Violation
                                 (Unit, Stmt, Overwritten_Assignment,

@@ -48,6 +48,27 @@ package body Adalang_Analyzer.SPARK_Readiness is
    package Access_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Access_Info);
 
+   --  An object declared over the out parameter Set_On_Every_Return is
+   --  looking at, "X : T with Import, Address => Param'Address;" or with
+   --  "for X'Address use Param'Address;": writing X writes Param
+   --  (FP-194). Set by Set_On_Every_Return for the time it runs, so that
+   --  Same_Parameter, deep in its interpretation, sees them; empty
+   --  otherwise.
+   type Overlay_Item is record
+      Name : Unbounded_String;
+      Decl : Libadalang.Analysis.Basic_Decl;
+   end record;
+
+   package Overlay_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Overlay_Item);
+
+   Current_Overlays : Overlay_Vectors.Vector;
+
+   procedure Use_Overlays (Items : Overlay_Vectors.Vector) is
+   begin
+      Current_Overlays := Items;
+   end Use_Overlays;
+
    function Contract_Expression
      (Decl : Libadalang.Analysis.Basic_Decl'Class;
       Name : String) return Libadalang.Analysis.Expr
@@ -739,6 +760,114 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return Libadalang.Analysis.No_Basic_Decl;
    end Enclosing_Subprogram_Or_Entry;
 
+   --  True when Node is a type conversion "T (X)": a call whose name
+   --  denotes a type and that has one actual, given without a designator.
+   --  As an out or in out actual, or as the target of an assignment, it is
+   --  a view conversion, and what is written through it is X, all of it
+   --  ("Get_PGID (Proc, Unsigned_32 (Returned))", Ironclad; FP-195).
+   function Is_Type_Conversion
+     (Node : Libadalang.Analysis.Ada_Node'Class) return Boolean
+   is
+      Suffix : Libadalang.Analysis.Ada_Node;
+      Decl   : Libadalang.Analysis.Basic_Decl;
+   begin
+      if Node.Kind /= Libadalang.Common.Ada_Call_Expr then
+         return False;
+      end if;
+      Suffix := Node.As_Call_Expr.F_Suffix;
+      if Suffix.Kind /= Libadalang.Common.Ada_Assoc_List
+        or else Suffix.Children_Count /= 1
+        or else Suffix.Child (1).Kind /= Libadalang.Common.Ada_Param_Assoc
+        or else not Libadalang.Analysis.Is_Null
+                      (Suffix.Child (1).As_Param_Assoc.F_Designator)
+      then
+         return False;
+      end if;
+      Decl := Node.As_Call_Expr.F_Name.P_Referenced_Decl;
+      return not Libadalang.Analysis.Is_Null (Decl)
+        and then Decl.Kind in Libadalang.Common.Ada_Base_Type_Decl;
+   exception
+      when others =>
+         return False;
+   end Is_Type_Conversion;
+
+   --  Node with the type conversions around it taken off: the object a
+   --  view conversion names.
+   function Without_Conversions
+     (Node : Libadalang.Analysis.Ada_Node'Class)
+      return Libadalang.Analysis.Ada_Node
+   is
+      Current : Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Node);
+   begin
+      while not Libadalang.Analysis.Is_Null (Current)
+        and then Is_Type_Conversion (Current)
+      loop
+         Current := Libadalang.Analysis.Ada_Node
+           (Current.As_Call_Expr.F_Suffix.Child (1).As_Param_Assoc
+              .F_R_Expr);
+      end loop;
+      return Current;
+   end Without_Conversions;
+
+   --  True when Node is a call with one actual, given without a
+   --  designator, whose object is named Name or the name of one of
+   --  Current_Overlays: a text test, so that Same_Parameter resolves a
+   --  call's name, to see whether it is a type conversion, only where that
+   --  could matter.
+   function Converts_Named
+     (Node : Libadalang.Analysis.Ada_Node'Class;
+      Name : String) return Boolean
+   is
+      Suffix : Libadalang.Analysis.Ada_Node;
+      Root   : Libadalang.Analysis.Ada_Node;
+   begin
+      if Node.Kind /= Libadalang.Common.Ada_Call_Expr then
+         return False;
+      end if;
+      Suffix := Node.As_Call_Expr.F_Suffix;
+      if Suffix.Kind /= Libadalang.Common.Ada_Assoc_List
+        or else Suffix.Children_Count /= 1
+        or else Suffix.Child (1).Kind /= Libadalang.Common.Ada_Param_Assoc
+      then
+         return False;
+      end if;
+      Root := Libadalang.Analysis.Ada_Node
+        (Suffix.Child (1).As_Param_Assoc.F_R_Expr);
+      for Unused in 1 .. 16 loop
+         exit when Libadalang.Analysis.Is_Null (Root);
+         if Root.Kind = Libadalang.Common.Ada_Dotted_Name then
+            Root := Libadalang.Analysis.Ada_Node
+              (Root.As_Dotted_Name.F_Prefix);
+         elsif Root.Kind = Libadalang.Common.Ada_Call_Expr then
+            Root := Libadalang.Analysis.Ada_Node (Root.As_Call_Expr.F_Name);
+         else
+            exit;
+         end if;
+      end loop;
+      if Libadalang.Analysis.Is_Null (Root)
+        or else Root.Kind /= Libadalang.Common.Ada_Identifier
+      then
+         return False;
+      end if;
+      declare
+         Text : constant String := Normalize_Rule_Name (Node_Text (Root));
+      begin
+         if Text = Name then
+            return True;
+         end if;
+         for Item of Current_Overlays loop
+            if Text = To_String (Item.Name) then
+               return True;
+            end if;
+         end loop;
+      end;
+      return False;
+   exception
+      when others =>
+         return False;
+   end Converts_Named;
+
    function Same_Parameter
      (Node   : Libadalang.Analysis.Ada_Node'Class;
       Param  : Libadalang.Analysis.Param_Spec;
@@ -794,6 +923,10 @@ package body Adalang_Analyzer.SPARK_Readiness is
          elsif Current.Kind = Libadalang.Common.Ada_Dotted_Name then
             Current := Libadalang.Analysis.Ada_Node
               (Current.As_Dotted_Name.F_Prefix);
+         elsif Converts_Named (Current, Name)
+           and then Is_Type_Conversion (Current)
+         then
+            Current := Without_Conversions (Current);
          elsif Current.Kind = Libadalang.Common.Ada_Call_Expr then
             Current := Libadalang.Analysis.Ada_Node
               (Current.As_Call_Expr.F_Name);
@@ -804,8 +937,20 @@ package body Adalang_Analyzer.SPARK_Readiness is
 
       if Libadalang.Analysis.Is_Null (Current)
         or else Current.Kind /= Libadalang.Common.Ada_Identifier
-        or else Normalize_Rule_Name (Node_Text (Current)) /= Name
       then
+         return False;
+      elsif Normalize_Rule_Name (Node_Text (Current)) /= Name then
+         --  An object overlaid on Param (Current_Overlays).
+         for Item of Current_Overlays loop
+            if Normalize_Rule_Name (Node_Text (Current)) =
+              To_String (Item.Name)
+            then
+               Decl := Current.As_Name.P_Referenced_Decl
+                 (Imprecise_Fallback => True);
+               return not Libadalang.Analysis.Is_Null (Decl)
+                 and then Decl = Item.Decl;
+            end if;
+         end loop;
          return False;
       end if;
       Decl := Current.As_Name.P_Referenced_Decl (Imprecise_Fallback => True);
@@ -1708,7 +1853,8 @@ package body Adalang_Analyzer.SPARK_Readiness is
      (List     : Libadalang.Analysis.Ada_Node'Class;
       Object   : Libadalang.Analysis.Basic_Decl'Class;
       Name     : String;
-      Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean;
+      Loop_Var : Libadalang.Analysis.Basic_Decl;
+      Element_Write : Boolean := False) return Boolean;
 
    --  True when Node -- a statement reached along every path through an
    --  already-escape-free loop body (Contains_Loop_Escape has ruled out
@@ -1717,12 +1863,15 @@ package body Adalang_Analyzer.SPARK_Readiness is
    --  "Param (I) := ...;" where I is that variable. If/case statements
    --  recurse into every alternative (an "if" with no "else" can never be
    --  unconditional here); anything else (nested loops, calls, ...) is
-   --  conservatively not recognized as a qualifying write.
+   --  conservatively not recognized as a qualifying write. With
+   --  Element_Write, the write looked for is "C := ...;" instead, C being
+   --  Loop_Var, the loop parameter of an element iterator over Param.
    function Statement_Always_Writes_Loop_Index
      (Node     : Libadalang.Analysis.Ada_Node'Class;
       Object   : Libadalang.Analysis.Basic_Decl'Class;
       Name     : String;
-      Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean
+      Loop_Var : Libadalang.Analysis.Basic_Decl;
+      Element_Write : Boolean := False) return Boolean
    is
    begin
       if Libadalang.Analysis.Is_Null (Node) then
@@ -1735,7 +1884,13 @@ package body Adalang_Analyzer.SPARK_Readiness is
                Dest : constant Libadalang.Analysis.Name :=
                  Node.As_Assign_Stmt.F_Dest;
             begin
-               if Dest.Kind /= Libadalang.Common.Ada_Call_Expr then
+               if Element_Write then
+                  --  "C := ...;", C the loop parameter of an element
+                  --  iterator (FP-193).
+                  return Dest.Kind = Libadalang.Common.Ada_Identifier
+                    and then Dest.P_Referenced_Decl
+                      (Imprecise_Fallback => True) = Loop_Var;
+               elsif Dest.Kind /= Libadalang.Common.Ada_Call_Expr then
                   return False;
                end if;
                declare
@@ -1766,15 +1921,15 @@ package body Adalang_Analyzer.SPARK_Readiness is
             begin
                if Libadalang.Analysis.Is_Null (Stmt.F_Else_Part)
                  or else not List_Always_Writes_Loop_Index
-                   (Stmt.F_Then_Stmts, Object, Name, Loop_Var)
+                   (Stmt.F_Then_Stmts, Object, Name, Loop_Var, Element_Write)
                  or else not List_Always_Writes_Loop_Index
-                   (Stmt.F_Else_Part.F_Stmts, Object, Name, Loop_Var)
+                   (Stmt.F_Else_Part.F_Stmts, Object, Name, Loop_Var, Element_Write)
                then
                   return False;
                end if;
                for Alt of Stmt.F_Alternatives loop
                   if not List_Always_Writes_Loop_Index
-                    (Alt.F_Stmts, Object, Name, Loop_Var)
+                    (Alt.F_Stmts, Object, Name, Loop_Var, Element_Write)
                   then
                      return False;
                   end if;
@@ -1792,7 +1947,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
                end if;
                for Alt of Stmt.F_Alternatives loop
                   if not List_Always_Writes_Loop_Index
-                    (Alt.F_Stmts, Object, Name, Loop_Var)
+                    (Alt.F_Stmts, Object, Name, Loop_Var, Element_Write)
                   then
                      return False;
                   end if;
@@ -1802,7 +1957,7 @@ package body Adalang_Analyzer.SPARK_Readiness is
 
          when Libadalang.Common.Ada_Decl_Block =>
             return List_Always_Writes_Loop_Index
-              (Node.As_Decl_Block.F_Stmts.F_Stmts, Object, Name, Loop_Var);
+              (Node.As_Decl_Block.F_Stmts.F_Stmts, Object, Name, Loop_Var, Element_Write);
 
          when others =>
             --  Ada's own exhaustiveness rules make every other statement
@@ -1820,12 +1975,13 @@ package body Adalang_Analyzer.SPARK_Readiness is
      (List     : Libadalang.Analysis.Ada_Node'Class;
       Object   : Libadalang.Analysis.Basic_Decl'Class;
       Name     : String;
-      Loop_Var : Libadalang.Analysis.Basic_Decl) return Boolean
+      Loop_Var : Libadalang.Analysis.Basic_Decl;
+      Element_Write : Boolean := False) return Boolean
    is
    begin
       for Index in 1 .. List.Children_Count loop
          if Statement_Always_Writes_Loop_Index
-           (List.Child (Index), Object, Name, Loop_Var)
+           (List.Child (Index), Object, Name, Loop_Var, Element_Write)
          then
             return True;
          end if;
@@ -2143,9 +2299,10 @@ package body Adalang_Analyzer.SPARK_Readiness is
       Param : Libadalang.Analysis.Param_Spec;
       Name  : String) return Boolean
    is
+      --  A view conversion of Param writes all of it (FP-195).
       function Partial (Target : Libadalang.Analysis.Ada_Node'Class)
         return Boolean
-      is (Target.Kind /= Libadalang.Common.Ada_Identifier
+      is (Without_Conversions (Target).Kind /= Libadalang.Common.Ada_Identifier
           and then Same_Parameter (Target, Param, Name));
    begin
       if Libadalang.Analysis.Is_Null (Node) then
@@ -2373,6 +2530,26 @@ package body Adalang_Analyzer.SPARK_Readiness is
                Index_Type  : constant Libadalang.Analysis.Base_Type_Decl :=
                  Array_Index_Type (Param);
             begin
+               --  "for C of Param loop ... C := ...; ... end loop;" with
+               --  Param an array: every pass assigns its element, so all of
+               --  Param is set after it, even when it is empty ("for C of
+               --  Buffer loop C := ' '; end loop;", Ironclad; FP-193).
+               if Spec.F_Loop_Type.Kind = Libadalang.Common.Ada_Iter_Type_Of
+                 and then not Libadalang.Analysis.Is_Null (Index_Type)
+                 and then Spec.F_Iter_Expr.Kind =
+                   Libadalang.Common.Ada_Identifier
+                 and then Same_Parameter (Spec.F_Iter_Expr, Param, Name)
+                 and then not Contains_Loop_Escape
+                   (Node.As_Base_Loop_Stmt.F_Stmts)
+                 and then List_Always_Writes_Loop_Index
+                   (Node.As_Base_Loop_Stmt.F_Stmts,
+                    Libadalang.Analysis.Basic_Decl (Param), Name,
+                    Libadalang.Analysis.Basic_Decl (Spec.F_Var_Decl),
+                    Element_Write => True)
+               then
+                  return (True, True);
+               end if;
+
                if Spec.F_Loop_Type.Kind /= Libadalang.Common.Ada_Iter_Type_In
                  or else Inner.Unsupported
                then
@@ -3133,28 +3310,51 @@ package body Adalang_Analyzer.SPARK_Readiness is
          return False;
    end Formal_Keeps_A_Value;
 
-   --  True when Subprogram returns normally only after Param, one of its
-   --  parameters, named Id, is set: by its declarations, its statements
-   --  or, where one is left by, the exception handler.
-   function Set_On_Every_Return
+   --  Set_On_Every_Return, with Current_Overlays already set for Param.
+   function Set_On_Every_Return_Here
      (Subprogram : Libadalang.Analysis.Subp_Body;
       Param      : Libadalang.Analysis.Param_Spec;
       Id         : Libadalang.Analysis.Defining_Name'Class) return Boolean
    is
       Name       : constant String := Normalize_Rule_Name (Node_Text (Id));
       Bad_Return : Boolean := False;
+      By_Declarations : constant Boolean :=
+        Declarations_Write_Parameter
+          (Subprogram.F_Decls.F_Decls, Param, Name);
       Result     : constant Init_Result := Interpret_List
-        (Subprogram.F_Stmts.F_Stmts, Param, Name,
-         Declarations_Write_Parameter
-           (Subprogram.F_Decls.F_Decls, Param, Name),
+        (Subprogram.F_Stmts.F_Stmts, Param, Name, By_Declarations,
          Bad_Return);
+
+      --  True when the statements set Param before the first one that can
+      --  raise an exception (Flow_Eval.Statement_Cannot_Raise): "Count :=
+      --  0;" first, then a loop that can raise (Ironclad's IPC.Futex.Wake
+      --  and Sound.Get_Audio_Device_Limits, FP-192).
+      function Set_Before_Any_Raise return Boolean is
+      begin
+         for Stmt of Subprogram.F_Stmts.F_Stmts loop
+            if not Statement_Cannot_Raise (Stmt) then
+               return False;
+            elsif Statement_Writes_Parameter (Stmt, Param, Name) then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Set_Before_Any_Raise;
+
+      --  What a handler starts from: the handler runs only for an exception
+      --  raised by the statements, after the declarations are done, so
+      --  Param is set there if the declarations set it or the statements
+      --  do before anything can raise (FP-192).
+      Handler_Start : constant Boolean :=
+        Subprogram.F_Stmts.F_Exceptions.Children_Count > 0
+        and then (By_Declarations or else Set_Before_Any_Raise);
    begin
       for Handler of Subprogram.F_Stmts.F_Exceptions loop
          declare
             Handler_Result : constant Init_Result :=
               Interpret_List
-                (Handler.As_Exception_Handler.F_Stmts, Param, Name, False,
-                 Bad_Return);
+                (Handler.As_Exception_Handler.F_Stmts, Param, Name,
+                 Handler_Start, Bad_Return);
          begin
             if Handler_Result.Can_Fall_Through
               and then not Handler_Result.Initialized
@@ -3165,6 +3365,114 @@ package body Adalang_Analyzer.SPARK_Readiness is
       end loop;
       return not Bad_Return
         and then (Result.Initialized or else not Result.Can_Fall_Through);
+   end Set_On_Every_Return_Here;
+
+   --  The objects the declarative part of Subprogram declares over Param,
+   --  named Name, all of it: with the aspect "Address => Param'Address",
+   --  or with "for X'Address use Param'Address;". Found by their text, as
+   --  resolving an address clause can raise a property error.
+   function Overlays_Of
+     (Subprogram : Libadalang.Analysis.Subp_Body;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Name       : String) return Overlay_Vectors.Vector
+   is
+      Decls  : constant Libadalang.Analysis.Ada_Node :=
+        Libadalang.Analysis.Ada_Node (Subprogram.F_Decls.F_Decls);
+      Result : Overlay_Vectors.Vector;
+      Named  : Unbounded_String;
+
+      --  True when Value is "Param'Address", Param named whole.
+      function Is_Address_Of_Param
+        (Value : Libadalang.Analysis.Ada_Node'Class) return Boolean is
+      begin
+         return not Libadalang.Analysis.Is_Null (Value)
+           and then Value.Kind = Libadalang.Common.Ada_Attribute_Ref
+           and then Normalize_Rule_Name
+             (Node_Text (Value.As_Attribute_Ref.F_Attribute)) = "address"
+           and then Value.As_Attribute_Ref.F_Prefix.Kind =
+             Libadalang.Common.Ada_Identifier
+           and then Normalize_Rule_Name
+             (Node_Text (Value.As_Attribute_Ref.F_Prefix)) = Name
+           and then Same_Parameter
+             (Value.As_Attribute_Ref.F_Prefix, Param, Name);
+      end Is_Address_Of_Param;
+
+      --  Adds the objects Item declares, or those named Only.
+      procedure Add
+        (Item : Libadalang.Analysis.Object_Decl; Only : String := "") is
+      begin
+         for Id of Item.F_Ids loop
+            if Only = ""
+              or else Normalize_Rule_Name (Node_Text (Id)) = Only
+            then
+               Result.Append
+                 ((Name => To_Unbounded_String
+                             (Normalize_Rule_Name (Node_Text (Id))),
+                   Decl => Item.As_Basic_Decl));
+            end if;
+         end loop;
+      end Add;
+   begin
+      for Item of Decls.Children loop
+         if Item.Kind = Libadalang.Common.Ada_Object_Decl
+           and then not Libadalang.Analysis.Is_Null
+                          (Item.As_Object_Decl.F_Aspects)
+         then
+            for Assoc of Item.As_Object_Decl.F_Aspects.F_Aspect_Assocs loop
+               if Normalize_Rule_Name (Node_Text (Assoc.F_Id)) = "address"
+                 and then Is_Address_Of_Param (Assoc.F_Expr)
+               then
+                  Add (Item.As_Object_Decl);
+               end if;
+            end loop;
+         elsif Item.Kind = Libadalang.Common.Ada_Attribute_Def_Clause
+           and then Item.As_Attribute_Def_Clause.F_Attribute_Expr.Kind =
+             Libadalang.Common.Ada_Attribute_Ref
+           and then Normalize_Rule_Name
+             (Node_Text (Item.As_Attribute_Def_Clause.F_Attribute_Expr
+                .As_Attribute_Ref.F_Attribute)) = "address"
+           and then Is_Address_Of_Param (Item.As_Attribute_Def_Clause.F_Expr)
+         then
+            Named := To_Unbounded_String
+              (Normalize_Rule_Name
+                 (Node_Text (Item.As_Attribute_Def_Clause.F_Attribute_Expr
+                    .As_Attribute_Ref.F_Prefix)));
+            for Other of Decls.Children loop
+               if Other.Kind = Libadalang.Common.Ada_Object_Decl then
+                  Add (Other.As_Object_Decl, To_String (Named));
+               end if;
+            end loop;
+         end if;
+      end loop;
+      return Result;
+   exception
+      when others =>
+         return Result;
+   end Overlays_Of;
+
+   --  True when Subprogram returns normally only after Param, one of its
+   --  parameters, named Id, is set: by its declarations, its statements
+   --  or, where one is left by, the exception handler. A write of an
+   --  object overlaid on Param counts (Overlays_Of, FP-194).
+   function Set_On_Every_Return
+     (Subprogram : Libadalang.Analysis.Subp_Body;
+      Param      : Libadalang.Analysis.Param_Spec;
+      Id         : Libadalang.Analysis.Defining_Name'Class) return Boolean
+   is
+      Saved  : constant Overlay_Vectors.Vector := Current_Overlays;
+      Result : Boolean;
+   begin
+      --  Set for the time Set_On_Every_Return_Here runs, which reads it,
+      --  and given back its value after, however it ends.
+      Use_Overlays
+        (Overlays_Of (Subprogram, Param, Normalize_Rule_Name (Node_Text (Id))));
+      Result := Set_On_Every_Return_Here (Subprogram, Param, Id);
+      Use_Overlays (Saved);
+      return Result;
+   exception
+      when others =>
+         Use_Overlays (Saved);
+         raise;
    end Set_On_Every_Return;
 
    function Written_On_Every_Return
@@ -3320,10 +3628,14 @@ package body Adalang_Analyzer.SPARK_Readiness is
                --  libgfxinit's hw-gfx-gma-panel.adb; FP-181); a read that
                --  may come first takes the value it had on entry, which
                --  Output does not allow (Ada-Lisp's decrement_exit_block).
+               --  The value may be given by a call of a subprogram with no
+               --  Global aspect, which writes the global but is not among
+               --  what the body itself writes (FP-196): Written_First tells
+               --  of every write before the reads, so it is asked whether
+               --  or not the body writes the global itself.
                if Missing_Read
                  and then Found
                  and then Can_Write
-                 and then Actual.Is_Written
                  and then Actual.Key.Kind = Libadalang.Common.Ada_Defining_Name
                  and then Flow_Contracts.Written_First
                    (Subprogram, Actual.Key.As_Defining_Name,

@@ -24,6 +24,9 @@ package Verification_FP145_Output_Globals with SPARK_Mode is
    --  not read it (SPARK testsuite S530-019).
    procedure Exit_Then_Write_Relaxed (C : Boolean)
      with Global => (Output => R);
+   --  FP-196: a subprogram with no Global aspect that gives X a value on
+   --  every path, called before the read.
+   procedure Callee_Write_Then_Read with Global => (Output => X);
 
    --  Not proved: X may be read before it is written.
    procedure Read_Then_Write with Global => (Output => X);
@@ -34,5 +37,9 @@ package Verification_FP145_Output_Globals with SPARK_Mode is
    --  Not proved: X, not relaxed, is not given a value on the path that
    --  leaves the loop before the write.
    procedure Exit_Then_Write (C : Boolean) with Global => (Output => X);
+   --  Not proved: the subprogram with no Global aspect called first may
+   --  return before it gives X a value (FP-196).
+   procedure Callee_Return_Then_Read (C : Boolean)
+     with Global => (Output => X);
 
 end Verification_FP145_Output_Globals;

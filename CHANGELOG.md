@@ -5,6 +5,45 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+The fixes of what running 1.17.6 on the Ironclad kernel (a SPARK and Ada
+kernel, x86_64 and riscv64) showed. Two of its real defects, both
+confirmed by GNATprove, are reported upstream (Ironclad#29, #30).
+
+### Fixed
+
+- `Overwritten_Assignment` reported a flag set before statements that can
+  raise and reset after them, when an exception handler of the
+  subprogram reads it: `Locked := True;`, a loop that can raise,
+  `Locked := False;`, and `if Locked then Release;` in the handler.
+  The value is no longer taken as lost when a statement between the two
+  writes can raise and an enclosing handler reads the target
+  (`FP-191`).
+- `Uninitialized_Output` took an exception handler for one that can run
+  before anything else, even where the out parameter is set by the
+  first statements, which cannot raise (`Count := 0;` and then a loop
+  that can). A handler now starts from what the declarations set and
+  what the statements set before the first one that can raise. Only
+  statements that provably cannot raise count: null statements, pragmas
+  that check nothing, and assignments to a whole variable of a value no
+  check can fail for its subtype (`FP-192`).
+- `Uninitialized_Output` did not take `for C of Buffer loop C := ...;
+  end loop;` for a write of all of `Buffer` (`FP-193`), nor a write of
+  an object declared at the parameter's address (`X : T with Import,
+  Address => Param'Address;`, or an address clause; `FP-194`), nor an
+  out actual given as a view conversion, `Get (Unsigned_32 (Result))`
+  (`FP-195`).
+- `Global_Contract_Mismatch` reported the read of an `Output` global that
+  a called subprogram with no Global aspect gives a value first
+  (`Normalize; Seen := Res;`, where `Normalize` sets `Res`). Such a call
+  now writes the global first when the callee's body does so on every path
+  to its end; a callee that may return before the write, or that has a
+  handler, does not. With `--verify`, the data dependencies of such a
+  caller are proved, as GNATprove proves them (`FP-196`).
+- `Infinite_Loop` reported a plain loop that a `goto` to a label after
+  it leaves (`FP-197`).
+
 ## [1.17.6] - 2026-11-27
 
 The fixes of what running 1.17.5 on coreboot's libgfxinit and libhwbase
