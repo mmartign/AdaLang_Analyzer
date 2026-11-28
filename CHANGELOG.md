@@ -5,11 +5,26 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.17.7] - 2026-11-28
 
 The fixes of what running 1.17.6 on the Ironclad kernel (a SPARK and Ada
 kernel, x86_64 and riscv64) showed. Two of its real defects, both
 confirmed by GNATprove, are reported upstream (Ironclad#29, #30).
+
+What to expect: on the ten corpora, with every preset (run of
+2026-11-28), every obligation has the verdict it had with 1.17.6, so the
+gap ledger stays at `--verify` proving 12,038 of the 15,043 checks
+GNATprove proves (80.0%). `Uninitialized_Output` goes from 71 sites to
+69 (one in gnatcoll-core, one in AWS), and no other finding changes. The
+SPARK testsuite, the five lanes with GNATprove's log and coreboot's
+libgfxinit and libhwbase give what 1.17.6 gave; of the other repositories
+we sweep, one false `Uninitialized_Output` goes (ravenadm). On Ironclad,
+per configuration, 25 false `Uninitialized_Output`, 6 `Overwritten_Assignment`
+(5 on riscv64) and 1 `Infinite_Loop` go, and on x86_64 1
+`Global_Contract_Mismatch`; both real defects are still reported. Code
+that sets its out parameters before anything that can raise, writes them
+through an overlay or an element loop, or passes them as a view
+conversion gets fewer false `Uninitialized_Output` findings.
 
 ### Fixed
 
