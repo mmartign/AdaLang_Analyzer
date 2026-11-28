@@ -74,7 +74,7 @@ Global_Contract_Mismatch	yes	automotive,spark,verify	10	0	0
 Missing_Depends_Contract	yes	automotive,spark,verify	10	4376	264
 Incomplete_Depends_Contract	yes	automotive,spark,verify	10	0	0
 Depends_Contract_Mismatch	yes	automotive,spark,verify	10	4	2
-Uninitialized_Output	yes	automotive,recommended,spark,verify	10	181	39
+Uninitialized_Output	yes	automotive,recommended,spark,verify	10	174	37
 Uninitialized_Read	yes	automotive,recommended	4	1	1
 Missing_Overriding_Indicator	yes	automotive	2	0	0
 Inefficient_String_Concatenation	no	-	0	0	0
