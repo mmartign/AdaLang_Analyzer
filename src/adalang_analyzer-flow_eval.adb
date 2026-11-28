@@ -4961,9 +4961,11 @@ package body Adalang_Analyzer.Flow_Eval is
    function Statement_Cannot_Raise
      (Stmt : Libadalang.Analysis.Ada_Node'Class) return Boolean
    is
+      --  Lower case, underscores kept (Normalize_Rule_Name makes them
+      --  hyphens, which no pragma name below has).
       function Lower (Node : Libadalang.Analysis.Ada_Node'Class)
         return String
-      is (Text_Utils.Normalize_Rule_Name (Ada_Text.Node_Text (Node)));
+      is (Ada_Text.Canonical_Text (Node));
 
       --  True when Type_Expr names an enumeration type's first subtype,
       --  which every literal of the type belongs to.
@@ -5057,16 +5059,125 @@ package body Adalang_Analyzer.Flow_Eval is
             return False;
       end Composite_Without_Predicate;
 
+      --  True when Type_Expr is a subtype mark alone, adding no constraint
+      --  to the subtype it names.
+      function Plain_Mark
+        (Type_Expr : Libadalang.Analysis.Ada_Node'Class) return Boolean
+      is (not Libadalang.Analysis.Is_Null (Type_Expr)
+          and then Type_Expr.Kind = Libadalang.Common.Ada_Subtype_Indication
+          and then Libadalang.Analysis.Is_Null
+                     (Type_Expr.As_Subtype_Indication.F_Constraint));
+
+      function Same_Decl
+        (Left, Right : Libadalang.Analysis.Base_Type_Decl) return Boolean
+      is
+         use type Libadalang.Analysis.Analysis_Unit;
+         use type Langkit_Support.Slocs.Source_Location;
+      begin
+         return not Libadalang.Analysis.Is_Null (Left)
+           and then not Libadalang.Analysis.Is_Null (Right)
+           and then Left.Unit = Right.Unit
+           and then Langkit_Support.Slocs.Start_Sloc (Left.Sloc_Range) =
+             Langkit_Support.Slocs.Start_Sloc (Right.Sloc_Range);
+      end Same_Decl;
+
+      --  True when storing a value of the subtype Typ in an object of
+      --  that same subtype checks nothing: a scalar subtype or a private
+      --  type without discriminants, with no predicate (and, for the
+      --  private type, no invariant) on any of its parts.
+      function Checks_Nothing_Within
+        (Typ : Libadalang.Analysis.Base_Type_Decl) return Boolean
+      is
+         function Has
+           (Decl : Libadalang.Analysis.Basic_Decl; Name : String)
+            return Boolean
+         is (Libadalang.Analysis.Exists
+               (Decl.P_Get_Aspect
+                  (Langkit_Support.Text.To_Unbounded_Text
+                     (Langkit_Support.Text.To_Text (Name)))));
+      begin
+         if Typ.P_Is_Scalar_Type then
+            return not Has_Subtype_Predicate (Typ);
+         elsif Typ.Kind /= Libadalang.Common.Ada_Concrete_Type_Decl
+           or else Typ.As_Concrete_Type_Decl.F_Type_Def.Kind /=
+             Libadalang.Common.Ada_Private_Type_Def
+           or else not Libadalang.Analysis.Is_Null
+                         (Typ.As_Concrete_Type_Decl.F_Discriminants)
+         then
+            return False;
+         end if;
+         for Part of Typ.P_All_Parts loop
+            if Has (Part, "Predicate") or else Has (Part, "Static_Predicate")
+              or else Has (Part, "Dynamic_Predicate")
+              or else Has (Part, "Type_Invariant")
+              or else Has (Part, "Invariant")
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      exception
+         when others =>
+            return False;
+      end Checks_Nothing_Within;
+
+      --  True when Value names a constant (deferred or not) declared with
+      --  the subtype mark of Typ alone: its value was checked against Typ
+      --  when it was declared, and reading it raises nothing
+      --  (System.Null_Address).
+      function Same_Subtype_Constant
+        (Value : Libadalang.Analysis.Ada_Node'Class;
+         Typ   : Libadalang.Analysis.Base_Type_Decl) return Boolean
+      is
+         Decl : Libadalang.Analysis.Basic_Decl;
+      begin
+         if Value.Kind not in Libadalang.Common.Ada_Identifier
+                            | Libadalang.Common.Ada_Dotted_Name
+         then
+            return False;
+         end if;
+         Decl := Value.As_Name.P_Referenced_Decl;
+         return not Libadalang.Analysis.Is_Null (Decl)
+           and then Decl.Kind = Libadalang.Common.Ada_Object_Decl
+           and then Decl.As_Object_Decl.F_Has_Constant
+           and then Libadalang.Analysis.Is_Null
+                      (Decl.As_Object_Decl.F_Renaming_Clause)
+           and then Plain_Mark (Decl.As_Object_Decl.F_Type_Expr)
+           and then Same_Decl
+                      (Decl.As_Object_Decl.F_Type_Expr.P_Designated_Type_Decl,
+                       Typ);
+      end Same_Subtype_Constant;
+
+      --  True when 0 belongs to Typ whatever the target: Storage_Offset'Last
+      --  is at least Integer'Last or the largest storage offset, and
+      --  Storage_Offset'First at most -Storage_Offset'Last (RM 13.7.1(11)),
+      --  so 0 is in System.Storage_Elements.Storage_Offset and in
+      --  Storage_Count (0 .. Storage_Offset'Last), whose bounds depend on
+      --  Standard'Address_Size.
+      function Holds_Zero
+        (Typ : Libadalang.Analysis.Base_Type_Decl) return Boolean
+      is
+         Name : constant String := Langkit_Support.Text.To_UTF8
+           (Typ.P_Canonical_Fully_Qualified_Name);
+      begin
+         return Name = "system.storage_elements.storage_offset"
+           or else Name = "system.storage_elements.storage_count";
+      exception
+         when others =>
+            return False;
+      end Holds_Zero;
+
       --  True when no check fails when Value is stored in an object of
       --  type Typ, of the scalar range Bounds, of an enumeration first
-      --  subtype if Enumeration, and, for an array, with the index range
-      --  Index.
+      --  subtype if Enumeration, for an array with the index range Index,
+      --  and of the subtype Typ itself if Whole.
       function Fits
         (Value       : Libadalang.Analysis.Ada_Node'Class;
          Typ         : Libadalang.Analysis.Base_Type_Decl;
          Bounds      : Abstract_Range;
          Enumeration : Boolean;
          Index       : Abstract_Range;
+         Whole       : Boolean;
          Depth       : Natural) return Boolean
       is
          Assocs : Libadalang.Analysis.Ada_Node;
@@ -5075,13 +5186,19 @@ package body Adalang_Analyzer.Flow_Eval is
            or else Libadalang.Analysis.Is_Null (Typ)
            or else Typ.P_Is_Tagged_Type
            or else Typ.P_Is_Access_Type
-           or else (if Typ.P_Is_Scalar_Type then Has_Subtype_Predicate (Typ)
-                    else not Composite_Without_Predicate (Typ))
          then
             return False;
          elsif Value.Kind = Libadalang.Common.Ada_Paren_Expr then
             return Fits (Value.As_Paren_Expr.F_Expr, Typ, Bounds,
-                         Enumeration, Index, Depth + 1);
+                         Enumeration, Index, Whole, Depth + 1);
+         elsif Whole and then Checks_Nothing_Within (Typ)
+           and then Same_Subtype_Constant (Value, Typ)
+         then
+            return True;
+         elsif (if Typ.P_Is_Scalar_Type then Has_Subtype_Predicate (Typ)
+                else not Composite_Without_Predicate (Typ))
+         then
+            return False;
          end if;
 
          if Value.Kind in Libadalang.Common.Ada_Aggregate
@@ -5124,7 +5241,7 @@ package body Adalang_Analyzer.Flow_Eval is
                          (Assoc.As_Aggregate_Assoc.F_R_Expr, Element_Type,
                           Element_Bounds, Whole_Enumeration (Element),
                           Array_Index_Range (Element_Type, 1, Empty_Flow_State),
-                          Depth + 1)
+                          Plain_Mark (Element), Depth + 1)
                      then
                         return False;
                      end if;
@@ -5209,7 +5326,7 @@ package body Adalang_Analyzer.Flow_Eval is
                         Type_Expr.P_Designated_Type_Decl,
                         Declared_Range (Key), Whole_Enumeration (Type_Expr),
                         Declared_Index_Range (Key, 1, Empty_Flow_State),
-                        Depth + 1)
+                        Plain_Mark (Type_Expr), Depth + 1)
                      then
                         return False;
                      end if;
@@ -5246,9 +5363,11 @@ package body Adalang_Analyzer.Flow_Eval is
                Known := Named_Number_Value (Value);
             end if;
             return Known.Known
-              and then Bounds.Has_Low and then Bounds.Has_High
-              and then Bounds.Low <= Known.Value
-              and then Known.Value <= Bounds.High;
+              and then ((Bounds.Has_Low and then Bounds.Has_High
+                         and then Bounds.Low <= Known.Value
+                         and then Known.Value <= Bounds.High)
+                        or else (Known.Value = 0 and then Whole
+                                 and then Holds_Zero (Typ)));
          end;
       end Fits;
    begin
@@ -5298,7 +5417,8 @@ package body Adalang_Analyzer.Flow_Eval is
                return Fits
                  (Stmt.As_Assign_Stmt.F_Expr, Type_Expr.P_Designated_Type_Decl,
                   Declared_Range (Key), Whole_Enumeration (Type_Expr),
-                  Declared_Index_Range (Key, 1, Empty_Flow_State), 0);
+                  Declared_Index_Range (Key, 1, Empty_Flow_State),
+                  Plain_Mark (Type_Expr), 0);
             end;
 
          when others =>

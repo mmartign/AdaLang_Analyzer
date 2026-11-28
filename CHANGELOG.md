@@ -5,6 +5,20 @@ All notable changes to AdaLang Analyzer are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `Uninitialized_Output` still took an exception handler for one that can
+  run before the out parameters were set when the first statements store
+  an aggregate holding a constant of a private type or 0 in a
+  `Storage_Count`: `Segments := [others => (Start => System.Null_Address,
+  Length => 0, ...)]`. A constant declared with the target's own subtype
+  mark is stored without a check, and 0 belongs to `Storage_Offset` and
+  `Storage_Count` whatever the address size (RM 13.7.1). Pragmas that
+  check nothing, `Style_Checks` and `Inspection_Point`, were not
+  recognized as statements that cannot raise; they are now (`FP-198`).
+
 ## [1.17.7] - 2026-11-28
 
 The fixes of what running 1.17.6 on the Ironclad kernel (a SPARK and Ada
